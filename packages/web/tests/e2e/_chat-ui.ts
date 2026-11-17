@@ -22,6 +22,13 @@ export async function openChatModel(page: Page): Promise<void> {
   await expect(page.getByTestId("chat-model-select")).toBeVisible();
 }
 
+export async function chooseChatEffort(page: Page, effort: string): Promise<void> {
+  await openChatAgentModel(page);
+  const option = page.getByTestId(`chat-effort-option-${effort}`);
+  await option.click();
+  await expect(option).toHaveAttribute("aria-checked", "true");
+}
+
 export async function chooseChatModel(page: Page, model: string): Promise<void> {
   await openChatModel(page);
   await page.getByTestId(`chat-model-option-${model}`).click();
@@ -72,7 +79,7 @@ export async function openChatActions(page: Page): Promise<void> {
 
 export async function openChatSettings(
   page: Page,
-  tab: "overview" | "customize" | "analytics" = "overview",
+  tab: "overview" | "customize" = "overview",
 ): Promise<void> {
   await openChatActions(page);
   await page.getByTestId("chat-config-button").click();

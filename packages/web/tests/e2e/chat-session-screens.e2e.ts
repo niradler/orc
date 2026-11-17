@@ -8,6 +8,93 @@ import { HOME, mockSessionHome } from "./_session-home-demo";
 // to refresh docs/public/screens; otherwise the shots stay in the test output.
 const CAPTURE = process.env.ORC_CAPTURE_CHAT_SCREENS === "1";
 
+/** The session page reads the same payload as the chat analytics route. */
+function analyticsFixture(now: number) {
+  return {
+    messages: 4,
+    userMessages: 2,
+    assistantMessages: 2,
+    turns: 2,
+    toolCalls: 5,
+    toolFailures: 1,
+    attachments: 0,
+    startedAt: now - 32 * 60_000,
+    lastActivityAt: now - 12 * 60_000,
+    outcomes: { completed: 2, stopped: 0, failed: 0, running: 0 },
+    durations: { averageMs: 171_000, medianMs: 171_000, p95Ms: 224_000, totalMs: 342_000 },
+    toolTotal: 3,
+    skills: [
+      { name: "nir-collab", loads: 2 },
+      { name: "orc-track", loads: 1 },
+    ],
+    tools: [
+      { name: "Bash", calls: 3, failures: 1 },
+      { name: "Read", calls: 1, failures: 0 },
+      { name: "Edit", calls: 1, failures: 0 },
+    ],
+    turnTimeline: [
+      {
+        index: 1,
+        startedAt: now - 30 * 60_000,
+        durationMs: 118_000,
+        outcome: "completed",
+        toolCalls: 2,
+        toolFailures: 0,
+        responseChars: 220,
+      },
+      {
+        index: 2,
+        startedAt: now - 16 * 60_000,
+        durationMs: 224_000,
+        outcome: "completed",
+        toolCalls: 3,
+        toolFailures: 1,
+        responseChars: 118,
+      },
+    ],
+    turnTimelineTruncated: false,
+    context: {
+      backend: "claude",
+      model: "claude-sonnet-4-5",
+      supported: true,
+      reason: null,
+      usage: {
+        latest: {
+          input_tokens: 48_210,
+          cached_input_tokens: 41_120,
+          cache_write_tokens: 2_048,
+          recorded_at: new Date(now - 12 * 60_000).toISOString(),
+          may_be_cold_after: null,
+        },
+        totals: {
+          input_tokens: 168_400,
+          cached_input_tokens: 142_300,
+          cache_write_tokens: 5_120,
+        },
+        output_tokens: 18_760,
+        requests: 12,
+        compactions: [
+          {
+            recorded_at: new Date(now - 20 * 60_000).toISOString(),
+            pre_tokens: 122_000,
+            post_tokens: 48_000,
+          },
+        ],
+        timeline: [
+          16_000, 21_000, 26_000, 32_000, 39_000, 46_000, 122_000, 48_000, 48_100, 48_150, 48_200,
+          48_210,
+        ].map((context, index) => ({
+          request: index + 1,
+          recorded_at: new Date(now - (32 - index * 2) * 60_000).toISOString(),
+          context_tokens: context,
+          cached_input_tokens: Math.round(context * 0.85),
+          output_tokens: 900 + index * 100,
+        })),
+      },
+    },
+  };
+}
+
 for (const width of [1440, 390]) {
   test(`chat session UI screenshots at ${width}px`, async ({ page }, testInfo) => {
     const now = Date.now();
@@ -25,7 +112,7 @@ for (const width of [1440, 390]) {
       title: "Round cart totals to cents",
       config: ChatSettingsSchema.parse({
         agent: "claude",
-        model: "claude-sonnet-4-5",
+        model: "claude-opus-4-1",
         permissionMode: "acceptEdits",
       }),
       cwd: "/home/demo/acme-shop",
@@ -64,6 +151,7 @@ for (const width of [1440, 390]) {
           content:
             "I found the rounding in `src/cart/total.ts`. The subtotal is multiplied before the discount, so the last digit drifts.\n\nI will round once at the money boundary and add a regression test.",
           timestamp: now - 28 * 60_000,
+          model: "claude-sonnet-4-5",
           turn: {
             startedAt: now - 30 * 60_000,
             finishedAt: now - 28 * 60_000,
@@ -93,6 +181,7 @@ for (const width of [1440, 390]) {
           content:
             "The cart suite passes with the rounding change. Two snapshots needed updating for the new cent formatting.",
           timestamp: now - 12 * 60_000,
+          model: "claude-opus-4-1",
           turn: {
             startedAt: now - 16 * 60_000,
             finishedAt: now - 12 * 60_000,
@@ -122,8 +211,24 @@ for (const width of [1440, 390]) {
     };
     await page.setViewportSize({ width, height: 844 });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.addInitScript(() => localStorage.setItem("orc_theme", "dark"));
+    await page.addInitScript(() => {
+      localStorage.setItem("orc_theme", "dark");
+      // A little more room than the default shows full session titles in docs shots.
+      localStorage.setItem("orc_chat_history_width", "320");
+    });
     await mockSessionHome(page, now);
+    if (CAPTURE)
+      await page.route("**/api/chat/models?**", (route) =>
+        route.fulfill({
+          json: {
+            models: [
+              { id: "claude-opus-4-1", label: "Claude Opus 4.1" },
+              { id: "claude-sonnet-4-5", label: "Claude Sonnet 4.5" },
+            ],
+            warning: null,
+          },
+        }),
+      );
     await page.route(`**/api/chat/threads/${HOME.chatA}`, (route) =>
       route.fulfill({ json: thread }),
     );
@@ -174,7 +279,14 @@ for (const width of [1440, 390]) {
           },
           output_tokens: 18_760,
           requests: 12,
-          compactions: [],
+          compactions: [
+            {
+              recorded_at: new Date(now - 20 * 60_000).toISOString(),
+              pre_tokens: 88_400,
+              post_tokens: 12_200,
+              trigger: "auto",
+            },
+          ],
           timeline: null,
         },
       }),
@@ -281,16 +393,113 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-workspace-folder")).toBeVisible();
     await expect(page.getByTestId("chat-workspace-branch")).toBeVisible();
     await expect(page.getByTestId("chat-permission-chip")).toBeVisible();
+    // The header carries only the state; agent, model and cache live on the turn.
+    await expect(page.getByTestId("chat-session-strip")).toHaveCount(0);
+    await expect(page.getByTestId("chat-header-state").filter({ visible: true })).toHaveAttribute(
+      "data-state",
+      "idle",
+    );
+    // The turn records its own model, usage on the newest turn, and both dividers.
+    await expect(page.getByTestId("chat-turn-model")).toHaveCount(2);
+    await expect(page.getByTestId("chat-turn-divider-model")).toContainText("claude-opus-4-1");
+    await expect(page.getByTestId("chat-turn-divider-compaction")).toContainText(
+      "Context compacted automatically",
+    );
+    await expect(page.getByTestId("chat-turn-divider-compaction")).toContainText(
+      "88k → 12k tokens",
+    );
+    await expect(page.getByTestId("chat-turn-tokens")).toContainText("48k tokens");
+    await expect(page.getByTestId("chat-turn-cache")).toContainText("85% cached");
     await shot("chat-session-composer");
+    if (CAPTURE) {
+      await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+      await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+      await page.screenshot({
+        path:
+          width === 1440
+            ? `${repoRoot()}/docs/public/screens/chat-agent-picker.png`
+            : testInfo.outputPath(`chat-agent-picker-${width}.png`),
+        animations: "disabled",
+      });
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
+    }
+
+    await page.route(`**/api/chat/threads/${HOME.chatA}/analytics`, (route) =>
+      route.fulfill({ json: analyticsFixture(Date.now()) }),
+    );
+    const analyticsButton = page.getByTestId("chat-analytics-button").filter({ visible: true });
+    if (!(await analyticsButton.count()))
+      await page.getByTestId("chat-options-button").filter({ visible: true }).click();
+    await analyticsButton.first().click();
+    const analytics = page.getByTestId("chat-analytics-dialog");
+    await expect(analytics).toBeVisible();
+    await expect(analytics.getByTestId("chat-analytics-turns")).toContainText("2");
+    const compaction = analytics.getByTestId("chat-compaction-row");
+    await expect(compaction).toHaveCount(1);
+    await expect(compaction).toContainText("122k");
+    await expect(compaction).toContainText("48k");
+    await expect(compaction).toContainText("60.7%");
+    await expect(analytics.getByTestId("chat-skill-row")).toHaveText([
+      /nir-collab\s*2/,
+      /orc-track\s*1/,
+    ]);
+    await analytics.getByTestId("chat-skill-table").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath(`chat-analytics-dialog-${width}.png`) });
+    await analytics.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(analytics).toBeHidden();
 
     await openChatSettings(page);
     await expect(page.getByTestId("chat-session-id-agent")).toContainText("6c1f0d8e");
+    await expect(page.getByTestId("chat-settings-tab-analytics")).toHaveCount(0);
     if (width === 1440) await shot("chat-session-settings-overview");
     await page.getByTestId("chat-settings-tab-customize").click();
     if (width === 390) await shot("chat-session-settings-customize");
-    await page.getByTestId("chat-settings-tab-analytics").click();
-    await expect(page.getByTestId("chat-analytics-turns")).toContainText("2");
-    if (width === 1440) await shot("chat-session-settings-analytics");
     await page.keyboard.press("Escape");
+
+    // The session list now lives on the chat page; Recents shows every session flat.
+    await page.goto("/chat?project=all&sessionList=show");
+    await page.getByTestId("session-navigation-recents").click();
+    await expect(
+      page.getByTestId("chat-session-list").locator("[data-history-id]").first(),
+    ).toBeVisible();
+    await shot(width === 1440 ? "session-recents" : "session-list");
+
+    if (width === 1440) {
+      // The read-only viewer carries the session cache details and analytics.
+      await page.route("**/api/sessions/live/live-demo-claude/analytics", (route) =>
+        route.fulfill({ json: analyticsFixture(now) }),
+      );
+      await page.goto("/chat?project=all&sessionView=live-demo-claude");
+      const view = page.getByTestId("session-view");
+      await expect(view).toBeVisible();
+      await page.getByTestId("session-cache-indicator").click();
+      const cache = page.getByTestId("session-cache");
+      await expect(cache).toContainText("Session total");
+      if (CAPTURE)
+        await cache.screenshot({
+          path: `${repoRoot()}/docs/public/screens/session-cache.png`,
+          animations: "disabled",
+        });
+      await page.getByTestId("session-analytics").locator("summary").click();
+      await expect(page.getByTestId("chat-context-chart")).toBeVisible();
+      await expect(page.getByTestId("chat-tool-chart")).toBeVisible();
+      await expect(page.getByTestId("chat-turn-chart")).toBeVisible();
+      await expect(page.getByTestId("chat-analytics-turns")).toContainText("2");
+      await page.screenshot({
+        path: CAPTURE
+          ? `${repoRoot()}/docs/public/screens/chat-session-analytics-desktop.png`
+          : testInfo.outputPath("chat-session-analytics-desktop.png"),
+        animations: "disabled",
+      });
+      await page.getByTestId("chat-tool-chart").scrollIntoViewIfNeeded();
+      await page.waitForTimeout(200);
+      await page.screenshot({
+        path: CAPTURE
+          ? `${repoRoot()}/docs/public/screens/chat-session-analytics-tools-desktop.png`
+          : testInfo.outputPath("chat-session-analytics-tools-desktop.png"),
+        animations: "disabled",
+      });
+    }
   });
 }

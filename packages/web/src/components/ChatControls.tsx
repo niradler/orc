@@ -1,15 +1,17 @@
-import type { ChatMessage, ChatTurn } from "@orc/core/chat";
 import {
-  Check,
   ChevronRight,
-  Copy,
+  Eye,
+  EyeOff,
   Folder,
+  FolderOpen,
+  FolderPlus,
   History,
   Inbox,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   RefreshCw,
+  Sparkles,
   SquarePen,
   SquareTerminal,
   X,
@@ -18,11 +20,8 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
-import { ChatAgentOptionsEditor } from "@/components/ChatAgentOptionsEditor";
-import { ChatPermissionSelect } from "@/components/ChatPermissionSelect";
-import { ChatSendModeSelect } from "@/components/ChatSendModeSelect";
-import { HelpPopover } from "@/components/HelpPopover";
-import { SessionCacheUsage } from "@/components/SessionCacheUsage";
+import { CreateProjectDialog } from "@/components/CreateProjectDialog";
+import { Highlight } from "@/components/Highlight";
 import { SessionStateFilters, StableOrderPill } from "@/components/SessionListControls";
 import {
   SessionRowContent,
@@ -31,25 +30,20 @@ import {
 } from "@/components/SessionRowContent";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
-import { type SessionHistory, useSessionHistory } from "@/hooks/useSessionHistory";
+import {
+  SESSION_SORT_LABELS,
+  SESSION_SORTS,
+  type SessionHistory,
+  type SessionSort,
+  useSessionHistory,
+} from "@/hooks/useSessionHistory";
 import type { SessionHomeNav } from "@/hooks/useSessionHome";
 import { AGENT_STATES, type AgentState } from "@/lib/agent-state";
-import { formatDuration } from "@/lib/chat-activity";
-import type { ChatHistoryEntry } from "@/lib/chat-history-list";
-import { useDesktopPreview } from "@/lib/desktop-preview-context";
-import { THIS_SERVER } from "@/lib/host-labels";
+import { type ChatHistoryEntry, entryAgent, nestedLabel } from "@/lib/chat-history-list";
 import { cn } from "@/lib/utils";
 
 export function ChatSessionPicker({
@@ -81,8 +75,8 @@ export function ChatSessionPicker({
     listError,
     section,
     chooseSection,
-    expandedProject,
-    setExpandedProject,
+    expandedProjects,
+    toggleProject,
     refreshingSessions,
     refreshSessions,
     filter,
@@ -94,11 +88,42 @@ export function ChatSessionPicker({
     shown,
     projectGroups,
     unassignedRows,
+    unassignedFolders,
+    projectFromFolder,
+    adoptFolder,
+    closeAdopt,
+    expandProject,
     loading,
     selectEntry,
     newProjectSession,
     selectedArchive,
+    deep,
+    setDeep,
+    deepSearching,
+    searchMeta,
+    archive,
+    agentFilter,
+    setAgentFilter,
+    agentOptions,
+    sort,
+    setSort,
+    includeHidden,
+    setIncludeHidden,
+    agentGroups,
   } = history;
+  const renderRow = (entry: ChatHistoryEntry): ReactNode => (
+    <HistoryRow
+      key={entry.id}
+      entry={entry}
+      state={stateOf(entry)}
+      pending={pending}
+      selected={isSelected(entry)}
+      terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
+      query={search}
+      onSelect={() => selectEntry(entry)}
+      nested={entry.children?.map(renderRow)}
+    />
+  );
   if (rail)
     return (
       <aside
@@ -179,7 +204,7 @@ export function ChatSessionPicker({
       {selectedArchive ? (
         <ArchiveResumeForm history={history} />
       ) : (
-        <>
+        <div className="min-w-0 space-y-4" {...stable.listProps}>
           <div className="flex items-center gap-1">
             <div
               role="tablist"
@@ -202,6 +227,7 @@ export function ChatSessionPicker({
                 </Button>
               ))}
             </div>
+            <StableOrderPill pending={stable.pending} onApply={stable.apply} />
             <ActionHelp
               label="Refresh sessions"
               description="Re-import agent sessions, then refresh threads, live sessions and archive."
@@ -219,17 +245,93 @@ export function ChatSessionPicker({
               </Button>
             </ActionHelp>
           </div>
-          <Input
-            data-testid="chat-session-search"
-            aria-label="Search sessions"
-            placeholder="Search sessions…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <div className="min-w-0 space-y-2" {...stable.listProps}>
-            <SessionStateFilters value={filter} counts={counts} onChange={setFilter}>
-              <StableOrderPill pending={stable.pending} onApply={stable.apply} />
-            </SessionStateFilters>
+          <div className="flex items-center gap-1">
+            <Input
+              data-testid="chat-session-search"
+              aria-label="Search sessions"
+              placeholder="Search sessions…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="min-w-0 flex-1"
+            />
+            <ActionHelp
+              label="Search inside conversations"
+              description="Also match words inside transcripts (ripgrep) and archived sessions. Requires ripgrep for live content; archived search uses embeddings when configured."
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Search inside conversations"
+                aria-pressed={deep}
+                data-testid="chat-session-deep-search"
+                onClick={() => setDeep(!deep)}
+                className={cn(deep && "bg-surface-highest text-on-surface")}
+              >
+                <Sparkles />
+              </Button>
+            </ActionHelp>
+          </div>
+          <div className="flex items-center gap-1">
+            <select
+              data-testid="chat-session-agent"
+              aria-label="Filter sessions by agent"
+              value={agentFilter}
+              onChange={(event) => setAgentFilter(event.target.value)}
+              className="h-8 min-w-0 flex-1 rounded-md border border-control-border bg-background px-2 text-xs text-on-surface"
+            >
+              <option value="">All agents</option>
+              {agentOptions.map((agent) => (
+                <option key={agent} value={agent}>
+                  {agentDisplayName(agent)}
+                </option>
+              ))}
+            </select>
+            <select
+              data-testid="chat-session-sort"
+              aria-label="Sort sessions"
+              value={sort}
+              onChange={(event) => setSort(event.target.value as SessionSort)}
+              className="h-8 min-w-0 flex-1 rounded-md border border-control-border bg-background px-2 text-xs text-on-surface"
+            >
+              {SESSION_SORTS.map((value) => (
+                <option key={value} value={value}>
+                  {SESSION_SORT_LABELS[value]}
+                </option>
+              ))}
+            </select>
+            <ActionHelp
+              label="Show hidden sessions"
+              description="Hidden sessions stay out of the list until you show and restore them."
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="Show hidden sessions"
+                aria-pressed={includeHidden}
+                data-testid="chat-session-hidden"
+                onClick={() => setIncludeHidden(!includeHidden)}
+                className={cn(includeHidden && "bg-surface-highest text-on-surface")}
+              >
+                {includeHidden ? <Eye /> : <EyeOff />}
+              </Button>
+            </ActionHelp>
+          </div>
+          {deepSearching && searchMeta && (
+            <p data-testid="chat-session-search-meta" className="text-[11px] text-muted-foreground">
+              {searchMeta.rg
+                ? `Searched conversation content in ${(searchMeta.ms / 1000).toFixed(1)}s`
+                : "Titles and summaries only. Install ripgrep to search conversation content."}
+            </p>
+          )}
+          {archive.data?.degraded && (
+            <p data-testid="chat-session-degraded" className="text-[11px] text-outline">
+              {archive.data.degraded}
+            </p>
+          )}
+          <div className="min-w-0 space-y-2">
+            <SessionStateFilters value={filter} counts={counts} onChange={setFilter} />
             {section === "projects" && (
               <section
                 role="tabpanel"
@@ -246,23 +348,11 @@ export function ChatSessionPicker({
                     name={project.name}
                     icon={<Folder size={14} className="shrink-0" aria-hidden />}
                     count={rows.length}
-                    expanded={expandedProject === project.id}
-                    onToggle={() =>
-                      setExpandedProject(expandedProject === project.id ? null : project.id)
-                    }
+                    expanded={expandedProjects.includes(project.id)}
+                    onToggle={() => toggleProject(project.id)}
                     onNew={() => newProjectSession(project)}
                   >
-                    {rows.slice(0, visibleCount).map((entry) => (
-                      <HistoryRow
-                        key={entry.id}
-                        entry={entry}
-                        state={stateOf(entry)}
-                        pending={pending}
-                        selected={isSelected(entry)}
-                        terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                        onSelect={() => selectEntry(entry)}
-                      />
-                    ))}
+                    {rows.slice(0, visibleCount).map((entry) => renderRow(entry))}
                     {!rows.length && !loading && (
                       <p className="px-2 py-1.5 text-xs text-muted-foreground">
                         {search || filter !== "all"
@@ -272,32 +362,32 @@ export function ChatSessionPicker({
                     )}
                   </ProjectGroup>
                 ))}
-                {unassignedRows.length > 0 && (
-                  <ProjectGroup
-                    testId="session-project-unassigned"
-                    name="Unassigned"
-                    icon={<Inbox size={14} className="shrink-0" aria-hidden />}
-                    count={unassignedRows.length}
-                    expanded={expandedProject === "__unassigned__"}
-                    onToggle={() =>
-                      setExpandedProject(
-                        expandedProject === "__unassigned__" ? null : "__unassigned__",
-                      )
-                    }
-                  >
-                    {unassignedRows.slice(0, visibleCount).map((entry) => (
-                      <HistoryRow
-                        key={entry.id}
-                        entry={entry}
-                        state={stateOf(entry)}
-                        pending={pending}
-                        selected={isSelected(entry)}
-                        terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                        onSelect={() => selectEntry(entry)}
-                      />
-                    ))}
-                  </ProjectGroup>
-                )}
+                {unassignedFolders.map((folder) => {
+                  const name = folder.label;
+                  return (
+                    <ProjectGroup
+                      key={folder.key}
+                      testId={folder.cwd ? "session-folder-group" : "session-project-unassigned"}
+                      name={name}
+                      title={folder.cwd ?? undefined}
+                      icon={
+                        folder.cwd ? (
+                          <FolderOpen size={14} className="shrink-0" aria-hidden />
+                        ) : (
+                          <Inbox size={14} className="shrink-0" aria-hidden />
+                        )
+                      }
+                      count={folder.rows.length}
+                      expanded={expandedProjects.includes(folder.key)}
+                      onToggle={() => toggleProject(folder.key)}
+                      onAdopt={
+                        folder.cwd ? () => projectFromFolder(folder.cwd as string) : undefined
+                      }
+                    >
+                      {folder.rows.slice(0, visibleCount).map((entry) => renderRow(entry))}
+                    </ProjectGroup>
+                  );
+                })}
                 {!loading && !projectGroups.length && !unassignedRows.length && (
                   <p className="px-2 text-sm text-muted-foreground">
                     No projects yet. Create a project to group its sessions here.
@@ -305,26 +395,36 @@ export function ChatSessionPicker({
                 )}
               </section>
             )}
-            <div
-              role="tabpanel"
-              id="session-panel-recents"
-              aria-labelledby="session-tab-recents"
-              data-testid="chat-session-list"
-              hidden={section !== "recents"}
-              className="min-w-0 space-y-1"
-            >
-              {shown.map((entry) => (
-                <HistoryRow
-                  key={entry.id}
-                  entry={entry}
-                  state={stateOf(entry)}
-                  pending={pending}
-                  selected={isSelected(entry)}
-                  terminal={!!(home || entry.kind === "terminal") && !!entry.terminalId}
-                  onSelect={() => selectEntry(entry)}
-                />
-              ))}
-            </div>
+            {section === "recents" && (
+              <div
+                role="tabpanel"
+                id="session-panel-recents"
+                aria-labelledby="session-tab-recents"
+                data-testid="chat-session-list"
+                className="min-w-0 space-y-1"
+              >
+                {sort === "agent"
+                  ? agentGroups.map((group) => (
+                      <div
+                        key={group.agent}
+                        data-testid={`chat-session-agent-group-${group.agent}`}
+                        className="min-w-0"
+                      >
+                        <p className="flex min-w-0 items-center gap-1.5 px-2 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-wide text-outline">
+                          <AgentIcon
+                            agent={group.agent}
+                            title={agentDisplayName(group.agent)}
+                            className="size-3.5"
+                          />
+                          <span className="min-w-0 truncate">{agentDisplayName(group.agent)}</span>
+                          <span className="tabular-nums">{group.rows.length}</span>
+                        </p>
+                        {group.rows.map((entry) => renderRow(entry))}
+                      </div>
+                    ))
+                  : shown.map((entry) => renderRow(entry))}
+              </div>
+            )}
           </div>
           {loading && (
             <p role="status" className="px-2 text-xs text-muted-foreground">
@@ -341,12 +441,38 @@ export function ChatSessionPicker({
               Load older sessions
             </Button>
           )}
-        </>
+        </div>
       )}
       {listError && (
-        <p role="alert" className="text-sm text-error wrap-break-word">
-          {listError}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p
+            role="alert"
+            data-testid="chat-session-error"
+            className="text-sm text-error wrap-break-word"
+          >
+            {listError}
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void refreshSessions()}
+            disabled={refreshingSessions}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+      {adoptFolder && (
+        <CreateProjectDialog
+          open
+          initialName={adoptFolder.name}
+          initialScope={adoptFolder.cwd}
+          allowFirstTask={false}
+          onClose={closeAdopt}
+          onCreated={expandProject}
+          onFirstTask={expandProject}
+        />
       )}
     </SessionHistoryFrame>
   );
@@ -582,13 +708,6 @@ function SessionHistoryFrame({
   );
 }
 
-export function entryAgent(entry: ChatHistoryEntry): string {
-  if (entry.kind === "local") return entry.tab.config.agent;
-  if (entry.kind === "saved") return entry.thread.agent || entry.provider || "";
-  if (entry.kind === "terminal") return entry.terminal.kind;
-  return entry.session.agent;
-}
-
 function ProviderMark({ agent }: { agent: string }) {
   return (
     <AgentIcon
@@ -608,6 +727,8 @@ export function ProjectGroup({
   expanded,
   onToggle,
   onNew,
+  onAdopt,
+  title,
   testId,
   children,
 }: {
@@ -617,6 +738,8 @@ export function ProjectGroup({
   expanded: boolean;
   onToggle: () => void;
   onNew?: () => void;
+  onAdopt?: () => void;
+  title?: string;
   testId: string;
   children: ReactNode;
 }) {
@@ -628,6 +751,7 @@ export function ProjectGroup({
           className="min-w-0 flex-1 justify-start gap-1.5 px-2"
           aria-expanded={expanded}
           data-testid="session-project-toggle"
+          title={title}
           onClick={onToggle}
         >
           <ChevronRight
@@ -653,6 +777,19 @@ export function ProjectGroup({
             <Plus size={15} />
           </Button>
         )}
+        {onAdopt && (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Make project from ${name}`}
+            title={`Make project from ${name}`}
+            data-testid="session-folder-adopt"
+            className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 max-sm:opacity-100 pointer-coarse:opacity-100"
+            onClick={onAdopt}
+          >
+            <FolderPlus size={15} />
+          </Button>
+        )}
       </div>
       {expanded && <div className="space-y-1 pl-2">{children}</div>}
     </div>
@@ -665,20 +802,25 @@ export function HistoryRow({
   pending,
   selected,
   terminal,
+  query = "",
   onSelect,
+  nested,
 }: {
   entry: ChatHistoryEntry;
   state: AgentState;
   pending: boolean;
   selected: boolean;
   terminal: boolean;
+  query?: string;
   onSelect: () => void;
+  nested?: ReactNode[] | undefined;
 }) {
   const chat = useChat();
   const tab = entry.kind === "local" ? entry.tab : null;
   const open = !!tab && !tab.hidden;
   const agent = entryAgent(entry);
   const status = AGENT_STATES[state].label;
+  const hidden = entry.kind === "native" && !!entry.session.hidden;
   const testId = terminal
     ? "chat-open-terminal"
     : entry.kind === "local"
@@ -697,423 +839,127 @@ export function HistoryRow({
       data-history-open={open ? "true" : "false"}
       data-active={selected ? "true" : "false"}
       data-state={state}
-      className={`${sessionRowClass} ${selected ? "bg-surface-highest" : "hover:bg-surface"}`}
+      className={cn(
+        "group min-w-0 rounded-md",
+        selected ? "bg-surface-highest" : "hover:bg-surface",
+      )}
     >
-      <ActionHelp label={`${agent || "Unknown provider"} · ${status}`} description={entry.title}>
-        <button
-          type="button"
-          data-testid={testId}
-          aria-current={selected ? "true" : undefined}
-          disabled={pending}
-          onClick={onSelect}
-          className={sessionRowButtonClass}
-        >
-          <SessionRowContent
-            agent={agent}
-            title={entry.title}
-            state={state}
-            stateTestId="chat-session-status"
-            marker={
-              terminal && (
-                <SquareTerminal
-                  size={13}
-                  aria-hidden="true"
-                  className="shrink-0 text-muted-foreground"
-                />
-              )
-            }
-          />
-          <span className="sr-only">
-            {agent ? ` · ${agent}` : ""}
-            {terminal ? " · Terminal" : ""}
-            {tab?.draft ? " · Draft" : ""}
-            {entry.kind === "archive" ? " · Import and resume" : ""}
-          </span>
-          {entry.kind === "saved" && entry.thread.running && (
-            <span data-testid="chat-thread-running" className="sr-only">
-              Running
-            </span>
-          )}
-        </button>
-      </ActionHelp>
-      {open && tab && (
-        <ActionHelp
-          label={`Close ${entry.title} from open sessions`}
-          description="Close from open sessions; history and background work are kept"
-        >
+      <div className={sessionRowClass}>
+        <ActionHelp label={`${agent || "Unknown provider"} · ${status}`} description={entry.title}>
           <button
             type="button"
-            data-testid="chat-tab-close"
-            aria-label={`Close ${entry.title} from open sessions`}
-            onClick={() => chat.closeTab(tab.key)}
-            className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
+            data-testid={testId}
+            aria-current={selected ? "true" : undefined}
+            disabled={pending}
+            onClick={onSelect}
+            className={sessionRowButtonClass}
           >
-            <X size={13} />
+            <SessionRowContent
+              agent={agent}
+              title={
+                query.trim().length >= 2 ? (
+                  <Highlight text={entry.title} query={query} />
+                ) : (
+                  entry.title
+                )
+              }
+              state={state}
+              stateTestId="chat-session-status"
+              marker={
+                <>
+                  {entry.kind === "native" && entry.session.handoff?.status === "ready" && (
+                    <span data-testid="handoff-ready" className="shrink-0 text-[10px] text-primary">
+                      Ready to resume
+                    </span>
+                  )}
+                  {hidden && (
+                    <span
+                      data-testid="chat-session-hidden-badge"
+                      className="shrink-0 text-[10px] text-outline"
+                    >
+                      Hidden
+                    </span>
+                  )}
+                  {terminal && (
+                    <SquareTerminal
+                      size={13}
+                      aria-hidden="true"
+                      className="shrink-0 text-muted-foreground"
+                    />
+                  )}
+                </>
+              }
+            />
+            <span className="sr-only">
+              {agent ? ` · ${agent}` : ""}
+              {terminal ? " · Terminal" : ""}
+              {hidden ? " · Hidden" : ""}
+              {tab?.draft ? " · Draft" : ""}
+              {entry.kind === "archive" ? " · Import and resume" : ""}
+            </span>
+            {entry.kind === "saved" && entry.thread.running && (
+              <span data-testid="chat-thread-running" className="sr-only">
+                Running
+              </span>
+            )}
           </button>
         </ActionHelp>
-      )}
-    </div>
-  );
-}
-
-export function ChatConversationInfo({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { config, changePermissions, changeSendMode, thread, streaming } = useChat();
-  const preview = useDesktopPreview();
-  const capabilities = useAgentCapabilities(config.agent, thread);
-  const analytics = chatAnalytics(thread?.messages ?? []);
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        data-testid="chat-config-dialog"
-        tabIndex={-1}
-        onOpenAutoFocus={(event) => {
-          // Do not focus a help trigger: its tooltip would become the top layer
-          // and swallow the Escape that closes the dialog.
-          event.preventDefault();
-          const content = event.currentTarget as HTMLElement | null;
-          content?.focus();
-        }}
-        className="w-[calc(100%-1rem)] min-w-0 grid-cols-[minmax(0,1fr)] sm:max-w-2xl"
-      >
-        <div className="flex min-w-0 items-center gap-1 pr-8">
-          <DialogTitle className="min-w-0 flex-1">Session settings</DialogTitle>
-          <HelpPopover label="Session settings">
-            These settings belong to this conversation. Loosening permissions applies right away,
-            including to a pending approval; stricter permissions apply to your next message. New
-            chat defaults live in Settings → Agents → Chat.
-          </HelpPopover>
-        </div>
-        <DialogDescription className="sr-only">
-          Information, customization and analytics for this chat session.
-        </DialogDescription>
-        <Tabs defaultValue="overview" className="min-w-0">
-          <TabsList aria-label="Session settings sections" className="grid w-full grid-cols-3 p-0">
-            {(
-              [
-                ["overview", "Overview"],
-                ["customize", "Customize"],
-                ["analytics", "Analytics"],
-              ] as const
-            ).map(([value, label]) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                data-testid={`chat-settings-tab-${value}`}
-                className="bg-surface hover:bg-surface-high"
-              >
-                {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          <TabsContent value="overview" className="space-y-4">
-            <dl data-testid="chat-session-info" className="space-y-3 text-sm wrap-break-word">
-              <SettingsRow label="Agent">
-                <span data-testid="chat-settings-agent">{agentDisplayName(config.agent)}</span>
-                {config.model && (
-                  <span data-testid="chat-settings-model" className="text-muted-foreground">
-                    {" "}
-                    · {config.model}
-                  </span>
-                )}
-              </SettingsRow>
-              <SettingsRow label="Execution">
-                {thread
-                  ? `${thread.host || THIS_SERVER} · ${thread.cwd}`
-                  : "Starts with your first message"}
-                {thread?.cwd && (
-                  <span className="block font-mono text-xs break-all">{thread.cwd}</span>
-                )}
-              </SettingsRow>
-              {thread?.backend && (
-                <SettingsRow label="Backend">
-                  <span className="font-mono text-xs">{thread.backend}</span>
-                </SettingsRow>
-              )}
-              {thread && <SettingsRow label="Last activity">{when(thread.updatedAt)}</SettingsRow>}
-              <SettingsRow label="Tools">
-                {config.mcp === "orc"
-                  ? "ORC MCP connection plus agent host configuration"
-                  : "Agent host configuration"}
-              </SettingsRow>
-              {capabilities && (
-                <SettingsRow label="Capabilities">
-                  <span data-testid="chat-capabilities">
-                    {[
-                      capabilities.resume && "Resume",
-                      capabilities.approvals && "Approvals in chat",
-                      capabilities.questions && "Questions",
-                      capabilities.steering && "Steering",
-                      capabilities.interrupt && "Native stop",
-                    ]
-                      .filter(Boolean)
-                      .join(" · ") || "Basic text conversation"}
-                  </span>
-                </SettingsRow>
-              )}
-            </dl>
-            <section aria-labelledby="chat-session-ids-heading" className="space-y-2">
-              <div className="flex items-center gap-1">
-                <h3 id="chat-session-ids-heading" className="text-sm font-medium">
-                  Identifiers
-                </h3>
-                <HelpPopover label="Session identifiers" testId="chat-session-ids-help">
-                  ORC chat ID names this conversation in ORC. The agent session ID is the coding
-                  agent's native session, used to resume it outside ORC. The resume session ID is
-                  the discovered ORC session this chat continues, when it was resumed.
-                </HelpPopover>
-              </div>
-              <dl className="space-y-2" data-testid="chat-session-ids">
-                <IdRow id="orc" label="ORC chat ID" value={thread?.id} empty="Not saved yet" />
-                <IdRow
-                  id="agent"
-                  label="Agent session ID"
-                  value={thread?.runtimeId}
-                  empty="No native session yet"
-                />
-                <IdRow
-                  id="resume"
-                  label="Resume session ID"
-                  value={thread?.sourceId}
-                  empty="Not resumed from a session"
-                />
-              </dl>
-            </section>
-          </TabsContent>
-          <TabsContent value="customize" className="space-y-5">
-            {thread && (
-              <p className="text-sm text-muted-foreground wrap-break-word">
-                Runs in {thread.host || THIS_SERVER} ·{" "}
-                <span className="font-mono text-xs">{thread.cwd}</span>
-              </p>
-            )}
-            <ChatPermissionSelect
-              config={config}
-              onChange={(next) => void changePermissions(next)}
-            />
-            <ChatSendModeSelect
-              config={config}
-              thread={thread}
-              onChange={(next) => void changeSendMode(next.sendWhileRunning)}
-            />
-            <ChatAgentOptionsEditor key={`${config.agent}:${thread?.id ?? "new"}`} />
-            <div className="text-sm">
-              <div className="flex items-center gap-1">
-                <label htmlFor="chat-session-instructions" className="text-sm font-medium">
-                  Session instructions
-                </label>
-                <HelpPopover label="Session instructions" testId="chat-instructions-help">
-                  {config.agent === "claude"
-                    ? "Appended to Claude’s coding system prompt."
-                    : "Sent as turn instructions to the agent."}{" "}
-                  Agent and workspace instructions may also apply.
-                </HelpPopover>
-              </div>
-              <pre
-                id="chat-session-instructions"
-                className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background p-2 text-xs wrap-break-word"
-              >
-                {config.system || "No additional instructions"}
-              </pre>
-            </div>
-            {preview && (
-              <div className="border-t border-border pt-4">
-                <div className="flex items-start justify-between gap-6">
-                  <div className="flex min-w-0 items-center gap-1">
-                    <label htmlFor="chat-browser-agent-access" className="text-sm font-medium">
-                      Allow agent browser control
-                    </label>
-                    <HelpPopover label="Agent browser control" testId="chat-browser-help">
-                      {preview.browserControl.globallyEnabled
-                        ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
-                        : "Disabled globally in Settings → General → Browser. Enable global access there to allow browser control for this chat."}
-                    </HelpPopover>
-                  </div>
-                  <input
-                    type="checkbox"
-                    id="chat-browser-agent-access"
-                    data-testid="chat-browser-agent-access"
-                    className="mt-1 h-4 w-4 shrink-0"
-                    checked={preview.browserControl.enabled}
-                    disabled={
-                      preview.browserControl.pending || !preview.browserControl.globallyEnabled
-                    }
-                    onChange={(event) => preview.browserControl.setEnabled(event.target.checked)}
-                  />
-                </div>
-                {preview.browserControl.error && (
-                  <p
-                    role="alert"
-                    data-testid="chat-browser-preferences-error"
-                    className="mt-2 text-xs text-error"
-                  >
-                    {preview.browserControl.error}
-                  </p>
-                )}
-              </div>
-            )}
-          </TabsContent>
-          <TabsContent value="analytics" className="space-y-4">
-            <div className="flex items-center gap-1">
-              <h3 className="text-sm font-medium">Session analytics</h3>
-              <HelpPopover label="Session analytics" testId="chat-analytics-help">
-                Counts come from this chat's stored transcript. Context and cache figures appear
-                when the agent records usage for the session.
-              </HelpPopover>
-            </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <AnalyticsStat label="Messages" value={analytics.messages} />
-              <AnalyticsStat label="Turns" value={analytics.turns} />
-              <AnalyticsStat label="Tool calls" value={analytics.tools} />
-              <AnalyticsStat label="Tool failures" value={analytics.toolFailures} />
-            </div>
-            <dl className="space-y-3 text-sm wrap-break-word">
-              <SettingsRow label="Started">{when(analytics.startedAt)}</SettingsRow>
-              <SettingsRow label="Last activity">
-                {thread ? when(thread.updatedAt) : "—"}
-              </SettingsRow>
-              <SettingsRow label="Last turn">
-                {analytics.lastTurn
-                  ? [
-                      analytics.lastTurn.outcome ?? "running",
-                      analytics.lastTurn.durationMs !== undefined
-                        ? `${formatDuration(analytics.lastTurn.durationMs)}`
-                        : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")
-                  : "No completed turn yet"}
-              </SettingsRow>
-              <SettingsRow label="Average turn">
-                {analytics.averageTurnMs === null ? "—" : formatDuration(analytics.averageTurnMs)}
-              </SettingsRow>
-              {analytics.attachments > 0 && (
-                <SettingsRow label="Attachments">{analytics.attachments}</SettingsRow>
-              )}
-            </dl>
-            {thread?.sourceId ? (
-              <div className="border-t border-border pt-3">
-                <SessionCacheUsage sessionId={thread.sourceId} live={streaming} />
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                {thread
-                  ? "Context and cache usage are recorded for sessions resumed from an agent session or terminal."
-                  : "Analytics appear after the session starts."}
-              </p>
-            )}
-          </TabsContent>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function SettingsRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd>{children}</dd>
-    </div>
-  );
-}
-
-function AnalyticsStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div data-testid={`chat-analytics-${label.toLowerCase().replace(" ", "-")}`}>
-      <p className="text-lg font-medium tabular-nums">{value}</p>
-      <p className="text-xs text-muted-foreground">{label}</p>
-    </div>
-  );
-}
-
-function IdRow({
-  id,
-  label,
-  value,
-  empty,
-}: {
-  id: string;
-  label: string;
-  value: string | null | undefined;
-  empty: string;
-}) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex min-w-0 items-start gap-2">
-      <div className="min-w-0 flex-1">
-        <dt className="text-xs text-muted-foreground">{label}</dt>
-        <dd
-          data-testid={`chat-session-id-${id}`}
-          className="font-mono text-xs break-all text-on-surface-variant"
-        >
-          {value ?? empty}
-        </dd>
+        {!(open && tab) && (
+          <span aria-hidden className="size-8 shrink-0 max-sm:size-11 pointer-coarse:size-11" />
+        )}
+        {open && tab && (
+          <ActionHelp
+            label={`Close ${entry.title} from open sessions`}
+            description="Close from open sessions; history and background work are kept"
+          >
+            <button
+              type="button"
+              data-testid="chat-tab-close"
+              aria-label={`Close ${entry.title} from open sessions`}
+              onClick={() => chat.closeTab(tab.key)}
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-surface-highest hover:text-on-surface group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100 max-md:opacity-100 max-sm:size-11 pointer-coarse:size-11"
+            >
+              <X size={13} />
+            </button>
+          </ActionHelp>
+        )}
       </div>
-      {value && (
-        <button
-          type="button"
-          data-testid={`chat-session-id-copy-${id}`}
-          aria-label={copied ? `${label} copied` : `Copy ${label}`}
-          title={copied ? `${label} copied` : `Copy ${label}`}
-          onClick={async () => {
-            try {
-              await navigator.clipboard.writeText(value);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            } catch {
-              /* The value stays visible for manual copying. */
-            }
-          }}
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus max-sm:size-11 pointer-coarse:size-11"
+      {entry.snippets?.[0] && (
+        <p
+          data-testid="chat-session-snippet"
+          className="truncate pl-8 pr-2 pb-1 text-[11px] text-muted-foreground"
+          title={entry.snippets[0]}
         >
-          {copied ? <Check size={13} /> : <Copy size={13} />}
-        </button>
+          <Highlight text={entry.snippets[0]} query={query} />
+        </p>
       )}
+      {nested?.length && entry.children ? (
+        <SubagentList label={nestedLabel(entry.children)}>{nested}</SubagentList>
+      ) : null}
     </div>
   );
 }
 
-function chatAnalytics(messages: ChatMessage[]) {
-  let turns = 0;
-  let tools = 0;
-  let toolFailures = 0;
-  let attachments = 0;
-  let timed = 0;
-  let totalDuration = 0;
-  let lastTurn: ChatTurn | undefined;
-  for (const message of messages) {
-    attachments += message.attachments?.length ?? 0;
-    for (const activity of message.activity ?? []) {
-      if (activity.type !== "tool") continue;
-      tools += 1;
-      if (activity.isError) toolFailures += 1;
-    }
-    if (!message.turn) continue;
-    turns += 1;
-    lastTurn = message.turn;
-    if (message.turn.durationMs === undefined) continue;
-    timed += 1;
-    totalDuration += message.turn.durationMs;
-  }
-  return {
-    messages: messages.length,
-    turns,
-    tools,
-    toolFailures,
-    attachments,
-    startedAt: messages[0]?.timestamp,
-    lastTurn,
-    averageTurnMs: timed ? Math.round(totalDuration / timed) : null,
-  };
-}
-
-function when(value: number | undefined): string {
-  if (!value) return "—";
-  return new Date(value).toLocaleString();
+export function SubagentList({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div data-testid="chat-session-subagents" className="pb-1 pl-6">
+      <button
+        type="button"
+        data-testid="chat-session-subagents-toggle"
+        aria-expanded={open}
+        aria-label={`${open ? "Hide" : "Show"} ${label}`}
+        onClick={() => setOpen(!open)}
+        className="inline-flex min-h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-surface-highest hover:text-on-surface max-sm:min-h-11 pointer-coarse:min-h-11"
+      >
+        <ChevronRight
+          size={12}
+          aria-hidden
+          className={cn("shrink-0 motion-safe:transition-transform", open && "rotate-90")}
+        />
+        {label}
+      </button>
+      {open && <div className="space-y-0.5 border-l border-border pl-1.5">{children}</div>}
+    </div>
+  );
 }

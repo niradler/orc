@@ -108,10 +108,19 @@ export function installChangeTracking(sqlite: Database, path: string): void {
       );
     const changed = columns.map((name) => `OLD."${name}" IS NOT NEW."${name}"`).join(" OR ");
     for (const operation of ["INSERT", "UPDATE", "DELETE"]) {
+      const name = `orc_change_${table}_${operation}`;
       const guard = operation === "UPDATE" ? `WHEN ${changed}` : "";
-      sqlite.exec(
-        `CREATE TRIGGER IF NOT EXISTS orc_change_${table}_${operation} AFTER ${operation} ON "${table}" ${guard} BEGIN UPDATE orc_change_versions SET revision=revision+1 WHERE resource='${resource}'; END`,
-      );
+      const trigger = `CREATE TRIGGER ${name} AFTER ${operation} ON "${table}" ${guard} BEGIN UPDATE orc_change_versions SET revision=revision+1 WHERE resource='${resource}'; END`;
+      const existing = sqlite
+        .query<{ sql: string }, [string]>(
+          "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
+        )
+        .get(name);
+      if (existing?.sql === trigger) continue;
+      sqlite.transaction(() => {
+        sqlite.exec(`DROP TRIGGER IF EXISTS ${name}`);
+        sqlite.exec(trigger);
+      })();
     }
   }
   readChanges();

@@ -7,8 +7,10 @@ import {
   chatBackendFor,
   createBackend,
   discoverAgentModels,
+  discoverOpenCodeEffortChoices,
   type RuleGap,
   type SessionOpts,
+  SteerNotConsumedError,
   sessionRules,
   UNKNOWN_CAPABILITIES,
 } from "@orc/agent-runtime";
@@ -35,6 +37,7 @@ import {
   nativeChatAgent,
   nativeChatResumeUnavailableReason,
 } from "@orc/core/chat";
+import { ChatAnalyticsSchema } from "@orc/core/chat-analytics";
 import { expandChatCommands } from "@orc/core/chat-commands";
 import {
   type ChatTurnContext,
@@ -84,7 +87,7 @@ import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { SessionMessageStore } from "@orc/db/session-messages";
 import { SkillHistory } from "@orc/db/skill-history";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { rememberTerminalFolder } from "../git/registry.js";
@@ -100,7 +103,10 @@ import {
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
 import { LIVE_CHAT_ID } from "../session-watcher.js";
+import { loadSessionCacheUsage } from "../sessions/cache-usage.js";
+import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
+import { isClaudeProcessName } from "../sessions/claude.js";
 import { projectIdFor } from "../sessions/common.js";
 import { notifySpawner, spawnChain } from "../sessions/control.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
@@ -282,7 +288,7 @@ function chatPush(thread: ChatThread, status: string, body: string): PushMessage
   return {
     title: notificationTitle(`${status} · ${truncate(thread.title, 120)}`, project),
     body,
-    url: `/?chat=open&chatThread=${encodeURIComponent(thread.id)}`,
+    url: `/chat?chatThread=${encodeURIComponent(thread.id)}&project=${encodeURIComponent(thread.projectId ?? "all")}`,
     tag: `chat:${thread.id}`,
   };
 }
@@ -361,14 +367,21 @@ app.openapi(
       });
     modelRequests++;
     const result = discoverAgentModels(agent, host, cwd, selectedProvider)
-      .then(
-        (models): ChatModels => ({
+      .then(async (models): Promise<ChatModels> => {
+        // OpenCode's effort levels are model-dependent and only readable over a
+        // live ACP handshake; probe them alongside the catalog for a new chat.
+        const effortChoices =
+          agent === "opencode"
+            ? await discoverOpenCodeEffortChoices(host, cwd, selectedProvider).catch(() => null)
+            : null;
+        return {
           models,
           warning: models.length
             ? null
             : "No models were reported. Choose a saved or custom model.",
-        }),
-      )
+          ...(effortChoices ? { effortChoices } : {}),
+        };
+      })
       .catch(
         (): ChatModels => ({
           models: [],
@@ -492,7 +505,17 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
     dispatched = true;
     try {
       await steer(expandChatInput(input, run.thread.projectId ?? null));
-    } catch {
+    } catch (error) {
+      if (error instanceof SteerNotConsumedError) {
+        // The agent confirmed it did not take the text: roll the intent back so
+        // the client can queue the same message without duplicating it.
+        run.thread.messages = run.thread.messages.filter((entry) => entry.id !== requestId);
+        run.steering.delete(requestId);
+        saveDelivery();
+        throw new ConflictError(
+          "This response cannot take the message right now. Queue a message instead.",
+        );
+      }
       message.activity = [
         {
           type: "status",
@@ -667,6 +690,19 @@ async function nativeSource(thread: ChatThread): Promise<NativeSource | null> {
   );
 }
 
+/** A chat can attach to a native session ORC already discovered (for example
+ *  when a second chat reuses it); record that source so Resume session ID and
+ *  handoff checks name the real session instead of showing empty. */
+async function linkNativeSource(thread: ChatThread): Promise<ChatThread> {
+  if (thread.sourceId || !thread.runtimeId) return thread;
+  const source = await nativeSource(thread);
+  if (!source) return thread;
+  // A targeted update, not save(): readers can race a running turn's save.
+  store().setSourceId(thread.id, source.id);
+  thread.sourceId = source.id;
+  return thread;
+}
+
 async function transcriptMark(thread: ChatThread, source?: NativeSource | null) {
   const row = source === undefined ? await nativeSource(thread) : source;
   if (!row?.transcript_path) return null;
@@ -674,6 +710,34 @@ async function transcriptMark(thread: ChatThread, source?: NativeSource | null) 
     .stat(row.transcript_path)
     .catch(() => null);
   return info ? `${info.size}:${info.mtimeMs}` : null;
+}
+
+/** Freeze the session's latest recorded request as this turn's token figure so a
+ *  finished turn does not keep drifting as later requests are recorded. Best-effort:
+ *  a read failure leaves the figure to the live usage view. */
+async function captureTurnUsage(
+  thread: ChatThread,
+  startedAt: number,
+): Promise<{ input_tokens: number; cached_input_tokens: number } | undefined> {
+  try {
+    const source = await nativeSource(thread);
+    if (!source?.transcript_path || !["claude", "codex", "pi", "opencode"].includes(source.backend))
+      return undefined;
+    const usage = await loadSessionCacheUsage(
+      hostRuntime(execHostFor(source.execution_host ?? null)),
+      source.backend,
+      source.transcript_path,
+      source.runtime_session_id ?? null,
+    );
+    const latest = usage.latest;
+    if (!latest || latest.input_tokens <= 0) return undefined;
+    const at = latest.recorded_at ? Date.parse(latest.recorded_at) : Number.NaN;
+    // A figure recorded before this turn began belongs to an earlier turn.
+    if (Number.isFinite(at) && at < startedAt) return undefined;
+    return { input_tokens: latest.input_tokens, cached_input_tokens: latest.cached_input_tokens };
+  } catch {
+    return undefined;
+  }
 }
 
 async function importTranscript(thread: ChatThread, source: NativeSource): Promise<boolean> {
@@ -702,7 +766,7 @@ async function importTranscript(thread: ChatThread, source: NativeSource): Promi
       offset: transcript.total - CHAT_HISTORY_PAGE_SIZE,
       limit: CHAT_HISTORY_PAGE_SIZE,
     });
-  thread.messages = chatHistory(transcript.turns, source.backend);
+  thread.messages = chatHistory(transcript.turns, source.backend, thread.config.model);
   thread.importedMessages = thread.messages.length;
   thread.historyBefore = transcript.offset > 0 ? transcript.offset : null;
   if (mark) thread.transcriptMark = mark;
@@ -887,6 +951,16 @@ app.openapi(
     method: "get",
     path: "/chat/threads",
     tags: ["Chat"],
+    request: {
+      query: z.object({
+        include_hidden: z
+          .enum(["true", "false"])
+          .optional()
+          .default("false")
+          .transform((v) => v === "true")
+          .openapi({ description: "Include chats whose session a human hid from the list" }),
+      }),
+    },
     responses: {
       200: {
         description: "Recent chats",
@@ -904,6 +978,7 @@ app.openapi(
                   sourceId: z.string().nullable().optional(),
                   host: z.string().nullable().optional(),
                   projectId: z.string().nullable().optional(),
+                  spawnedFrom: z.string().nullable().optional(),
                 }),
               ),
             }),
@@ -912,12 +987,38 @@ app.openapi(
       },
     },
   }),
-  (c) =>
-    c.json({
-      threads: store()
-        .list()
-        .map((thread) => ({ ...thread, running: !!threadRun(thread.id) })),
-    }),
+  async (c) => {
+    const { include_hidden } = c.req.valid("query");
+    const threads = store().list();
+    const sourceIds = [
+      ...new Set(threads.flatMap((thread) => (thread.sourceId ? [thread.sourceId] : []))),
+    ];
+    const sources = sourceIds.length
+      ? await getDb().query.gateway_sessions.findMany({
+          where: inArray(gateway_sessions.id, sourceIds),
+          columns: { id: true, title: true, display_title: true, cwd: true, hidden_at: true },
+        })
+      : [];
+    const sourceById = new Map(sources.map((row) => [row.id, row]));
+    const sourceTitle = (thread: (typeof threads)[number]) => {
+      const source = thread.sourceId ? sourceById.get(thread.sourceId) : undefined;
+      const title = source && (source.display_title ?? source.title);
+      if (!title) return null;
+      return thread.resumed || isClaudeProcessName(thread.title, source.cwd) ? title : null;
+    };
+    return c.json({
+      threads: threads
+        .filter(
+          (thread) =>
+            include_hidden || !(thread.sourceId && sourceById.get(thread.sourceId)?.hidden_at),
+        )
+        .map(({ resumed, ...thread }) => ({
+          ...thread,
+          title: sourceTitle({ ...thread, resumed }) || thread.title,
+          running: !!threadRun(thread.id),
+        })),
+    });
+  },
 );
 app.openapi(
   createRoute({
@@ -927,7 +1028,7 @@ app.openapi(
     request: { params },
     responses: response,
   }),
-  (c) => c.json(requireThread(c.req.valid("param").id)),
+  async (c) => c.json(await linkNativeSource(requireThread(c.req.valid("param").id))),
 );
 app.openapi(
   createRoute({
@@ -939,11 +1040,11 @@ app.openapi(
     request: { params },
     responses: response,
   }),
-  (c) => {
+  async (c) => {
     const messageId = c.req.valid("param").id;
     const thread = store().byMessage(messageId);
     if (!thread) throw new NotFoundError("Chat message", messageId);
-    return c.json(thread);
+    return c.json(await linkNativeSource(thread));
   },
 );
 app.openapi(
@@ -962,6 +1063,17 @@ app.openapi(
             schema: z.object({
               changed: z.boolean(),
               running: z.boolean(),
+              live: z
+                .object({
+                  id: z.string(),
+                  agent: z.string(),
+                  tokens_used: z.number().nullable(),
+                  tokens_estimated: z.boolean(),
+                  status: z.enum(["idle", "running", "stopped", "error"]),
+                  created_at: z.string().datetime(),
+                  last_activity_at: z.string().datetime().nullable(),
+                })
+                .nullable(),
               queued: z.array(z.object({ id: z.string(), title: z.string() })),
             }),
           },
@@ -984,14 +1096,60 @@ app.openapi(
     const queued = thread.runtimeId
       ? await queuedAnswers(turnKey(thread.host, thread.backend, thread.runtimeId))
       : [];
+    const source = await nativeSource(thread);
     return c.json({
       changed,
       running,
+      live: source
+        ? {
+            id: source.id,
+            agent: source.backend,
+            tokens_used: source.tokens_used ?? null,
+            tokens_estimated: source.backend === "cursor" && source.tokens_used != null,
+            status: source.status,
+            created_at: source.created_at.toISOString(),
+            last_activity_at: source.last_activity_at?.toISOString() ?? null,
+          }
+        : null,
       queued: queued.map((request) => ({
         id: request.id,
         title: request.input.title ?? request.input.prompt.slice(0, 120),
       })),
     });
+  },
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/chat/threads/{id}/analytics",
+    tags: ["Chat"],
+    description:
+      "Session analytics for this chat: message, turn and tool counts from the stored transcript, plus context and cache usage recorded by the agent.",
+    request: { params },
+    responses: {
+      200: {
+        description: "Chat session analytics",
+        content: { "application/json": { schema: ChatAnalyticsSchema } },
+      },
+      404: { description: "Chat not found" },
+    },
+  }),
+  async (c) => {
+    const thread = requireThread(c.req.valid("param").id);
+    const source = await nativeSource(thread);
+    return c.json(
+      await chatAnalyticsFor(
+        thread,
+        source
+          ? {
+              backend: source.backend,
+              model: source.model ?? null,
+              transcript_path: source.transcript_path ?? null,
+              runtime_session_id: source.runtime_session_id ?? null,
+            }
+          : null,
+      ),
+    );
   },
 );
 app.openapi(
@@ -1119,7 +1277,7 @@ app.openapi(
         "The native transcript changed. Reopen the session to load its history.",
       );
     return c.json({
-      messages: chatHistory(page.turns, source.backend),
+      messages: chatHistory(page.turns, source.backend, thread.config.model),
       before: offset > 0 ? offset : null,
     });
   },
@@ -1219,6 +1377,8 @@ app.openapi(
         // Sync to real native activity without stamping the open time.
         thread.updatedAt = Math.max(thread.updatedAt, resumed.updatedAt);
       } else thread = resumed;
+      // Resuming in chat consumes a ready handoff just like resuming in a terminal.
+      if (body.sourceSessionId) await getHandoffService().markResumed(body.sourceSessionId);
     }
     store().save(thread);
     return c.json(thread);
@@ -1299,7 +1459,7 @@ async function forkPrefix(
       start = from;
     }
     return {
-      messages: [...chatHistory(turns, thread.config.agent), ...loaded],
+      messages: [...chatHistory(turns, thread.config.agent, thread.config.model), ...loaded],
       partial: start > 0,
     };
   } catch (error) {
@@ -1951,6 +2111,7 @@ async function beginTurn(
   const mock = chatMockEnabled();
   const backend = createBackend(thread.backend);
   active.add(key);
+  let nativeKey: string | undefined;
   const runId = crypto.randomUUID();
   let stopped = false;
   let halt = () => {};
@@ -2031,6 +2192,7 @@ async function beginTurn(
     content: "",
     timestamp: Date.now(),
     agent: thread.config.agent,
+    ...(thread.config.model ? { model: thread.config.model } : {}),
     activity: [],
     turn: { startedAt },
   };
@@ -2071,12 +2233,10 @@ async function beginTurn(
       timer = setTimeout(expire, turnLimits.idleMs);
     };
     touch();
+    // Tracks whether a tool call interrupted the prose, so the next text starts a
+    // new paragraph instead of running into the previous remark.
+    let proseInterrupted = false;
     const emit = async (event: ChatEvent) => {
-      if (event.type === "tool_use" && assistant.content) {
-        const narration = assistant.content;
-        assistant.content = "";
-        await emit({ type: "narration", text: narration });
-      }
       if (
         event.type !== "thread" &&
         event.type !== "turn" &&
@@ -2084,7 +2244,18 @@ async function beginTurn(
         event.type !== "capabilities"
       )
         responded = true;
-      if (event.type === "text") assistant.content += event.text;
+      // Prose stays in the message content even when tool calls follow it, so the
+      // assistant's words render as a regular message instead of being folded into
+      // the collapsed activity block as narration.
+      if (event.type === "text") {
+        const text = proseInterrupted && assistant.content ? `\n\n${event.text}` : event.text;
+        proseInterrupted = false;
+        assistant.content += text;
+        // The break travels with the text event so the live stream and the stored
+        // message stay identical.
+        event = { ...event, text };
+      }
+      if (event.type === "tool_use") proseInterrupted = true;
       if (event.type === "error") failure ??= event.message;
       assistant.activity = appendChatActivity(assistant.activity ?? [], event);
       publish(run, event);
@@ -2284,6 +2455,7 @@ async function beginTurn(
                 "The agent returned a different session instead of resuming this conversation. The original session identity was kept.",
               );
             thread.runtimeId = event.data.runtimeSessionId ?? thread.runtimeId;
+            if (!thread.sourceId && event.data.runtimeSessionId) await linkNativeSource(thread);
             // A backend may have resumed the session in a folder it moved to (an
             // OpenCode worktree); follow it so the next turn loads from there.
             if (event.data.cwd && isAbsolute(event.data.cwd) && !event.data.cwd.includes("\0"))
@@ -2296,6 +2468,14 @@ async function beginTurn(
           // at the result above or when the session closes (bounded by stopFallback).
           if (stopped) continue;
           touch();
+          if (!nativeKey) {
+            const nativeId = run.session?.getRuntimeSessionId?.();
+            if (nativeId) {
+              nativeKey = turnKey(thread.host, thread.backend, nativeId);
+              if (nativeKey === key || active.has(nativeKey)) nativeKey = key;
+              else active.add(nativeKey);
+            }
+          }
           if (event.type === "tool_use") toolsPending++;
           else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
           outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
@@ -2307,6 +2487,8 @@ async function beginTurn(
           }
           if (event.type === "text" || event.type === "thinking" || event.type === "system_status")
             await emit({ type: event.type, text: event.data });
+          else if (event.type === "plan") await emit({ type: "plan", data: event.data });
+          else if (event.type === "subagent") await emit({ type: "subagent", data: event.data });
           else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
@@ -2383,6 +2565,10 @@ async function beginTurn(
         publish(run, { type: "error", message });
       }
       const finishedAt = Date.now();
+      const frozenUsage = await Promise.race([
+        captureTurnUsage(thread, startedAt),
+        Bun.sleep(5000).then(() => undefined),
+      ]);
       assistant.turn = {
         startedAt,
         finishedAt,
@@ -2394,6 +2580,7 @@ async function beginTurn(
             : failure || agentOutcome === "failed"
               ? "failed"
               : "completed",
+        ...(frozenUsage ? { usage: frozenUsage } : {}),
       };
       assistant.timestamp = finishedAt;
       // Do not pin a native id the backend explicitly reported as non-resumable;
@@ -2454,6 +2641,7 @@ async function beginTurn(
           });
       } finally {
         active.delete(key);
+        if (nativeKey && nativeKey !== key) active.delete(nativeKey);
         runs.delete(runId);
         changes.publish("human-requests", "session-messages");
         queueMicrotask(startPendingChildren);

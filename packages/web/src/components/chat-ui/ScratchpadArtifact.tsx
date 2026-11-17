@@ -2,22 +2,11 @@ import type { Scratchpad } from "@orc/core/scratchpad";
 import { lazy, Suspense } from "react";
 import { Markdown } from "@/components/Markdown";
 import { withOrcKit } from "@/lib/orc-kit";
-import { useTheme } from "@/lib/theme";
+import { useAppearance, useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import { isolatedHtml } from "./sandboxed-html";
 
 const DiagramPreview = lazy(() => import("./ScratchpadDiagramPreview"));
-
-// An opaque origin plus CSP keeps generated scripts away from ORC storage, API
-// credentials. CSP blocks connections/external resources; embed data and chart code.
-const HTML_POLICY = `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'`;
-
-function isolatedHtml(content: string): string {
-  const policy = `<meta http-equiv="Content-Security-Policy" content="${HTML_POLICY}">`;
-  const doctype = /^\s*<!doctype[^>]*>/i.exec(content);
-  return doctype
-    ? `${doctype[0]}${policy}${content.slice(doctype[0].length)}`
-    : `${policy}${content}`;
-}
 
 export function ScratchpadArtifact({
   pad,
@@ -29,6 +18,7 @@ export function ScratchpadArtifact({
   fullscreen?: boolean;
 }) {
   const { theme } = useTheme();
+  const { darkBackground } = useAppearance();
   if (pad.kind === "html") {
     return (
       <iframe
@@ -36,7 +26,7 @@ export function ScratchpadArtifact({
         title={`${pad.title} preview`}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
-        srcDoc={isolatedHtml(withOrcKit(pad.content, theme))}
+        srcDoc={isolatedHtml(withOrcKit(pad.content, theme, darkBackground))}
         className={cn(
           "w-full border border-outline-variant bg-white",
           fullscreen ? "h-full min-h-0" : expanded ? "h-[70vh] min-h-80" : "h-72",

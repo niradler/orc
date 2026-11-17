@@ -44,6 +44,7 @@ import {
   unlockNotificationSound,
 } from "@/lib/notification-sound";
 import { formatRelative } from "@/lib/relative-time";
+import { sessionPath } from "@/lib/session-links";
 import { cn } from "@/lib/utils";
 
 export const FOCUS_NOTIFICATIONS_EVENT = "orc-focus-notifications";
@@ -238,6 +239,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   }, [query.data]);
 
   const activeThreadId = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
+  const activeThreadSourceId = tabs.find((tab) => tab.key === activeKey)?.thread?.sourceId ?? null;
   // A completion for the chat or session already on screen is settled instead of
   // waiting unread in the bell; the visible conversation is the acknowledgement.
   useEffect(() => {
@@ -247,6 +249,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       pathname: location.pathname,
       search: location.search,
       chatThreadId: activeThreadId,
+      threadSourceId: activeThreadSourceId,
       sessions: sessions.data?.sessions,
       requests: requests.data,
     };
@@ -261,22 +264,34 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     if (!settled.length) return;
     for (const item of settled) acknowledged.current.add(item.id);
     acknowledge.current(settled);
-  }, [items, location.pathname, location.search, activeThreadId, sessions.data, requests.data]);
+  }, [
+    items,
+    location.pathname,
+    location.search,
+    activeThreadId,
+    activeThreadSourceId,
+    sessions.data,
+    requests.data,
+  ]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
       const state = delivery.current;
-      const incoming = feed.current.flush(Date.now(), (item) => {
-        if (document.visibilityState === "hidden" || !document.hasFocus()) return false;
-        return notificationInView(item, {
-          active: true,
-          pathname: state.location.pathname,
-          search: state.location.search,
-          chatThreadId: state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id ?? null,
-          sessions: state.sessions,
-          requests: state.requests ?? undefined,
-        });
-      });
+      const incoming = feed.current
+        .flush(Date.now(), (item) => {
+          if (document.visibilityState === "hidden" || !document.hasFocus()) return false;
+          return notificationInView(item, {
+            active: true,
+            pathname: state.location.pathname,
+            search: state.location.search,
+            chatThreadId: state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id ?? null,
+            threadSourceId:
+              state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.sourceId ?? null,
+            sessions: state.sessions,
+            requests: state.requests ?? undefined,
+          });
+        })
+        .filter((item) => item.type !== "agent.finished");
       if (!incoming.length) return;
       setToasts((current) => mergeNotificationToasts(current, incoming));
       setAnnouncement(
@@ -404,7 +419,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       if (button) show(button);
     } else {
       setExpanded(false);
-      navigate(item.path);
+      navigate(sessionPath(item.path));
     }
   };
 

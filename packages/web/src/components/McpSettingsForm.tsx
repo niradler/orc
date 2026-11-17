@@ -1,6 +1,7 @@
 import { type McpServerSettings, McpServerSettingsSchema } from "@orc/core/mcp-prompts";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -60,14 +61,17 @@ export function McpSettingsForm() {
         <h2 id="mcp-settings-title" className="text-base font-medium">
           MCP
         </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Control how agents connect to this ORC server.
-        </p>
       </div>
       {config && (
         <fieldset disabled={pending} className="min-w-0 space-y-5">
           <div className="space-y-2">
-            <Label htmlFor="mcp-default-mode">Default tool mode</Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="mcp-default-mode">Default tool mode</Label>
+              <HelpPopover label="default tool mode" testId="mcp-default-mode-help">
+                An explicit connection mode overrides this default. Restart existing stdio clients
+                to apply changes.
+              </HelpPopover>
+            </div>
             <select
               id="mcp-default-mode"
               data-testid="mcp-default-mode"
@@ -83,14 +87,17 @@ export function McpSettingsForm() {
               <option value="meta">Meta: discover tools on demand</option>
               <option value="full">Full: list every tool</option>
             </select>
-            <p className="text-xs text-muted-foreground">
-              An explicit connection mode overrides this default. Restart existing stdio clients to
-              apply changes.
-            </p>
           </div>
           <div className="border-y border-border py-3">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-medium">Prompts · {config.prompts.length}</h3>
+              <div className="flex items-center gap-1">
+                <h3 className="text-sm font-medium">Prompts · {config.prompts.length}</h3>
+                <HelpPopover label="MCP prompts" testId="mcp-prompts-help">
+                  Agents select these through MCP prompts; in chat, type <code>/name</code>. Use{" "}
+                  <code>{"{{request}}"}</code> for the user's words and{" "}
+                  <code>{"{{ui_catalog}}"}</code> for the current component catalog.
+                </HelpPopover>
+              </div>
               <Button
                 variant="outline"
                 disabled={pending || config.prompts.length >= 50}
@@ -117,12 +124,7 @@ export function McpSettingsForm() {
                 Add prompt
               </Button>
             </div>
-            <p className="my-2 text-xs text-muted-foreground">
-              Agents select these through MCP prompts; in chat, type <code>/name</code>. Use{" "}
-              <code>{"{{request}}"}</code> for the user's words and <code>{"{{ui_catalog}}"}</code>{" "}
-              for the current component catalog.
-            </p>
-            <ul className="divide-y divide-border">
+            <ul className="mt-2 divide-y divide-border">
               {config.prompts.map((prompt, index) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: editable names cannot be keys; rows own no local state
                 <li key={index} className="py-2">

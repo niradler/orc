@@ -57,6 +57,8 @@ let failedTurn = false;
 let resultIdentity: string | undefined;
 let resultDurationMs: number | undefined;
 let narrateBeforeTool = false;
+let planUpdate: { status: "pending" | "in_progress" | "completed" | "failed"; content: string }[] =
+  [];
 let noResumable = false;
 let closed = 0;
 let interrupted = 0;
@@ -125,6 +127,15 @@ function session(call: (typeof calls)[number]): AgentSession {
         return;
       }
       yield { type: "thinking", data: "Visible provider reasoning summary" };
+      if (planUpdate.length)
+        yield {
+          type: "plan",
+          data: {
+            id: "plan",
+            title: "Checklist",
+            entries: planUpdate.map((entry, index) => ({ id: String(index), ...entry })),
+          },
+        };
       if (narrateBeforeTool) yield { type: "text", data: "First I will inspect the workspace." };
       yield {
         type: "tool_use",
@@ -317,7 +328,7 @@ describe("native chat runtime", () => {
     }
     calls.length = 0;
   });
-  test("should fold pre-tool narration separately from the final reply", async () => {
+  test("should keep pre-tool prose in the reply instead of folding it as narration", async () => {
     narrateBeforeTool = true;
     try {
       const result = await turn({ messages: [{ role: "user", content: "Inspect and summarize" }] });
@@ -326,14 +337,61 @@ describe("native chat runtime", () => {
       const stored = ChatThreadSchema.parse(
         await (await request(`/chat/threads/${opened.thread.id}`)).json(),
       );
-      expect(stored.messages.at(-1)?.content).toBe("Hello from the native session");
-      expect(stored.messages.at(-1)?.activity).toContainEqual({
-        type: "status",
-        id: expect.any(String),
-        text: "First I will inspect the workspace.",
-      });
+      expect(stored.messages.at(-1)?.content).toBe(
+        "First I will inspect the workspace.\n\nHello from the native session",
+      );
+      expect(stored.messages.at(-1)?.activity ?? []).not.toContainEqual(
+        expect.objectContaining({ type: "status", text: "First I will inspect the workspace." }),
+      );
     } finally {
       narrateBeforeTool = false;
+      calls.length = 0;
+    }
+  });
+  test("should freeze per-turn token usage at turn end", async () => {
+    const transcript = join(home, "usage-fixture.jsonl");
+    writeFileSync(
+      transcript,
+      `${JSON.stringify({
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            last_token_usage: { input_tokens: 1234, cached_input_tokens: 1000 },
+            total_token_usage: { input_tokens: 1234, cached_input_tokens: 1000 },
+          },
+        },
+      })}\n`,
+    );
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-usage",
+        backend: "codex",
+        mode: "direct",
+        status: "stopped",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: "usage-native",
+        cwd: home,
+        transcript_path: transcript,
+      })
+      .run();
+    resultIdentity = "usage-native";
+    try {
+      const result = await turn({ messages: [{ role: "user", content: "Count tokens" }] });
+      const opened = result.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing thread");
+      const stored = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      expect(stored.messages.at(-1)?.turn?.usage).toEqual({
+        input_tokens: 1234,
+        cached_input_tokens: 1000,
+      });
+    } finally {
+      resultIdentity = undefined;
+      getSqlite().query("DELETE FROM gateway_sessions WHERE id=?").run("source-usage");
+      rmSync(transcript, { force: true });
       calls.length = 0;
     }
   });
@@ -593,6 +651,44 @@ describe("native chat runtime", () => {
     ).toHaveLength(4);
     expect(closed).toBeGreaterThanOrEqual(2);
   });
+  test("records the turn's model and keeps an agent plan as structured activity", async () => {
+    planUpdate = [
+      { status: "in_progress", content: "Map the adapters" },
+      { status: "pending", content: "Ship the card" },
+    ];
+    try {
+      const result = await turn({
+        messages: [{ role: "user", content: "plan it" }],
+        agent: "codex",
+        model: "fixture-plan",
+      });
+      expect(result.response.status).toBe(200);
+      expect(result.events.map((event) => event.type)).toContain("plan");
+      const opened = result.events[0];
+      if (opened?.type !== "thread") throw new Error("No conversation identity");
+      const stored = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(stored.messages[1]?.model).toBe("fixture-plan");
+      expect(stored.messages[1]?.activity).toContainEqual({
+        type: "plan",
+        id: "plan",
+        title: "Checklist",
+        entries: [
+          { id: "0", status: "in_progress", content: "Map the adapters" },
+          { id: "1", status: "pending", content: "Ship the card" },
+        ],
+      });
+      // A plan is not a status blob: no joined "status: content" line is stored.
+      expect(
+        stored.messages[1]?.activity?.some(
+          (item) => item.type === "status" && item.text.includes("Map the adapters"),
+        ),
+      ).toBe(false);
+    } finally {
+      planUpdate = [];
+    }
+  });
   test("web chat context reaches the agent but is not stored in the conversation", async () => {
     const result = await turn({
       messages: [{ role: "user", content: "what am I looking at?" }],
@@ -814,12 +910,19 @@ describe("native chat runtime", () => {
       (await (await request(`/chat/threads/${thread.id}/session`)).json()) as {
         changed: boolean;
         running: boolean;
+        live: { id: string; agent: string; status: string } | null;
         queued: unknown[];
       };
     expect((await request(`/chat/threads/${thread.id}/session`, undefined, false)).status).toBe(
       401,
     );
-    expect(await state()).toEqual({ changed: false, running: false, queued: [] });
+    expect(await state()).toMatchObject({ changed: false, running: false, queued: [] });
+    // The chat sync names the native session it is attached to.
+    expect((await state()).live).toMatchObject({
+      id: "source-changed",
+      agent: "codex",
+      status: "stopped",
+    });
     const synced = await turn({
       threadId: thread.id,
       messages: [{ role: "user", content: "a turn from this chat" }],
@@ -892,10 +995,10 @@ describe("native chat runtime", () => {
         },
       })}\n`,
     );
-    for (const [id, backend, status] of [
-      ["source-ended", "codex", "stopped"],
-      ["source-running", "codex", "running"],
-      ["source-other", "cursor", "stopped"],
+    for (const [id, backend, status, native] of [
+      ["source-ended", "codex", "stopped", "discovered-native"],
+      ["source-running", "codex", "running", "discovered-running"],
+      ["source-other", "cursor", "stopped", "discovered-native"],
     ] as const)
       getDb()
         .insert(gateway_sessions)
@@ -905,7 +1008,7 @@ describe("native chat runtime", () => {
           mode: "direct",
           status,
           chat_id: LIVE_CHAT_ID,
-          runtime_session_id: "discovered-native",
+          runtime_session_id: native,
           cwd: home,
           transcript_path: transcript,
           title: id,

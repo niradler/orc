@@ -7,7 +7,7 @@ How to connect Claude Code, Codex, Cursor, Gemini CLI, Pi, OpenCode and other MC
 | Piece                                 | Gives the agent                                                           | Setup                                                            |
 | ------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | [MCP server](#mcp)                    | ORC tools: context, tasks, memories, knowledge, jobs, skills, scratchpads | Register once per agent                                          |
-| [Session tracking](#session-tracking) | The agent's sessions in **Sessions**, with resume and search              | Automatic for Claude Code and Codex; hooks for Cursor and Gemini |
+| [Session tracking](#session-tracking) | The agent's sessions in the chat session list, with resume and search | Automatic for Claude Code and Codex; hooks for Cursor and Gemini |
 | [Rule hooks](#rule-hooks)             | ORC rules enforced inside the agent (block, approve, inject context)      | `orc rules install-hook`                                         |
 | [Skills](#skills)                     | ORC's `orc-platform` and `orc-sdlc` skills in the agent                   | `npx skills add` or `orc skill export-to`                        |
 

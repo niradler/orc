@@ -195,25 +195,23 @@ for (const width of [1440, 390])
 
     test("opens from Activity Sessions and leaving returns to that page", async ({ page }) => {
       await mockSessionHome(page);
-      await page.goto("/sessions?project=all");
-      const liveRow = page
-        .getByTestId("live-session-row")
-        .filter({ hasText: "Upgrade the payments SDK" });
-      await liveRow.getByTestId("live-session-open-home").click();
+      await page.goto("/activity?project=all");
+      await page
+        .locator(`[data-testid="activity-session-link"][data-session-id="${HOME.codexLive}"]`)
+        .click();
       await expect(page.getByText("Resumed.").first()).toBeVisible();
-      await expect(page).not.toHaveURL(/sessionLive=/);
+      await expect(page.getByTestId("session-view")).toHaveCount(0);
 
       const list = await sessionList(page, narrow);
       await row(list, `chat:${HOME.chatA}`).locator("button").first().click();
       await expect(page.getByText("Here is the checkout plan.").first()).toBeVisible();
 
-      // The phone chat page has no close button: Back walks out through its
+      // The chat page has no close button: Back walks out through its
       // history (thread switches push entries) to the page that opened it.
-      if (narrow) {
-        for (let i = 0; i < 6 && new URL(page.url()).pathname === "/chat"; i++) await page.goBack();
-      } else await page.getByTestId("chat-close-button").click();
-      await expect(page).toHaveURL(/\/sessions\?project=all$/);
-      await expect(page.getByTestId("live-sessions")).toBeVisible();
+      await expect(page.getByTestId("chat-close-button")).toHaveCount(0);
+      for (let i = 0; i < 6 && new URL(page.url()).pathname === "/chat"; i++) await page.goBack();
+      await expect(page).toHaveURL(/\/activity\?project=all$/);
+      await expect(page.getByTestId("view-title")).toHaveText(/activity/i);
     });
   });
 
@@ -241,18 +239,6 @@ test.describe("session home on desktop", () => {
     await page.getByTestId("session-list-expand").click();
     await expect(page.getByTestId("chat-session-sidebar")).toBeVisible();
   });
-
-  test("opens a terminal agent from Terminals Sessions", async ({ page }) => {
-    await mockSessionHome(page);
-    await page.goto(`/terminals/${HOME.terminal}?project=all`);
-    await page.getByTestId("terminals-open-home").click();
-    await expect(page).toHaveURL(
-      new RegExp(`/chat\\?project=all&sessionTerminal=${HOME.terminal}`),
-    );
-    await expect(page.getByTestId("session-terminal")).toBeVisible();
-    await page.getByTestId("chat-close-button").click();
-    await expect(page).toHaveURL(new RegExp(`/terminals/${HOME.terminal}\\?project=all$`));
-  });
 });
 
 for (const width of [1440, 390])
@@ -272,16 +258,18 @@ for (const width of [1440, 390])
       await page.route(/\/api\/projects(\?.*)?$/, (route) =>
         route.fulfill({ json: { projects: [{ id: "home-project", name: "Shop" }], total: 1 } }),
       );
-      await page.goto("/sessions?project=all");
-      await expect(page.getByTestId("live-session-list")).toBeVisible();
-      await expect(page.getByTestId("live-session-row")).toHaveCount(2);
+      await page.goto("/chat?project=all&sessionList=show");
+      await showSessionSection(page, "recents");
+      await expect(page.getByTestId("chat-session-list")).toBeVisible();
+      await expect(
+        page.locator('[data-testid="chat-history-row"][data-history-id="native:home-codex"]'),
+      ).toHaveCount(1);
       await page.screenshot({
         path: test.info().outputPath(`activity-sessions-${theme}-${width}.png`),
       });
       await page
-        .getByTestId("live-session-row")
-        .filter({ hasText: "Upgrade the payments SDK" })
-        .getByTestId("live-session-open-home")
+        .locator('[data-testid="chat-history-row"][data-history-id="native:home-codex"]')
+        .getByTestId("chat-resume-live")
         .click();
       await expect(page.getByText("Resumed.").first()).toBeVisible();
       const list = await sessionList(page, width < 1280);
@@ -352,21 +340,25 @@ test("phone session list is full screen and URL, reload, Back and Escape preserv
 test("Exit full screen returns to its source after Back and Forward", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockSessionHome(page);
-  await page.goto("/sessions?project=all");
+  await page.goto("/activity?project=all");
   await page
-    .getByTestId("live-session-row")
-    .filter({ hasText: "Upgrade the payments SDK" })
-    .getByTestId("live-session-open-home")
+    .locator(`[data-testid="activity-session-link"][data-session-id="${HOME.codexLive}"]`)
     .click();
   await expect(page.getByText("Resumed.").first()).toBeVisible();
+  await expect(page.getByTestId("session-view")).toHaveCount(0);
   await page.getByTestId("session-inspector-toggle").click();
-  await page.goBack();
-  await page.goBack();
-  await expect(page).toHaveURL(/\/sessions\?project=all$/);
+  const actions = page.getByTestId("session-inspector-session");
+  await expect(actions.getByTestId("rename-session")).toBeVisible();
+  await expect(actions.getByTestId("hide-session")).toBeVisible();
+  await expect(actions.getByTestId("link-task")).toBeVisible();
+  // Resume can replace its own history entry, so walk back to the source instead
+  // of assuming a fixed number of entries.
+  for (let i = 0; i < 6 && !/\/activity\?project=all$/.test(page.url()); i++) await page.goBack();
+  await expect(page).toHaveURL(/\/activity\?project=all$/);
   await page.goForward();
   await expect(page.getByTestId("session-home")).toBeVisible();
-  await page.getByTestId("chat-close-button").filter({ visible: true }).click();
-  await expect(page).toHaveURL(/\/sessions\?project=all$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/activity\?project=all$/);
 });
 
 test("leaving the phone chat page with Back keeps history as it was before opening it", async ({
@@ -415,6 +407,7 @@ test("breadcrumb uses recorded project ownership and unlinked terminal state sta
     }),
   );
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+  await showSessionSection(page, "recents");
   await expect(page.getByTestId("session-project-breadcrumb").filter({ visible: true })).toHaveText(
     "Shop",
   );
@@ -454,4 +447,49 @@ test("inspector names a detached HEAD instead of claiming GitHub auth is missing
   const status = page.getByTestId("session-inspector-pull-request-status");
   await expect(status).toContainText("Detached HEAD: select a branch");
   await expect(status).not.toContainText("authentication is unavailable");
+});
+
+test("the inspector Refresh pulls a pull request opened after the card loaded", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await mockSessionHome(page);
+  let opened = false;
+  await page.route(`**/api/terminals/${HOME.terminal}/git/github`, (route) =>
+    route.fulfill({
+      json: {
+        auth: "gh",
+        login: "demo",
+        items: opened
+          ? [
+              {
+                repo: "acme/shop",
+                number: 419,
+                title: "Opened after the push",
+                url: "https://github.com/acme/shop/pull/419",
+                kind: "pr",
+                state: "open",
+                branch: "fix/cart-rounding",
+                assignees: [],
+                task_ids: [],
+              },
+            ]
+          : [],
+        errors: [],
+        truncated: false,
+      },
+    }),
+  );
+  await page.goto(`/chat?project=all&sessionTerminal=${HOME.terminal}&inspector=overview`);
+  await expect(page.getByTestId("session-inspector-pull-request-status")).toContainText(
+    "No open pull request",
+  );
+  opened = true;
+  await page.getByTestId("session-inspector-pr-refresh").click();
+  await expect(page.getByTestId("session-inspector-pull-request")).toContainText(
+    "Opened after the push",
+  );
+  await page
+    .getByTestId("session-inspector")
+    .screenshot({ path: test.info().outputPath("inspector-pr-refresh.png") });
 });

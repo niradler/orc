@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,14 +20,16 @@ export function AttentionSettings() {
   const value = hours ?? String(preferences.data?.attention_retention_hours ?? 72);
   return (
     <section className="space-y-3" aria-labelledby="attention-settings-title">
-      <h2 id="attention-settings-title" className="text-base font-medium">
-        Questions and approvals
-      </h2>
-      <p className="text-sm text-outline">
-        Requests stop accepting replies after this many hours from creation. Session continuation
-        clears obsolete requests when reported by a supported hook. Notification and audit history
-        have separate cleanup periods.
-      </p>
+      <div className="flex items-center gap-1">
+        <h2 id="attention-settings-title" className="text-base font-medium">
+          Questions and approvals
+        </h2>
+        <HelpPopover label="request retention" testId="attention-retention-help">
+          Requests stop accepting replies after this many hours from creation. Session continuation
+          clears obsolete requests when reported by a supported hook. Notification and audit history
+          have separate cleanup periods.
+        </HelpPopover>
+      </div>
       {preferences.error && <p role="alert">{preferences.error.message}</p>}
       <form
         className="flex flex-wrap items-end gap-3"

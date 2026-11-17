@@ -47,7 +47,7 @@ const logger = createLogger("api:projects");
  * background: the response must not wait for the whole workspace, and the
  * published change events refresh open clients.
  */
-function reassignSessions(): void {
+export function reassignSessions(): void {
   invalidateProjectFolderCache();
   void reconcileSessionProjects().catch((error) =>
     logger.error("Session project reassignment failed", error),

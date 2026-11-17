@@ -1,12 +1,15 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
-import { supportsManualCompaction } from "@orc/core/coding-agents";
+import { agentLabel, supportsManualCompaction } from "@orc/core/coding-agents";
+import { sessionMessageHookSupported } from "@orc/core/session-messages";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
+  ChartColumn,
   ChevronDown,
   ChevronsDownUp,
+  Focus,
   History,
   ListPlus,
   LoaderCircle,
@@ -22,10 +25,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
-import { AgentMessageText } from "@/components/AgentMessageText";
+import { AgentMessageText, AgentTextStreamProvider } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatAttachments } from "@/components/ChatAttachments";
@@ -34,7 +38,8 @@ import {
   ChatContinueInTerminal,
   useChatContinueInTerminal,
 } from "@/components/ChatContinueInTerminal";
-import { ChatConversationInfo, ChatSessionPicker } from "@/components/ChatControls";
+import { ChatSessionPicker } from "@/components/ChatControls";
+import { ChatConversationInfo } from "@/components/ChatConversationInfo";
 import { ChatForkNotice } from "@/components/ChatForkNotice";
 import { ChatLiveAnnouncer, ChatLiveStatus } from "@/components/ChatLiveStatus";
 import { ChatMessageActions } from "@/components/ChatMessageActions";
@@ -45,7 +50,12 @@ import {
   useChatPromptMenu,
 } from "@/components/ChatPromptMenu";
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
+import { ChatSelectionToolbar } from "@/components/ChatSelectionToolbar";
+import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
+import { useChatContextUsage } from "@/components/ChatSessionStrip";
+import { ChatTurnDivider } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
+import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
 import {
   SessionDrawer,
@@ -56,22 +66,54 @@ import {
   useSessionLiveLink,
 } from "@/components/SessionHome";
 import { SessionLineage } from "@/components/SessionLineage";
-import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { SessionMessageInbox } from "@/components/SessionMessageInbox";
+import { SessionView } from "@/components/SessionView";
+import { StateBadge } from "@/components/StateBadge";
+import { ScratchpadFormDialog } from "@/components/scratchpad/ScratchpadFormDialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
-import { useSessionChildren } from "@/hooks/useSessions";
+import {
+  useSendSessionMessage,
+  useSessionChildren,
+  useSessionSubagents,
+} from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
+import { type AgentState, liveSessionState } from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
+import { chatDividers } from "@/lib/chat-dividers";
+import { groupChatMessages } from "@/lib/chat-message-groups";
+import {
+  appendDraftQuote,
+  boundedText,
+  type ChatSelectionAction,
+  quoteDraft,
+  SELECTION_CAPTURE_LIMIT,
+  type SelectionSource,
+  selectionTitle,
+  taskBody,
+} from "@/lib/chat-selection";
 import { pastedTextName, shouldAttachPaste } from "@/lib/composer-chips";
+import {
+  type ComposerBox,
+  composerHandoff,
+  composerHandoffTransform,
+} from "@/lib/composer-handoff";
+import { THIS_SERVER } from "@/lib/host-labels";
+import { scratchpadPath } from "@/lib/scratchpad-routes";
+import { matchSubagents } from "@/lib/subagent-links";
 import { cn } from "@/lib/utils";
 
 // The highlight layer must wrap text exactly like the textarea above it.
 const composerText = "p-2 text-base leading-relaxed [scrollbar-gutter:stable]";
+// Three rows of 16px text at leading-relaxed, plus the composer's own padding.
+const HERO_INPUT_HEIGHT = 96;
 
 interface ChatPanelProps {
   open: boolean;
@@ -134,6 +176,33 @@ function ChatRefreshAction({
     </button>
   );
   return row ? button : <ActionHelp label="Refresh session">{button}</ActionHelp>;
+}
+
+function ChatAnalyticsAction({
+  row = false,
+  large = false,
+  disabled,
+  onOpen,
+}: {
+  row?: boolean;
+  large?: boolean;
+  disabled: boolean;
+  onOpen: () => void;
+}) {
+  const button = (
+    <button
+      type="button"
+      data-testid="chat-analytics-button"
+      onClick={onOpen}
+      disabled={disabled}
+      className={cn(row ? actionButton : iconButton, large && "min-h-11 min-w-11")}
+      aria-label="Session analytics"
+    >
+      <ChartColumn size={17} />
+      {row && "Session analytics"}
+    </button>
+  );
+  return row ? button : <ActionHelp label="Session analytics">{button}</ActionHelp>;
 }
 
 function ChatCompactAction({
@@ -229,18 +298,53 @@ export function ChatPanel({
   });
   const answers = session.data?.queued ?? [];
   const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
-  const turnElsewhere = !!session.data?.running && !streaming && !refreshing;
+  const agentRunning =
+    session.data?.live?.status === "running" && session.data.live.agent !== "codex" && !streaming;
+  const agentInbox =
+    agentRunning && session.data?.live && sessionMessageHookSupported(session.data.live.agent)
+      ? session.data.live
+      : null;
+  // The watcher's "running" claim can go stale (the agent finished or died without a
+  // status update). Never hard-lock the composer on it: offer an explicit override.
+  const [agentOverride, setAgentOverride] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the deps are change triggers, not reads — drop the override when the thread or its running claim changes
+  useEffect(() => {
+    setAgentOverride(false);
+  }, [thread?.id, session.data?.live?.status]);
+  const agentBlocked = agentRunning && !agentInbox && !agentOverride;
+  const queueToAgent = useSendSessionMessage(agentInbox?.id ?? null);
+  const runElsewhere = !!session.data?.running && !streaming && !refreshing;
+  const turnElsewhere = runElsewhere || (agentRunning && !refreshing);
+  // The usage API only knows sessions it discovered from an agent or terminal.
+  const contextUsage = useChatContextUsage(thread?.sourceId, streaming);
+  const sessionState: AgentState | null =
+    permission || question
+      ? "needs-you"
+      : error
+        ? "failed"
+        : streaming || reconnecting || refreshing || turnElsewhere
+          ? "working"
+          : thread
+            ? "idle"
+            : null;
   const forkDisabledReason =
     streaming || refreshing || reconnecting || turnElsewhere
       ? "Wait for the current response to finish before forking."
       : undefined;
+  const followedChange = useRef(0);
+  useEffect(() => {
+    if (!sessionChanged || !thread || error) return;
+    if (followedChange.current === session.dataUpdatedAt) return;
+    followedChange.current = session.dataUpdatedAt;
+    void refresh(true).finally(() => session.refetch());
+  }, [sessionChanged, thread, error, refresh, session.dataUpdatedAt, session.refetch]);
   const followedSession = useRef<string | null>(null);
   useEffect(() => {
     if (!session.data?.running) followedSession.current = null;
-    if (!turnElsewhere || !thread || followedSession.current === thread.id) return;
+    if (!runElsewhere || !thread || followedSession.current === thread.id) return;
     followedSession.current = thread.id;
     void refresh().finally(() => session.refetch());
-  }, [turnElsewhere, refresh, thread, session.data?.running, session.refetch]);
+  }, [runElsewhere, refresh, thread, session.data?.running, session.refetch]);
   const reload = async () => {
     await refresh(sessionChanged);
     void session.refetch();
@@ -282,10 +386,70 @@ export function ChatPanel({
   const desktop = useBreakpoint("xl");
   const phone = !useBreakpoint("md");
   const compactViewport = useCompactViewport();
+  // Focus chat is in-memory view state for the open conversation, never a saved
+  // global mode: another chat, a closed chat or a reload starts unfocused.
+  const [focusChat, setFocusChat] = useState(false);
+  const focusScope = `${activeKey}:${open ? "open" : "closed"}`;
+  const [focusAt, setFocusAt] = useState(focusScope);
+  if (focusAt !== focusScope) {
+    // Adjust during render so a new or closed chat never paints one focused frame.
+    setFocusAt(focusScope);
+    setFocusChat(false);
+  }
+  // A blank thread puts the heading and composer together around the middle.
+  // The software keyboard compacts the viewport, and then the composer docks so
+  // it stays reachable instead of pushing the hero off screen.
+  const hero = messages.length === 0 && !streaming && !editingQueuedId && !compactViewport;
+  const composerBox = useRef<HTMLFormElement>(null);
+  // The hero rectangle of the composer, measured after layout-changing renders so
+  // typing in the hero does not skew the handoff. Streaming tokens do not change
+  // the key, so they never read layout. Only the first send arms the animation.
+  const composerLayout = useRef<{ hero: boolean; scope: string; box: ComposerBox } | null>(null);
+  const composerLayoutKey = useRef("");
+  const layoutKey = `${hero}:${open ? 1 : 0}:${activeKey}:${thread?.id ?? ""}:${draft.length}:${files.length}:${compactViewport ? 1 : 0}`;
+  const handoffArmed = useRef(false);
+  useLayoutEffect(() => {
+    if (composerLayoutKey.current === layoutKey) return;
+    composerLayoutKey.current = layoutKey;
+    const node = composerBox.current;
+    if (!node) return;
+    const rect = node.getBoundingClientRect();
+    const box: ComposerBox = {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+    const scope = `${activeKey}:${thread?.id ?? ""}`;
+    const previous = composerLayout.current;
+    composerLayout.current = { hero, scope, box };
+    if (!handoffArmed.current || hero || !previous?.hero || previous.scope !== scope) return;
+    handoffArmed.current = false;
+    if (!open || document.hidden || !box.width || !box.height) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const handoff = composerHandoff(previous.box, box);
+    if (!handoff) return;
+    // 180 ms ease-out: the docked composer starts where the hero was. Web
+    // Animations leaves no transform behind once it finishes.
+    node.animate([{ transform: composerHandoffTransform(handoff) }, { transform: "none" }], {
+      duration: 180,
+      easing: "ease-out",
+    });
+  });
   const docked = fullscreen && desktop && !home.listHidden;
   const rail = fullscreen && desktop && home.listHidden;
-  const context = useSessionContext(home.terminalId);
   const terminalCenter = !!home.terminalId;
+  const viewId = fullscreen && !terminalCenter ? home.viewId : null;
+  const viewed = useQuery({
+    queryKey: ["sessions", "live-one", viewId],
+    queryFn: () => api.sessions.liveOne(viewId as string),
+    enabled: !!viewId,
+    retry: false,
+  }).data;
+  const context = useSessionContext(
+    home.terminalId,
+    viewId ? { id: viewId, session: viewed } : undefined,
+  );
   // The drawer can take the conversation's space; collapsing or closing it
   // returns the column to the chat instead of leaving a half-empty screen.
   const [drawerExpanded, setDrawerExpanded] = useState(false);
@@ -309,11 +473,70 @@ export function ChatPanel({
     );
   };
   const linkError = useSessionLiveLink(home, fullscreen);
-  const title = terminalCenter ? (context.terminal?.name ?? "Terminal") : thread?.title;
+  const title = terminalCenter
+    ? (context.terminal?.name ?? "Terminal")
+    : viewId
+      ? (viewed?.name ?? "Session")
+      : thread?.title;
+  const headerState = viewId ? (viewed ? liveSessionState(viewed) : null) : sessionState;
+  const dividers = useMemo(() => {
+    const raw = chatDividers(messages, contextUsage.data?.compactions ?? []);
+    const { displayId } = groupChatMessages(messages);
+    const byMessage = new Map<string, typeof raw.trailing>();
+    for (const [id, list] of raw.byMessage) {
+      const key = displayId.get(id) ?? id;
+      byMessage.set(key, [...(byMessage.get(key) ?? []), ...list]);
+    }
+    return { byMessage, trailing: raw.trailing };
+  }, [messages, contextUsage.data?.compactions]);
+  const storedMessages = useMemo(
+    () => new Map(messages.map((message) => [message.id, message])),
+    [messages],
+  );
+  // What an attribution line needs from a message the user selected text in.
+  const messageSources = useMemo(
+    () =>
+      new Map(
+        messages.map((message) => [
+          message.id,
+          { agent: message.agent, role: message.role, timestamp: message.timestamp },
+        ]),
+      ),
+    [messages],
+  );
+  const { data: subagents } = useSessionSubagents(thread?.sourceId ?? thread?.id ?? null);
+  const subagentLinks = useMemo(
+    () => matchSubagents(messages, subagents ?? []),
+    [messages, subagents],
+  );
+  const lastAssistant = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index];
+      if (message?.role === "assistant") return message;
+    }
+    return undefined;
+  }, [messages]);
+  // The latest recorded request belongs to the newest assistant turn only when it
+  // was recorded after that turn started; otherwise the figure belongs elsewhere.
+  const latestUsage = contextUsage.data?.latest ?? null;
+  const latestUsageAt = latestUsage?.recorded_at ? Date.parse(latestUsage.recorded_at) : Number.NaN;
+  // A finished turn carries a frozen token figure; only a still-live turn reads the
+  // session's latest recorded request, so completed turns stop drifting upward.
+  const frozenUsage = lastAssistant?.turn?.usage;
+  const turnUsage = frozenUsage
+    ? frozenUsage
+    : latestUsage &&
+        Number.isFinite(latestUsageAt) &&
+        lastAssistant?.turn &&
+        latestUsageAt >= lastAssistant.turn.startedAt
+      ? latestUsage
+      : null;
   const projects = useProjects();
   const owner = terminalCenter
     ? context.session?.project_id
-    : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
+    : viewId
+      ? viewed?.project_id
+      : (thread?.projectId ?? tabs.find((tab) => tab.key === activeKey)?.projectId);
   const projectName =
     owner === null
       ? "Unassigned"
@@ -323,16 +546,38 @@ export function ChatPanel({
     count: messages.length + (streaming ? 1 : 0),
     restoring: loadingHistory,
   });
-  const sendLabel = !streaming ? "Send message" : canSteerLive ? "Send now" : "Queue message";
+  const sendLabel = agentInbox
+    ? "Queue for its next safe point"
+    : agentBlocked
+      ? "Running in its own agent; send when it finishes"
+      : !streaming
+        ? "Send message"
+        : canSteerLive
+          ? "Send now"
+          : "Queue message";
   const submit = () => {
-    if (!ready || (!draft.trim() && !files.length)) return;
+    if (agentInbox) {
+      const body = draft.trim();
+      if (!body || files.length || queueToAgent.isPending) return;
+      setDraft("");
+      queueToAgent.mutate(body, {
+        onError: () => setDraft((current) => (current === "" ? body : current)),
+      });
+      return;
+    }
+    if (!ready || agentBlocked || (!draft.trim() && !files.length)) return;
     if (!streaming) scroll.pinToBottom();
+    // The first message docks the hero composer; animate that one move only.
+    if (hero) handoffArmed.current = true;
     const text = draft;
     setDraft("");
     // A failed steer keeps the text so the user can retry; a queued or steered
     // message already left the composer.
     void deliver(text).then((outcome) => {
-      if (outcome === "failed") setDraft((current) => (current === "" ? text : current));
+      if (outcome === "failed") {
+        handoffArmed.current = false;
+        setDraft((current) => (current === "" ? text : current));
+      }
     });
   };
   const compactDisabled =
@@ -347,9 +592,7 @@ export function ChatPanel({
   const headerWide = headerWidth >= 620;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
-  // One menu vocabulary for the phone and the narrow desktop header: Settings
-  // first, then continue-in-terminal, then Refresh/Compact as labeled rows so the
-  // actions stay reachable even when the phone's second header line is collapsed.
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const actionMenuRows = (includeSessionActions: boolean) => (
     <>
       <button
@@ -364,6 +607,19 @@ export function ChatPanel({
       >
         <Settings2 size={17} />
         Session settings
+      </button>
+      <button
+        type="button"
+        data-testid="chat-focus-menu"
+        aria-pressed={focusChat}
+        className={actionButton}
+        onClick={() => {
+          setActionsOpen(false);
+          setFocusChat((value) => !value);
+        }}
+      >
+        <Focus size={17} />
+        {focusChat ? "Exit focus chat" : "Focus chat"}
       </button>
       {!terminalCenter && (
         <ChatContinueInTerminal
@@ -382,6 +638,14 @@ export function ChatPanel({
             onRefresh={() => {
               setActionsOpen(false);
               void reload();
+            }}
+          />
+          <ChatAnalyticsAction
+            row
+            disabled={!thread}
+            onOpen={() => {
+              setActionsOpen(false);
+              setAnalyticsOpen(true);
             }}
           />
           <ChatCompactAction
@@ -409,8 +673,89 @@ export function ChatPanel({
   const input = useRef<HTMLTextAreaElement>(null);
   const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
+  const promptMenuOpen = useRef(false);
+  promptMenuOpen.current = promptMenu.matches.length > 0;
+  // Escape leaves focus chat, except while an overlay or an IME composition owns
+  // the key: a dialog, a menu, the prompt list, the selection toolbar or IME.
+  useEffect(() => {
+    if (!focusChat) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.isComposing || event.keyCode === 229) return;
+      // A popover, dialog or menu consumed the key first; it closes, focus stays.
+      if (event.defaultPrevented) return;
+      if (promptMenuOpen.current) return;
+      if (
+        document.querySelector(
+          '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-testid="chat-selection-toolbar"]',
+        )
+      )
+        return;
+      setFocusChat(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [focusChat]);
   const inputBackdrop = useRef<HTMLDivElement>(null);
   const plainPaste = useRef(false);
+  const [taskFromSelection, setTaskFromSelection] = useState<{
+    title: string;
+    body: string;
+  } | null>(null);
+  const [padFromSelection, setPadFromSelection] = useState<{
+    title: string;
+    content: string;
+  } | null>(null);
+  const [savedPad, setSavedPad] = useState<{ id: string; title: string } | null>(null);
+  const lastActiveKey = useRef(activeKey);
+  useEffect(() => {
+    if (lastActiveKey.current === activeKey) return;
+    lastActiveKey.current = activeKey;
+    setSavedPad(null);
+  }, [activeKey]);
+  // Selection actions insert into the active tab's draft, so they survive a
+  // tab switch like text the user typed there.
+  const actOnSelection = useCallback(
+    (action: ChatSelectionAction, text: string, source: SelectionSource) => {
+      const bounded = boundedText(text, SELECTION_CAPTURE_LIMIT);
+      if (!bounded) return;
+      setSavedPad(null);
+      if (action === "ask") {
+        setDraft((current) => appendDraftQuote(current, quoteDraft(bounded, source)));
+        window.requestAnimationFrame(() => {
+          const field = input.current;
+          if (!field) return;
+          field.focus();
+          field.setSelectionRange(field.value.length, field.value.length);
+        });
+        return;
+      }
+      if (action === "task") {
+        setTaskFromSelection({
+          title: selectionTitle(bounded),
+          body: taskBody(bounded, source),
+        });
+        return;
+      }
+      setPadFromSelection({
+        title: selectionTitle(bounded),
+        content: quoteDraft(bounded, source),
+      });
+    },
+    [setDraft],
+  );
+  const resolveSelectionSource = useCallback(
+    (messageId: string): SelectionSource => {
+      const entry = messageSources.get(messageId);
+      return {
+        threadId: thread?.id,
+        title: thread?.title ?? "New chat",
+        // A quote from your own message is not attributed to the agent.
+        agent: entry?.role === "user" ? "You" : agentLabel(entry?.agent ?? config.agent),
+        timestamp: entry?.timestamp ?? Date.now(),
+      };
+    },
+    [config.agent, messageSources, thread?.id, thread?.title],
+  );
   const draftSegments = useMemo(
     () => commandSegments(draft, promptMenu.commandNames),
     [draft, promptMenu.commandNames],
@@ -418,12 +763,16 @@ export function ChatPanel({
   const highlighted = draftSegments.some((segment) => segment.command);
   useLayoutEffect(() => {
     if (!open) return;
+    // Three rows in the hero; one row once the composer is docked.
+    const floor = hero ? HERO_INPUT_HEIGHT : 42;
     const measure = () => {
       if (!input.current) return;
       input.current.style.height = "auto";
-      input.current.style.height = draft
-        ? `${Math.min(input.current.scrollHeight, 160)}px`
-        : "40px";
+      // Typed text decides its own height; an empty hero keeps three rows.
+      const height = draft
+        ? Math.min(Math.max(input.current.scrollHeight, 42), 160)
+        : Math.min(floor, 160);
+      input.current.style.height = `${height}px`;
     };
     measure();
     let width = 0;
@@ -438,7 +787,7 @@ export function ChatPanel({
       observer.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [draft, open]);
+  }, [draft, hero, open]);
   const [queueDisclosure, setQueueDisclosure] = useState({ key: activeKey, open: false });
   useLayoutEffect(() => {
     if (open && editingQueuedId)
@@ -481,6 +830,7 @@ export function ChatPanel({
     <ThreadPrimitive.Root
       data-testid="chat-panel"
       data-streaming={streaming ? "true" : "false"}
+      data-focus={focusChat ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
       className={cn(
         "relative h-full flex min-h-0 bg-background",
@@ -520,70 +870,84 @@ export function ChatPanel({
             data-chat-gesture-header={phone ? "true" : undefined}
             className={cn(
               "chat-header shrink-0",
-              // Desktop keeps every control on one line; the phone gives the title
-              // its own line and moves the panel/session controls to a second line.
               phone
-                ? "flex flex-col gap-0.5 px-2 py-1"
+                ? "flex items-center px-1 py-0.5"
                 : "flex min-h-12 items-center gap-1 px-3 py-1",
+              // Focus chat narrows the chrome: tighter padding, no strip detail
+              // and a one-line phone title.
+              focusChat && (phone ? "py-0.5" : "px-2"),
               !docked && !rail && !phone && "pl-40",
             )}
           >
             {!phone && terminalBack}
             {phone ? (
               <>
-                <div className="flex items-center gap-0.5">
-                  {terminalBack}
-                  <button
-                    type="button"
-                    data-testid="chat-sessions-button"
-                    aria-label="Sessions, session history"
-                    title="Session history"
-                    className={cn(iconButton, "min-h-11 min-w-11")}
-                    onClick={() => home.go({ listOpen: true })}
-                  >
-                    <History size={17} />
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="chat-clear-button"
-                    aria-label="New session"
-                    title="New session"
-                    disabled={tabs.some(
-                      (tab) =>
-                        tab.key !== activeKey &&
-                        (tab.permissions.length ||
-                          tab.questions.length ||
-                          tab.attention ||
-                          tab.error),
-                    )}
-                    className={cn(iconButton, "min-h-11 min-w-11")}
-                    onClick={() => {
-                      newTab();
-                      home.go({ terminalId: null });
-                    }}
-                  >
-                    <SquarePen size={17} />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <h2
-                      className="truncate text-sm font-medium"
-                      title={`${projectName} / ${title ?? "New session"}`}
-                    >
-                      {title ?? "New session"}
-                    </h2>
-                    <p className="truncate text-xs text-muted-foreground">
-                      <span data-testid="session-project-breadcrumb">{projectName}</span>
-                      {" · "}
-                      {thread?.host ?? "this server"}
-                    </p>
-                  </div>
-                  {streaming && (
-                    <LoaderCircle
-                      size={14}
-                      aria-hidden="true"
-                      className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
-                    />
+                {terminalBack}
+                <button
+                  type="button"
+                  data-testid="chat-sessions-button"
+                  aria-label="Sessions, session history"
+                  title="Session history"
+                  className={cn(iconButton, "min-h-11 min-w-11")}
+                  onClick={() => home.go({ listOpen: true })}
+                >
+                  <History size={17} />
+                </button>
+                <button
+                  type="button"
+                  data-testid="chat-clear-button"
+                  aria-label="New session"
+                  title="New session"
+                  disabled={tabs.some(
+                    (tab) =>
+                      tab.key !== activeKey &&
+                      (tab.permissions.length ||
+                        tab.questions.length ||
+                        tab.attention ||
+                        tab.error),
                   )}
+                  className={cn(iconButton, "min-h-11 min-w-11")}
+                  onClick={() => {
+                    newTab();
+                    home.go({ terminalId: null });
+                  }}
+                >
+                  <SquarePen size={17} />
+                </button>
+                <div className="min-w-0 flex-1">
+                  <h2
+                    className="truncate text-sm font-medium"
+                    title={`${projectName} / ${title ?? "New session"}`}
+                  >
+                    {title ?? "New session"}
+                  </h2>
+                  {!focusChat && (
+                    <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+                      {headerState && (
+                        <StateBadge
+                          state={headerState}
+                          compact
+                          testId="chat-header-state"
+                          className="shrink-0"
+                        />
+                      )}
+                      <span className="truncate">
+                        <span data-testid="session-project-breadcrumb">{projectName}</span>
+                        {" · "}
+                        {(viewId ? viewed?.host : thread?.host) ?? THIS_SERVER}
+                      </span>
+                    </p>
+                  )}
+                </div>
+                {streaming && !viewId && (
+                  <LoaderCircle
+                    size={14}
+                    aria-hidden="true"
+                    className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
+                  />
+                )}
+                <SessionHomeToggles home={home} gestures />
+                {!viewId && (
                   <Popover open={actionsOpen} onOpenChange={setActionsOpen}>
                     <PopoverTrigger asChild>
                       <button
@@ -599,46 +963,20 @@ export function ChatPanel({
                         <MoreHorizontal size={17} />
                       </button>
                     </PopoverTrigger>
-                    {/* Anchor below the whole two-line header so the menu never
-                        covers the Terminal/Inspector/Refresh/Compact controls. */}
-                    <PopoverAnchor virtualRef={header} />
                     <PopoverContent
                       data-testid="chat-actions-menu"
                       aria-label="Session actions"
                       align="end"
                       className="flex w-56 flex-col gap-1 p-1"
                     >
-                      {actionMenuRows(compactViewport)}
+                      {actionMenuRows(!terminalCenter)}
                     </PopoverContent>
                   </Popover>
-                </div>
-                <div className="chat-header-controls flex items-center justify-end gap-0.5">
-                  <SessionHomeToggles home={home} gestures />
-                  {!terminalCenter && (
-                    <div
-                      data-testid="chat-header-actions"
-                      className="flex shrink-0 items-center gap-0.5"
-                    >
-                      <ChatRefreshAction
-                        large
-                        stale={sessionChanged}
-                        busy={refreshing || reconnecting}
-                        disabled={!thread || refreshing}
-                        onRefresh={() => void reload()}
-                      />
-                      <ChatCompactAction
-                        large
-                        agent={config.agent}
-                        disabled={compactDisabled}
-                        onCompact={() => void send("/compact")}
-                      />
-                    </div>
-                  )}
-                </div>
+                )}
               </>
             ) : title || fullscreen ? (
               <h2
-                className="flex min-w-0 flex-1 items-center gap-1.5 text-sm font-medium"
+                className="flex min-w-0 shrink items-center gap-1.5 text-sm font-medium"
                 title={fullscreen ? `${projectName} / ${title ?? "New session"}` : title}
               >
                 {fullscreen && (
@@ -656,25 +994,33 @@ export function ChatPanel({
                 )}
                 <span className="min-w-0 truncate">{title ?? "New session"}</span>
               </h2>
-            ) : (
-              <div className="min-w-0 flex-1" aria-hidden="true" />
-            )}
-            {!phone && streaming && (
-              <LoaderCircle
-                size={14}
-                aria-hidden="true"
-                className="chat-compact-activity shrink-0 text-progress motion-safe:animate-spin"
-              />
+            ) : null}
+            {!phone && !focusChat && Boolean(title || fullscreen) && (
+              <span aria-hidden="true" className="h-3 w-px shrink-0 bg-outline-variant" />
             )}
             {!phone &&
-              (terminalCenter ? null : headerWide ? (
+              !focusChat &&
+              headerState &&
+              !(headerState === "working" && headerWide && !terminalCenter && !viewId) && (
+                <StateBadge
+                  state={headerState}
+                  compact={!headerWide}
+                  testId="chat-header-state"
+                  className="shrink-0"
+                />
+              )}
+            {/* Session facts sit beside the title; actions stay at the right edge. */}
+            {!phone && <div className="min-w-0 flex-1" aria-hidden="true" />}
+            {!phone &&
+              (terminalCenter || viewId ? null : headerWide ? (
                 <div data-testid="chat-header-actions" className="flex shrink-0 items-center gap-1">
                   <ChatRefreshAction
                     stale={sessionChanged}
-                    busy={refreshing || reconnecting}
+                    busy={refreshing || reconnecting || headerState === "working"}
                     disabled={!thread || refreshing}
                     onRefresh={() => void reload()}
                   />
+                  <ChatAnalyticsAction disabled={!thread} onOpen={() => setAnalyticsOpen(true)} />
                   <ChatContinueInTerminal control={terminalControl} />
                   <ChatCompactAction
                     agent={config.agent}
@@ -729,9 +1075,9 @@ export function ChatPanel({
                 </button>
               </ActionHelp>
             )}
-            {/* The phone chat is a regular page: navigation (Back, the drawer or
+            {/* The chat page is a regular page: navigation (Back, the sidebar or
                 another destination) leaves it, so it has no close button. */}
-            {!(fullscreen && phone) && (
+            {!fullscreen && (
               <ActionHelp label="Close chat">
                 <button
                   type="button"
@@ -751,10 +1097,21 @@ export function ChatPanel({
             </p>
           )}
           {terminalCenter && <SessionTerminalCenter context={context} />}
+          {viewId && (
+            <div className={cn("flex min-h-0 flex-1 flex-col", drawerExpanded && "hidden")}>
+              <SessionView
+                key={viewId}
+                sessionId={viewId}
+                onResumed={() => home.go({ listOpen: false, viewId: null }, { replace: true })}
+              />
+            </div>
+          )}
           <div
             className={cn(
               "flex min-h-0 flex-1 flex-col",
-              (terminalCenter || drawerExpanded) && "hidden",
+              // A blank thread centres the hero heading and composer together.
+              hero && "justify-center",
+              (terminalCenter || drawerExpanded || viewId) && "hidden",
             )}
           >
             <ChatConversationInfo open={settingsOpen} onOpenChange={setSettingsOpen} />
@@ -767,7 +1124,12 @@ export function ChatPanel({
                 Connection interrupted. Reconnecting…
               </p>
             )}
-            <div className="relative flex min-h-0 flex-1 flex-col">
+            <div className={cn("relative flex min-h-0 flex-col", !hero && "flex-1")}>
+              <ChatSelectionToolbar
+                resetKey={`${thread?.id ?? "new"}:${open ? "open" : "closed"}`}
+                resolveSource={resolveSelectionSource}
+                onAction={actOnSelection}
+              />
               <ThreadPrimitive.Viewport
                 ref={scroll.viewportRef}
                 autoScroll={false}
@@ -776,9 +1138,12 @@ export function ChatPanel({
                 scrollToBottomOnThreadSwitch={false}
                 data-testid="chat-messages"
                 data-pinned={scroll.pinned}
-                className="chat-messages relative flex-1 min-h-0 overflow-y-auto px-4 py-5 sm:px-6"
+                className={cn(
+                  "chat-messages relative min-h-0 overflow-y-auto px-4 py-5 sm:px-6",
+                  hero ? "flex-none py-0" : "flex-1",
+                )}
               >
-                <div ref={scroll.contentRef} className="flex min-h-full flex-col">
+                <div ref={scroll.contentRef} className={cn("flex flex-col", !hero && "min-h-full")}>
                   {historyBefore !== null && (
                     <button
                       type="button"
@@ -794,7 +1159,12 @@ export function ChatPanel({
                     </button>
                   )}
                   {messages.length === 0 && !streaming && (
-                    <div className="chat-empty-state mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center gap-2">
+                    <div
+                      className={cn(
+                        "chat-empty-state mx-auto flex w-full max-w-(--chat-width) flex-col gap-2",
+                        hero ? "px-4 pt-2" : "flex-1 justify-center",
+                      )}
+                    >
                       <h3 className="text-lg font-medium">What are you working on?</h3>
                       <p className="max-w-xs text-sm leading-relaxed text-on-surface-variant">
                         Ask about your tasks, review agent activity, or work through a coding
@@ -803,68 +1173,95 @@ export function ChatPanel({
                     </div>
                   )}
                   <ChatForkNotice thread={thread ?? undefined} />
-                  <SessionLineage sessionId={thread?.id ?? null} />
+                  {!focusChat && <SessionLineage sessionId={thread?.id ?? null} />}
                   <ThreadPrimitive.Messages>
                     {({ message }) => {
                       const custom = message.metadata.custom;
                       const live = custom.live === true;
                       const content = typeof custom.content === "string" ? custom.content : "";
+                      const stored = storedMessages.get(message.id);
+                      const usage = message.id === lastAssistant?.id ? turnUsage : null;
                       return (
-                        <MessagePrimitive.Root
-                          style={{ contentVisibility: "auto", containIntrinsicSize: "auto 120px" }}
-                          data-testid="chat-message"
-                          data-role={message.role}
-                          className="group/message mx-auto mb-3 w-full max-w-3xl min-w-0 text-base leading-[1.6]"
-                        >
-                          <div
-                            className={
-                              message.role === "user"
-                                ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
-                                : undefined
-                            }
+                        <>
+                          {dividers.byMessage.get(message.id)?.map((divider, index) => (
+                            // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                            <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                          ))}
+                          <MessagePrimitive.Root
+                            style={{
+                              contentVisibility: "auto",
+                              containIntrinsicSize: "auto 120px",
+                            }}
+                            data-testid="chat-message"
+                            data-role={message.role}
+                            data-message-id={message.id}
+                            className="group/message mx-auto mb-1 w-full max-w-(--chat-width) min-w-0 chat-message"
                           >
                             <div
-                              data-testid="chat-message-agent"
                               className={
                                 message.role === "user"
-                                  ? "sr-only"
-                                  : "mb-1 text-xs font-medium text-on-surface-variant"
+                                  ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
+                                  : undefined
                               }
                             >
-                              {message.role === "user"
-                                ? "You"
-                                : typeof custom.agent === "string"
-                                  ? custom.agent
-                                  : "Assistant"}
+                              <div data-testid="chat-message-agent" className="sr-only">
+                                {message.role === "user"
+                                  ? "You"
+                                  : typeof custom.agent === "string"
+                                    ? custom.agent
+                                    : "Assistant"}
+                              </div>
+                              <div
+                                data-testid="chat-message-content"
+                                className="min-w-0 wrap-break-word"
+                              >
+                                <ChatActivityList
+                                  value={custom.activity}
+                                  providerActivity={custom.providerActivity}
+                                  turn={custom.turn}
+                                  live={live}
+                                  subagents={subagentLinks}
+                                />
+                                <ChatAttachments value={custom.attachments} />
+                                <AgentTextStreamProvider streaming={live}>
+                                  <MessagePrimitive.Parts components={textParts} />
+                                </AgentTextStreamProvider>
+                              </div>
                             </div>
-                            <div
-                              data-testid="chat-message-content"
-                              className="min-w-0 wrap-break-word"
-                            >
-                              <ChatActivityList
-                                value={custom.activity}
-                                turn={custom.turn}
-                                live={live}
-                              />
-                              <ChatAttachments value={custom.attachments} />
-                              <MessagePrimitive.Parts components={textParts} />
-                            </div>
-                          </div>
-                          {!live && (
-                            <ChatMessageActions
-                              threadId={thread?.id}
-                              messageId={message.id}
-                              role={message.role === "user" ? "user" : "assistant"}
-                              content={content}
-                              turn={custom.turn}
-                              forkDisabledReason={forkDisabledReason}
-                              onForked={openThread}
-                            />
-                          )}
-                        </MessagePrimitive.Root>
+                            {!live &&
+                              (message.role === "user" ||
+                                !!content.trim() ||
+                                !!custom.turn ||
+                                !!stored?.model ||
+                                !!usage?.input_tokens) && (
+                                <ChatMessageActions
+                                  threadId={thread?.id}
+                                  messageId={message.id}
+                                  role={message.role === "user" ? "user" : "assistant"}
+                                  content={content}
+                                  turn={custom.turn}
+                                  model={stored?.model}
+                                  tokens={usage?.input_tokens}
+                                  cachedTokens={usage?.cached_input_tokens}
+                                  forkDisabledReason={forkDisabledReason}
+                                  onForked={openThread}
+                                  threadTitle={thread?.title ?? "New chat"}
+                                  agent={agentLabel(
+                                    typeof custom.agent === "string" ? custom.agent : config.agent,
+                                  )}
+                                  timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
+                                  onSelectionAction={actOnSelection}
+                                />
+                              )}
+                          </MessagePrimitive.Root>
+                        </>
                       );
                     }}
                   </ThreadPrimitive.Messages>
+                  {dividers.trailing.map((divider, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                    <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                  ))}
                 </div>
               </ThreadPrimitive.Viewport>
               {!scroll.pinned && messages.length > 0 && (
@@ -896,11 +1293,21 @@ export function ChatPanel({
               />
             )}
             <ChatBackgroundWork
-              items={background}
+              items={focusChat ? [] : background}
               error={backgroundError}
               onOpen={(sessionId) => void openBackground(sessionId)}
               onStop={(sessionId) => void stopBackground(sessionId)}
             />
+            {focusChat && backgroundError && (
+              // Focus hides the background rows, never a failure raised from them.
+              <p
+                role="alert"
+                data-testid="chat-background-error"
+                className="px-4 pb-1 text-xs text-error"
+              >
+                {backgroundError}
+              </p>
+            )}
             <ChatLiveAnnouncer
               streaming={streaming}
               agent={streamingAgent}
@@ -979,7 +1386,7 @@ export function ChatPanel({
                 )}
               </div>
             )}
-            {queued.length + answers.length > 0 && (
+            {!focusChat && queued.length + answers.length > 0 && (
               <details
                 key={activeKey}
                 open={queueDisclosure.key === activeKey && queueDisclosure.open}
@@ -988,7 +1395,7 @@ export function ChatPanel({
                 }
                 data-testid="chat-message-queue"
                 aria-label="Pending messages"
-                className="group mx-auto w-full max-w-[calc(48rem+3rem)] shrink-0 border-t border-outline-variant px-4 sm:px-6"
+                className="group mx-auto w-full max-w-[calc(var(--chat-width)+3rem)] shrink-0 border-t border-outline-variant px-4 sm:px-6"
               >
                 <summary
                   data-testid="chat-queue-toggle"
@@ -1035,8 +1442,69 @@ export function ChatPanel({
                 </ol>
               </details>
             )}
-            <div className="chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6">
+            <div
+              data-hero={hero ? "true" : "false"}
+              className={cn(
+                "chat-composer-footer relative w-full shrink-0 px-4 pt-2 pb-3 sm:px-6",
+                // The hero gives the composer the same column and width as the
+                // docked footer; only its place in the column changes.
+                hero && "pt-4",
+              )}
+            >
+              {agentRunning && (
+                <div className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2">
+                  <p
+                    data-testid="chat-agent-running"
+                    role="status"
+                    className="text-xs text-on-surface-variant"
+                  >
+                    {agentInbox
+                      ? "Running in its own agent. Send queues your message for its next safe point."
+                      : agentOverride
+                        ? "Sending unlocked. The running status may be stale."
+                        : "Running in its own agent. Sending unlocks when it finishes."}
+                  </p>
+                  {agentBlocked && (
+                    <button
+                      type="button"
+                      data-testid="chat-agent-send-anyway"
+                      onClick={() => {
+                        setAgentOverride(true);
+                        void session.refetch();
+                      }}
+                      className="mt-0.5 text-xs text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+                    >
+                      Still blocked? Send anyway
+                    </button>
+                  )}
+                  {queueToAgent.error && (
+                    <p role="alert" className="text-xs text-error">
+                      {queueToAgent.error.message}
+                    </p>
+                  )}
+                  {agentInbox && (
+                    <SessionMessageInbox session={agentInbox} live={false} compose={false} />
+                  )}
+                </div>
+              )}
+              {savedPad && (
+                <p
+                  role="status"
+                  data-testid="chat-selection-saved"
+                  className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2 text-xs text-on-surface-variant"
+                >
+                  Saved to{" "}
+                  <Link
+                    to={scratchpadPath(savedPad.id)}
+                    data-testid="chat-selection-saved-link"
+                    className="text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus"
+                  >
+                    {savedPad.title}
+                  </Link>
+                </p>
+              )}
               <form
+                ref={composerBox}
                 onSubmit={(event) => {
                   event.preventDefault();
                   if (event.target !== event.currentTarget) return;
@@ -1052,7 +1520,7 @@ export function ChatPanel({
                     addFiles(Array.from(event.dataTransfer.files));
                   }
                 }}
-                className="chat-composer-box mx-auto w-full max-w-3xl rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
+                className="chat-composer-box mx-auto w-full max-w-(--chat-width) rounded-2xl border border-border bg-surface p-2 focus-within:ring-2 focus-within:ring-focus"
               >
                 {files.length > 0 && (
                   <ul data-testid="chat-attachments" className="flex flex-wrap gap-1 px-2 pb-1">
@@ -1110,7 +1578,13 @@ export function ChatPanel({
                     aria-activedescendant={
                       activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                     }
-                    placeholder="Ask anything. / for prompts and skills"
+                    placeholder={
+                      agentInbox
+                        ? "Running in its own agent. Messages queue for its next safe point."
+                        : agentBlocked
+                          ? "Running in its own agent. Sending unlocks when it finishes."
+                          : "Ask anything. / for prompts and skills"
+                    }
                     disabled={!ready}
                     value={draft}
                     onChange={(event) => {
@@ -1152,7 +1626,7 @@ export function ChatPanel({
                         submit();
                       }
                     }}
-                    rows={1}
+                    rows={hero ? 3 : 1}
                     className={`chat-composer-input ${composerText} relative block w-full resize-none overflow-y-auto bg-transparent placeholder:text-on-surface-variant focus-visible:outline-hidden disabled:opacity-60 ${highlighted ? "text-transparent caret-on-surface" : ""}`}
                   />
                 </div>
@@ -1243,7 +1717,11 @@ export function ChatPanel({
                     <ActionHelp label={sendLabel}>
                       <button
                         type="submit"
-                        disabled={!ready || (!draft.trim() && !files.length)}
+                        disabled={
+                          agentInbox
+                            ? !draft.trim() || !!files.length || queueToAgent.isPending
+                            : !ready || agentBlocked || (!draft.trim() && !files.length)
+                        }
                         data-testid="chat-send-button"
                         aria-label={sendLabel}
                         className="chat-send-button inline-flex min-h-8 min-w-8 items-center justify-center rounded-full bg-primary text-primary-foreground disabled:opacity-40"
@@ -1267,6 +1745,37 @@ export function ChatPanel({
         </div>
       </MobileChatShell>
       {fullscreen && !phone && <SessionInspector context={context} home={home} narrow={!desktop} />}
+      {taskFromSelection && (
+        <CreateTaskDialog
+          open
+          defaultProjectId={thread?.projectId}
+          defaultTitle={taskFromSelection.title}
+          defaultBody={taskFromSelection.body}
+          onClose={() => setTaskFromSelection(null)}
+        />
+      )}
+      {padFromSelection && (
+        <ScratchpadFormDialog
+          defaultProjectId={thread?.projectId ?? ""}
+          defaultSessionId={thread?.sourceId ?? undefined}
+          defaultTitle={padFromSelection.title}
+          defaultContent={padFromSelection.content}
+          onClose={() => setPadFromSelection(null)}
+          onSaved={(pad) => {
+            setPadFromSelection(null);
+            setSavedPad({ id: pad.id, title: pad.title });
+          }}
+        />
+      )}
+      <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
+        <DialogContent
+          data-testid="chat-analytics-dialog"
+          className="max-h-[85dvh] w-[min(56rem,calc(100vw-24px))] max-w-none overflow-y-auto"
+        >
+          <DialogTitle className="sr-only">Session analytics</DialogTitle>
+          {analyticsOpen && <ChatSessionAnalytics threadId={thread?.id} streaming={false} />}
+        </DialogContent>
+      </Dialog>
     </ThreadPrimitive.Root>
   );
 }

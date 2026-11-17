@@ -1,3 +1,9 @@
+import {
+  type ChatThread,
+  type ChatWorkspace,
+  draftCheckoutId,
+  nativeChatAgent,
+} from "@orc/core/chat";
 import { Maximize2, Minimize2, PanelBottom, PanelRight, SquareTerminal, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -36,27 +42,100 @@ export interface SessionContext {
   cwd: string | null;
   host: string | null;
   session?: LiveSession;
-  gitTerminal?: Terminal;
+  sourceId: string | null;
+  /** The checkout Git acts on: a running terminal in the folder, or the chat
+   *  session's own folder when no terminal is running. */
+  gitCheckout?: Terminal;
   shell?: Terminal;
 }
 
-export function useSessionContext(terminalId: string | null): SessionContext {
+/** Git reads and writes the session folder directly, so the chat thread is a
+ *  checkout even when no terminal has been opened. */
+function sessionCheckout(thread: ChatThread | null): Terminal | undefined {
+  if (!thread?.cwd) return undefined;
+  return {
+    id: thread.id,
+    name: thread.title,
+    kind: "shell",
+    cwd: thread.cwd,
+    status: "running",
+    exit_code: null,
+    pid: null,
+    live_session_id: thread.sourceId ?? null,
+    host: thread.host ?? null,
+    project_id: thread.projectId ?? null,
+    worktree_path: null,
+    dev: false,
+    preview_url: null,
+    created_at: new Date(thread.updatedAt).toISOString(),
+  };
+}
+
+function draftCheckout(workspace: ChatWorkspace | undefined): Terminal | undefined {
+  const id = workspace ? draftCheckoutId(workspace) : null;
+  if (!id || !workspace?.cwd) return undefined;
+  return {
+    id,
+    name: workspace.cwd,
+    kind: "shell",
+    cwd: workspace.cwd,
+    status: "running",
+    exit_code: null,
+    pid: null,
+    live_session_id: null,
+    host: workspace.host ?? null,
+    project_id: null,
+    worktree_path: null,
+    dev: false,
+    preview_url: null,
+    created_at: new Date().toISOString(),
+  };
+}
+
+export function useSessionContext(
+  terminalId: string | null,
+  view?: { id: string; session: LiveSession | undefined },
+): SessionContext {
   const chat = useChat();
   const { terminals } = useTerminals();
   const live = useActiveLiveSessions();
   const terminal = terminalId ? terminals.find((item) => item.id === terminalId) : undefined;
-  const cwd = terminal ? terminal.cwd : (chat.thread?.cwd ?? null);
-  const host = terminal ? terminal.host : (chat.thread?.host ?? null);
-  const liveId = terminal ? terminal.live_session_id : (chat.thread?.sourceId ?? null);
-  const session = liveId ? live.data?.find((item) => item.id === liveId) : undefined;
+  const cwd = terminal
+    ? terminal.cwd
+    : view
+      ? (view.session?.cwd ?? null)
+      : (chat.thread?.cwd ?? chat.workspace?.cwd ?? null);
+  const host = terminal
+    ? terminal.host
+    : view
+      ? (view.session?.host ?? null)
+      : (chat.thread?.host ?? chat.workspace?.host ?? null);
+  const liveId = terminal
+    ? terminal.live_session_id
+    : view
+      ? view.id
+      : (chat.thread?.sourceId ?? null);
+  const session = view
+    ? view.session
+    : liveId
+      ? live.data?.find((item) => item.id === liveId)
+      : undefined;
   const sameFolder = (item: Terminal) => terminalInFolder(item, cwd, host);
   return {
     terminal,
     cwd,
     host,
     session,
-    gitTerminal:
-      terminal?.status === "running" ? terminal : runningTerminalForFolder(terminals, cwd, host),
+    sourceId: liveId,
+    gitCheckout:
+      (terminal?.status === "running"
+        ? terminal
+        : runningTerminalForFolder(terminals, cwd, host)) ??
+      // Only a chat-only page can borrow the thread's folder; a terminal page
+      // must never show Git for a different checkout than its Overview.
+      (terminalId || view
+        ? undefined
+        : (sessionCheckout(chat.thread) ?? draftCheckout(chat.workspace))),
     shell: terminals.find(
       (item) => sameFolder(item) && item.kind === "shell" && item.id !== terminal?.id,
     ),
@@ -81,15 +160,22 @@ export function useSessionLiveLink(home: SessionHomeNav, enabled: boolean) {
       opening.current = null;
       return;
     }
-    api.chat
-      .resume(liveId)
-      .then((thread) => openThread(thread))
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : "Session could not be opened."),
-      )
+    api.sessions
+      .liveOne(liveId)
+      .then(async (session) => {
+        if (!nativeChatAgent(session.agent)) {
+          go({ viewId: session.id, terminalId: null, liveId: null }, { replace: true });
+          return;
+        }
+        openThread(await api.chat.resume(liveId));
+        go({ terminalId: null, liveId: null }, { replace: true });
+      })
+      .catch((cause) => {
+        setError(cause instanceof Error ? cause.message : "Session could not be opened.");
+        go({ terminalId: null, liveId: null }, { replace: true });
+      })
       .finally(() => {
         opening.current = null;
-        go({ terminalId: null, liveId: null }, { replace: true });
       });
   }, [enabled, liveId, isLoading, terminals, go, openThread]);
   return error;
@@ -124,7 +210,7 @@ export function SessionHomeToggles({
         label={home.inspector ? "Hide inspector" : "Show inspector"}
         description={
           gestures
-            ? "Git, changes, pull requests, files and the desktop browser. Or swipe right from the left edge"
+            ? "Git, changes, pull requests, files and the desktop browser. Or swipe left from the right edge"
             : undefined
         }
       >
@@ -288,7 +374,7 @@ function InspectorBody({
   tab: InspectorTab;
   home: SessionHomeNav;
 }) {
-  const git = context.gitTerminal;
+  const git = context.gitCheckout;
   const preview = useDesktopPreview();
   const [, setParams] = useSearchParams();
   const browser = !!preview;

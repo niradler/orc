@@ -98,5 +98,5 @@ attributed to the OpenCode session.
 
 The plugin enforces rules; it does not add ORC tools. For context, memories, skills and
 tasks, register the ORC MCP server under `mcp.servers` (see [Connect agents](./connect-agents.md)).
-OpenCode session history is read from its SQLite store and appears in ORC **Sessions**
+OpenCode session history is read from its SQLite store and appears in the ORC chat session list
 (see [Live sessions](./live-sessions.md)).

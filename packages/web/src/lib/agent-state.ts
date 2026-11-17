@@ -88,5 +88,5 @@ const LIVE_STATES: Record<LiveSession["status"], AgentState> = {
 export function liveSessionState(
   session: Pick<LiveSession, "status" | "waiting_for_human">,
 ): AgentState {
-  return session.waiting_for_human ? "needs-you" : LIVE_STATES[session.status];
+  return session.waiting_for_human ? "needs-you" : (LIVE_STATES[session.status] ?? "unknown");
 }

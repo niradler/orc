@@ -41,7 +41,6 @@ const Rules = lazy(() => import("@/views/Rules"));
 
 const Scratchpads = lazy(() => import("@/views/Scratchpads"));
 
-const Sessions = lazy(() => import("@/views/Sessions"));
 const Audit = lazy(() => import("@/views/Audit"));
 
 const Settings = lazy(() => import("@/views/Settings"));
@@ -346,10 +345,6 @@ export default function App() {
                               <Route
                                 path="/webhooks"
                                 element={<Webhooks projectId={projectId} />}
-                              />
-                              <Route
-                                path="/sessions"
-                                element={<Sessions projectId={projectId} />}
                               />
                               <Route path="/audit" element={<Audit projectId={projectId} />} />
                               <Route

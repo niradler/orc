@@ -135,6 +135,8 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
     last_activity_at: lastActivityAt,
     updated_at: new Date(),
     ...(r.cwd !== undefined && { cwd: r.cwd }),
+    ...(r.parentId !== undefined && { parent_session_id: r.parentId }),
+    ...(r.spawnedFromId !== undefined && { spawned_from_session_id: r.spawnedFromId }),
     ...(r.summary !== undefined && { summary: r.summary }),
     ...(r.pid !== undefined && { pid: r.pid }),
     ...(r.transcriptPath !== undefined && {
@@ -165,62 +167,69 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
           r.cwd ?? existing.cwd,
         );
     }
-    recordObservedNotification(
-      {
-        id: existing.id,
-        backend: r.backend,
-        host: executionHost,
-        nativeId: r.externalId,
-        title: r.title,
-        projectId: fields.project_id ?? existing.project_id,
-        cwd: r.cwd ?? existing.cwd,
-        previous: existing.status,
-        status: r.status,
-        waiting: r.pendingHuman === true && r.status !== "stopped",
-        wasWaiting: sessionWaitingForHuman(r.backend, executionHost, r.externalId),
-        activity: r.lastActivityAt.getTime(),
-      },
-      () =>
-        getSqlite()
-          .query<{ status: string }, [string]>("SELECT status FROM gateway_sessions WHERE id=?")
-          .get(existing.id)?.status === r.status &&
-        sessionWaitingForHuman(r.backend, executionHost, r.externalId) ===
-          (r.pendingHuman === true && r.status !== "stopped"),
-    );
+    if (!r.parentId)
+      recordObservedNotification(
+        {
+          id: existing.id,
+          backend: r.backend,
+          host: executionHost,
+          nativeId: r.externalId,
+          title: r.title,
+          projectId: fields.project_id ?? existing.project_id,
+          cwd: r.cwd ?? existing.cwd,
+          previous: existing.status,
+          status: r.status,
+          waiting: r.pendingHuman === true && r.status !== "stopped",
+          wasWaiting: sessionWaitingForHuman(r.backend, executionHost, r.externalId),
+          activity: r.lastActivityAt.getTime(),
+        },
+        () =>
+          getSqlite()
+            .query<{ status: string }, [string]>("SELECT status FROM gateway_sessions WHERE id=?")
+            .get(existing.id)?.status === r.status &&
+          sessionWaitingForHuman(r.backend, executionHost, r.externalId) ===
+            (r.pendingHuman === true && r.status !== "stopped"),
+      );
     return existing.id;
   }
   const id = ulid();
   const projectId = mappedProject ?? null;
-  await db.insert(gateway_sessions).values({
-    id,
-    chat_id: LIVE_CHAT_ID,
-    backend: r.backend,
-    mode: "direct",
-    runtime_session_id: r.externalId,
-    execution_host: executionHost,
-    project_id: projectId,
-    created_at: r.createdAt,
-    ...fields,
-  });
+  const inserted = await db
+    .insert(gateway_sessions)
+    .values({
+      id,
+      chat_id: LIVE_CHAT_ID,
+      backend: r.backend,
+      mode: "direct",
+      runtime_session_id: r.externalId,
+      execution_host: executionHost,
+      project_id: projectId,
+      created_at: r.createdAt,
+      ...fields,
+    })
+    .onConflictDoNothing()
+    .returning({ id: gateway_sessions.id });
+  if (!inserted.length) return upsertRecord(r, executionHost);
   // A new session with no requests yet still changes the report's coverage counts.
   changes.publish("usage");
-  recordObservedNotification(
-    {
-      id,
-      backend: r.backend,
-      host: executionHost,
-      nativeId: r.externalId,
-      title: r.title,
-      projectId,
-      cwd: r.cwd ?? null,
-      previous: null,
-      status: r.status,
-      waiting: r.pendingHuman === true && r.status !== "stopped",
-      wasWaiting: false,
-      activity: r.lastActivityAt.getTime(),
-    },
-    () => sessionWaitingForHuman(r.backend, executionHost, r.externalId) === true,
-  );
+  if (!r.parentId)
+    recordObservedNotification(
+      {
+        id,
+        backend: r.backend,
+        host: executionHost,
+        nativeId: r.externalId,
+        title: r.title,
+        projectId,
+        cwd: r.cwd ?? null,
+        previous: null,
+        status: r.status,
+        waiting: r.pendingHuman === true && r.status !== "stopped",
+        wasWaiting: false,
+        activity: r.lastActivityAt.getTime(),
+      },
+      () => sessionWaitingForHuman(r.backend, executionHost, r.externalId) === true,
+    );
   return id;
 }
 

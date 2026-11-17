@@ -1,9 +1,9 @@
-import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
+import type { ChatThread } from "@orc/core/chat";
 import { projectForFolder } from "@orc/core/project-path";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "@/api/client";
 import type { ChatTab } from "@/hooks/useChat";
-import { type AgentState, liveSessionState, moreUrgent } from "./agent-state";
+import { type AgentState, liveSessionState, moreUrgent, rollupState } from "./agent-state";
 import { lastSeen, type SeenRecord, unseenState } from "./session-seen";
 
 type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
@@ -13,6 +13,7 @@ type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   sourceId?: string | null;
   host?: string | null;
   projectId?: string | null;
+  spawnedFrom?: string | null;
 };
 type HistorySource =
   | { kind: "local"; tab: ChatTab }
@@ -29,7 +30,26 @@ export type ChatHistoryEntry = HistorySource & {
   projectId?: string | null;
   terminalId?: string;
   seenKeys: string[];
+  snippets?: string[];
+  matched?: string[];
+  children?: ChatHistoryEntry[];
+  spawned?: boolean;
 };
+
+export function withDescendants(entry: ChatHistoryEntry): ChatHistoryEntry[] {
+  return [entry, ...(entry.children ?? []).flatMap(withDescendants)];
+}
+
+export function nestedLabel(children: readonly ChatHistoryEntry[]): string {
+  const sessions = children.filter((child) => child.spawned).length;
+  const subagents = children.length - sessions;
+  return [
+    subagents ? `${subagents} ${subagents === 1 ? "subagent" : "subagents"}` : "",
+    sessions ? `${sessions} ${sessions === 1 ? "session" : "sessions"}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
 
 function observe(entry: ChatHistoryEntry, state: AgentState) {
   entry.observedState = entry.observedState ? moreUrgent(entry.observedState, state) : state;
@@ -61,6 +81,7 @@ export function chatHistoryList(
   const identities = new Map<string, ChatHistoryEntry>();
   const sources = new Map<string, ChatHistoryEntry>();
   const archiveMatches = new Set<string>();
+  const contentMatches = new Set<string>();
   const liveEntries = new Map<string, ChatHistoryEntry>();
   const chatIds = new Set(tabs.flatMap((tab) => (tab.thread ? [tab.thread.id] : [])));
   const savedDates = new Map(saved.map((thread) => [thread.id, thread.updatedAt]));
@@ -102,15 +123,20 @@ export function chatHistoryList(
   for (const thread of [...saved].sort(
     (a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id),
   )) {
-    if (chatIds.has(thread.id)) {
-      const entry = entries.find((entry) => entry.id === `chat:${thread.id}`);
-      if (entry && thread.running) observe(entry, "working");
-      continue;
-    }
     const key =
       thread.agent && thread.runtimeId
         ? nativeKey(thread.agent, thread.runtimeId, thread.host)
         : null;
+    if (chatIds.has(thread.id)) {
+      const entry = entries.find((entry) => entry.id === `chat:${thread.id}`);
+      if (!entry) continue;
+      if (thread.running) observe(entry, "working");
+      if (thread.title) entry.title = thread.title;
+      keywords.set(entry.id, `${keywords.get(entry.id) ?? ""} ${thread.title}`);
+      if (thread.sourceId && !sources.has(thread.sourceId)) sources.set(thread.sourceId, entry);
+      if (key && !identities.has(key)) identities.set(key, entry);
+      continue;
+    }
     const existing =
       (thread.sourceId ? sources.get(thread.sourceId) : undefined) ||
       (key ? identities.get(key) : undefined);
@@ -146,7 +172,6 @@ export function chatHistoryList(
     if (thread.sourceId && !sources.has(thread.sourceId)) sources.set(thread.sourceId, entry);
   }
   for (const session of native) {
-    if (!nativeChatAgent(session.agent)) continue;
     const key = session.session_id
       ? nativeKey(session.agent, session.session_id, session.host)
       : null;
@@ -164,10 +189,14 @@ export function chatHistoryList(
     else existing.seenKeys.push(`native:${session.id}`);
     entry.provider ??= session.agent;
     entry.projectId =
-      session.project_id ??
       entry.projectId ??
+      session.project_id ??
       projectForFolder(session.cwd, projectFolders)?.id ??
       session.project_id;
+    const hit = session as LiveSession & { snippets?: string[]; matched?: string[] };
+    if (hit.snippets?.length) entry.snippets = hit.snippets;
+    if (hit.matched?.length) entry.matched = hit.matched;
+    if (hit.matched?.length) contentMatches.add(entry.id);
     observe(entry, liveSessionState(session));
     entry.updatedAt = Math.max(entry.updatedAt, date);
     keywords.set(
@@ -177,6 +206,47 @@ export function chatHistoryList(
     if (key) identities.set(key, entry);
     liveEntries.set(session.id, entry);
   }
+  const nested = new Set<ChatHistoryEntry>();
+  const parentOf = new Map<ChatHistoryEntry, ChatHistoryEntry>();
+  const chatEntries = new Map(entries.map((entry) => [entry.id, entry]));
+  const spawnParent = (id: string | null | undefined) =>
+    id ? (liveEntries.get(id) ?? chatEntries.get(`chat:${id}`)) : undefined;
+  const nest = (child: ChatHistoryEntry | undefined, parent: ChatHistoryEntry | undefined) => {
+    if (!child || !parent || nested.has(child)) return false;
+    for (let at: ChatHistoryEntry | undefined = parent; at; at = parentOf.get(at))
+      if (at === child) return false;
+    parent.children = [...(parent.children ?? []), child];
+    parentOf.set(child, parent);
+    nested.add(child);
+    return true;
+  };
+  for (const session of native) {
+    const parent = session.parent_id ? liveEntries.get(session.parent_id) : undefined;
+    nest(liveEntries.get(session.id), parent);
+  }
+  const nestSpawn = (child: ChatHistoryEntry | undefined, from: string | null | undefined) => {
+    if (child && nest(child, spawnParent(from))) child.spawned = true;
+  };
+  for (const session of native) nestSpawn(liveEntries.get(session.id), session.spawned_from_id);
+  for (const entry of entries)
+    nestSpawn(
+      entry,
+      entry.kind === "local"
+        ? entry.tab.thread?.spawnedBy?.sessionId
+        : entry.kind === "saved"
+          ? entry.thread.spawnedFrom
+          : undefined,
+    );
+  const rollup = (entry: ChatHistoryEntry) => {
+    if (!entry.children) return;
+    for (const child of entry.children) rollup(child);
+    entry.children.sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+    const busy = rollupState(entry.children.map((child) => child.observedState));
+    if (busy) observe(entry, busy);
+    entry.updatedAt = Math.max(entry.updatedAt, ...entry.children.map((child) => child.updatedAt));
+    entry.seenKeys.push(...entry.children.flatMap((child) => child.seenKeys));
+  };
+  for (const entry of entries) if (!nested.has(entry)) rollup(entry);
   for (const terminal of terminals) {
     if (terminal.status !== "running" || (terminal.kind === "shell" && !includeShells)) continue;
     const linked = terminal.live_session_id ? liveEntries.get(terminal.live_session_id) : undefined;
@@ -231,6 +301,8 @@ export function chatHistoryList(
     entry.provider ??= session.agent;
     if (entry.projectId === undefined) entry.projectId = session.project_id;
     entry.updatedAt = Math.max(entry.updatedAt, date);
+    const hit = session as ArchiveSession & { passages?: { snippet: string }[] };
+    if (hit.passages?.length) entry.snippets = hit.passages.map((passage) => passage.snippet);
     // A full-text archive hit must still reveal its canonical conversation, even if the title differs.
     archiveMatches.add(entry.id);
     keywords.set(
@@ -240,17 +312,25 @@ export function chatHistoryList(
   }
   for (const entry of entries) {
     if (entry.projectId) continue;
-    const cwd =
-      entry.kind === "local"
-        ? (entry.tab.thread?.cwd ?? entry.tab.workspace?.cwd)
-        : entry.kind === "native"
-          ? entry.session.cwd
-          : entry.kind === "terminal"
-            ? entry.terminal.cwd
-            : null;
-    entry.projectId = projectForFolder(cwd, projectFolders)?.id ?? entry.projectId;
+    entry.projectId = projectForFolder(entryCwd(entry), projectFolders)?.id ?? entry.projectId;
   }
+  for (const entry of entries)
+    if (entry.children?.length && !nested.has(entry))
+      keywords.set(
+        entry.id,
+        withDescendants(entry)
+          .map((item) => keywords.get(item.id) ?? item.title)
+          .join(" "),
+      );
+  const keepSpawned = (entry: ChatHistoryEntry) => {
+    if (!entry.children) return;
+    entry.children = entry.children.filter((child) => child.spawned);
+    for (const child of entry.children) keepSpawned(child);
+    if (!entry.children.length) delete entry.children;
+  };
+  for (const entry of entries) if (!nested.has(entry)) keepSpawned(entry);
   return entries
+    .filter((entry) => !nested.has(entry))
     .filter(
       (entry) =>
         projectScope === "all" ||
@@ -259,9 +339,20 @@ export function chatHistoryList(
           : entry.projectId === projectScope),
     )
     .filter(
-      (entry) => matches(keywords.get(entry.id) ?? entry.title) || archiveMatches.has(entry.id),
+      (entry) =>
+        [entry, ...(entry.children ?? [])].some(
+          (item) => archiveMatches.has(item.id) || contentMatches.has(item.id),
+        ) || matches(keywords.get(entry.id) ?? entry.title),
     )
     .sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
+}
+
+/** The row's provider: the live agent for discovered sessions, the tab or thread agent otherwise. */
+export function entryAgent(entry: ChatHistoryEntry): string {
+  if (entry.kind === "local") return entry.tab.config.agent;
+  if (entry.kind === "saved") return entry.thread.agent || entry.provider || "";
+  if (entry.kind === "terminal") return entry.terminal.kind;
+  return entry.session.agent;
 }
 
 /** The row's state; finished activity this client has not seen reads Done until opened. */
@@ -293,4 +384,48 @@ export function historyEntryState(
   const state = entry.observedState ? moreUrgent(own, entry.observedState) : own;
   if (selected || entry.kind === "terminal" || entry.id.startsWith("draft:")) return state;
   return unseenState(state, entry.updatedAt, lastSeen(seen, entry.seenKeys));
+}
+
+export function entryCwd(entry: ChatHistoryEntry): string | null {
+  const cwd =
+    entry.kind === "local"
+      ? (entry.tab.thread?.cwd ?? entry.tab.workspace?.cwd)
+      : entry.kind === "native"
+        ? entry.session.cwd
+        : entry.kind === "terminal"
+          ? entry.terminal.cwd
+          : null;
+  return cwd?.trim() || null;
+}
+
+export function folderProjectName(cwd: string, taken: string[]): string {
+  const used = new Set(taken.map((name) => name.toLowerCase()));
+  const slug = (value: string) =>
+    value
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 90) || "project";
+  const parts = cwd.split(/[\\/]/).filter(Boolean);
+  const base = slug(parts[parts.length - 1] ?? "");
+  const candidates = [base, slug(parts.slice(-2).join("-"))];
+  for (let n = 2; n < 100; n++) candidates.push(`${base}-${n}`);
+  return candidates.find((name) => !used.has(name.toLowerCase())) ?? `${base}-${Date.now()}`;
+}
+
+export function folderLabel(
+  cwd: string | null,
+  folders: readonly (string | null)[],
+  projects: readonly string[] = [],
+): string {
+  if (!cwd) return "Unassigned";
+  const parts = (path: string) => path.split(/[\\/]/).filter(Boolean);
+  const own = parts(cwd);
+  const others = folders.flatMap((other) => (other && other !== cwd ? [parts(other)] : []));
+  const taken = new Set(projects.map((name) => name.toLowerCase()));
+  for (let depth = 1; depth <= own.length; depth++) {
+    const tail = own.slice(-depth).join("/");
+    if (taken.has(tail.toLowerCase())) continue;
+    if (!others.some((other) => other.slice(-depth).join("/") === tail)) return tail;
+  }
+  return cwd;
 }

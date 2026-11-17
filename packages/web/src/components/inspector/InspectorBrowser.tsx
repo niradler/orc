@@ -1,3 +1,4 @@
+import type { PreviewProfile, PreviewProfileChoice } from "@orc/core/desktop-preview";
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getApiUrl } from "@/api/client";
 import { CodeEditor } from "@/components/CodeEditor";
 import {
@@ -150,6 +152,7 @@ function FilePane({ tab }: { tab: PreviewFileTab }) {
 export function InspectorBrowser(): ReactNode {
   const preview = useDesktopPreview();
   const panel = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
   const state = preview?.browser.state ?? null;
   const dialog = state?.dialog ?? null;
   const dialogSession = dialog && state ? state.session_id : null;
@@ -398,102 +401,126 @@ export function InspectorBrowser(): ReactNode {
             className="shrink-0 border-b border-border px-3 py-1 text-xs"
             data-testid="preview-display-settings"
           >
-            <summary className="cursor-pointer">Browser profile, display & recording</summary>
-            <div className="flex flex-wrap items-center gap-2 py-2">
-              <select
-                aria-label="Browser profile"
-                data-testid="preview-browser-profile"
-                className="form-control h-8 min-w-0 max-w-48 text-xs"
-                disabled={browser.profilesPending}
-                value={browser.profileId ?? ""}
-                onChange={(event) => browser.selectProfile(event.target.value || null)}
-              >
-                <option value="">Temporary · this chat</option>
-                {browser.profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Browser color scheme"
-                className="form-control h-8 text-xs"
-                disabled={!state || browser.displayBusy}
-                value={state?.color_scheme ?? "system"}
-                onChange={(event) =>
-                  browser.display({
-                    action: "appearance",
-                    color_scheme: event.target.value as "system" | "light" | "dark",
-                  })
-                }
-              >
-                <option value="system">System appearance</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-              <select
-                aria-label="Browser viewport"
-                className="form-control h-8 text-xs"
-                defaultValue=""
-                disabled={!state || browser.displayBusy}
-                onChange={(event) => {
-                  if (event.target.value === "fill") {
-                    browser.display({ action: "resize_reset" });
-                    return;
-                  }
-                  const [width, height] = event.target.value.split("x").map(Number);
-                  if (width && height)
-                    browser.display({
-                      action: "resize",
-                      width,
-                      height,
-                      device_scale_factor: 1,
-                      mobile: width < 600,
-                    });
-                }}
-              >
-                <option value="" disabled>
-                  Viewport size
-                </option>
-                <option value="1280x720">Desktop 1280 × 720</option>
-                <option value="fill">Fit panel</option>
-                <option value="768x1024">Tablet 768 × 1024</option>
-                <option value="390x844">Phone 390 × 844</option>
-              </select>
-              <button
-                type="button"
-                className={button}
-                data-testid="preview-record-start"
-                disabled={!state || browser.displayBusy || state.recording_available}
-                onClick={() => browser.display({ action: "recording_start", max_seconds: 60 })}
-              >
-                Record browser
-              </button>
-              <button
-                type="button"
-                className={button}
-                data-testid="preview-record-stop"
-                disabled={!state?.recording_available || browser.displayBusy}
-                onClick={() => browser.display({ action: "recording_stop" })}
-              >
-                Save recording
-              </button>
-              {state?.recording && <span role="status">Recording · up to 60 seconds</span>}
-              {browser.recording && (
+            <summary className="cursor-pointer">
+              {profileLabel(browser.profileId, browser.profiles)}
+              {state?.recording && <span className="ml-2 text-error">● Recording</span>}
+            </summary>
+            <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 py-2">
+              <span className="text-muted-foreground">Profile</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  aria-label="Browser profile"
+                  data-testid="preview-browser-profile"
+                  className="form-control h-8 min-w-0 max-w-56 text-xs"
+                  disabled={browser.profilesPending}
+                  value={browser.profileId}
+                  onChange={(event) => browser.selectProfile(event.target.value)}
+                >
+                  <option value="default">ORC browser · shared</option>
+                  {browser.profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name}
+                    </option>
+                  ))}
+                  <option value="temporary">Temporary · this chat only</option>
+                </select>
                 <button
                   type="button"
                   className={button}
-                  data-testid="preview-recording-view"
-                  onClick={() => browser.openRecording()}
+                  data-testid="preview-browser-import"
+                  onClick={() => navigate("/settings?settingsSection=general")}
                 >
-                  View {browser.recording.name.endsWith(".webm") ? "recording" : "download"}
-                  {browser.recording.saving
-                    ? " · saving…"
-                    : browser.recording.path
-                      ? " · saved"
-                      : " · save failed"}
+                  Import logins…
                 </button>
-              )}
+              </div>
+              <span className="text-muted-foreground">Display</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  aria-label="Browser color scheme"
+                  className="form-control h-8 text-xs"
+                  disabled={!state || browser.displayBusy}
+                  value={state?.color_scheme ?? "system"}
+                  onChange={(event) =>
+                    browser.display({
+                      action: "appearance",
+                      color_scheme: event.target.value as "system" | "light" | "dark",
+                    })
+                  }
+                >
+                  <option value="system">System appearance</option>
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+                <select
+                  aria-label="Browser viewport"
+                  className="form-control h-8 text-xs"
+                  defaultValue=""
+                  disabled={!state || browser.displayBusy}
+                  onChange={(event) => {
+                    if (event.target.value === "fill") {
+                      browser.display({ action: "resize_reset" });
+                      return;
+                    }
+                    const [width, height] = event.target.value.split("x").map(Number);
+                    if (width && height)
+                      browser.display({
+                        action: "resize",
+                        width,
+                        height,
+                        device_scale_factor: 1,
+                        mobile: width < 600,
+                      });
+                  }}
+                >
+                  <option value="" disabled>
+                    Viewport size
+                  </option>
+                  <option value="fill">Fit panel</option>
+                  <option value="1280x720">Desktop 1280 × 720</option>
+                  <option value="768x1024">Tablet 768 × 1024</option>
+                  <option value="390x844">Phone 390 × 844</option>
+                </select>
+              </div>
+              <span className="text-muted-foreground">Recording</span>
+              <div className="flex flex-wrap items-center gap-2">
+                {state?.recording_available ? (
+                  <button
+                    type="button"
+                    className={button}
+                    data-testid="preview-record-stop"
+                    disabled={browser.displayBusy}
+                    onClick={() => browser.display({ action: "recording_stop" })}
+                  >
+                    {state.recording ? "Stop & save" : "Save recording"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className={button}
+                    data-testid="preview-record-start"
+                    disabled={!state || browser.displayBusy}
+                    onClick={() => browser.display({ action: "recording_start", max_seconds: 90 })}
+                  >
+                    Record
+                  </button>
+                )}
+                {state?.recording && <span role="status">Up to 90 seconds</span>}
+                {browser.recording && (
+                  <button
+                    type="button"
+                    className={button}
+                    data-testid="preview-recording-view"
+                    onClick={() => browser.openRecording()}
+                  >
+                    View {browser.recording.name.endsWith(".webm") ? "recording" : "download"}
+                    {browser.recording.saving
+                      ? " · saving…"
+                      : browser.recording.path
+                        ? " · saved"
+                        : " · save failed"}
+                  </button>
+                )}
+              </div>
             </div>
             {state?.downloads?.map((download) => (
               <div key={download.id} className="flex items-center gap-2 py-1">
@@ -532,4 +559,11 @@ export function InspectorBrowser(): ReactNode {
       )}
     </div>
   );
+}
+
+function profileLabel(choice: PreviewProfileChoice, profiles: PreviewProfile[]): string {
+  if (choice === "default") return "ORC browser profile · display & recording";
+  if (choice === "temporary") return "Temporary profile · display & recording";
+  const name = profiles.find((profile) => profile.id === choice)?.name ?? "Saved profile";
+  return `${name} profile · display & recording`;
 }

@@ -94,6 +94,7 @@ app.openapi(
       SELECT backend, created_at,
         CASE WHEN backend = 'claude' AND tokens_version < ? THEN NULL ELSE tokens_used END AS tokens_used
       FROM gateway_sessions WHERE chat_id = ? AND created_at >= ?
+        AND NOT (backend = 'claude' AND parent_session_id IS NOT NULL)
     )
     SELECT backend AS agent, date(created_at, 'unixepoch') AS date,
       count(*) AS sessions, coalesce(sum(max(coalesce(tokens_used, 0), 0)), 0) AS tokens,
@@ -154,6 +155,11 @@ app.openapi(
         granularity: z.enum(["day", "hour"]).default("day"),
         agent: z.string().max(64).optional(),
         model: z.string().max(200).optional(),
+        project_id: z
+          .string()
+          .max(64)
+          .optional()
+          .openapi({ description: "Project id, or unassigned for sessions without a project" }),
       }),
     },
     responses: {
@@ -172,10 +178,18 @@ app.openapi(
     const agent = query.agent?.trim() || null;
     const model = query.model?.trim() || null;
     const granularity = query.granularity;
+    const projectId = query.project_id?.trim() || null;
+    const projectClause =
+      projectId === "unassigned"
+        ? ["session_id IN (SELECT id FROM gateway_sessions WHERE project_id IS NULL)"]
+        : projectId
+          ? ["session_id IN (SELECT id FROM gateway_sessions WHERE project_id = ?)"]
+          : [];
+    const projectBinds = projectId && projectId !== "unassigned" ? [projectId] : [];
 
     const where = (extra: string[] = [], binds: (string | number)[] = []) => {
-      const clauses = [...(sinceMs === null ? [] : ["ts >= ?"]), ...extra];
-      const values = [...(sinceMs === null ? [] : [sinceMs]), ...binds];
+      const clauses = [...(sinceMs === null ? [] : ["ts >= ?"]), ...projectClause, ...extra];
+      const values = [...(sinceMs === null ? [] : [sinceMs]), ...projectBinds, ...binds];
       return { sql: clauses.length ? `WHERE ${clauses.join(" AND ")}` : "", binds: values };
     };
     const agentFilter = agent ? { sql: "agent = ?", bind: agent } : null;
@@ -261,6 +275,7 @@ app.openapi(
          FROM gateway_sessions gs
          LEFT JOIN usage ON usage.session_id = gs.id
          WHERE gs.chat_id = ?
+           AND NOT (gs.backend = 'claude' AND gs.parent_session_id IS NOT NULL)
            AND (? IS NULL OR gs.created_at >= ?)`,
       )
       .get(

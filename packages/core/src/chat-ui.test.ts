@@ -1,7 +1,48 @@
 import { describe, expect, test } from "bun:test";
-import { CHAT_UI_FENCE, chatUiCatalogText, parseChatUiSpec } from "./chat-ui";
+import {
+  CHAT_UI_FENCE,
+  CHAT_UI_HTML_MAX_LENGTH,
+  CHAT_UI_MAX_CHARTS,
+  CHAT_UI_MAX_HTML,
+  chatUiCatalog,
+  chatUiCatalogText,
+  parseChatUiSpec,
+} from "./chat-ui";
 
 const parse = (spec: unknown) => parseChatUiSpec(JSON.stringify(spec));
+
+const WAVE_2: Record<string, Record<string, unknown>> = {
+  Metric: {
+    label: "Open tasks",
+    value: 12,
+    unit: "tasks",
+    hint: "+3 this week",
+    trend: "up",
+  },
+  Progress: { value: 62, label: "Migration" },
+  Table: {
+    columns: ["Task", "Status"],
+    rows: [
+      ["Render components", "Doing"],
+      ["Review chart", "Done"],
+    ],
+    caption: "Today",
+  },
+  Sparkline: { values: [1, 3, 2, 5, 4], label: "Builds" },
+  Chart: {
+    kind: "line",
+    labels: ["Mon", "Tue", "Wed"],
+    series: [{ name: "Runs", values: [2, 5, 3] }],
+    title: "Runs",
+  },
+  KeyValue: { items: [{ label: "Host", value: "This ORC server" }], title: "Runtime" },
+  Callout: { tone: "warn", text: "Cache may need rebuilding.", title: "Heads up" },
+  Html: { html: "<p>Hello</p>", title: "Demo", height: "tall" },
+  SessionUsage: { sessionId: "session_1" },
+};
+
+const single = (type: string, props: unknown) =>
+  parse({ root: "a", elements: { a: { type, props } } });
 
 describe("parseChatUiSpec", () => {
   test("should reject malformed elements, cycles, missing children and executable watchers", () => {
@@ -74,10 +115,7 @@ describe("parseChatUiSpec", () => {
       "Text",
       "Markdown",
       "Badge",
-      "KeyValue",
       "Stat",
-      "Table",
-      "Progress",
       "Alert",
       "Link",
       "Divider",
@@ -133,6 +171,186 @@ describe("parseChatUiSpec", () => {
   });
 });
 
+describe("wave 2 presentational components", () => {
+  test("accepts every new component through the parser", () => {
+    for (const [type, props] of Object.entries(WAVE_2))
+      expect({ type, result: single(type, props).ok }).toEqual({ type, result: true });
+  });
+
+  test("accepts a layout that mixes the new components", () => {
+    const keys = Object.keys(WAVE_2);
+    const result = parse({
+      root: "main",
+      elements: {
+        main: { type: "Stack", children: keys },
+        ...Object.fromEntries(
+          Object.entries(WAVE_2).map(([type, props]) => [type, { type, props }]),
+        ),
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  test("rejects malformed metric, progress, sparkline, key-value and callout props", () => {
+    expect(single("Metric", { label: "Open tasks" }).ok).toBe(false);
+    expect(single("Metric", { label: "", value: 1 }).ok).toBe(false);
+    expect(single("Metric", { label: "Open tasks", value: "x".repeat(25) }).ok).toBe(false);
+    expect(single("Metric", { label: "Open tasks", value: 1, trend: "sideways" }).ok).toBe(false);
+    expect(single("Metric", { label: "Open tasks", value: 1, unit: "x".repeat(13) }).ok).toBe(
+      false,
+    );
+    expect(single("Metric", { label: "Open tasks", value: 1, hint: "x".repeat(61) }).ok).toBe(
+      false,
+    );
+    expect(
+      single("Metric", {
+        label: "Open tasks",
+        value: 1,
+        unit: "x".repeat(12),
+        hint: "x".repeat(60),
+      }).ok,
+    ).toBe(true);
+    expect(single("Progress", { value: 101 }).ok).toBe(false);
+    expect(single("Progress", { value: -1 }).ok).toBe(false);
+    expect(single("Progress", { value: 50.5 }).ok).toBe(false);
+    expect(single("Progress", { value: 50, label: "x".repeat(81) }).ok).toBe(false);
+    expect(single("Sparkline", { values: [1] }).ok).toBe(false);
+    expect(single("Sparkline", { values: Array.from({ length: 61 }, (_, i) => i) }).ok).toBe(false);
+    expect(single("Sparkline", { values: [1, "two"] }).ok).toBe(false);
+    expect(single("KeyValue", { items: [] }).ok).toBe(false);
+    expect(single("KeyValue", { items: [{ label: "Note", value: "x".repeat(201) }] }).ok).toBe(
+      false,
+    );
+    expect(
+      single("KeyValue", {
+        items: Array.from({ length: 9 }, (_, i) => ({ label: `L${i}`, value: "v" })),
+      }).ok,
+    ).toBe(false);
+    expect(single("Callout", { tone: "success", text: "Done" }).ok).toBe(false);
+    expect(single("Callout", { tone: "info", text: "x".repeat(281) }).ok).toBe(false);
+  });
+
+  test("bounds tables to six columns and fifty rows with matching cells", () => {
+    const ok = single("Table", WAVE_2.Table).ok;
+    expect(ok).toBe(true);
+    expect(
+      single("Table", {
+        columns: Array.from({ length: 7 }, (_, i) => `C${i}`),
+        rows: [Array.from({ length: 7 }, () => "")],
+      }).ok,
+    ).toBe(false);
+    expect(
+      single("Table", {
+        columns: ["A"],
+        rows: Array.from({ length: 51 }, () => ["x"]),
+      }).ok,
+    ).toBe(false);
+    expect(single("Table", { columns: ["A", "B"], rows: [["one cell"]] }).ok).toBe(false);
+    expect(single("Table", { columns: ["A"], rows: [["one", "two"]] }).ok).toBe(false);
+    expect(single("Table", { columns: ["A"], rows: [["   "]] }).ok).toBe(false);
+    expect(single("Table", { columns: ["x".repeat(41)], rows: [["x"]] }).ok).toBe(false);
+  });
+
+  test("rejects malformed chart series but allows an empty chart", () => {
+    expect(single("Chart", WAVE_2.Chart).ok).toBe(true);
+    expect(
+      single("Chart", {
+        labels: ["Mon", "Tue"],
+        series: [{ name: "Runs", values: [1] }],
+      }).ok,
+    ).toBe(false);
+    expect(
+      single("Chart", {
+        labels: ["Mon"],
+        series: [
+          { name: "Runs", values: [1] },
+          { name: "Runs", values: [2] },
+        ],
+      }).ok,
+    ).toBe(false);
+    expect(
+      single("Chart", {
+        labels: ["Mon"],
+        series: Array.from({ length: 5 }, (_, i) => ({ name: `S${i}`, values: [i] })),
+      }).ok,
+    ).toBe(false);
+    expect(
+      single("Chart", {
+        labels: Array.from({ length: 25 }, (_, i) => `L${i}`),
+        series: [{ name: "Runs", values: Array.from({ length: 25 }, (_, i) => i) }],
+      }).ok,
+    ).toBe(false);
+    expect(single("Chart", { labels: ["Mon"], series: [{ name: "Runs", values: ["1"] }] }).ok).toBe(
+      false,
+    );
+    // An empty series is how an agent says "no data yet"; the renderer shows an empty state.
+    expect(single("Chart", { labels: [], series: [{ name: "Runs", values: [] }] }).ok).toBe(true);
+  });
+
+  test("bounds sandboxed html and session ids", () => {
+    expect(single("Html", WAVE_2.Html).ok).toBe(true);
+    expect(single("Html", { html: "<p>x</p>".repeat(3000) }).ok).toBe(false);
+    expect(single("Html", { html: "" }).ok).toBe(false);
+    expect(single("Html", { html: "<p>x</p>", height: "huge" }).ok).toBe(false);
+    expect(single("SessionUsage", { sessionId: "../sessions/1" }).ok).toBe(false);
+    expect(single("SessionUsage", {}).ok).toBe(false);
+  });
+
+  test("accepts an Html snippet at exactly the character limit and rejects one over it", () => {
+    expect(CHAT_UI_HTML_MAX_LENGTH).toBe(20_000);
+    expect(single("Html", { html: "x".repeat(CHAT_UI_HTML_MAX_LENGTH) }).ok).toBe(true);
+    expect(single("Html", { html: "x".repeat(CHAT_UI_HTML_MAX_LENGTH + 1) }).ok).toBe(false);
+  });
+
+  test("caps charts and inline frames per spec", () => {
+    const repeated = (type: string, props: unknown, count: number) => {
+      const children = Array.from({ length: count }, (_, index) => `n${index}`);
+      return {
+        root: "main",
+        elements: {
+          main: { type: "Stack", children },
+          ...Object.fromEntries(children.map((key) => [key, { type, props }])),
+        },
+      };
+    };
+    expect(parse(repeated("Chart", WAVE_2.Chart, CHAT_UI_MAX_CHARTS)).ok).toBe(true);
+    expect(parse(repeated("Chart", WAVE_2.Chart, CHAT_UI_MAX_CHARTS + 1))).toMatchObject({
+      ok: false,
+      error: `Spec exceeds ${CHAT_UI_MAX_CHARTS} Chart components`,
+    });
+    expect(parse(repeated("Html", WAVE_2.Html, CHAT_UI_MAX_HTML)).ok).toBe(true);
+    expect(parse(repeated("Html", WAVE_2.Html, CHAT_UI_MAX_HTML + 1))).toMatchObject({
+      ok: false,
+      error: `Spec exceeds ${CHAT_UI_MAX_HTML} Html components`,
+    });
+    // A shared definition still mounts once per reference, so the cap counts renders.
+    expect(
+      parse({
+        root: "main",
+        elements: {
+          main: {
+            type: "Stack",
+            children: Array.from({ length: CHAT_UI_MAX_CHARTS + 1 }, () => "chart"),
+          },
+          chart: { type: "Chart", props: WAVE_2.Chart },
+        },
+      }),
+    ).toMatchObject({ ok: false, error: `Spec exceeds ${CHAT_UI_MAX_CHARTS} Chart components` });
+  });
+
+  test("rejects a layout over the rendered element budget", () => {
+    const children = Array.from({ length: 200 }, (_, i) => `n${i}`);
+    const elements: Record<string, unknown> = {
+      main: { type: "Stack", children },
+      ...Object.fromEntries(children.map((key) => [key, { type: "Stack", children: [] }])),
+    };
+    expect(parse({ root: "main", elements })).toMatchObject({
+      ok: false,
+      error: "Spec exceeds 200 elements",
+    });
+  });
+});
+
 describe("chatUiCatalogText", () => {
   test("documents every component, action and the webchat-only rule", () => {
     const text = chatUiCatalogText();
@@ -140,6 +358,7 @@ describe("chatUiCatalogText", () => {
     expect(text).toContain("webchat");
     for (const name of ["Task {", "TaskList {", "Job {", "Button {", "task.update {", "job.run {"])
       expect(text).toContain(name);
+    for (const name of Object.keys(WAVE_2)) expect(text).toContain(`- ${name} {`);
     expect(text).toContain("Markdown");
     expect(text).not.toContain("- Stat ");
     expect(text).toContain("## Examples");
@@ -149,7 +368,45 @@ describe("chatUiCatalogText", () => {
     const lean = chatUiCatalogText("lean");
     for (const name of ["Task {", "Scratchpad {", "Stack {", "task.update {", "job.setEnabled {"])
       expect(lean).toContain(name);
+    for (const name of Object.keys(WAVE_2)) expect(lean).toContain(`- ${name} {`);
     expect(lean).not.toContain("## Examples");
     expect(lean.length).toBeLessThan(chatUiCatalogText().length / 2);
+  });
+
+  test("stays within the prompt budget", () => {
+    // Wave 1 shipped lean 1239 / full 3612 characters; nine components added ~700/1816.
+    // The lean catalog rides in every webchat system prompt, so growth stays bounded.
+    const lean = chatUiCatalogText("lean").length;
+    const full = chatUiCatalogText("full").length;
+    expect(lean).toBeLessThanOrEqual(2_100);
+    expect(full).toBeLessThanOrEqual(5_600);
+  });
+
+  test("keeps the seven existing components and their actions unchanged", () => {
+    const { components, actions } = chatUiCatalog.data;
+    expect(Object.keys(components).slice(0, 7)).toEqual([
+      "Stack",
+      "Button",
+      "Task",
+      "TaskList",
+      "Job",
+      "SessionList",
+      "Scratchpad",
+    ]);
+    expect(components.Stack.props.safeParse({ direction: "horizontal", gap: "lg" }).success).toBe(
+      true,
+    );
+    expect(components.Stack.props.safeParse({ direction: "diagonal" }).success).toBe(false);
+    expect(components.Button.props.safeParse({ label: "Done", variant: "primary" }).success).toBe(
+      true,
+    );
+    expect(components.TaskList.props.safeParse({ limit: 51 }).success).toBe(false);
+    expect(Object.keys(actions)).toEqual([
+      "task.update",
+      "task.comment",
+      "task.delete",
+      "job.run",
+      "job.setEnabled",
+    ]);
   });
 });

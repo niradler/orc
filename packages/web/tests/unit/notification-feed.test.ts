@@ -147,16 +147,16 @@ test("should recognize the open native session by direct link or origin identity
     host: "lab",
     session_id: "runtime-1",
   };
-  const direct = { ...item("native", "agent.finished"), path: "/sessions?session=native-1" };
+  const direct = { ...item("native", "agent.finished"), path: "/chat?sessionLive=native-1" };
   const sessions = {
     active: true,
-    pathname: "/sessions",
-    search: "?session=native-1",
+    pathname: "/chat",
+    search: "?sessionLive=native-1",
     chatThreadId: null,
     sessions: [session],
   };
   expect(notificationInView(direct, sessions)).toBe(true);
-  expect(notificationInView(direct, { ...sessions, search: "?session=native-2" })).toBe(false);
+  expect(notificationInView(direct, { ...sessions, search: "?sessionLive=native-2" })).toBe(false);
   const request = HumanRequestSchema.parse({
     id: "request-2",
     input: {
@@ -197,5 +197,72 @@ test("should recognize the open native session by direct link or origin identity
         },
       ],
     }),
+  ).toBe(false);
+});
+
+test("should recognize a session notification in the chat thread resumed from it", () => {
+  const finished = { ...item("native-1", "agent.finished"), path: "/chat?sessionLive=native-1" };
+  const view = {
+    active: true,
+    pathname: "/chat",
+    search: "?project=all",
+    chatThreadId: "thread-1",
+    threadSourceId: "native-1",
+  };
+  expect(notificationInView(finished, view)).toBe(true);
+  expect(notificationInView(finished, { ...view, threadSourceId: "native-2" })).toBe(false);
+  expect(notificationInView(finished, { ...view, pathname: "/tasks" })).toBe(false);
+  expect(notificationInView(finished, { ...view, pathname: "/tasks", search: "?chat=open" })).toBe(
+    true,
+  );
+  // A human request's own id is not a session id.
+  expect(
+    notificationInView(
+      {
+        ...item("request-1", "human.request"),
+        path: "/activity?notifications=open&request=request-1",
+      },
+      { ...view, threadSourceId: "request-1" },
+    ),
+  ).toBe(false);
+  const request = HumanRequestSchema.parse({
+    id: "request-9",
+    input: {
+      kind: "question",
+      prompt: "Continue?",
+      origin: { backend: "codex-cli", session_id: "runtime-1", request_id: "request-9" },
+    },
+    status: "pending",
+    version: 1,
+    response: null,
+    created_at: 1000,
+    expires_at: 10000,
+    responded_at: null,
+    delivered_at: null,
+  });
+  const resumed = {
+    ...view,
+    sessions: [{ id: "native-1", agent: "codex-cli", host: null, session_id: "runtime-1" }],
+    requests: [request],
+  };
+  expect(
+    notificationInView(
+      {
+        ...item(request.id, "human.request"),
+        source_id: request.id,
+        path: `/activity?notifications=open&request=${request.id}`,
+      },
+      resumed,
+    ),
+  ).toBe(true);
+  expect(
+    notificationInView(
+      {
+        ...item(request.id, "human.request"),
+        source_id: request.id,
+        path: `/activity?notifications=open&request=${request.id}`,
+      },
+      { ...resumed, threadSourceId: "native-2", sessions: [] },
+    ),
   ).toBe(false);
 });

@@ -7,6 +7,7 @@ import type {
   ChannelView,
 } from "@orc/core/channels";
 import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
+import type { ChatAnalytics } from "@orc/core/chat-analytics";
 import type { PreviewFile, PreviewRequest } from "@orc/core/desktop-preview";
 import type { GithubSyncState } from "@orc/core/github-sync";
 import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
@@ -221,6 +222,7 @@ import type {
   JobRun,
   JobRunLog,
   LiveSession,
+  LiveSessionStatus,
   PackageFull,
   PackageMeta,
   Project,
@@ -816,7 +818,7 @@ export const api = {
         cwd,
         providerId,
       }),
-    list: () =>
+    list: (includeHidden = false) =>
       req<{
         threads: {
           id: string;
@@ -829,10 +831,12 @@ export const api = {
           host?: string | null;
           projectId?: string | null;
         }[];
-      }>("GET", "/chat/threads"),
+      }>("GET", "/chat/threads", undefined, includeHidden ? { include_hidden: true } : undefined),
     cancel: (runId: string) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/cancel`),
     get: (id: string) => req<ChatThread>("GET", `/chat/threads/${encodeURIComponent(id)}`),
+    analytics: (id: string) =>
+      req<ChatAnalytics>("GET", `/chat/threads/${encodeURIComponent(id)}/analytics`),
     byMessage: (messageId: string, signal?: AbortSignal) =>
       req<ChatThread | null>(
         "GET",
@@ -844,10 +848,20 @@ export const api = {
     fork: (id: string, messageId: string) =>
       req<ChatThread>("POST", `/chat/threads/${encodeURIComponent(id)}/fork`, { messageId }),
     session: (id: string) =>
-      req<{ changed: boolean; running: boolean; queued: { id: string; title: string }[] }>(
-        "GET",
-        `/chat/threads/${encodeURIComponent(id)}/session`,
-      ),
+      req<{
+        changed: boolean;
+        running: boolean;
+        live: {
+          id: string;
+          agent: string;
+          tokens_used: number | null;
+          tokens_estimated: boolean;
+          status: LiveSessionStatus;
+          created_at: string;
+          last_activity_at: string | null;
+        } | null;
+        queued: { id: string; title: string }[];
+      }>("GET", `/chat/threads/${encodeURIComponent(id)}/session`),
     refresh: (id: string) =>
       req<ChatThread>("POST", `/chat/threads/${encodeURIComponent(id)}/refresh`),
     configure: (
@@ -891,6 +905,7 @@ export const api = {
       granularity: "day" | "hour";
       agent?: string;
       model?: string;
+      project_id?: string;
     }) => req<UsageReport>("GET", "/usage/report", undefined, params),
     usageQuotas: () => req<{ accounts: UsageQuota[] }>("GET", "/usage/quotas"),
     mcp: {
@@ -1249,10 +1264,13 @@ export const api = {
   sessions: {
     cacheUsage: (id: string) =>
       req<SessionCacheUsage>("GET", `/sessions/live/${encodeURIComponent(id)}/cache`),
+    analytics: (id: string) =>
+      req<ChatAnalytics>("GET", `/sessions/live/${encodeURIComponent(id)}/analytics`),
     archive: (params: {
       q?: string;
       project_id?: string;
       agent?: string;
+      mode?: "auto" | "lexical" | "semantic" | "hybrid";
       offset?: number;
       limit?: number;
     }) => req<ArchiveSearchResult>("GET", "/sessions/archive", undefined, params),
@@ -1262,10 +1280,6 @@ export const api = {
       req<{ indexed: number; failed: number; skipped: number }>("POST", "/sessions/archive/index", {
         project_id,
       }),
-    archiveTranscript: (
-      id: string,
-      params?: { revision?: number; offset?: number; limit?: number },
-    ) => req<TranscriptPage>("GET", `/sessions/archive/${id}/transcript`, undefined, params),
     archiveResume: (
       id: string,
       input: {
@@ -1318,6 +1332,7 @@ export const api = {
       project_id?: string;
       active?: boolean;
       include_hidden?: boolean;
+      include_children?: boolean;
       limit?: number;
     }) =>
       req<{ sessions: LiveSession[] }>(
@@ -1326,6 +1341,7 @@ export const api = {
         undefined,
         params as Record<string, string | number | boolean | undefined>,
       ),
+    liveOne: (id: string) => req<LiveSession>("GET", `/sessions/live/${encodeURIComponent(id)}`),
     update: (
       id: string,
       input: { task_id?: string | null; display_title?: string | null; hidden?: boolean },
@@ -1336,6 +1352,11 @@ export const api = {
       req<import("@orc/core/session-messages").SessionLineage>(
         "GET",
         `/sessions/live/${encodeURIComponent(id)}/lineage`,
+      ),
+    subagents: (id: string) =>
+      req<import("@orc/core/session-messages").SessionSubagents>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(id)}/subagents`,
       ),
     children: (id: string) =>
       req<{ sessions: import("@orc/core/session-messages").SessionStatus[] }>(
@@ -1446,6 +1467,10 @@ export const api = {
       }),
     projects: (name: string) =>
       req<{ project_ids: string[] }>("GET", `/skills/${encodeURIComponent(name)}/projects`),
+    setProjects: (name: string, project_ids: string[]) =>
+      req<{ project_ids: string[] }>("PUT", `/skills/${encodeURIComponent(name)}/projects`, {
+        project_ids,
+      }),
     create: (data: CreateSkillInput) => req<SkillFull>("POST", "/skills", data),
   },
   agents: {

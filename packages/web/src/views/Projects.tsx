@@ -18,6 +18,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FormDialog } from "@/components/FormDialog";
 import { GithubSyncFields } from "@/components/GithubSyncFields";
+import { HelpPopover } from "@/components/HelpPopover";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { Button } from "@/components/ui/button";
@@ -725,12 +726,17 @@ function EditProjectDialog({
                     />
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
-                    <Label
-                      htmlFor="edit-project-git-remote-url"
-                      className="font-label text-sm text-muted-foreground"
-                    >
-                      Git remote URL (optional)
-                    </Label>
+                    <div className="flex items-center gap-1">
+                      <Label
+                        htmlFor="edit-project-git-remote-url"
+                        className="font-label text-sm text-muted-foreground"
+                      >
+                        Git remote URL (optional)
+                      </Label>
+                      <HelpPopover label="git remote URL" testId="edit-project-git-remote-help">
+                        Clear this field to remove the saved address.
+                      </HelpPopover>
+                    </div>
                     <Input
                       id="edit-project-git-remote-url"
                       className="bg-background border-control-border text-on-surface font-body text-sm"
@@ -739,14 +745,21 @@ function EditProjectDialog({
                       onChange={(event) => setGitRemoteUrl(event.target.value)}
                       placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Clear this field to remove the saved address.
-                    </p>
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
-                    <Label htmlFor="edit-project-upload-directory">
-                      Upload directory (optional)
-                    </Label>
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="edit-project-upload-directory">
+                        Upload directory (optional)
+                      </Label>
+                      <HelpPopover
+                        label="upload directory"
+                        testId="edit-project-upload-directory-help"
+                      >
+                        Relative to the conversation folder, or an absolute path on its execution
+                        host. External folders may require agent read permission. Empty uses
+                        .orc/sessions.
+                      </HelpPopover>
+                    </div>
                     <Input
                       id="edit-project-upload-directory"
                       data-testid="edit-project-upload-directory"
@@ -754,11 +767,6 @@ function EditProjectDialog({
                       onChange={(event) => setUploadDirectory(event.target.value)}
                       placeholder=".orc/sessions"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Relative to the conversation folder, or an absolute path on its execution
-                      host. External folders may require agent read permission. Empty uses
-                      .orc/sessions.
-                    </p>
                   </div>
                   <GithubSyncFields
                     value={githubSync}

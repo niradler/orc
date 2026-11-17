@@ -1,29 +1,70 @@
+import { nativeChatAgent } from "@orc/core/chat";
+import { projectForFolder } from "@orc/core/project-path";
 import type { ArchiveSession } from "@orc/core/session-archive";
-import { useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { useChat } from "@/hooks/useChat";
 import { useProjects } from "@/hooks/useProjects";
 import { type SessionHomeNav, useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionSeen } from "@/hooks/useSessionSeen";
+import { useSessionSearch } from "@/hooks/useSessions";
 import { useSsh } from "@/hooks/useSsh";
 import { useStableOrder } from "@/hooks/useStableOrder";
 import type { AgentState } from "@/lib/agent-state";
-import { type ChatHistoryEntry, chatHistoryList, historyEntryState } from "@/lib/chat-history-list";
-import { useSelectedProject } from "@/lib/selected-project";
-import { filterCounts, matchesFilter, parseFilter, type SessionFilter } from "@/lib/session-filter";
+import {
+  type ChatHistoryEntry,
+  chatHistoryList,
+  entryAgent,
+  entryCwd,
+  folderLabel,
+  folderProjectName,
+  historyEntryState,
+  withDescendants,
+} from "@/lib/chat-history-list";
+import { resolveAgentId } from "@/lib/composer-chips";
+import {
+  filterCounts,
+  matchesFilter,
+  onSessionFilterChange,
+  parseFilter,
+  SESSION_FILTER_KEY,
+  type SessionFilter,
+} from "@/lib/session-filter";
+import { sessionHomeSearch } from "@/lib/session-home";
 import { markSeen } from "@/lib/session-seen";
 import { terminalPath } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
 
-const FILTER_KEY = "orc_chat_history_filter";
+const FILTER_KEY = SESSION_FILTER_KEY;
+const SORT_KEY = "orc_chat_history_sort";
+const DEEP_KEY = "orc_chat_history_deep";
+const AGENT_KEY = "orc_chat_history_agent";
+const HIDDEN_KEY = "orc_chat_history_hidden";
 // v2: per-project grouping became the default; the old key only records the
 // previous default, so it must not override the new one.
 const SECTION_KEY = "orc_chat_history_section_v2";
 export const UNASSIGNED_SECTION = "__unassigned__";
 
+export const folderSection = (cwd: string | null) => `${UNASSIGNED_SECTION}:${cwd ?? ""}`;
+
+type FolderGroupData = {
+  key: string;
+  cwd: string | null;
+  label: string;
+  rows: ChatHistoryEntry[];
+  latest: number;
+};
+
 export type SessionSection = "projects" | "recents";
+export type SessionSort = "active-desc" | "active-asc" | "agent";
+export const SESSION_SORTS: readonly SessionSort[] = ["active-desc", "active-asc", "agent"];
+export const SESSION_SORT_LABELS: Record<SessionSort, string> = {
+  "active-desc": "Last active: newest",
+  "active-asc": "Last active: oldest",
+  agent: "Agent",
+};
 
 function storedFilter(): SessionFilter {
   try {
@@ -31,6 +72,37 @@ function storedFilter(): SessionFilter {
   } catch {
     return "all";
   }
+}
+
+function storedSort(): SessionSort {
+  try {
+    const value = localStorage.getItem(SORT_KEY);
+    return value === "active-asc" || value === "agent" ? value : "active-desc";
+  } catch {
+    return "active-desc";
+  }
+}
+
+function storedFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function storedAgent(): string {
+  try {
+    return localStorage.getItem(AGENT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function store(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
 }
 
 function storedSection(): SessionSection {
@@ -65,9 +137,9 @@ export function useSessionHistory({
 }) {
   const chat = useChat();
   const navigate = useNavigate();
+  const location = useLocation();
   const { terminals } = useTerminals();
   const projectScope = chat.projectScope;
-  const selectedProject = useSelectedProject();
   const navigation = useSessionHome();
   const setOpen = (next: boolean) => navigation.go({ listOpen: next });
   const open = enabled && (forceOpen || docked || rail || navigation.listOpen);
@@ -80,12 +152,37 @@ export function useSessionHistory({
   const { data: projects, isLoading: projectsLoading, error: projectsError } = projectsQuery;
   const { data: ssh } = useSsh();
   const [section, setSection] = useState<SessionSection>(storedSection);
-  const [expandedProject, setExpandedProject] = useState<string | null>(null);
+  const [expandedProjects, setExpandedProjects] = useState<string[]>([]);
+  const [adoptFolder, setAdoptFolder] = useState<{ cwd: string; name: string } | null>(null);
+  const [deep, setDeepState] = useState(() => storedFlag(DEEP_KEY));
+  const [agentFilter, setAgentFilterState] = useState(storedAgent);
+  const [sort, setSortState] = useState<SessionSort>(storedSort);
+  const [includeHidden, setIncludeHiddenState] = useState(() => storedFlag(HIDDEN_KEY));
   const chooseSection = (next: SessionSection) => {
     setSection(next);
     try {
       localStorage.setItem(SECTION_KEY, next);
     } catch {}
+  };
+  const setDeep = (next: boolean) => {
+    setDeepState(next);
+    setVisibleCount(50);
+    store(DEEP_KEY, next ? "1" : "0");
+  };
+  const setAgentFilter = (next: string) => {
+    setAgentFilterState(next);
+    setVisibleCount(50);
+    store(AGENT_KEY, next);
+  };
+  const setSort = (next: SessionSort) => {
+    setSortState(next);
+    setVisibleCount(50);
+    store(SORT_KEY, next);
+  };
+  const setIncludeHidden = (next: boolean) => {
+    setIncludeHiddenState(next);
+    setVisibleCount(50);
+    store(HIDDEN_KEY, next ? "1" : "0");
   };
 
   const [selectedArchive, setSelectedArchive] = useState<ArchiveSession | null>(null);
@@ -94,31 +191,50 @@ export function useSessionHistory({
   const [commit, setCommit] = useState("");
   const [subdirectory, setSubdirectory] = useState("");
   const threads = useQuery({
-    queryKey: ["chat-threads", open],
-    queryFn: api.chat.list,
+    queryKey: ["chat-threads", open, includeHidden],
+    queryFn: () => api.chat.list(includeHidden),
     enabled: open,
     staleTime: 0,
   });
   const live = useQuery({
-    queryKey: ["chat-resume-sessions", open, projectScope],
+    queryKey: ["chat-resume-sessions", open, projectScope, includeHidden],
     queryFn: () =>
       api.sessions.live({
         active: false,
+        include_children: true,
         limit: 5000,
+        ...(includeHidden ? { include_hidden: true } : {}),
         ...(projectScope === "all" ? {} : { project_id: projectScope }),
       }),
     enabled: open,
     staleTime: 0,
   });
+  // Transcript and archive search read the whole store on the server, so wait
+  // for a pause in typing instead of searching on every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const deepSearching = deep && search.trim().length >= 2;
+  // Content search across transcripts (ripgrep) so a phrase inside a conversation finds its row.
+  const contentSearch = useSessionSearch(
+    deepSearching ? debouncedSearch : "",
+    "",
+    projectScope === "all" ? undefined : projectScope,
+    includeHidden,
+  );
   const archive = useQuery({
-    queryKey: ["chat-resume-archive", search, projectScope],
+    queryKey: ["chat-resume-archive", debouncedSearch, projectScope, deep],
     queryFn: () =>
       api.sessions.archive({
-        q: search,
+        q: debouncedSearch,
+        mode: deep ? "auto" : "lexical",
         limit: 30,
         ...(projectScope === "all" ? {} : { project_id: projectScope }),
       }),
     enabled: open,
+    placeholderData: keepPreviousData,
   });
   const [refreshingSessions, setRefreshingSessions] = useState(false);
   const [refreshError, setRefreshError] = useState("");
@@ -139,6 +255,7 @@ export function useSessionHistory({
         threads.refetch(),
         live.refetch(),
         archive.refetch(),
+        contentSearch.refetch(),
         projectsQuery.refetch(),
       ]);
     } finally {
@@ -166,12 +283,21 @@ export function useSessionHistory({
       localStorage.setItem(FILTER_KEY, next);
     } catch {}
   };
+  // A palette command can set the filter while this list is already mounted.
+  useEffect(
+    () =>
+      onSessionFilterChange((next) => {
+        setFilterState(next);
+        setVisibleCount(50);
+      }),
+    [],
+  );
   // Folder matching stays limited to active projects; grouping resolves names for all statuses.
   const activeProjects = (projects ?? []).filter((project) => project.status === "active");
   const entries = chatHistoryList(
     chat.tabs,
     threads.data?.threads ?? [],
-    live.data?.sessions ?? [],
+    deepSearching ? (contentSearch.data?.hits ?? []) : (live.data?.sessions ?? []),
     archive.data?.sessions ?? [],
     search,
     projectScope,
@@ -179,29 +305,83 @@ export function useSessionHistory({
     !!home,
     activeProjects,
   );
-  const isSelected = (entry: ChatHistoryEntry) =>
-    home?.terminalId
-      ? entry.terminalId === home.terminalId
-      : entry.kind === "local" && entry.tab.key === chat.activeKey;
-  const states = new Map(
-    entries.map((entry) => [entry.id, historyEntryState(entry, seen, isSelected(entry))]),
+  /** Display and filter by the coding agent, so Cursor CLI and Cursor IDE are one choice. */
+  const agentOf = (entry: ChatHistoryEntry): string => {
+    const raw = entryAgent(entry);
+    return resolveAgentId(raw) ?? raw;
+  };
+  const agentOptions = [...new Set(entries.map(agentOf).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
   );
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  const counts = filterCounts(states.values());
-  const loading = threads.isLoading || live.isLoading || archive.isLoading || projectsLoading;
+  const scopedEntries = agentFilter
+    ? entries.filter((entry) => agentOf(entry) === agentFilter)
+    : entries;
+  const orderedEntries = [...scopedEntries].sort((a, b) => {
+    if (sort === "agent")
+      return (
+        agentOf(a).localeCompare(agentOf(b)) ||
+        b.updatedAt - a.updatedAt ||
+        a.id.localeCompare(b.id)
+      );
+    const compared = a.updatedAt - b.updatedAt || a.id.localeCompare(b.id);
+    return sort === "active-asc" ? compared : -compared;
+  });
+  /** The draft or saved thread the conversation pane is showing. */
+  const activeTab = chat.tabs.find((tab) => tab.key === chat.activeKey);
+  const selectedChatId = activeTab?.thread
+    ? `chat:${activeTab.thread.id}`
+    : activeTab
+      ? `draft:${activeTab.key}`
+      : null;
+  const isSelected = (entry: ChatHistoryEntry) => {
+    // The URL names whatever the chat page renders: a terminal, the read-only
+    // viewer, or the open conversation.
+    if (home?.terminalId) return entry.terminalId === home.terminalId;
+    if (home?.viewId) return entry.seenKeys.includes(`native:${home.viewId}`);
+    return entry.id === selectedChatId;
+  };
+  const states = new Map(
+    scopedEntries
+      .flatMap(withDescendants)
+      .map((entry) => [entry.id, historyEntryState(entry, seen, isSelected(entry))]),
+  );
+  const listed = orderedEntries.filter(
+    (entry) =>
+      matchesFilter(states.get(entry.id) ?? "idle", filter) ||
+      withDescendants(entry).some(isSelected),
+  );
+  const byId = new Map(listed.map((entry) => [entry.id, entry]));
+  const counts = filterCounts(scopedEntries.map((entry) => states.get(entry.id) ?? "idle"));
+  const loading =
+    threads.isLoading ||
+    live.isLoading ||
+    archive.isLoading ||
+    projectsLoading ||
+    (deepSearching && contentSearch.isLoading);
   const stable = useStableOrder({
-    items: entries.filter((entry) => matchesFilter(states.get(entry.id) ?? "idle", filter)),
+    items: listed,
     id: (entry) => entry.id,
     version: (entry) => String(entry.updatedAt),
     lookup: (id) => byId.get(id),
-    resetKey: `${filter}\n${search}\n${projectScope}`,
+    resetKey: `${filter}\n${search}\n${projectScope}\n${sort}\n${agentFilter}\n${deep}\n${includeHidden}`,
     loading,
   });
   const shown = stable.items.slice(0, visibleCount);
+  const agentGroups: { agent: string; rows: ChatHistoryEntry[] }[] = [];
+  if (sort === "agent") {
+    for (const entry of shown) {
+      const agent = agentOf(entry);
+      const group = agentGroups[agentGroups.length - 1];
+      if (group?.agent === agent) group.rows.push(entry);
+      else agentGroups.push({ agent, rows: [entry] });
+    }
+  }
   // Projects float up by their newest session; empty projects stay alphabetical at the end.
   // Groups follow the active project scope and cover every assigned row, including sessions
   // whose project is archived/paused or no longer listed, so none silently disappear.
   const projectById = new Map((projects ?? []).map((project) => [project.id, project]));
+  const assigned = (entry: ChatHistoryEntry) =>
+    !!entry.projectId && (!projects || projectById.has(entry.projectId));
   const groups = new Map<string, ProjectGroupData>();
   const groupFor = (projectId: string) => {
     let group = groups.get(projectId);
@@ -225,7 +405,7 @@ export function useSessionHistory({
     groupFor(project.id);
   }
   for (const entry of stable.items) {
-    if (!entry.projectId) continue;
+    if (!entry.projectId || !assigned(entry)) continue;
     const group = groupFor(entry.projectId);
     group.rows.push(entry);
     group.latest = Math.max(group.latest, entry.updatedAt);
@@ -233,36 +413,61 @@ export function useSessionHistory({
   const projectGroups = [...groups.values()].sort(
     (a, b) => b.latest - a.latest || a.project.name.localeCompare(b.project.name),
   );
-  const unassignedRows = stable.items.filter((entry) => !entry.projectId);
-  const expandedRows =
-    expandedProject === UNASSIGNED_SECTION
-      ? unassignedRows
-      : (projectGroups.find((group) => group.project.id === expandedProject)?.rows ?? []);
-  const visibleEntries = section === "projects" ? expandedRows : stable.items;
-  const active = entries.find(
-    (entry) => entry.kind === "local" && entry.tab.key === chat.activeKey,
+  const unassignedRows = stable.items.filter((entry) => !assigned(entry));
+  const folderGroups = new Map<string, FolderGroupData>();
+  for (const entry of unassignedRows) {
+    const cwd = entryCwd(entry);
+    const key = folderSection(cwd);
+    let group = folderGroups.get(key);
+    if (!group) {
+      group = { key, cwd, label: "", rows: [], latest: 0 };
+      folderGroups.set(key, group);
+    }
+    group.rows.push(entry);
+    group.latest = Math.max(group.latest, entry.updatedAt);
+  }
+  const unassignedFolders = [...folderGroups.values()].sort(
+    (a, b) => Number(!a.cwd) - Number(!b.cwd) || b.latest - a.latest,
   );
+  for (const group of unassignedFolders)
+    group.label = folderLabel(
+      group.cwd,
+      unassignedFolders.map((other) => other.cwd),
+      projectGroups.map((other) => other.project.name),
+    );
+  const expandedGroups = expandedProjects.map((id) =>
+    id.startsWith(UNASSIGNED_SECTION)
+      ? (folderGroups.get(id)?.rows ?? [])
+      : (projectGroups.find((group) => group.project.id === id)?.rows ?? []),
+  );
+  // Opening the list must land on the project of the session already on screen,
+  // even though every group is collapsed by default.
+  const activeRow = entries.find((entry) => withDescendants(entry).some(isSelected));
+  const activeAssigned = !!activeRow && assigned(activeRow);
+  const autoExpanded = useRef("");
+  useEffect(() => {
+    if (!open) {
+      autoExpanded.current = "";
+      return;
+    }
+    if (section !== "projects" || !activeRow) return;
+    const group = activeAssigned
+      ? (activeRow.projectId as string)
+      : folderSection(entryCwd(activeRow));
+    const listed = activeAssigned
+      ? projectGroups.some((candidate) => candidate.project.id === group)
+      : unassignedRows.includes(activeRow);
+    if (!listed) return;
+    const signature = `${activeRow.id}:${group}`;
+    if (autoExpanded.current === signature) return;
+    autoExpanded.current = signature;
+    setExpandedProjects((ids) => (ids.includes(group) ? ids : [...ids, group]));
+  }, [open, section, activeRow, activeAssigned, projectGroups, unassignedRows]);
+  const active = entries
+    .flatMap(withDescendants)
+    .find((entry) => entry.kind === "local" && entry.tab.key === chat.activeKey);
   const activeKeys = active?.seenKeys.join("\n") ?? "";
   const activeUpdated = active?.updatedAt ?? 0;
-  const adoptProject = useCallback(
-    (projectId?: string | null) => {
-      if (!projectId) return;
-      // Only scopes the header can show: paused and archived projects are not picker options.
-      if (!activeProjects.some((project) => project.id === projectId)) return;
-      if (selectedProject.projectId === "all" || selectedProject.projectId === "unassigned")
-        selectedProject.setProjectId(projectId);
-    },
-    [activeProjects, selectedProject],
-  );
-  // Opening or switching to a folder-scoped session adopts its project unless the
-  // header already has an explicit project selected.
-  const adoptedSignature = useRef("");
-  const adoptOnOpen = (projectId?: string | null) => {
-    const signature = `${chat.activeKey}:${projectId ?? ""}`;
-    if (adoptedSignature.current === signature) return;
-    adoptedSignature.current = signature;
-    adoptProject(projectId);
-  };
   useEffect(() => {
     if (!activeKeys) return;
     const keys = activeKeys.split("\n");
@@ -271,7 +476,6 @@ export function useSessionHistory({
   }, [activeKeys, activeUpdated]);
   const selectEntry = (entry: ChatHistoryEntry) => {
     markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
-    adoptOnOpen(entry.projectId);
     const terminalId = home || entry.kind === "terminal" ? entry.terminalId : undefined;
     if (terminalId) {
       setOpen(false);
@@ -287,6 +491,19 @@ export function useSessionHistory({
         setOpen(false);
       } else void select(() => api.chat.get(entry.thread.id), entry.projectId);
     } else if (entry.kind === "native") {
+      if (!nativeChatAgent(entry.session.agent)) {
+        if (!home) {
+          navigate(`/chat${sessionHomeSearch(location.search, { viewId: entry.session.id })}`);
+          return;
+        }
+        navigation.go({
+          viewId: entry.session.id,
+          terminalId: null,
+          liveId: null,
+          listOpen: false,
+        });
+        return;
+      }
       home?.go({ terminalId: null });
       void select(() => api.chat.resume(entry.session.id), entry.projectId);
     } else if (entry.kind === "archive") {
@@ -300,7 +517,6 @@ export function useSessionHistory({
     }
   };
   const newProjectSession = (project: { id: string; scope?: string | null }) => {
-    adoptProject(project.id);
     chat.newTab({
       projectId: project.id,
       fresh: true,
@@ -310,6 +526,24 @@ export function useSessionHistory({
     });
     home?.go({ terminalId: null });
     setOpen(false);
+  };
+  const projectFromFolder = (cwd: string) => {
+    // Reuse a project that already owns this folder instead of creating a duplicate.
+    const existing = projectForFolder(cwd, projects ?? []);
+    if (existing) {
+      setExpandedProjects((ids) => (ids.includes(existing.id) ? ids : [...ids, existing.id]));
+      setError("");
+      return;
+    }
+    // Otherwise open the new-project dialog prefilled with the folder, so creating
+    // a project is an explicit, editable step rather than a silent duplicate.
+    setAdoptFolder({
+      cwd,
+      name: folderProjectName(
+        cwd,
+        (projects ?? []).map((project) => project.name),
+      ),
+    });
   };
   const newSession = () => {
     chat.newTab();
@@ -323,6 +557,7 @@ export function useSessionHistory({
     threads.error?.message ||
     live.error?.message ||
     archive.error?.message ||
+    (deepSearching ? contentSearch.error?.message : undefined) ||
     projectsError?.message ||
     "";
   return {
@@ -337,17 +572,35 @@ export function useSessionHistory({
     },
     visibleCount,
     loadMore: () => setVisibleCount((count) => count + 50),
-    hasMore: visibleEntries.length > visibleCount,
+    hasMore:
+      section === "projects"
+        ? expandedGroups.some((rows) => rows.length > visibleCount)
+        : stable.items.length > visibleCount,
     pending,
     error,
     setError,
     listError,
+    deep,
+    setDeep,
+    deepSearching,
+    searchMeta: deepSearching
+      ? { rg: contentSearch.data?.rg ?? false, ms: contentSearch.data?.ms ?? 0 }
+      : null,
+    agentFilter,
+    setAgentFilter,
+    agentOptions,
+    sort,
+    setSort,
+    includeHidden,
+    setIncludeHidden,
+    agentGroups,
     section,
     chooseSection,
-    expandedProject,
-    setExpandedProject: (id: string | null) => {
-      setVisibleCount(50);
-      setExpandedProject(id);
+    expandedProjects,
+    toggleProject: (id: string) => {
+      setExpandedProjects((ids) =>
+        ids.includes(id) ? ids.filter((other) => other !== id) : [...ids, id],
+      );
     },
     projects,
     projectsLoading,
@@ -367,8 +620,12 @@ export function useSessionHistory({
     shown,
     projectGroups,
     unassignedRows,
-    expandedRows,
-    visibleEntries,
+    unassignedFolders,
+    projectFromFolder,
+    adoptFolder,
+    closeAdopt: () => setAdoptFolder(null),
+    expandProject: (id: string) =>
+      setExpandedProjects((ids) => (ids.includes(id) ? ids : [...ids, id])),
     loading,
     selectEntry,
     select,

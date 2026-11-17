@@ -24,7 +24,7 @@ export function InspectorTabs({
   onSelect,
   className,
 }: {
-  /** Git-backed tabs need a running terminal in the session's folder. */
+  /** Git-backed tabs read the session's folder, terminal or not. */
   git: boolean;
   /** The Electron desktop app adds the Browser tab. */
   browser?: boolean;

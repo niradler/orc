@@ -19,6 +19,9 @@ test.describe("Sessions", () => {
   test("native session date order persists and reverses the whole result list", async ({
     page,
   }) => {
+    // Other tests in the shard share this API database, so give these rows a
+    // unique token and search on it instead of the shared date prefix.
+    const tag = tid("date-order");
     const dates = ["2026-02-01", "2026-01-01", "2026-03-01"];
     await page.route("**/api/sessions/live?*", (route) =>
       route.fulfill({
@@ -27,7 +30,7 @@ test.describe("Sessions", () => {
             id: `date-${index}`,
             session_id: `native-${index}`,
             agent: "codex",
-            name: date,
+            name: `${date} ${tag}`,
             status: "idle",
             project_id: null,
             task: null,
@@ -42,20 +45,21 @@ test.describe("Sessions", () => {
       }),
     );
     await gotoView(page, "sessions");
-    await page.goto("/sessions?project=all");
-    const rows = page.getByTestId("live-session-row");
+    await page.getByTestId("chat-session-search").fill(tag);
+    const rows = page.getByTestId("chat-session-list").getByTestId("chat-history-row");
+    await expect(rows).toHaveCount(3);
     await expect(rows.first()).toContainText("2026-03-01");
-    await page.getByTestId("session-date-sort").selectOption("asc");
+    await page.getByTestId("chat-session-sort").selectOption("active-asc");
     await expect(rows.first()).toContainText("2026-01-01");
     await page.reload();
-    await expect(page.getByTestId("session-date-sort")).toHaveValue("asc");
+    await expect(page.getByTestId("chat-session-sort")).toHaveValue("active-asc");
     await expect(rows.first()).toContainText("2026-01-01");
   });
 
   test("Audit date order persists and resets pagination", async ({ page, request }) => {
     const agent = tid("date-sort");
     for (let i = 0; i < 26; i++) await seedSession(request, agent, `Date order ${i}`);
-    await gotoView(page, "sessions");
+    await gotoView(page, "activity");
     await page.goto(`/audit?project=all&agent=${agent}`);
     await page.getByTestId("pager-next").click();
     await expect(page.getByTestId("pager")).toContainText("Page 2");
@@ -66,7 +70,7 @@ test.describe("Sessions", () => {
     await expect(page.getByTestId("logged-sessions")).toBeVisible();
   });
   test("Audit opens directly and preserves shared state", async ({ page }) => {
-    await gotoView(page, "sessions");
+    await gotoView(page, "activity");
     await page.goto("/audit?project=all#records");
     await expect(page).toHaveURL(/\/audit\?project=all#records$/);
     await expect(page.getByTestId("logged-sessions")).toBeVisible();
@@ -77,7 +81,7 @@ test.describe("Sessions", () => {
     const summary = `Playwright test session ${agent}`;
     const sessionId = await seedSession(request, agent, summary);
 
-    await gotoView(page, "sessions");
+    await gotoView(page, "activity");
     await page.getByTestId("nav-audit").click();
     await page.getByTestId("audit-session-history").locator("summary").click();
     await expect(page.getByTestId("view-title")).toHaveText("Audit");
@@ -91,7 +95,7 @@ test.describe("Sessions", () => {
     const agent = tid("pw-agent-detail");
     const sessionId = await seedSession(request, agent, `Detail test ${agent}`);
 
-    await gotoView(page, "sessions");
+    await gotoView(page, "activity");
     await page.getByTestId("nav-audit").click();
     await page.getByTestId("audit-session-history").locator("summary").click();
 
@@ -112,7 +116,7 @@ test.describe("Sessions", () => {
     const agent = tid("pw-agent-count");
     const sessionId = await seedSession(request, agent, `Count test ${agent}`);
 
-    await gotoView(page, "sessions");
+    await gotoView(page, "activity");
     await page.getByTestId("nav-audit").click();
     await page.getByTestId("audit-session-history").locator("summary").click();
     await expect(page.getByTestId("view-title")).toHaveText("Audit");
@@ -122,13 +126,13 @@ test.describe("Sessions", () => {
     await expect(row).toContainText(agent);
   });
 
-  test("Audit follows Jobs and is separate from native Sessions", async ({ page }) => {
+  test("Audit follows Jobs and is separate from the chat session list", async ({ page }) => {
     await gotoView(page, "sessions");
-    await expect(page.getByTestId("live-sessions")).toBeVisible();
+    await expect(page.getByTestId("chat-session-sidebar")).toBeVisible();
     await expect(page.getByTestId("logged-sessions")).toHaveCount(0);
+    await page.getByTestId("nav-activity").click();
     await expect(page.locator('nav[aria-label="Activity pages"] a')).toHaveText([
       "Activity",
-      "Sessions",
       "Jobs",
       "Webhooks",
       "Audit",
@@ -137,7 +141,7 @@ test.describe("Sessions", () => {
     await page.getByTestId("nav-audit").click();
     await page.getByTestId("audit-session-history").locator("summary").click();
     await expect(page.getByTestId("logged-sessions")).toBeVisible();
-    await expect(page.getByTestId("live-sessions")).toHaveCount(0);
+    await expect(page.getByTestId("chat-session-sidebar")).toHaveCount(0);
     await expect(page).toHaveURL(/\/audit/);
     await page.reload();
     await expect(page.getByTestId("view-title")).toHaveText("Audit");
@@ -149,7 +153,7 @@ test.describe("Sessions", () => {
       await seedSession(request, agent, `Pagination test ${agent} ${i}`);
     }
 
-    await gotoView(page, "sessions");
+    await gotoView(page, "activity");
     await page.getByTestId("nav-audit").click();
     await expect(page.getByTestId("session-row")).toHaveCount(25);
     await page.getByTestId("audit-session-history").locator("summary").click();

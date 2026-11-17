@@ -98,8 +98,21 @@ function longTurnActivity(): ChatActivity[] {
   return activity;
 }
 
+function saveThread(thread: unknown) {
+  const seed = spawnSync(
+    "bun",
+    [
+      "-e",
+      'import {getSqlite} from "./packages/db/src/client.ts";import {ChatStore} from "./packages/db/src/chat.ts";new ChatStore(getSqlite()).save(JSON.parse(process.argv[1]));',
+      JSON.stringify(thread),
+    ],
+    { cwd: repoRoot(), env: process.env, encoding: "utf8", timeout: 10000 },
+  );
+  expect(seed.status, seed.stderr).toBe(0);
+}
+
 function seedThread(id: string, started: number) {
-  const thread = {
+  saveThread({
     id,
     title: "Long refactor turn",
     config: defaults,
@@ -125,17 +138,7 @@ function seedThread(id: string, started: number) {
         activity: longTurnActivity(),
       },
     ],
-  };
-  const seed = spawnSync(
-    "bun",
-    [
-      "-e",
-      'import {getSqlite} from "./packages/db/src/client.ts";import {ChatStore} from "./packages/db/src/chat.ts";new ChatStore(getSqlite()).save(JSON.parse(process.argv[1]));',
-      JSON.stringify(thread),
-    ],
-    { cwd: repoRoot(), env: process.env, encoding: "utf8", timeout: 10000 },
-  );
-  expect(seed.status, seed.stderr).toBe(0);
+  });
 }
 
 for (const width of [1440, 390]) {
@@ -149,7 +152,7 @@ for (const width of [1440, 390]) {
     const fold = page.getByTestId("chat-turn-fold");
     await expect(fold).toHaveCount(1);
     await expect(page.getByTestId("chat-turn-fold-label")).toHaveText(
-      "Worked for 42s · 45 tools · 3 files changed",
+      "Worked for 42s · 45 tools · 3 files changed (+6 −3)",
     );
     await expect(fold).toHaveAttribute("data-failed", "true");
     await expect(page.getByTestId("chat-turn-fold-summary")).toContainText("1 failed");
@@ -173,13 +176,151 @@ for (const width of [1440, 390]) {
     await expect(diff.getByTestId("git-diff-add")).toContainText("usePinnedScroll(options)");
     await expect(diff.getByTestId("git-diff-remove").first()).toContainText("useRef(null)");
 
-    const command = fold.locator('[data-testid="chat-tool"][data-kind="command"]').first();
+    const command = fold.locator('[data-testid="chat-tool"][data-kind="run"]').first();
     await expect(command).toContainText("bun test tests/unit/case-2.test.ts");
     await command.locator("summary").click();
     await expect(command.getByTestId("chat-tool-output")).toContainText("line 20");
     await expect(command.getByTestId("chat-tool-output")).not.toContainText("line 8\n");
     await expect(command.getByRole("button", { name: "Show 8 earlier lines" })).toBeVisible();
-    await expect(fold.locator('[data-testid="chat-tool"][data-kind="lookup"]')).toHaveCount(28);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="read"]')).toHaveCount(14);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="search"]')).toHaveCount(14);
+
+    await page.getByTestId("chat-activity-filter-changes").click();
+    await expect(page.getByTestId("chat-activity-filter-changes")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="edit"]')).toHaveCount(2);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="read"]')).toHaveCount(0);
+    await expect(page.getByTestId("chat-turn-fold-summary")).toContainText("1 failed");
+
+    await page.getByTestId("chat-activity-filter-all").click();
+    await page.getByTestId("chat-activity-hide-successful").click();
+    await expect(fold.locator('[data-testid="chat-tool"]')).toHaveCount(1);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="run"]')).toContainText(
+      "Failed",
+    );
+    await expect(page.getByTestId("chat-turn-fold-summary")).toContainText("1 failed");
+
+    await page.reload();
+    await page.getByTestId("chat-turn-fold-summary").click();
+    await expect(page.getByTestId("chat-activity-hide-successful")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator('[data-testid="chat-tool"][data-kind="run"]')).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    await page.evaluate(() => localStorage.removeItem("orc_chat_activity_prefs"));
+  });
+}
+
+/** 91 known tool calls plus one kind this build does not know; the failure is the oldest item. */
+function windowedTurnActivity(): unknown[] {
+  const activity: unknown[] = [
+    {
+      type: "tool",
+      id: "old-failure",
+      name: "Bash",
+      input: JSON.stringify({ command: "bun x tsc --noEmit" }),
+      result: "error TS2550: Property 'findLast' does not exist",
+      isError: true,
+    },
+  ];
+  for (let index = 0; index < 90; index++) {
+    activity.push({
+      type: "tool",
+      id: `read-${index}`,
+      name: "Read",
+      input: JSON.stringify({ file_path: `src/module-${index}.ts` }),
+      result: `export const value${index} = ${index};`,
+    });
+  }
+  activity.push({ type: "checkpoint", id: "checkpoint-1", state: "saved" });
+  return activity;
+}
+
+function seedWindowedThread(id: string, started: number) {
+  saveThread({
+    id,
+    title: "Windowed turn",
+    config: defaults,
+    cwd: "/tmp",
+    host: null,
+    runtimeId: null,
+    backend: "codex-cli",
+    sourceId: null,
+    updatedAt: started + 42_000,
+    messages: [
+      { id: "user", role: "user", content: "Check every module", timestamp: started },
+      {
+        id: "assistant",
+        role: "assistant",
+        content: "Every module checked.",
+        timestamp: started + 90_000,
+        turn: {
+          startedAt: started,
+          finishedAt: started + 90_000,
+          durationMs: 42_000,
+          outcome: "completed",
+        },
+        activity: windowedTurnActivity(),
+      },
+    ],
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`a turn past the window expands to its newest items at ${width}px`, async ({ page }) => {
+    const id = crypto.randomUUID();
+    seedWindowedThread(id, Date.now() - 120_000);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tasks?chat=open&chatThread=${id}`);
+    const fold = page.getByTestId("chat-turn-fold");
+    await expect(fold).toHaveCount(1);
+    await expect(page.getByTestId("chat-turn-fold-label")).toHaveText(
+      "Worked for 42s · 91 tools · 1 unrecognized activity",
+    );
+    await expect(page.getByTestId("chat-turn-fold-summary")).toContainText("1 failed");
+    await expect(page.getByTestId("chat-turn-fold-summary")).toContainText(
+      "1 unrecognized activity",
+    );
+
+    await page.getByTestId("chat-turn-fold-summary").click();
+    await expect(fold.getByTestId("chat-tool")).toHaveCount(79);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="run"]')).toHaveCount(0);
+    const provider = fold.getByTestId("chat-provider-activity");
+    await expect(provider).toHaveCount(1);
+    await expect(provider).toContainText("checkpoint");
+    await provider.locator("summary").click();
+    await expect(provider.getByTestId("chat-provider-data")).toContainText('"state": "saved"');
+    const showAll = page.getByTestId("chat-items-show-all");
+    await expect(showAll).toHaveText("Show all 92 activities");
+
+    await showAll.click();
+    await expect(showAll).toBeHidden();
+    await expect(fold.getByTestId("chat-tool")).toHaveCount(91);
+    await expect(fold.locator('[data-testid="chat-tool"][data-kind="run"]')).toContainText(
+      "Failed",
+    );
+
+    // The new windowing and provider controls keep a 44px touch target on a phone.
+    if (width === 390) {
+      for (const control of [
+        page.getByTestId("chat-turn-fold-summary"),
+        fold.getByTestId("chat-provider-activity").locator("summary").first(),
+        page.getByTestId("chat-tool").first().locator("summary").first(),
+      ]) {
+        const box = await control.boundingBox();
+        expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+      }
+    }
+
+    await page.reload();
+    await page.getByTestId("chat-turn-fold-summary").click();
+    await expect(fold.getByTestId("chat-tool")).toHaveCount(79);
+    await expect(page.getByTestId("chat-items-show-all")).toHaveText("Show all 92 activities");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
@@ -253,7 +394,7 @@ async function distanceFromBottom(page: Page) {
     .evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight);
 }
 
-test("pre-tool narration folds while the final reply stays visible", async ({ page }) => {
+test("pre-tool prose stays visible as part of the reply", async ({ page }) => {
   await installStreamControl(page);
   await page.goto("/?chat=open");
   await page.getByTestId("chat-input").fill("Inspect then summarize");
@@ -267,17 +408,16 @@ test("pre-tool narration folds while the final reply stays visible", async ({ pa
     messages.getByText("First I will inspect the workspace.", { exact: true }),
   ).toBeVisible();
   await push(page, 0, [
-    { type: "narration", text: "First I will inspect the workspace." },
     { type: "tool_use", data: { id: "read", name: "Read", input: '{"path":"README.md"}' } },
     { type: "tool_result", data: { toolUseId: "read", content: "Read complete", isError: false } },
-    { type: "text", text: "The workspace is ready." },
+    { type: "text", text: "\n\nThe workspace is ready." },
     { type: "done" },
   ]);
   await expect(messages.getByText("The workspace is ready.", { exact: true })).toBeVisible();
-  const narration = messages.getByText("First I will inspect the workspace.", { exact: true });
-  await expect(narration).toBeHidden();
-  await page.getByTestId("chat-turn-fold-summary").click();
-  await expect(narration).toBeVisible();
+  // The pre-tool prose remains a regular visible message, not folded into the turn.
+  await expect(
+    messages.getByText("First I will inspect the workspace.", { exact: true }),
+  ).toBeVisible();
 });
 
 test("streaming follows only while pinned and Jump to latest returns with a new count", async ({

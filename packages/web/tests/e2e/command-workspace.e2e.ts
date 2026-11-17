@@ -131,10 +131,7 @@ test("should share recent folders and last selection between chat and terminal, 
   await page.goto("/");
   await page.getByTestId("chat-open-button").click();
   await setWorkspaceFolder(page, cwd);
-  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
-    "title",
-    `This ORC server: ${cwd}`,
-  );
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute("title", `Local: ${cwd}`);
   // Exercise the native chooser contract without opening an OS dialog in CI.
   await page.route("**/api/terminals/pick-folder", (route) => {
     expect(route.request().postDataJSON()).toEqual({ initial: cwd, host: null });
@@ -145,10 +142,7 @@ test("should share recent folders and last selection between chat and terminal, 
   await expect(page.getByTestId("chat-workspace-recent-option")).toContainText([cwd]);
   await closeWorkspaceFolder(page);
   await page.reload();
-  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
-    "title",
-    `This ORC server: ${cwd}`,
-  );
+  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute("title", `Local: ${cwd}`);
   await gotoView(page, "terminals");
   await page.getByTestId("terminal-new").click();
   await page.getByTestId("terminal-host-select").selectOption("");
@@ -185,7 +179,8 @@ test("should share recent folders and last selection between chat and terminal, 
   expect(thread.cwd.startsWith(join(cwd, ".orc", "worktrees"))).toBe(true);
   expect(thread.host).toBeNull();
   await page.reload();
-  await expect(page.getByTestId("chat-workspace")).toHaveCount(0);
+  // A saved conversation shows its own workspace instead of the draft picker.
+  await expect(page.getByTestId("chat-workspace")).toHaveAttribute("data-session", "true");
 });
 
 test("should fold a turn's tools while retaining their input, results and separators", async ({

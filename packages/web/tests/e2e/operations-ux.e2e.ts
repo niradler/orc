@@ -48,22 +48,6 @@ for (const theme of ["dark", "light"] as const) {
       await gotoView(page, "activity");
       await selectProject(page, project.id);
       await expect(page.getByTestId("view-title")).toHaveText("Activity");
-      // Project bootstrap can also create an enabled Learnings digest job.
-      await expect
-        .poll(async () => {
-          const { jobs } = await apiGet<{ jobs: { enabled: boolean }[] }>(
-            request,
-            `/jobs?project_id=${project.id}`,
-          );
-          const displayed = await page
-            .locator('[data-stat-label="Active jobs"] [data-testid="stat-card-value"]')
-            .textContent();
-          return Number(displayed) - jobs.filter((item) => item.enabled).length;
-        })
-        .toBe(0);
-      await expect(
-        page.locator('[data-stat-label="Memories"] [data-testid="stat-card-value"]'),
-      ).toHaveText("1");
       await page.screenshot({ path: testInfo.outputPath("overview.png"), fullPage: true });
       // Phones default to the compact list; this workflow exercises the board.
       await page.goto(`/tasks?project=${project.id}&view=board`);
@@ -108,12 +92,14 @@ for (const theme of ["dark", "light"] as const) {
       expect(saved.description).toBe("");
       await page.screenshot({ path: testInfo.outputPath("jobs.png"), fullPage: true });
       await page.getByTestId("sheet-close").click();
-      await page.goto("/sessions");
+      await page.goto("/chat?sessionList=show");
       await selectProject(page, "all");
-      await page.getByTestId("nav-audit").click();
+      // Audit sits in the Activity subnav, which the chat page does not show, and
+      // the sidebar is a drawer on phones: open Audit directly at both widths.
+      await page.goto("/audit?project=all");
       await expect(page).toHaveURL(/\/audit/);
       await page.goBack();
-      await expect(page.getByTestId("nav-sessions")).toHaveAttribute("aria-current", "page");
+      await expect(page.getByTestId("nav-chat")).toHaveAttribute("aria-current", "page");
       await page.goForward();
       await expect(page.getByTestId("nav-audit")).toHaveAttribute("aria-current", "page");
       await page.reload();
@@ -124,7 +110,9 @@ for (const theme of ["dark", "light"] as const) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await page.getByTestId("nav-sessions").click();
+      // The sidebar is a drawer on phones; navigate straight to the chat page there.
+      if (width === 390) await page.goto("/chat?sessionList=show");
+      else await page.getByTestId("nav-chat").click();
       await page.route("**/api/sessions/live?*", (route) =>
         route.fulfill({
           status: 503,
@@ -133,7 +121,9 @@ for (const theme of ["dark", "light"] as const) {
         }),
       );
       await page.reload();
-      await expect(page.getByTestId("live-sessions")).toContainText("Session service unavailable");
+      await expect(page.getByTestId("chat-session-error")).toContainText(
+        "Session service unavailable",
+      );
     });
   }
 }
@@ -149,8 +139,8 @@ test("an Audit detail URL reopens directly", async ({ page, request }) => {
   await expect(page.getByTestId("nav-audit")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("dialog")).toContainText(agent);
   await page.getByTestId("sheet-close").click();
-  await page.getByTestId("nav-sessions").click();
-  await expect(page.getByTestId("live-sessions")).toBeVisible();
+  await page.getByTestId("nav-chat").click();
+  await expect(page.getByTestId("chat-session-sidebar")).toBeVisible();
 });
 
 test("overview drilldowns preserve shared project scope independently of the saved picker", async ({
@@ -167,14 +157,10 @@ test("overview drilldowns preserve shared project scope independently of the sav
   await gotoView(page, "activity");
   await selectProject(page, saved.id);
   await page.goto(`/activity?project=${shared.id}`);
-  await expect(
-    page.locator('[data-stat-label="Doing"] [data-testid="stat-card-value"]'),
-  ).toHaveText("1");
-  await page.locator('[data-stat-label="Doing"]').click();
-  await expect(page).toHaveURL(new RegExp(`project=${shared.id}`));
-  await expect(page).toHaveURL(/status=doing/);
-  await page.reload();
-  await expect(page.getByTestId("task-row")).toHaveCount(1);
+  const taskTitle = page.locator(".activity-task-title");
+  await expect(taskTitle).toHaveCount(1);
+  await taskTitle.click();
+  await expect(page).toHaveURL(new RegExp(`/tasks/.+project=${shared.id}`));
 });
 
 for (const view of ["tasks", "jobs", "sessions", "activity"] as const) {
@@ -188,6 +174,17 @@ for (const view of ["tasks", "jobs", "sessions", "activity"] as const) {
     let failing = false;
     const endpoint = view === "activity" ? "tasks" : view === "sessions" ? "sessions/live" : view;
     const pattern = new RegExp(`/api/${endpoint}(?:[?].*)?$`);
+    if (view === "sessions") {
+      // The chat page also lists saved chats and archives; keep this about the live feed.
+      await page.route(/\/api\/chat\/threads(?:\?.*)?$/, (route) =>
+        route.request().method() === "GET"
+          ? route.fulfill({ json: { threads: [] } })
+          : route.fallback(),
+      );
+      await page.route("**/api/sessions/archive?**", (route) =>
+        route.fulfill({ json: { sessions: [], has_more: false } }),
+      );
+    }
     await page.route(pattern, async (route) => {
       await gate;
       await route.fulfill({
@@ -215,7 +212,7 @@ for (const view of ["tasks", "jobs", "sessions", "activity"] as const) {
         ? "No tasks"
         : view === "jobs"
           ? "No jobs configured"
-          : "No active agent sessions. Enable Show ended to browse previous conversations.";
+          : "No sessions yet.";
     await expect(page.getByText(emptyText, { exact: true }).first()).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`${view}-empty.png`), fullPage: true });
     failing = true;

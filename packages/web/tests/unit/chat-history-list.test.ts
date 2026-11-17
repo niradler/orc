@@ -1,7 +1,14 @@
 import { expect, test } from "bun:test";
 import type { ArchiveSession } from "@orc/core/session-archive";
 import type { LiveSession, Terminal } from "../../src/api/client";
-import { chatHistoryList, historyEntryState } from "../../src/lib/chat-history-list";
+import {
+  chatHistoryList,
+  folderLabel,
+  folderProjectName,
+  historyEntryState,
+  nestedLabel,
+  withDescendants,
+} from "../../src/lib/chat-history-list";
 
 const saved = {
   id: "90000000-0000-4000-8000-000000000001",
@@ -58,7 +65,32 @@ test("should merge Cursor CLI aliases without merging Cursor IDE archives", () =
   );
   expect(entries).toHaveLength(2);
   expect(entries.some((entry) => entry.id === "archive:ide")).toBe(true);
+  // The saved chat keeps the row; the discovered Cursor CLI session aliases it.
   expect(entries.some((entry) => entry.id === `chat:${saved.id}`)).toBe(true);
+});
+
+test("every discovered provider appears in the chat history, including Cursor", () => {
+  for (const agent of ["claude", "codex", "gemini", "opencode", "pi", "cursor", "cursor-agent"]) {
+    const rows = chatHistoryList([], [], [{ ...live, agent }], []);
+    expect(rows.map((row) => row.id)).toEqual(["native:live-source"]);
+  }
+});
+
+test("content-search hits keep their snippets and matched fields", () => {
+  const hit = {
+    ...live,
+    snippets: ["the phrase inside the transcript"],
+    matched: ["transcript"],
+    score: 2,
+  };
+  const [entry] = chatHistoryList([], [], [hit], []);
+  expect(entry.snippets).toEqual(["the phrase inside the transcript"]);
+  expect(entry.matched).toEqual(["transcript"]);
+  // A transcript-only hit survives the keyword filter that would drop its title.
+  expect(chatHistoryList([], [], [hit], [], "phrase", "all")).toHaveLength(1);
+  expect(
+    chatHistoryList([], [], [{ ...live, snippets: [], matched: [] }], [], "phrase"),
+  ).toHaveLength(0);
 });
 
 test("archive project metadata cannot overwrite an authoritative native association", () => {
@@ -257,4 +289,148 @@ test("saved chats keep their recorded project after reload", () => {
   ).toEqual(["shop"]);
   expect(chatHistoryList([], [assigned], [], [], "", "unassigned")).toHaveLength(0);
   expect(chatHistoryList([], [assigned], [], [], "", "all")).toHaveLength(1);
+});
+
+test("a folder's project name is a valid, unused slug", () => {
+  expect(folderProjectName("/Users/nir/projects/nebius-ai-cloud-sft", [])).toBe(
+    "nebius-ai-cloud-sft",
+  );
+  expect(folderProjectName("/srv/shop/api", ["API"])).toBe("shop-api");
+  expect(folderProjectName("/srv/shop/api", ["api", "shop-api"])).toBe("api-2");
+  expect(folderProjectName("C:\\Users\\Nir\\My Repo (old)\\", [])).toBe("My-Repo-old");
+  expect(folderProjectName("/", [])).toBe("project");
+  expect(folderProjectName(`/x/${"a".repeat(300)}`, [])).toHaveLength(90);
+});
+
+test("subagent sessions stay out of the list but lift their parent's state and recency", () => {
+  const parent = {
+    ...live,
+    id: "parent",
+    session_id: "p",
+    name: "Review the PR",
+    project_id: null,
+  };
+  const child = {
+    ...live,
+    id: "child",
+    session_id: "c",
+    parent_id: "parent",
+    name: "Find callers",
+    status: "running" as const,
+    project_id: null,
+    last_activity_at: "2026-10-31T00:00:00Z",
+  };
+  const orphan = { ...live, id: "orphan", session_id: "o", parent_id: "gone", project_id: null };
+  const entries = chatHistoryList([], [], [child, parent, orphan], []);
+  expect(entries.map((entry) => entry.id)).toEqual(["native:parent", "native:orphan"]);
+  const [top] = entries;
+  expect(top?.children).toBeUndefined();
+  expect(top?.observedState).toBe("working");
+  expect(top?.updatedAt).toBe(Date.parse("2026-10-31T00:00:00Z"));
+  expect(top?.seenKeys).toContain("native:child");
+  expect(chatHistoryList([], [], [child, parent], [], "callers").map((e) => e.id)).toEqual([
+    "native:parent",
+  ]);
+});
+
+test("a subagent opened as a chat stays out of the list", () => {
+  const parent = { ...live, id: "parent", session_id: "p", project_id: null };
+  const child = { ...live, id: "child", session_id: "c", parent_id: "parent", project_id: null };
+  const opened = { ...saved, id: "90000000-0000-4000-8000-000000000002", sourceId: "child" };
+  const entries = chatHistoryList([], [opened], [child, parent], []);
+  expect(entries.map((entry) => entry.id)).toEqual(["native:parent"]);
+  expect(entries[0]?.children).toBeUndefined();
+});
+
+test("independent sessions nest under the session that started them, in a tree", () => {
+  const root = { ...live, id: "root", session_id: "r", name: "SFT training", project_id: null };
+  const child = {
+    ...live,
+    id: "child",
+    session_id: "c",
+    spawned_from_id: "root",
+    name: "Dataset v3",
+    project_id: null,
+  };
+  const grand = {
+    ...live,
+    id: "grand",
+    session_id: "g",
+    spawned_from_id: "child",
+    name: "Benchmark baselines",
+    status: "running" as const,
+    project_id: null,
+    last_activity_at: "2026-11-01T00:00:00Z",
+  };
+  const subagent = { ...live, id: "sub", session_id: "s", parent_id: "root", project_id: null };
+  const orcSpawn = {
+    ...saved,
+    id: "90000000-0000-4000-8000-000000000003",
+    title: "Spawned through ORC",
+    agent: "claude",
+    runtimeId: "orc-run",
+    sourceId: null,
+    spawnedFrom: "root",
+  };
+  const entries = chatHistoryList([], [orcSpawn], [grand, child, root, subagent], []);
+  expect(entries.map((entry) => entry.id)).toEqual(["native:root"]);
+  const [top] = entries;
+  expect(top?.children?.map((entry) => [entry.id, !!entry.spawned])).toEqual([
+    ["native:child", true],
+    [`chat:${orcSpawn.id}`, true],
+  ]);
+  expect(top?.children?.[0]?.children?.map((entry) => entry.id)).toEqual(["native:grand"]);
+  expect(top?.observedState).toBe("working");
+  expect(top?.updatedAt).toBe(Date.parse("2026-11-01T00:00:00Z"));
+  expect(nestedLabel(top?.children ?? [])).toBe("2 sessions");
+  expect(withDescendants(top as NonNullable<typeof top>).map((entry) => entry.id)).toContain(
+    "native:grand",
+  );
+  expect(chatHistoryList([], [], [grand, child, root], [], "baselines").map((e) => e.id)).toEqual([
+    "native:root",
+  ]);
+  const loop = [
+    { ...root, spawned_from_id: "child" },
+    { ...child, spawned_from_id: "root" },
+  ];
+  expect(chatHistoryList([], [], loop, []).map((entry) => entry.id)).toHaveLength(1);
+});
+
+test("folder groups with the same name show enough of the path to tell them apart", () => {
+  const folders = ["/tmp/a/e330/repo", "/tmp/a/e330b/repo", "/Users/nir/orc", null];
+  expect(folders.map((cwd) => folderLabel(cwd, folders))).toEqual([
+    "e330/repo",
+    "e330b/repo",
+    "orc",
+    "Unassigned",
+  ]);
+  expect(folderLabel("/work/agentops", ["/work/agentops"], ["agentops"])).toBe("work/agentops");
+});
+
+test("an open tab older than its saved thread still merges the native session and takes its title", () => {
+  const thread = { ...saved, title: "Coding agent competition framework", updatedAt: 5 };
+  const tab = {
+    key: "tab-1",
+    projectId: null,
+    config: { agent: "codex" },
+    thread: { id: saved.id, title: "finish the post and lets merge the pr", updatedAt: 1 },
+    messages: [],
+    draft: "",
+    files: [],
+    queued: [],
+    permissions: [],
+    questions: [],
+  } as unknown as Parameters<typeof chatHistoryList>[0][number];
+  const entries = chatHistoryList([tab], [thread], [live], []);
+  expect(entries.map((entry) => [entry.id, entry.title])).toEqual([
+    [`chat:${saved.id}`, "Coding agent competition framework"],
+  ]);
+});
+
+test("a chat stays in the project it was started in when its session's folder maps elsewhere", () => {
+  const thread = { ...saved, projectId: "project-chat" };
+  const session = { ...live, project_id: "project-folder" };
+  const [entry] = chatHistoryList([], [thread], [session], []);
+  expect(entry?.projectId).toBe("project-chat");
+  expect(chatHistoryList([], [thread], [session], [], "", "project-folder")).toEqual([]);
 });

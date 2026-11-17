@@ -269,8 +269,12 @@ secondary detail opens on demand and the account quota list starts collapsed.
 Gemini records only a per-message total, and Cursor exposes a context estimate
 rather than per-request usage, so those requests are marked estimated. Codex
 rollouts larger than the import cap keep their lifetime total as an estimated
-remainder, and model names are unknown for that remainder. Claude output splits
-thinking tokens out of output, and cached input is counted once. Repeated
+remainder, and model names are unknown for that remainder. Codex also rotates
+closed rollouts to `<rollout>.jsonl.zst`; ORC reads those compressed rollouts,
+so periods that include older sessions stay exact. A session whose transcript
+is gone entirely keeps its lifetime total as one estimated request when a total
+is known, and is settled once instead of staying pending forever. Claude output
+splits thinking tokens out of output, and cached input is counted once. Repeated
 assistant messages are counted once by message id. The Coverage section reports
 sessions started in the period that have not been indexed yet and excludes their
 lifetime totals from the distribution, rather than mixing the two accounting
@@ -466,7 +470,7 @@ Most knowledge settings are also editable under **Settings → Knowledge**.
 
 In JSON configuration, `"terminals": { "shell": ["pwsh", "-NoLogo", "-NoProfile"] }` launches PowerShell without personal profiles. The first array entry must be a nonempty executable; up to 64 entries are supported. Arguments are passed literally, without shell parsing. Existing executable strings remain supported, including `ORC_TERMINALS_SHELL`; that environment variable accepts an executable, not a command line or JSON array. An unset shell keeps the platform default, including its usual profile loading.
 
-Pick the execution host from the SSH row under **Settings → Hosts**: **Change**, then choose **This ORC server** or an alias. Switching applies to new actions. When `ORC_SSH_HOST` is set, the selection is fixed.
+Pick the execution host from the SSH row under **Settings → Hosts**: **Change**, then choose **Local** or an alias. Switching applies to new actions. When `ORC_SSH_HOST` is set, the selection is fixed.
 
 ### `rules`, `mcp`, `github`
 

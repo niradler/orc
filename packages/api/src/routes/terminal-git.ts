@@ -1,9 +1,11 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { parseDraftCheckoutId } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
-import { ValidationError } from "@orc/core/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import type { ExecHost } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { prepareSessionDirectory } from "@orc/core/session-dir";
+import { previewSession } from "../desktop-preview/session.js";
 import { checkoutFiles, saveCheckoutFile } from "../git/files.js";
 import { checkoutGithubFeed, GithubCiSchema } from "../git/github.js";
 import { commitStaged, gitDiff, gitStatus, stageFiles, switchBranch } from "../git/panel.js";
@@ -18,6 +20,7 @@ import { worktreeDeps } from "../git/registry.js";
 import { trackedWorktrees } from "../git/worktrees.js";
 import { createRouter } from "../lib/router.js";
 import { observeCheckout } from "../realtime/sources.js";
+import { selectedTerminalHost } from "../terminals/host.js";
 import {
   launchDeps,
   requireTerminals,
@@ -28,10 +31,26 @@ import { WorktreeSchema } from "./git.js";
 
 const app = createRouter();
 const params = z.object({ id: z.string().min(1) });
-function folder(id: string): { host: ExecHost; cwd: string } {
-  requireTerminals(loadConfig());
-  const { host, cwd } = terminalHost(id);
-  if (!cwd) throw new ValidationError("Terminal has no working directory");
+// A chat session's folder is a checkout too: Git must work before (or without)
+// a terminal, so an id that is not a terminal falls back to its chat session.
+// Terminals may be disabled entirely; that only rules out terminal ids.
+async function folder(id: string): Promise<{ host: ExecHost; cwd: string }> {
+  const draft = parseDraftCheckoutId(id);
+  if (draft) {
+    const host = selectedTerminalHost(loadConfig(), draft.host);
+    observeCheckout(host, draft.cwd);
+    return { host, cwd: draft.cwd };
+  }
+  let host: ExecHost;
+  let cwd: string | null;
+  try {
+    requireTerminals(loadConfig());
+    ({ host, cwd } = terminalHost(id));
+  } catch (error) {
+    if (!(error instanceof NotFoundError || error instanceof ForbiddenError)) throw error;
+    ({ host, cwd } = await previewSession(id));
+  }
+  if (!cwd) throw new ValidationError("This checkout has no working directory");
   observeCheckout(host, cwd);
   return { host, cwd };
 }
@@ -58,7 +77,7 @@ app.openapi(
   }),
   async (c) => {
     const { id, number } = c.req.valid("param");
-    const { host, cwd } = folder(id);
+    const { host, cwd } = await folder(id);
     const { repo, branch, deps } = await terminalPullContext(host, cwd);
     return c.json(await readPullReview(repo, branch, number, deps), 200);
   },
@@ -80,7 +99,7 @@ app.openapi(
   }),
   async (c) => {
     const { id, number } = c.req.valid("param");
-    const { host, cwd } = folder(id);
+    const { host, cwd } = await folder(id);
     const { repo, branch, deps } = await terminalPullContext(host, cwd);
     await postPullComment(repo, branch, number, c.req.valid("json"), deps);
     return c.body(null, 204);
@@ -91,7 +110,7 @@ app.openapi(
     method: "put",
     path: "/terminals/{id}/files",
     tags: ["Terminals"],
-    summary: "Save an existing text file inside a terminal checkout",
+    summary: "Save an existing text file inside a terminal or session checkout",
     request: {
       params,
       body: {
@@ -115,7 +134,7 @@ app.openapi(
   }),
   async (c) => {
     const body = c.req.valid("json");
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     await saveCheckoutFile(host, cwd, body.path, body.content, body.original);
     return c.body(null, 204);
   },
@@ -125,7 +144,7 @@ app.openapi(
     method: "get",
     path: "/terminals/{id}/files",
     tags: ["Terminals"],
-    summary: "Browse or preview files inside a terminal checkout",
+    summary: "Browse or preview files inside a terminal or session checkout",
     request: {
       params,
       query: z.object({ path: z.string().max(4096).default("") }),
@@ -157,7 +176,7 @@ app.openapi(
     },
   }),
   async (c) => {
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     return c.json(await checkoutFiles(host, cwd, c.req.valid("query").path), 200);
   },
 );
@@ -180,7 +199,7 @@ app.openapi(
     responses: { 204: { description: "Switched" } },
   }),
   async (c) => {
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     await switchBranch(host, cwd, c.req.valid("json").branch);
     return c.body(null, 204);
   },
@@ -190,7 +209,7 @@ app.openapi(
     method: "get",
     path: "/terminals/{id}/git/github",
     tags: ["GitHub"],
-    summary: "Open pull requests for this terminal's current branch",
+    summary: "Open pull requests for this checkout's current branch",
     request: { params },
     responses: {
       200: {
@@ -224,7 +243,7 @@ app.openapi(
     },
   }),
   async (c) => {
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     return c.json(await checkoutGithubFeed(host, cwd), 200);
   },
 );
@@ -233,7 +252,7 @@ app.openapi(
     method: "get",
     path: "/terminals/{id}/git/status",
     tags: ["Git"],
-    summary: "Git status for a terminal checkout",
+    summary: "Git status for a terminal or chat session checkout",
     request: { params },
     responses: {
       200: {
@@ -252,7 +271,7 @@ app.openapi(
     },
   }),
   async (c) => {
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     return c.json(await gitStatus(host, cwd), 200);
   },
 );
@@ -281,7 +300,7 @@ app.openapi(
     },
   }),
   async (c) => {
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     const query = c.req.valid("query");
     if (query.path && !(await gitStatus(host, cwd)).files.some((file) => file.path === query.path))
       throw new ValidationError("Path is not in this checkout's status");
@@ -310,7 +329,7 @@ app.openapi(
     },
   }),
   async (c) => {
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     return c.json(await trackedWorktrees(cwd, worktreeDeps(host)), 200);
   },
 );
@@ -335,7 +354,7 @@ app.openapi(
     responses: { 204: { description: "Staged" } },
   }),
   async (c) => {
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     await stageFiles(host, cwd, c.req.valid("json").paths);
     return c.body(null, 204);
   },
@@ -359,7 +378,7 @@ app.openapi(
     responses: { 204: { description: "Committed" } },
   }),
   async (c) => {
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     await commitStaged(host, cwd, c.req.valid("json").message);
     return c.body(null, 204);
   },
@@ -381,7 +400,7 @@ app.openapi(
     },
   }),
   async (c) => {
-    const { host, cwd } = folder(c.req.valid("param").id);
+    const { host, cwd } = await folder(c.req.valid("param").id);
     if (!(await gitStatus(host, cwd)).root) throw new ValidationError("Not a git repository");
     const deps = sessionDirDeps(await launchDeps(loadConfig(), host), host);
     return c.json(

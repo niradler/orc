@@ -56,7 +56,10 @@ function listProps(setHover: (value: boolean) => void, setFocus: (value: boolean
     onPointerEnter: () => setHover(true),
     onPointerLeave: () => setHover(false),
     onFocus: (event: FocusEvent<HTMLElement>) => {
-      if (event.target.matches(":focus-visible")) setFocus(true);
+      // The panel itself can be focused programmatically; only a row or control
+      // reached with the keyboard counts as "the list has keyboard focus".
+      if (event.target !== event.currentTarget && event.target.matches(":focus-visible"))
+        setFocus(true);
     },
     onBlur: (event: FocusEvent<HTMLElement>) => {
       if (!event.currentTarget.contains(event.relatedTarget)) setFocus(false);

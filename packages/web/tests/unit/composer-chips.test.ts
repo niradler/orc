@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { ChatSettingsSchema } from "@orc/core/chat";
 import {
   agentEffort,
+  agentEffortChoices,
+  agentEffortValue,
   agentModelLabel,
   branchChipLabel,
   branchName,
@@ -13,6 +15,7 @@ import {
   pathName,
   resolveAgentId,
   shouldAttachPaste,
+  withAgentEffort,
   withPermissionMode,
 } from "../../src/lib/composer-chips";
 
@@ -140,6 +143,91 @@ describe("agent and model", () => {
   test("agentModelLabel joins model and effort", () => {
     expect(agentModelLabel("Opus 5.5", "High")).toBe("Opus 5.5 · High");
     expect(agentModelLabel("Default", null)).toBe("Default");
+  });
+  test("offers effort choices only for adapters that accept them", () => {
+    expect(agentEffortChoices("claude").map((choice) => choice.value)).toEqual([
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+      "max",
+    ]);
+    expect(agentEffortChoices("codex").map((choice) => choice.value)).toEqual([
+      "minimal",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+    expect(agentEffortChoices("pi")[0]).toEqual({ value: "off", label: "Off" });
+    expect(agentEffortChoices("opencode")).toEqual([]);
+  });
+  test("withAgentEffort writes each adapter's native effort field", () => {
+    const claude = withAgentEffort(
+      {
+        ...defaults,
+        agent: "claude",
+        agentOptions: {
+          claude: { runtime: "claude-sdk", options: { maxTurns: 20, effort: "low" } },
+        },
+      },
+      "high",
+    );
+    expect(claude.agentOptions.claude).toEqual({
+      runtime: "claude-sdk",
+      options: { maxTurns: 20, effort: "high" },
+    });
+    expect(agentEffortValue(claude)).toBe("high");
+    expect(agentEffort(claude)).toBe("High");
+    const reset = withAgentEffort(claude, "");
+    expect(reset.agentOptions.claude).toEqual({
+      runtime: "claude-sdk",
+      options: { maxTurns: 20 },
+    });
+    expect(agentEffort(reset)).toBeNull();
+
+    const pi = withAgentEffort({ ...defaults, agent: "pi" }, "xhigh");
+    expect(pi.agentOptions.pi).toEqual({ runtime: "pi", options: { thinkingLevel: "xhigh" } });
+    expect(agentEffort(pi)).toBe("Extra high");
+    expect(withAgentEffort(pi, "off")).toMatchObject({
+      agentOptions: { pi: { options: { thinkingLevel: "off" } } },
+    });
+
+    const codex = withAgentEffort(
+      {
+        ...defaults,
+        agent: "codex",
+        agentOptions: {
+          codex: {
+            runtime: "codex",
+            args: ["-c", 'model_verbosity="low"', "--config", 'model_reasoning_effort="low"'],
+          },
+        },
+      },
+      "high",
+    );
+    expect(codex.agentOptions.codex).toEqual({
+      runtime: "codex",
+      args: ["-c", 'model_verbosity="low"', "-c", 'model_reasoning_effort="high"'],
+    });
+    expect(agentEffortValue(codex)).toBe("high");
+    const inline = withAgentEffort(
+      {
+        ...defaults,
+        agent: "codex",
+        agentOptions: {
+          codex: { runtime: "codex", args: ["-c=model_reasoning_effort=max"] },
+        },
+      },
+      "medium",
+    );
+    expect(inline.agentOptions.codex).toEqual({
+      runtime: "codex",
+      args: ["-c", 'model_reasoning_effort="medium"'],
+    });
+    expect(withAgentEffort({ ...defaults, agent: "gemini" }, "high").agentOptions).toEqual(
+      defaults.agentOptions,
+    );
   });
   test("resolveAgentId maps session backends", () => {
     expect(resolveAgentId("claude")).toBe("claude");

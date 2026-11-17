@@ -172,7 +172,7 @@ for (const width of [320, 390, 820, 1440]) {
           await page.screenshot({ path: test.info().outputPath("agent-model-picker.png") });
           await page.keyboard.press("Escape");
         }
-        await page.getByTestId("chat-close-button").click();
+        await page.goBack();
         await expect(agent.getByTestId("chat-model-current")).toBeHidden();
       }
     }
@@ -186,7 +186,7 @@ test("folder changes in two clicks and agent+model change from one pill", async 
   await page.getByTestId("chat-workspace-recent-option").filter({ hasText: OLDER }).click();
   await expect(page.getByTestId("chat-workspace-folder-picker")).toBeHidden();
   await expect(folder).toHaveText("older-service");
-  await expect(folder).toHaveAttribute("title", `This ORC server: ${OLDER}`);
+  await expect(folder).toHaveAttribute("title", `Local: ${OLDER}`);
 
   const pill = page.getByTestId("chat-agent-model-button");
   await pill.click();
@@ -231,7 +231,7 @@ test("composer chips are fully keyboard operable", async ({ page }) => {
   await expect(page.getByTestId("chat-workspace-recent-option").last()).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("chat-workspace-folder-picker")).toBeHidden();
-  await expect(folder).toHaveAttribute("title", `This ORC server: ${OLDER}`);
+  await expect(folder).toHaveAttribute("title", `Local: ${OLDER}`);
   await expect(folder).toBeFocused();
 
   await page.keyboard.press("Tab");

@@ -30,7 +30,7 @@ export type ApiHostDraft = Omit<ApiHost, "id"> & { id?: string };
 
 export const CURRENT_HOST: ApiHost = {
   id: CURRENT_HOST_ID,
-  label: "This ORC server",
+  label: "Local",
   url: DEFAULT_API_URL,
   token: "",
   headers: [],
@@ -214,7 +214,7 @@ function uniqueHeaders(headers: ApiHostHeader[]): ApiHostHeader[] {
   return [...byName.values()];
 }
 
-/** Saved hosts, excluding the built-in "This ORC server" row. */
+/** Saved hosts, excluding the built-in "Local" row. */
 export function readApiHosts(): ApiHost[] {
   if (typeof window === "undefined") return [];
   try {

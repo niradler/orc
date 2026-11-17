@@ -9,6 +9,8 @@ export type NotificationView = {
   pathname: string;
   search: string;
   chatThreadId: string | null;
+  /** Native session the open chat thread was resumed from, if any. */
+  threadSourceId?: string | null;
   sessions?: readonly {
     id: string;
     agent: string;
@@ -29,17 +31,28 @@ export function notificationInView(item: OrcNotification, view: NotificationView
       : undefined;
   const targetThread =
     target.searchParams.get("chatThread") ?? request?.input.origin.chat_thread_id;
+  const chatOpen = !!params.get("chat") || view.pathname === "/chat";
+  if (chatOpen && targetThread && targetThread === view.chatThreadId) return true;
+  // Resuming clears the link parameter, so the open thread remembers its source session.
   if (
-    (params.get("chat") || view.pathname === "/chat") &&
-    targetThread &&
-    targetThread === view.chatThreadId
+    chatOpen &&
+    view.threadSourceId &&
+    item.type.startsWith("agent.") &&
+    view.threadSourceId === item.source_id
   )
     return true;
-  if (view.pathname !== "/sessions") return false;
-  const sessionId = params.get("session");
-  if (target.pathname === "/sessions" && target.searchParams.get("session") === sessionId)
+  // A session notification is in view when the chat page shows that session's
+  // conversation, its read-only view, or the same native session from a running terminal.
+  if (view.pathname !== "/chat") return false;
+  const liveId = params.get("sessionLive") ?? params.get("sessionView");
+  if (
+    liveId &&
+    target.pathname === "/chat" &&
+    (target.searchParams.get("sessionLive") === liveId ||
+      target.searchParams.get("sessionView") === liveId)
+  )
     return true;
-  const session = view.sessions?.find((session) => session.id === sessionId);
+  const session = view.sessions?.find((session) => session.id === (liveId ?? view.threadSourceId));
   const origin = request?.input.origin;
   return (
     !!session &&

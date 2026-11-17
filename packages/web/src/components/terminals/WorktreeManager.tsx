@@ -10,14 +10,9 @@ import {
   type Worktree,
 } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useRemoveWorktree } from "@/hooks/useGit";
 import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import { launchRequest } from "@/lib/terminal-launch";
@@ -166,19 +161,24 @@ export function WorktreeManager({
         className={cn("min-h-11 sm:min-h-8 gap-1.5", className)}
       >
         <GitBranch size={14} />
-        Worktrees
+        <span className="pointer-coarse:sr-only">Worktrees</span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
+          aria-describedby={undefined}
           data-testid="worktree-manager"
           className="max-w-3xl gap-3 bg-surface p-4 sm:p-6 border-surface-highest"
         >
           <DialogHeader className="pr-8 text-left">
-            <DialogTitle className="font-headline text-base text-on-surface">Worktrees</DialogTitle>
-            <DialogDescription className="font-body text-xs text-on-surface-variant">
-              Checkouts of every repository ORC knows about: project folders, sessions and recent
-              terminals. Merged, squash-merged and missing worktrees can be cleaned up.
-            </DialogDescription>
+            <div className="flex items-center gap-1">
+              <DialogTitle className="font-headline text-base text-on-surface">
+                Worktrees
+              </DialogTitle>
+              <HelpPopover label="Worktrees" testId="worktree-help">
+                Checkouts of every repository ORC knows about: project folders, sessions and recent
+                terminals. Merged, squash-merged and missing worktrees can be cleaned up.
+              </HelpPopover>
+            </div>
           </DialogHeader>
           <div className="flex flex-wrap items-center gap-2">
             <div role="radiogroup" aria-label="Show" className="flex gap-1">
@@ -208,6 +208,11 @@ export function WorktreeManager({
                 </button>
               ))}
             </div>
+            {pulls.data?.auth === "none" && (
+              <HelpPopover label="Pull request matching" testId="worktree-auth-help">
+                Sign in with gh or set a GitHub token to match pull requests to branches.
+              </HelpPopover>
+            )}
             <Button
               variant="ghost"
               size="sm"

@@ -9,8 +9,10 @@ interface Task {
 }
 
 test.describe("Dashboard", () => {
-  test("stats reflect API state and stat cards navigate", async ({ page, request }) => {
-    // Seed a task so the stats have a deterministic "todo" increment.
+  test("leads with usage charts and sessions, then lists the newest task", async ({
+    page,
+    request,
+  }) => {
     const title = tid("pw-dash");
     const task = await apiPost<Task>(request, "/tasks", {
       title,
@@ -20,30 +22,15 @@ test.describe("Dashboard", () => {
     try {
       await gotoView(page, "activity");
       await expect(page.getByTestId("view-title")).toHaveText(/activity/i);
-
-      // Stat cards are present
-      const todoCard = page.locator(`[data-testid="stat-card"][data-stat-label="Todo"]`);
-      const projectsCard = page.locator(`[data-testid="stat-card"][data-stat-label="Projects"]`);
-      const memoriesCard = page.locator(`[data-testid="stat-card"][data-stat-label="Memories"]`);
-      const activeJobsCard = page.locator(
-        `[data-testid="stat-card"][data-stat-label="Active jobs"]`,
-      );
-
-      await expect(todoCard).toBeVisible();
-      await expect(projectsCard).toBeVisible();
-      await expect(memoriesCard).toBeVisible();
-      await expect(activeJobsCard).toBeVisible();
-
-      // Todo count should be >= 1 (we seeded one). The card renders a placeholder
-      // until the activity queries resolve, so wait for a real number first.
-      const todoValue = todoCard.getByTestId("stat-card-value");
-      await expect(todoValue).toHaveText(/^\d+$/);
-      const raw = (await todoValue.textContent())?.trim() ?? "0";
-      expect(Number(raw)).toBeGreaterThanOrEqual(1);
-
-      // Clicking the Projects stat card navigates to the projects view.
-      await projectsCard.click();
-      await expect(page.getByTestId("view-title")).toHaveText(/projects/i);
+      await expect(page.getByTestId("activity-chart")).toBeVisible();
+      await expect(page.getByTestId("stat-card")).toHaveCount(0);
+      const sessions = page.getByRole("heading", { name: "Sessions", exact: true });
+      const tasks = page.getByRole("heading", { name: "Recent tasks" });
+      const sessionsBox = await sessions.boundingBox();
+      const tasksBox = await tasks.boundingBox();
+      expect(sessionsBox?.y ?? 0).toBeLessThan(tasksBox?.y ?? 0);
+      await page.getByRole("button", { name: title }).first().click();
+      await expect(page).toHaveURL(new RegExp(`/tasks/${task.id}`));
     } finally {
       await apiDelete(request, `/tasks/${task.id}`);
     }
@@ -62,33 +49,6 @@ test.describe("Dashboard", () => {
       await expect(page.getByTestId("view-meta")).toContainText(name);
       // back to All Projects
       await selectProject(page, "all");
-    } finally {
-      await apiDelete(request, `/projects/${project.id}`);
-    }
-  });
-
-  test("memories card counts the project's memories and opens them", async ({ page, request }) => {
-    const project = await apiPost<Project>(request, "/projects", {
-      name: tid("pw-dash-mem"),
-      status: "active",
-    });
-    try {
-      for (const name of ["first", "second"])
-        await apiPost(request, "/memories", {
-          project_id: project.id,
-          name: `${name}-${tid("fact").toLowerCase()}`,
-          description: `Dashboard ${name} memory`,
-          content: "Counted on the dashboard",
-        });
-      await gotoView(page, "activity");
-      await selectProject(page, project.id);
-      const memoriesCard = page.locator(`[data-testid="stat-card"][data-stat-label="Memories"]`);
-      await expect(memoriesCard.getByTestId("stat-card-value")).toHaveText("2");
-      await memoriesCard.click();
-      await expect(page).toHaveURL(new RegExp(`/knowledge/memories\\?project=${project.id}`));
-      await expect(page.getByTestId("memory-row")).toHaveCount(2);
-      await page.goto("/activity?project=unassigned");
-      await expect(memoriesCard.getByTestId("stat-card-value")).toHaveText("0");
     } finally {
       await apiDelete(request, `/projects/${project.id}`);
     }

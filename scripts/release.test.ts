@@ -221,6 +221,24 @@ files:
     expect(source.ORC_API_PORT).toBe("7711");
     expect(desktopLaunchEnv({ orc_api_port: "7711", HOME: "user" })).toEqual({ HOME: "user" });
   });
+  test("should strip inherited ORC runtime overrides from release children unless passed explicitly", () => {
+    const previous = process.env.ORC_HOME;
+    process.env.ORC_HOME = join("real", ".orc");
+    try {
+      const probe = ["-e", "console.log(process.env.ORC_HOME ?? 'unset')"];
+      expect(run(process.execPath, probe, { capture: true, quiet: true })).toBe("unset");
+      expect(
+        run(process.execPath, probe, {
+          capture: true,
+          quiet: true,
+          env: { ORC_HOME: "explicit" },
+        }),
+      ).toBe("explicit");
+    } finally {
+      if (previous === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = previous;
+    }
+  });
   test("should preserve process errors rather than treating empty output as success", () => {
     expect(() =>
       run(process.execPath, ["-e", "process.exit(17)"], {

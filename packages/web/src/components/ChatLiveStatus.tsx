@@ -1,4 +1,4 @@
-import type { ChatActivity, ChatMessage } from "@orc/core/chat";
+import { buildChatItems, type ChatActivity, type ChatMessage } from "@orc/core/chat";
 import type { LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { AgentIcon, agentDisplayName } from "@/components/AgentIcon";
@@ -29,7 +29,14 @@ function activityTrail(activity: ChatActivity[]): TrailEntry[] {
       return [
         {
           id: item.id,
-          label: item.type === "thinking" ? "Thinking" : toolLabel(item.name),
+          label:
+            item.type === "thinking"
+              ? "Thinking"
+              : item.type === "plan"
+                ? (item.title ?? "Plan")
+                : item.type === "subagent"
+                  ? (item.title ?? "Subagent")
+                  : toolLabel(item.name),
           Icon: activityIcon(item),
           ...(item.type === "tool" && item.startedAt !== undefined
             ? { startedAt: item.startedAt }
@@ -57,7 +64,7 @@ export function ChatLiveStatus({
     <div className="chat-activity-status shrink-0 px-4 pt-1 pb-1.5 sm:px-6">
       <div
         data-testid="chat-activity-status"
-        className="mx-auto flex w-full max-w-3xl min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-outline-variant bg-surface/60 px-3 py-1.5 text-xs text-on-surface-variant"
+        className="mx-auto flex w-full max-w-(--chat-width) min-w-0 items-center gap-2 overflow-hidden rounded-xl border border-outline-variant bg-surface/60 px-3 py-1.5 text-xs text-on-surface-variant"
       >
         <Icon
           aria-hidden="true"
@@ -163,8 +170,18 @@ export function ChatLiveAnnouncer({
     if (last?.role !== "assistant") return;
     const rest = last.content.slice(spoken.current).trim();
     const summary =
-      last.activity?.length || last.turn?.outcome
-        ? foldLabel(foldTurn(last.activity ?? [], last.turn), false, last.turn?.outcome)
+      last.activity?.length || last.providerActivity?.length || last.turn?.outcome
+        ? foldLabel(
+            foldTurn(
+              buildChatItems({
+                activity: last.activity,
+                providerActivity: last.providerActivity,
+              }),
+              last.turn,
+            ),
+            false,
+            last.turn?.outcome,
+          )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
   }, [streaming, last]);

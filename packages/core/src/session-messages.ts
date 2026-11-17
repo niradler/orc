@@ -190,3 +190,14 @@ export const SessionLineageSchema = z.object({
   children: z.array(LineageNodeSchema),
 });
 export type SessionLineage = z.infer<typeof SessionLineageSchema>;
+
+export const SessionSubagentSchema = z.object({
+  id: identity,
+  session_id: z.string().nullable(),
+  title: z.string(),
+  status: z.string().max(32),
+  tool_call_id: z.string().nullable(),
+  created_at: z.number(),
+});
+export const SessionSubagentsSchema = z.object({ subagents: z.array(SessionSubagentSchema) });
+export type SessionSubagents = z.infer<typeof SessionSubagentsSchema>;

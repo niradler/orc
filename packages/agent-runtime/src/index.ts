@@ -1,3 +1,4 @@
+export { type AcpEffortChoice, SteerNotConsumedError } from "./acp.js";
 export {
   ACPX_MISSING_MESSAGE,
   type AcpxResolution,
@@ -7,7 +8,11 @@ export {
 } from "./acpx.js";
 export { chatBackendFor, UNKNOWN_CAPABILITIES } from "./capabilities.js";
 export { hostClaudeLoggedIn } from "./claude-sdk.js";
-export { type AgentModel, discoverAgentModels } from "./models.js";
+export {
+  type AgentModel,
+  discoverAgentModels,
+  discoverOpenCodeEffortChoices,
+} from "./models.js";
 export { type BackendProbe, probeBackend, probeBackends } from "./probe.js";
 export {
   createBackend,

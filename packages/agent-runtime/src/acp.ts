@@ -17,7 +17,9 @@ import {
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type SessionConfigOption,
+  type SetSessionConfigOptionResponse,
 } from "@agentclientprotocol/sdk";
+import { CHAT_SUBAGENT_MAX_ITEMS, type ChatSubagentActivity } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { type HostProcess, hostBinary, hostIsDirectory, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
@@ -28,6 +30,7 @@ import { acpElicitationForm } from "./elicitation.js";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
+import { planEvent, planFromToolInput } from "./plan.js";
 import { registerBackend } from "./registry.js";
 import type {
   AgentBackend,
@@ -37,6 +40,126 @@ import type {
   PermissionResult,
   SessionOpts,
 } from "./types.js";
+
+export type AcpEffortChoice = { value: string; label: string };
+
+/**
+ * The agent explicitly did not consume the steering text (e.g. `_session/steering`
+ * answered `promptRequired`). Nothing was delivered, so the caller may safely
+ * queue the same message instead of treating it as possibly duplicated.
+ */
+export class SteerNotConsumedError extends Error {
+  constructor() {
+    super("The agent did not consume the steering message.");
+    this.name = "SteerNotConsumedError";
+  }
+}
+
+type SteeringResponse = {
+  outcome?: "injected" | "promptRequired" | "startedNewTurn";
+  reason?: string;
+};
+
+/** Effort levels from a thought_level select option, flattening option groups. */
+function effortChoicesOf(option: SessionConfigOption | undefined): AcpEffortChoice[] | undefined {
+  if (!option || option.type !== "select" || option.category !== "thought_level") return undefined;
+  const choices = option.options
+    .flatMap((entry) => ("group" in entry ? entry.options : [entry]))
+    .slice(0, 16)
+    .map((entry) => ({ value: entry.value, label: entry.name || entry.value }));
+  return choices.length ? choices : undefined;
+}
+
+function thoughtLevelOption(
+  options: readonly SessionConfigOption[],
+): SessionConfigOption | undefined {
+  return options.find((option) => option.category === "thought_level" && option.type === "select");
+}
+
+type ChildSessionMeta = { id: string; title?: string };
+
+/** OpenCode tags child-session updates with _meta["opencode/child-session"]. */
+function childSessionMeta(update: unknown): ChildSessionMeta | null {
+  const meta = (update as { _meta?: Record<string, unknown> } | null)?._meta?.[
+    "opencode/child-session"
+  ];
+  if (!meta || typeof meta !== "object") return null;
+  const record = meta as { id?: unknown; title?: unknown };
+  if (typeof record.id !== "string" || !record.id) return null;
+  return {
+    id: record.id.slice(0, 200),
+    ...(typeof record.title === "string" && record.title
+      ? { title: record.title.slice(0, 200) }
+      : {}),
+  };
+}
+
+/** The child session a completed parent tool call spawned, when it names one. */
+function completedChildSession(update: {
+  sessionUpdate?: string;
+  status?: string | null;
+  rawOutput?: unknown;
+}): { id: string; failed: boolean } | null {
+  if (update.sessionUpdate !== "tool_call_update") return null;
+  if (update.status !== "completed" && update.status !== "failed") return null;
+  const output = update.rawOutput;
+  if (!output || typeof output !== "object") return null;
+  const record = output as { metadata?: { sessionId?: unknown }; sessionId?: unknown };
+  const id = record.metadata?.sessionId ?? record.sessionId;
+  if (typeof id !== "string" || !id) return null;
+  return { id: id.slice(0, 200), failed: update.status === "failed" };
+}
+
+/** Inline child activity keeps bounded excerpts; the full transcript stays in the child session. */
+const CHILD_INPUT_LIMIT = 1000;
+const CHILD_RESULT_LIMIT = 2000;
+
+function appendChildActivity(
+  activity: ChatSubagentActivity,
+  event: AgentEvent,
+): ChatSubagentActivity {
+  if (event.type === "tool_use") {
+    const input = event.data.input.slice(0, CHILD_INPUT_LIMIT);
+    const at = activity.findIndex((item) => item.type === "tool" && item.id === event.data.id);
+    if (at >= 0) {
+      const next = [...activity];
+      const previous = next[at];
+      if (previous?.type === "tool") next[at] = { ...previous, name: event.data.name, input };
+      return next;
+    }
+    return [...activity, { type: "tool", ...event.data, input, startedAt: Date.now() }].slice(
+      -CHAT_SUBAGENT_MAX_ITEMS,
+    ) as ChatSubagentActivity;
+  }
+  if (event.type === "tool_result") {
+    return activity.map((item) =>
+      item.type === "tool" && item.id === event.data.toolUseId
+        ? {
+            ...item,
+            result: event.data.content.slice(0, CHILD_RESULT_LIMIT),
+            isError: event.data.isError,
+          }
+        : item,
+    );
+  }
+  if (event.type === "thinking") {
+    const last = activity[activity.length - 1];
+    if (last?.type === "thinking")
+      return [...activity.slice(0, -1), { ...last, text: (last.text + event.data).slice(-20000) }];
+    return [...activity, { type: "thinking", id: ulid(), text: event.data.slice(0, 20000) }].slice(
+      -CHAT_SUBAGENT_MAX_ITEMS,
+    ) as ChatSubagentActivity;
+  }
+  return activity;
+}
+
+type ChildState = {
+  title?: string;
+  status: "running" | "completed" | "failed";
+  parse: (line: string) => AgentEvent[];
+  activity: ChatSubagentActivity;
+  text: string;
+};
 
 /** Bound frames before JSON decoding, including a peer that never sends a newline. */
 function boundedOutput(input: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
@@ -65,6 +188,8 @@ export class AcpSession implements AgentSession {
   private movedFrom: string | undefined;
   private moveNoted = false;
   private sessionList = false;
+  /** OpenCode 2.x steers through `_session/steering`; a second prompt is rejected. */
+  private steeringExtension = false;
   private closed = false;
   private done = true;
   private busy = false;
@@ -75,6 +200,10 @@ export class AcpSession implements AgentSession {
   private readonly queue: AgentEvent[] = [];
   private wake: (() => void) | undefined;
   private parse = createAcpxParser();
+  /** Live child sessions (OpenCode subagents), keyed by their native session id. */
+  private readonly children = new Map<string, ChildState>();
+  /** Notices from session setup; send() clears the queue, so they wait for the turn. */
+  private readonly setupNotes: string[] = [];
   private readonly pending = new Map<
     string,
     { params: RequestPermissionRequest; resolve: (value: RequestPermissionResponse) => void }
@@ -99,7 +228,7 @@ export class AcpSession implements AgentSession {
 
   private push(event: AgentEvent): void {
     if (this.closed) return;
-    this.outputBytes += JSON.stringify(event).length;
+    if (event.type !== "subagent") this.outputBytes += JSON.stringify(event).length;
     if (this.outputBytes > 2_000_000) {
       this.fail("ACP response exceeded the output limit.");
       return;
@@ -112,7 +241,7 @@ export class AcpSession implements AgentSession {
   private fail(message: string): void {
     if (this.failure || this.closed) return;
     this.failure = message;
-    this.queue.push({ type: "error", data: message });
+    if (!this.done) this.queue.push({ type: "error", data: message });
     this.done = true;
     this.cancelPending();
     this.wake?.();
@@ -199,12 +328,15 @@ export class AcpSession implements AgentSession {
       const abort = () => finish({ outcome: { outcome: "cancelled" } });
       this.pending.set(id, { params, resolve: finish });
       signal.addEventListener("abort", abort, { once: true });
+      // A child session's approval names the subagent so the prompt is unambiguous.
+      const child = childSessionMeta(params.toolCall);
+      const title = params.toolCall.title ?? "Agent action";
       this.push({
         type: "permission_request",
         data: {
           requestId: id,
           tool: params.toolCall.kind ?? "tool",
-          command: params.toolCall.title ?? "Agent action",
+          command: child?.title ? `${child.title}: ${title}` : title,
           input: { toolCall: params.toolCall },
           cwd: this.effectiveCwd,
         },
@@ -266,6 +398,54 @@ export class AcpSession implements AgentSession {
     });
   }
 
+  /**
+   * Child-session updates arrive on the parent's session id, tagged with the
+   * child's identity. They accumulate into one inline transcript block per child
+   * instead of mixing into the parent's text and tool stream.
+   */
+  private childUpdate(meta: ChildSessionMeta, params: { update: unknown }): void {
+    let state = this.children.get(meta.id);
+    if (!state) {
+      state = { status: "running", parse: createAcpxParser(), activity: [], text: "" };
+      this.children.set(meta.id, state);
+    }
+    if (meta.title) state.title = meta.title;
+    const events = state.parse(JSON.stringify({ method: "session/update", params }));
+    let discrete = false;
+    for (const event of events) {
+      if (event.type === "text") {
+        state.text = (state.text + event.data).slice(-100000);
+        continue;
+      }
+      if (event.type === "tool_use" || event.type === "tool_result") discrete = true;
+      state.activity = appendChildActivity(state.activity, event);
+    }
+    // Text and thinking stream into the block silently; pushing every chunk would
+    // resend the whole transcript each time. Discrete tool events carry it live.
+    if (discrete) this.pushChild(meta.id, state);
+  }
+
+  private pushChild(id: string, state: ChildState): void {
+    this.push({
+      type: "subagent",
+      data: {
+        id,
+        ...(state.title ? { title: state.title } : {}),
+        status: state.status,
+        activity: state.activity,
+        ...(state.text ? { text: state.text } : {}),
+      },
+    });
+  }
+
+  /** The parent's task call finished, so the child it names is done too. */
+  private finishChild(id: string, failed: boolean): void {
+    const state = this.children.get(id);
+    if (!state || state.status !== "running") return;
+    state.status = failed ? "failed" : "completed";
+    this.pushChild(id, state);
+  }
+
   async initialize(): Promise<void> {
     if (this.closed) throw new Error("ACP connection is closed.");
     try {
@@ -294,16 +474,36 @@ export class AcpSession implements AgentSession {
         .onNotification("session/update", ({ params }) => {
           if (this.replaying || this.closed || params.sessionId !== this.runtimeId || this.done)
             return;
+          if (params.update.sessionUpdate === "config_option_update") {
+            // A model change can change the effort levels the session offers.
+            const choices = effortChoicesOf(thoughtLevelOption(params.update.configOptions ?? []));
+            const next = { ...this.capabilities };
+            if (choices) next.effortChoices = choices;
+            else delete next.effortChoices;
+            this.capabilities = next;
+            this.push({ type: "capabilities", data: next });
+            return;
+          }
+          const child = childSessionMeta(params.update);
+          if (child) {
+            this.childUpdate(child, params);
+            return;
+          }
           const events = this.parse(JSON.stringify({ method: "session/update", params }));
-          for (const event of events) this.push(event);
-          if (params.update.sessionUpdate === "plan")
-            this.push({
-              type: "system_status",
-              data: params.update.entries
-                .map((entry) => `${entry.status}: ${entry.content}`)
-                .join("\n"),
-            });
-          else if (
+          for (const event of events) {
+            this.push(event);
+            // OpenCode and other ACP agents publish their checklist as a tool call.
+            if (event.type === "tool_use") {
+              const plan = planFromToolInput(event.data.name, event.data.input);
+              if (plan) this.push(plan);
+            }
+          }
+          const finished = completedChildSession(params.update);
+          if (finished) this.finishChild(finished.id, finished.failed);
+          if (params.update.sessionUpdate === "plan") {
+            const plan = planEvent("plan", params.update.entries ?? []);
+            if (plan) this.push(plan);
+          } else if (
             (params.update.sessionUpdate === "agent_message_chunk" ||
               params.update.sessionUpdate === "agent_thought_chunk") &&
             params.update.content.type !== "text"
@@ -323,7 +523,12 @@ export class AcpSession implements AgentSession {
           this.fail("ACP agent exited. Resume this conversation after checking the agent.");
       });
       const agent = this.connection.agent;
-      const clientCapabilities: ClientCapabilities = { elicitation: { form: {} } };
+      const clientCapabilities: ClientCapabilities = {
+        elicitation: { form: {} },
+        // OpenCode streams subagent activity on the parent session only when the
+        // client opts in; other ACP agents ignore the unknown key.
+        _meta: { "opencode/child-session-updates": true },
+      };
       const initialized = await this.request(
         agent.request("initialize", {
           protocolVersion: PROTOCOL_VERSION,
@@ -335,6 +540,9 @@ export class AcpSession implements AgentSession {
       if (initialized.protocolVersion !== PROTOCOL_VERSION)
         throw new Error("Unsupported ACP protocol version.");
       const native = initialized.agentCapabilities;
+      this.steeringExtension =
+        (initialized as { _meta?: { steering?: { supported?: boolean } } })._meta?.steering
+          ?.supported === true;
       this.sessionList = native?.sessionCapabilities?.list != null;
       this.capabilities = {
         ...this.capabilities,
@@ -447,14 +655,39 @@ export class AcpSession implements AgentSession {
           throw new Error(
             "This ACP agent does not expose model selection. Clear the explicit model or use ACPX.",
           );
-        await this.request(
-          agent.request("session/set_config_option", {
+        const changed = await this.request(
+          agent.request<SetSessionConfigOptionResponse>("session/set_config_option", {
             sessionId: this.runtimeId,
             configId: model.id,
             value: this.opts.model,
           }),
           "session/set_config_option",
         );
+        if (changed?.configOptions?.length) configOptions = changed.configOptions;
+      }
+      const effort = thoughtLevelOption(configOptions);
+      const choices = effortChoicesOf(effort);
+      if (choices) this.capabilities = { ...this.capabilities, effortChoices: choices };
+      const saved = this.opts.chatAgentOptions;
+      const requested = saved?.runtime === "opencode" ? saved.options.effort : undefined;
+      if (requested && requested !== "default") {
+        if (!choices)
+          this.setupNotes.push(
+            "This session does not expose effort levels; the agent default is used.",
+          );
+        else if (!choices.some((choice) => choice.value === requested))
+          this.setupNotes.push(
+            `Effort "${requested}" is not available for this model; the agent default is used.`,
+          );
+        else if (effort)
+          await this.request(
+            agent.request("session/set_config_option", {
+              sessionId: this.runtimeId,
+              configId: effort.id,
+              value: requested,
+            }),
+            "session/set_config_option",
+          );
       }
     } catch (error) {
       await this.close();
@@ -474,7 +707,9 @@ export class AcpSession implements AgentSession {
     this.queue.length = 0;
     this.outputBytes = 0;
     this.parse = createAcpxParser();
+    this.children.clear();
     this.push({ type: "capabilities", data: this.capabilities });
+    for (const note of this.setupNotes.splice(0)) this.push({ type: "system_status", data: note });
     if (this.movedFrom && !this.moveNoted) {
       this.moveNoted = true;
       this.push({
@@ -505,6 +740,15 @@ export class AcpSession implements AgentSession {
           this.push({ type: "system_status", data: "ACP turn stopped." });
         else if (result.stopReason !== "end_turn")
           this.push({ type: "error", data: `ACP turn ended: ${result.stopReason}` });
+        // Close any child block whose task call never reported completion.
+        for (const [id, state] of this.children)
+          if (state.status === "running") {
+            state.status =
+              result.stopReason === "end_turn" || result.stopReason === "cancelled"
+                ? "completed"
+                : "failed";
+            this.pushChild(id, state);
+          }
         this.push({
           type: "result",
           data: {
@@ -513,6 +757,7 @@ export class AcpSession implements AgentSession {
             ...(this.movedFrom ? { cwd: this.effectiveCwd } : {}),
           },
         });
+        this.done = true;
       })
       .catch(() =>
         this.fail("ACP prompt failed. Check the agent's login and session availability."),
@@ -526,10 +771,13 @@ export class AcpSession implements AgentSession {
   }
 
   /**
-   * ACP has no steer request. OpenCode treats a second `session/prompt` during a
-   * running turn as steering (verified against opencode 1.19.5): the text joins
-   * the active turn and that request resolves when the turn ends. Agents without
-   * the declared capability keep steering=false and never reach this method.
+   * OpenCode 2.x runs one prompt at a time and rejects a second `session/prompt`;
+   * when it advertises the steering extension, steer through `_session/steering`
+   * and let the owning prompt stay pending until the steered output finishes.
+   * Older OpenCode (verified against 1.19.5) treats a second `session/prompt`
+   * during a running turn as steering: the text joins the active turn and that
+   * request resolves when the turn ends. Agents without the declared capability
+   * keep steering=false and never reach this method.
    */
   async steer(prompt: string): Promise<void> {
     if (this.closed || this.failure || !this.connection || !this.runtimeId)
@@ -538,6 +786,31 @@ export class AcpSession implements AgentSession {
       throw new Error("This ACP agent does not accept steering.");
     if (!this.busy || this.done || this.cancelling)
       throw new Error("ACP has no active turn to steer.");
+    if (this.steeringExtension) {
+      const started = Date.now();
+      let result: SteeringResponse;
+      try {
+        result = await this.connection.agent.request<SteeringResponse>("_session/steering", {
+          sessionId: this.runtimeId,
+          prompt: [{ type: "text", text: prompt }],
+          // Ask the agent to refuse rather than start a turn of its own when idle;
+          // a refusal means the text was not consumed and can be queued safely.
+          _meta: { steering: { idleBehavior: "promptRequired" } },
+        });
+      } catch (error) {
+        if (Date.now() - started <= 2000 && !this.closed && !this.failure && !this.cancelling) {
+          this.capabilities = { ...this.capabilities, steering: false };
+          this.push({ type: "capabilities", data: this.capabilities });
+          this.push({
+            type: "system_status",
+            data: "This agent rejected steering; the running turn continues. Queue the message instead.",
+          });
+        }
+        throw error;
+      }
+      if (result?.outcome === "injected" || result?.outcome === "startedNewTurn") return;
+      throw new SteerNotConsumedError();
+    }
     const started = Date.now();
     // OpenCode answers an accepted steer only when the turn ends, so do not wait
     // for it. A refusal is immediate; a later failure belongs to the turn itself
@@ -664,6 +937,71 @@ function acpCommand(opts: SessionOpts, builtin?: BuiltinAcpAgent): string[] {
   throw new Error(
     "Configure agent_loop.acp_commands.<agent> with an ACP command and select that agent.",
   );
+}
+
+/**
+ * Effort levels for a chat that has not started: a metadata-only ACP handshake
+ * (initialize + session/new), deleting the probe session afterwards so it never
+ * reaches the session list. Null when the agent cannot clean up after itself,
+ * exposes no effort option, or does not answer in time.
+ */
+export async function probeOpenCodeEffortChoices(opts: {
+  cwd: string;
+  executionHost?: string | null | undefined;
+  providerExecutable?: string | undefined;
+  env?: Record<string, string> | undefined;
+}): Promise<AcpEffortChoice[] | null> {
+  const host = sessionExecHost(opts);
+  const command = acpCommand({ ...opts, acpAgent: "opencode" }, OPENCODE_BUILTIN);
+  let child: HostProcess | undefined;
+  let connection: ClientConnection | undefined;
+  const deadline = setTimeout(() => child?.kill(), 15_000);
+  try {
+    child = await hostSpawn(host, command, {
+      cwd: opts.cwd,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+      env: { ...process.env, ...opts.env },
+      passEnv: Object.keys(opts.env ?? {}),
+    });
+    if (!child.proc.stdout || typeof child.proc.stdout === "number") return null;
+    const proc = child;
+    const output = new WritableStream<Uint8Array>({
+      write: (data) => writeToStdin(proc.proc.stdin, data),
+      close: () => endStdin(proc.proc.stdin),
+    });
+    connection = client({ name: "orc-probe" }).connect(
+      ndJsonStream(output, boundedOutput(child.proc.stdout)),
+    );
+    const agent = connection.agent;
+    const initialized = await agent.request("initialize", {
+      protocolVersion: PROTOCOL_VERSION,
+      clientInfo: { name: "orc", version: "1" },
+      clientCapabilities: { elicitation: { form: {} } },
+    });
+    // Without session/delete the probe would leave a junk session behind.
+    if (initialized.agentCapabilities?.sessionCapabilities?.delete == null) return null;
+    const created = await agent.request<NewSessionResponse, NewSessionRequest>("session/new", {
+      cwd: opts.cwd,
+      mcpServers: [],
+    });
+    const choices = effortChoicesOf(thoughtLevelOption(created.configOptions ?? [])) ?? null;
+    await agent.request("session/delete", { sessionId: created.sessionId }).catch(() => {});
+    return choices;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(deadline);
+    connection?.close();
+    if (child) {
+      const proc = child;
+      endStdin(proc.proc.stdin);
+      const kill = setTimeout(() => proc.kill(), 1000);
+      await proc.proc.exited.catch(() => {});
+      clearTimeout(kill);
+    }
+  }
 }
 function createAcpBackend(builtin?: BuiltinAcpAgent): AgentBackend {
   const open = async (opts: SessionOpts) => {

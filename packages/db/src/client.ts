@@ -469,6 +469,8 @@ function setupDb(sqlite: Database): void {
     "UPDATE usage_events SET estimated_requests=1 WHERE estimated=1 AND estimated_requests=0",
     "UPDATE usage_events SET resolution='rollup' WHERE resolution IN ('day','model')",
     "CREATE INDEX IF NOT EXISTS usage_events_raw_ts_idx ON usage_events(ts) WHERE resolution='request'",
+    "ALTER TABLE gateway_sessions ADD COLUMN parent_session_id TEXT",
+    "ALTER TABLE gateway_sessions ADD COLUMN spawned_from_session_id TEXT",
   ];
   for (const statement of migrations) {
     try {
@@ -489,6 +491,7 @@ function setupDb(sqlite: Database): void {
     }
   }
 
+  mergeDuplicateLiveSessions(sqlite);
   sqlite.exec(INDEXES);
   syncTaskSearchTrigger(sqlite);
 
@@ -518,6 +521,70 @@ function setupDb(sqlite: Database): void {
   } catch {}
 }
 
+const LIVE_SESSION_REFERENCES = [
+  "UPDATE OR IGNORE usage_events SET session_id=$keep WHERE session_id=$drop",
+  "DELETE FROM usage_events WHERE session_id=$drop",
+  "UPDATE bridge_messages SET gateway_session_id=$keep WHERE gateway_session_id=$drop",
+  "UPDATE bridge_permissions SET gateway_session_id=$keep WHERE gateway_session_id=$drop",
+  "UPDATE flow_node_runs SET gateway_session_id=$keep WHERE gateway_session_id=$drop",
+  "UPDATE session_handoffs SET live_session_id=$keep WHERE live_session_id=$drop",
+  "UPDATE notifications SET source_id=$keep WHERE source_id=$drop",
+  "UPDATE OR IGNORE notification_session_sources SET source_id=$keep WHERE source_id=$drop",
+  "DELETE FROM notification_session_sources WHERE source_id=$drop",
+  "UPDATE tasks SET origin_session_id=$keep WHERE origin_session_id=$drop",
+  "UPDATE session_messages SET target_session_id=$keep WHERE target_session_id=$drop",
+  "UPDATE session_messages SET sender_session_id=$keep WHERE sender_session_id=$drop",
+  `UPDATE chat_threads SET data=json_set(data, '$.sourceId', $keep)
+     WHERE json_valid(data) AND json_extract(data, '$.sourceId')=$drop`,
+];
+
+export function mergeDuplicateLiveSessions(sqlite: Database): number {
+  if (
+    sqlite
+      .query("SELECT 1 FROM sqlite_master WHERE name = 'gateway_sessions_live_native_idx'")
+      .get()
+  )
+    return 0;
+  const twins = sqlite
+    .query<{ keepId: string; dropId: string }, []>(
+      `SELECT keep.id AS keepId, twin.id AS dropId FROM gateway_sessions twin
+       JOIN gateway_sessions keep ON keep.id = (
+         SELECT candidate.id FROM gateway_sessions candidate
+         WHERE candidate.chat_id = twin.chat_id AND candidate.backend = twin.backend
+           AND IFNULL(candidate.execution_host, '') = IFNULL(twin.execution_host, '')
+           AND candidate.runtime_session_id = twin.runtime_session_id
+         ORDER BY candidate.updated_at DESC, candidate.rowid ASC LIMIT 1)
+       WHERE twin.chat_id = '__live-sessions__' AND twin.runtime_session_id IS NOT NULL
+         AND twin.id <> keep.id`,
+    )
+    .all();
+  if (!twins.length) return 0;
+  sqlite
+    .transaction(() => {
+      for (const { keepId: keep, dropId: drop } of twins) {
+        sqlite
+          .query(
+            `UPDATE gateway_sessions SET
+             display_title = COALESCE(display_title, (SELECT display_title FROM gateway_sessions WHERE id = $drop)),
+             hidden_at = COALESCE(hidden_at, (SELECT hidden_at FROM gateway_sessions WHERE id = $drop)),
+             task_id = COALESCE(task_id, (SELECT task_id FROM gateway_sessions WHERE id = $drop))
+           WHERE id = $keep`,
+          )
+          .run({ $keep: keep, $drop: drop });
+        for (const statement of LIVE_SESSION_REFERENCES) {
+          try {
+            sqlite.query(statement).run({ $keep: keep, $drop: drop });
+          } catch (err) {
+            if (!String(err).toLowerCase().includes("no such table")) throw err;
+          }
+        }
+        sqlite.query("DELETE FROM gateway_sessions WHERE id = $drop").run({ $drop: drop });
+      }
+    })
+    .immediate();
+  return twins.length;
+}
+
 // Foreign-key children and hot list filters. SQLite looks up FK children on every parent
 // delete, so an unindexed child column means a full scan of that table per deleted row.
 const INDEXES = `
@@ -529,6 +596,11 @@ const INDEXES = `
   CREATE INDEX IF NOT EXISTS gateway_sessions_activity_idx ON gateway_sessions(chat_id, last_activity_at);
   CREATE INDEX IF NOT EXISTS gateway_sessions_status_role_idx ON gateway_sessions(status, role);
   CREATE INDEX IF NOT EXISTS gateway_sessions_project_idx ON gateway_sessions(project_id);
+  CREATE INDEX IF NOT EXISTS gateway_sessions_parent_idx ON gateway_sessions(backend, parent_session_id);
+  CREATE INDEX IF NOT EXISTS gateway_sessions_spawned_from_idx ON gateway_sessions(backend, spawned_from_session_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS gateway_sessions_live_native_idx
+    ON gateway_sessions(backend, IFNULL(execution_host, ''), runtime_session_id)
+    WHERE chat_id = '__live-sessions__' AND runtime_session_id IS NOT NULL;
   CREATE INDEX IF NOT EXISTS job_runs_task_idx ON job_runs(task_id);
   CREATE INDEX IF NOT EXISTS job_runs_created_idx ON job_runs(created_at);
   CREATE INDEX IF NOT EXISTS job_runs_status_idx ON job_runs(status);

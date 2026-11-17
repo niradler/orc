@@ -7,6 +7,7 @@ import {
   parseUpdateInfo,
   updateInfoFileName,
 } from "../packages/desktop/src/update-metadata.js";
+import { gateEnv } from "./gate-env.js";
 
 export const TARGETS = [
   { id: "windows-x64", os: "win", arch: "x64", runner: "windows-latest", extension: "exe" },
@@ -155,7 +156,9 @@ export function run(
     stdio: options.capture ? "pipe" : "inherit",
     encoding: "utf8",
     windowsHide: true,
-    env: { ...process.env, ...options.env },
+    // Strip inherited ORC runtime overrides (ORC_HOME, ORC_API_SECRET, ...) from the base so
+    // gates and builds cannot be redirected by the launching shell; explicit options.env wins.
+    env: { ...gateEnv(process.env), ...options.env },
   });
   if (result.error) throw result.error;
   if (result.status !== 0) {

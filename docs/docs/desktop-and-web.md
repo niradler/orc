@@ -23,7 +23,7 @@ Pages are grouped in the sidebar:
 
 | Group     | Pages                                        |
 | --------- | -------------------------------------------- |
-| Activity  | Activity, Sessions, Jobs, Webhooks, Audit    |
+| Activity  | Activity, Jobs, Webhooks, Audit              |
 | Chat      | Chat                                         |
 | Tasks     | Tasks                                        |
 | Knowledge | Knowledge base, Memories                     |
@@ -38,29 +38,63 @@ theme command in the command palette:
 
 ![Dashboard in the light theme](/screens/dashboard-light.png)
 
+### Appearance
+
+**Settings → General → Appearance** sets how ORC reads on each device. Theme is saved on
+the server; everything else is saved in this browser, so a phone and a desktop keep their
+own choices.
+
+| Setting | Options | Default |
+|---|---|---|
+| Dark background | Charcoal, Black | Charcoal |
+| Interface font | System, Inter, Geist | System (SF Pro on macOS, Segoe UI on Windows) |
+| Interface text on desktop / on phone | Small, Default, Large, Extra large | Default |
+| Chat message font | Same as interface, System, Inter, Geist, Serif | Same as interface |
+| Chat text on desktop / on phone | Small (15px), Default (16px), Large (18px), Extra large (20px) | Large on desktop, Default on phone |
+| Chat width | Comfortable, Wide, Full | Wide |
+
+Phone sizes apply below 768px wide, so resizing a desktop window switches between them.
+Chat text, its 1.65 line height and slight letter spacing apply to chat answers and to the
+read-only session viewer; terminals keep their own font.
+
+![Chat reading on desktop](/screens/chat-reading-desktop.png)
+
+![Appearance settings](/screens/settings-appearance-desktop.png)
+
 ## Chat page
 
-**Chat** in the sidebar, under Activity, opens the chat page at `/chat`. It is a
+**Chat** in the sidebar opens the chat page at `/chat`. It is a
 regular page: the workspace header keeps your navigation and notifications, and
 **Chat** shows as the active page. The sidebar collapses to its icon rail while a
 conversation is open, including the side chat, to give the conversation the width;
 leaving chat restores the width you had, and expanding it during chat keeps your
 choice.
-The chat panel's full-screen button, and the full-screen button on **Sessions**
-(on the page or on a row) or in the **Terminals** session list, open the same
-page.
+The chat panel's full-screen button in the **Terminals** session list opens the
+same page.
 
 Below 1280px wide, the chat has no side panel: starting a chat from any page
 opens the chat page instead.
 
-- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from your coding agents, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Collapse the list to a rail of icons with its state marks; expand it again from the rail.
-  - **Projects**, the default view, groups sessions under their project (unassigned sessions get their own group); expand a project to see its sessions, and use its **+** button to start a chat in the project's folder. **Recents** lists every session by last activity, newest first. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
+- **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from every coding agent, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Every list has the same search, state filters, agent filter, sort order, hidden-session toggle and stable ordering.
+  - **Search** matches titles and summaries; the sparkle toggle also searches inside transcripts (ripgrep) and archived conversations (embeddings when configured). The result snippet shows the matching passage.
+  - **Agent** filters by coding agent, merging Cursor IDE and Cursor CLI into one choice. **Sort** offers newest/oldest last activity or agent groups (newest first inside each agent); the choice is remembered.
+  - Providers whose native store chat cannot resume (Cursor) open the read-only session view instead of resuming.
+  - A session can be hidden from the list and shown again with the **hidden** toggle; both survive reloads.
+  - Collapse the list to a rail of icons with its state marks; expand it again from the rail.
+  - **Projects**, the default view, groups sessions under their project (unassigned sessions get their own group); the project of the session you are viewing opens and marks that session, expand any other project to see its sessions, and use a project's **+** button to start a chat in the project's folder. **Recents** lists every session by last activity, newest first. A session's working folder decides its project: the most specific project folder wins, a worktree resolves to its shared checkout, and a session without a recorded project is matched to a project whose folder contains its working folder. Both views follow the project selected in the workspace header; pick **All projects** to browse every project, and sessions in archived or paused projects stay listed under their project. Opening a session from the list adopts its project when the header is on **All projects** or **Unassigned**, so the list and notification inbox follow the work you opened.
   - Opening a session keeps its place in the list; sending a message is what moves it to the top. State filters still move rows as their status changes. While you hover or keyboard-focus the list, its order freezes and a pill offers to apply the new order. The header's refresh button re-imports agent sessions, then refreshes threads, live sessions and archive.
 - **Inspector**: the panel button in the header opens one panel with **Overview**, **Changes** and **Files** on desktop and phone. Overview shows the host, folder, branch, changed files, linked task and the branch's pull request with its state, CI state and GitHub link; a checkout on a detached HEAD says so instead of reporting missing GitHub authentication. When a terminal is running in that folder, **Changes** combines the working-tree review (staging and commit) with the branch's PR review (diff, comments and an **Open on GitHub** link) behind Local / PR modes, and **Files** browses and edits the checkout. In the Electron desktop app the same panel adds a desktop-only **Browser** tab. On a phone the inspector is a full page.
 - **Terminal drawer**: the terminal button in the header opens a shell in the session's folder below the conversation. Its header names the terminal, its live state and the folder/host. **Expand** gives the terminal the conversation's space and **Close** hides it, leaving the shell running. On a touch screen, swipe inside the terminal to scroll; a tap still opens the keyboard, and a swipe does not.
 - **Continue in terminal**: when the response has finished and the session is idle, **Continue in terminal** in the session actions menu resumes that origin session in its native agent. This works for every native chat agent (Claude Code, Codex, Gemini CLI, OpenCode and Pi), including sessions you have hidden from the session list. The terminal opens as the chat view's main pane, leaving the conversation mounted behind it; the back arrow returns to the chat without losing the terminal or your draft. An already running terminal for that session is reused instead of started twice; if it has exited, a new one resumes the session. A link to an exited or deleted terminal says it is no longer running and the back arrow still returns to the chat.
 - Drag a splitter, or focus it and use the arrow keys, to resize the list, inspector or drawer. Double-click to reset. The width is remembered.
-- **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and see how long it took. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
+- **Tool calls and plans**: a finished turn folds its tool calls and pre-tool narration into one summary line with duration, tool count, files changed with their added and removed lines, a command count when nothing changed, and failures. Expand the line to read each call: reads and searches stay one line, edits and writes show compact diffs, and commands show the command with its output tail. MCP, browser, todo, plan and question calls have their own view, and a tool ORC does not recognise keeps its raw input and result. An image a tool returned is shown inline when it is embedded in the result (never fetched from a remote URL), loads lazily, stays within a bounded size and expands on request. A file path opens in the inspector's file preview, and a Git command's branch, changed files and pull request link appear only when its output contains them.
+  Inside the expanded turn, **All**, **Changes**, **Commands** and **Failed** narrow the tool calls, and **Hide successful** leaves only running or failed ones; the choice is remembered for the next turn. Thinking, plans and status messages stay visible under every filter, and the collapsed summary always counts every failure. Agents that publish a checklist (ACP agents, Codex, Claude and OpenCode todos) show it as a plan card with each step's status — pending, in progress, completed or failed — in a bounded, scrollable list; the steps come from the agent, and providers that publish no plan show none. A turn's assistant message records the model that produced it when the session has one selected.
+- **Message actions**: hover a response (they stay visible on touch screens) to copy it, fork the chat at that response, and read the turn's meta: the model that produced it, its duration, a stopped or failed outcome, and — on the newest response — the latest request's context tokens and cached share when the session records usage. Missing fields are left out instead of filled with zeros. A fork reuses the agent's native session when the response is the latest one and the agent supports it; otherwise the new chat carries a bounded, tool-aware replay up to that response. A notice at the top of the forked chat names the source, the mode it used, what context it carried, and links back to the source chat.
+- **Act on selected text**: select prose in a message to open a toolbar with **Ask about this**, **Create task**, **Save** and **Copy as Markdown**. Ask appends a quoted draft plus a `Source:` line and focuses the composer; Create task opens the new-task form prefilled and links back to the session; Save creates a session-linked scratchpad and confirms it beside the composer; Copy puts the quote and source on the clipboard. Escape, scrolling or clicking elsewhere dismisses it. Each message's action row also has the same four actions in a **Selection actions** menu for keyboard and phone, acting on the start of the message (up to 2,000 characters) when nothing is selected.
+- **Focus chat**: the focus button beside the header's other actions, or **Focus chat** in the session actions menu, gives the conversation the screen. It hides the session strip, the pending-message disclosure, background-work rows and started-by/child-session lineage, and narrows the header (the phone title loses its project · host line). The composer, Send/Stop, streaming status, errors, permissions and questions stay visible, and the focus button stays in the header. Press `Escape` to leave focus; an open dialog, popover, menu, prompt list, selection toolbar or an in-progress IME composition keeps `Escape` for itself first. Focus belongs to the chat you are reading: switching chats, closing the chat or reloading starts unfocused, and nothing is saved.
+- **Composer hero**: a chat with no messages yet shows **What are you working on?** together with the composer as one centred block, with a three-line message field, so the first message is the obvious next step. Sending the first message docks the composer back to its normal place at the bottom of the conversation. There is one composer throughout, so the draft, caret and attachments carry over; a very short viewport, such as a phone with the software keyboard open, keeps the composer docked so it stays reachable.
+- **Model and compaction dividers**: the conversation marks a model change between consecutive turns, and each recorded context compaction, in the transcript where it happened. A compaction divider names the reason only when the provider recorded one — `Context compacted automatically · 182k → 24k tokens`, `Context compacted manually · …`, or the plain `Context compacted` — and it leaves out a size it does not have instead of showing a zero. Sessions that record no model or no compaction show no divider.
+- Automatic compaction belongs to the adapter, never to ORC: Codex applies its `model_auto_compact_token_limit` agent option (a Codex `-c` argument), Pi saves an `autoCompaction` choice to its own settings on the execution host, and Claude Code and OpenCode compact at their own thresholds that ORC cannot change. The size of the context is shown with each turn's meta, so there is no separate hint above the composer.
 - The page keeps the workspace header and its single notification bell. On desktop **Close chat** returns to the page you came from; on a phone the chat is a regular page, so you leave it with Back or the navigation drawer.
 - The URL keeps the selected session and which panels are open, so reload and Back restore them.
 - The header shows the recorded project and session title. Unlinked terminal agents
@@ -68,18 +102,26 @@ opens the chat page instead.
   while project ownership is unavailable. The Activity session list uses the same
   compact row design, retaining search, filters, task links and resume actions.
 
-On a phone (below 768px) the chat is a touch-first surface. The header keeps the
-session title, **Sessions**, **New** and the actions menu on one line, with the
-**Terminal**, **Inspector**, **Refresh** and **Compact** controls on a second line
-(right-aligned; it collapses when the viewport gets very short, such as with the
-software keyboard on a small screen, and the same actions stay available in the
-**⋯** menu). **Sessions**, the
+The header carries one quiet strip: the agent, the selected model (or the model
+the last turn recorded when none is selected), the cached share of the session's
+latest request, and the session state. The info icon beside the context figure
+explains the number and names the session's compactions; the figure is omitted
+entirely when the session has no recorded usage, so nothing reads as zero. The
+strip stays on one line and never displaces Send or Stop. On a phone, and in
+narrow chat panels, it keeps the context figure and state while the composer
+already names the agent and model.
+
+On a phone (below 768px) the chat is a touch-first surface with one header row:
+**Sessions**, **New**, the session title with its state, project and host, then
+**Terminal**, **Inspector** and the **⋯** menu, which holds session settings,
+focus chat, **Refresh**, analytics and **Compact**. Icon help appears on a long
+press only, so closing a page or menu never leaves a tooltip behind. **Sessions**, the
 **Inspector** and the **Terminal** open as full pages over the conversation,
 which stays mounted underneath so streams and drafts survive. They follow your
 finger:
 
-- Swipe left from the right edge to open **Sessions**; swipe right to close it.
-- Swipe right from the left edge to open the **Inspector**; swipe left to close it.
+- Swipe right from the left edge to open **Sessions**; swipe left to close it.
+- Swipe left from the right edge to open the **Inspector**; swipe right to close it.
 - Pull down on the chat header (or tap **Terminal**) to open the terminal page;
   it shows the same name, state and folder header, and swipe up on that header,
   tap the close button or press Escape to close it.
@@ -104,7 +146,7 @@ any other page.
 ![Session home with its inspector and demo data](/screens/session-home-desktop.png)
 
 <img src="/screens/session-home-phone.png" alt="Phone conversation with the Terminal and Inspector header buttons" width="260">
-<img src="/screens/session-list-phone.png" alt="Full-screen Sessions page on a phone" width="260">
+<img src="/screens/session-list-phone.png" alt="Full-screen session list on a phone" width="260">
 
 The phone inspector: branch and pull-request summary, the combined Changes tab
 (working-tree and PR review) and the file editor.
@@ -129,6 +171,48 @@ replay, and what that replay included.
 <img src="/screens/chat-fork-desktop.png" alt="Fork notice above the copied messages in a forked chat" width="320">
 <img src="/screens/chat-fork-phone.png" alt="The same fork notice on a phone" width="260">
 
+## Live components in chat
+
+In a web chat an agent can answer with an `orc-ui` block instead of Markdown: a
+small JSON layout of ORC components. Text outside the fence stays Markdown, and
+a block that fails validation shows its JSON and the validation error rather than
+hiding the answer. Live components read and act as the signed-in user; the
+buttons and status controls keep working while the reply stays on screen.
+
+Besides the live ORC components (`Task`, `TaskList`, `Job`, `SessionList`,
+`Scratchpad` and the task/job actions), an answer can present numbers it already
+has:
+
+- `Metric` — one headline number with a label, an optional unit and a trend hint.
+  The arrow is decoration; the hint carries the meaning.
+- `Progress` — a determinate 0–100 percentage with an optional label.
+- `Table` — up to six columns and fifty rows. Cells wrap instead of truncating,
+  and a phone scrolls the table sideways rather than squeezing its columns or
+  widening the conversation. A table with headers but no rows says "No rows".
+- `Sparkline` — a small trend line without axes; the latest value stays in text
+  beside it and the full range is in its accessible label.
+- `Chart` — a Recharts line, bar or area chart with a tooltip and a named legend,
+  using the shared series colors in both themes. Motion is short and stopped
+  under reduced motion. A chart with no points says so instead of showing an
+  empty plot.
+- `KeyValue` — a compact definition list for up to eight labelled values.
+- `Callout` — an info, warn, error or done note. A small icon carries the tone
+  and the text stays readable.
+- `Html` — a short inline HTML snippet inside a sandboxed frame. The frame runs
+  on an opaque origin with no ORC storage, credentials, API or parent access, and
+  the injected CSP blocks scripted requests (fetch, network images, fonts and
+  forms), so it can run its own inline scripts and styles and show `data:` or
+  `blob:` images but cannot call the ORC API. The frame can still navigate itself to another
+  URL, so treat its content as untrusted output; its scripts also run on the
+  page's main thread, so a runaway loop freezes the chat tab. Use a scratchpad
+  for HTML you want to save or edit; inline chat HTML is not saved as a
+  scratchpad.
+
+`SessionUsage` shows the same figure as the header strip for a session the answer
+talks about: the latest request's input tokens and the share served from the
+provider's cache, with the same explanation. A session that records no usage yet
+says so; the figures are left out rather than shown as zero.
+
 ## Activity
 
 ![Activity](/screens/dashboard.png)
@@ -149,15 +233,18 @@ Open a task to see its body, status, comments, linked sessions and Git links, an
 
 ![Task flow](/screens/task-flow.png)
 
-## Sessions
+## Session history and viewer
 
-![Sessions](/screens/sessions.png)
+![Session list and conversation](/screens/session-recents-desktop.png)
 
-Live and archived sessions from Claude Code, Codex, Cursor, Gemini CLI and OpenCode on this machine or the selected host. Working sessions update live; waiting sessions stay available to resume in a terminal or in chat. Search across archived conversations. See [Live sessions](./live-sessions.md).
+Live and ended sessions from Claude Code, Codex, Cursor, Gemini CLI, OpenCode and Pi appear in the chat page's session list on this machine or the selected host. Working sessions update live; a session that finished after you last opened it shows **Done** until you open it, and this browser remembers what you have seen. Ended sessions stay listed by default. See [Live sessions](./live-sessions.md).
 
-Filter the list by state with **All**, **Needs you**, **Working** and **Done**. Each filter shows its count, and failed sessions count as Needs you. A session that finished after you last opened it shows **Done** until you open it. This browser remembers what you have seen. The chat session history has the same filters.
+Filter with **All**, **Needs you**, **Working** and **Done**; each filter shows its count, and failed sessions count as Needs you. While your pointer is over the list, or a row has keyboard focus, rows stay where they are and an **N updated** pill applies the new order when you choose it.
 
-While your pointer is over the list, or a row has keyboard focus, rows stay where they are. States still update in place. When the order would change, an **N updated** button appears. Click it, or move away from the list, to apply the new order.
+The **view** button on a session row opens the read-only viewer: transcript search with match navigation, tokens and start/end timing, task link, rename, hide, scratchpads, cache usage, lineage and the queued-message inbox. **Analytics** opens from that page and shows message, turn and tool counts for the chat behind the session, plus context growth with cache reuse and compaction markers, per-tool call and failure bars, and turn-duration bars when the agent records usage. Agents without readable usage still show the chat-derived counts with an explanation. Resumable sessions also offer **Continue in chat** and a copyable CLI resume command. Cursor sessions stay readable here because chat cannot resume Cursor's separate CLI store. Archived sessions open the same viewer for their stored transcript and offer resume into chat from a pushed commit.
+
+![Session analytics on the session page with context growth, cache reuse and compaction](/screens/chat-session-analytics-desktop.png)
+![Session analytics tool usage, failures and turn durations on the session page](/screens/chat-session-analytics-tools-desktop.png)
 
 ## Terminals
 
@@ -218,21 +305,25 @@ cookies or desktop bridge. Camera, microphone, location and other site permissio
 are blocked. Browser downloads are staged privately (16 MB each, four across the
 app); **Browser profile, display & recording** lists their status and saves completed files
 to the selected chat workspace. Interrupted/failed downloads are never reported
-as saved. Each chat starts with a temporary cookie/storage profile.
-**Settings → General → Browser → Saved browser profiles** creates named profiles; select one
-under **Browser profile, display & recording** in the Browser tab to remember site logins. Selecting the same profile in another
-chat explicitly shares that profile's site storage. Temporary chats stay isolated.
-Profile choices and saved cookies survive app restart; session-only cookies follow
-the site's expiry rules. Switching profiles closes that chat's browser tabs after
+as saved. Every chat uses the shared **ORC browser** profile by default, so a site
+login made once works for you and your agents in every chat and survives restarts
+and daemon port changes. **Settings → General → Browser → Browser profiles** creates
+named profiles for a second set of logins; pick one, or **Temporary · this chat only**,
+under **Browser profile, display & recording** in the Browser tab. Temporary keeps
+cookies in memory and drops them when the chat's browser closes. Session-only cookies
+follow the site's expiry rules. Switching profiles closes that chat's browser tabs after
 confirmation and preserves file drafts. Use **+** to open a browser tab and each
 tab's close button to close it. Popups open another isolated tab. Limits are eight
 tabs per chat and 24 total; reaching a limit asks you to close a tab, without eviction.
 Tab IDs, URLs and the selected tab restore when you return after app restart.
-Temporary mode does not persist cookies; saved tab URLs are still restored.
-Browser settings also offers profile rename and removal. Removal asks for native
-confirmation, closes its tabs, clears cookies/site data/cache and resets chat selections.
+Browser settings also offers profile rename and removal, and **Clear browser data**
+for the ORC browser profile. Both ask for native confirmation, close the affected tabs
+and clear cookies/site data/cache; removal also resets chat selections to the default.
 
-**Import selected browser logins**, under Browser settings, connects to a local
+**Import logins**, under Browser settings (also linked from the Browser tab), copies
+cookies from Chrome, Edge, Brave, Arc, Vivaldi, Opera, Firefox or Safari into the
+selected profile, which is the ORC browser by default. Scan, pick the source profile,
+choose sites or **All sites**, and import. A second path connects to a local
 Chrome/Edge debugging endpoint you explicitly enable. Choose the destination ORC
 profile, enter the loopback debugging port, approve any source-browser prompt,
 then select sites from its open pages. Only those sites' applicable cookies are
@@ -367,7 +458,7 @@ database: saved secrets cannot be decrypted without that machine key.
 To see a result, open the job and select **View result** under **Recent runs**.
 This shows the saved output and errors. **Session summary** opens the audit record.
 For an agent run with a native session ID, **Open agent session** opens the actual
-conversation in Sessions, where the existing transcript/resume controls apply.
+conversation in the chat page's session viewer, where the transcript/resume controls apply.
 ORC discovers that conversation on the run's own host without changing the globally
 selected host. If the provider has not retained a conversation yet, the saved result
 remains available and the interface explains that the native conversation is missing.
@@ -427,8 +518,8 @@ page, so a report carries the real message and stack.
 
 Lifecycle and knowledge events with filters and expandable details. Recorded
 session summaries remain in collapsed history. Audit retention defaults to 90
-days and is configurable in Settings → Notifications → Automatic cleanup. Use Sessions to read full
-conversations or resume an agent.
+days and is configurable in Settings → Notifications → Automatic cleanup. Use the chat
+page's session list and viewer to read full conversations or resume an agent.
 
 ## Skills
 
@@ -459,7 +550,7 @@ does not change the saved HTML. Custom CSS and JavaScript still work.
 Pin the kit stylesheet in your HTML head to keep its version as the kit evolves:
 
 ```html
-<meta name="orc-kit" content="1">
+<meta name="orc-kit" content="2">
 ```
 
 Bundled older versions remain available. A missing or unknown version uses the
@@ -469,9 +560,10 @@ state. The saved pad content stays the same.
 
 Kit tabs support clicking, Left/Right arrows with wrapping, and Home/End. Only
 the selected panel is shown. The kit does not grant ORC API access: editor pads
-still require **Render with ORC access**, and chat artifacts retain their opaque
-sandbox and network-blocking policy. Prefer inline SVG for charts that must work
-in both views; a CDN chart library is blocked in chat.
+still require **Render with ORC access**, and chat artifacts keep their opaque
+sandbox and the CSP that blocks scripted requests and external resources. Prefer
+inline SVG for charts that must work in both views; a CDN chart library is
+blocked in chat.
 
 For concise component markup, use built-in custom elements such as
 `<orc-card>`, `<orc-stat label="Open tasks" value="12">`,
@@ -489,9 +581,9 @@ Agents can load the component list, copy-paste skeleton and chart guidance with
 
 | Section       | Controls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| General       | Theme (dark or light, saved on the server), interface font size — default, large or extra large — saved in this browser, terminal font for new terminals, and the desktop preview browser.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Hosts         | One list of hosts with **API** and **SSH** type badges. **API** rows are ORC servers this client can talk to: in a browser, save several server addresses with optional access tokens and proxy headers, then switch between them; the desktop app keeps its local/remote choice, token and headers in its data folder. The **SSH** row is where that server runs agents, terminals and git: **This ORC server**'s own machine, which carries both badges because it also serves the dashboard, or an alias from its `~/.ssh/config`.                                                                                                                                                                                                                                                                           |
-| Agents        | **Providers** chooses which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code, Codex and Pi are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. First startup selects installed agents from Codex, Claude, Cursor, Gemini CLI and OpenCode and saves that selection. Copilot can be enabled in Settings. Later selections are preserved even if an installation is missing. The terminal launcher only lists enabled agents installed on the selected host. **Chat** sets default models, instructions, tools and permission mode. **MCP** builds the MCP config snippet for your agent; see [Connect agents](./connect-agents.md). |
+| General       | Theme (dark or light, saved on the server); dark background, interface and chat fonts, interface and chat text sizes for desktop and phone, and chat width, saved in this browser (see [Appearance](#appearance)); terminal font for new terminals; and the desktop preview browser.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Hosts         | One list of hosts with **API** and **SSH** type badges. **API** rows are ORC servers this client can talk to: in a browser, save several server addresses with optional access tokens and proxy headers, then switch between them; the desktop app keeps its local/remote choice, token and headers in its data folder. The **SSH** row is where that server runs agents, terminals and git: **Local**'s own machine, which carries both badges because it also serves the dashboard, or an alias from its `~/.ssh/config`.                                                                                                                                                                                                                                                                                     |
+| Agents        | **Providers** chooses which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code, Codex and Pi are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. First startup selects installed agents from Codex, Claude, Cursor, Gemini CLI and OpenCode and saves that selection. If a saved provider list has no recorded selection yet, the next start aligns it with the installed agents once. Copilot can be enabled in Settings. Later selections are preserved even if an installation is missing. The terminal launcher only lists enabled agents installed on the selected host. **Chat** sets default models, instructions, tools and permission mode. **MCP** builds the MCP config snippet for your agent; see [Connect agents](./connect-agents.md). |
 | Connections   | **Channels** connects Telegram and Slack. **Integrations** manages APIs and MCP servers in the `spec` CLI registry.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Knowledge     | Parser, embeddings and knowledge defaults                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | Notifications | In-app updates, browser chime/volume/project mute, opt-in browser/PWA push for background approvals, questions, chat replies and job results, the question and approval dismissal period, and notification/audit cleanup. Push needs HTTPS.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -503,9 +595,9 @@ On a phone, Settings opens a grouped list of sections; tapping one opens its pan
 
 In a browser, **Hosts → Add server** saves another ORC address with an optional access token and proxy headers, so you can switch installations and come back. The token is sent as a Bearer token, and header names that look secret (token, key, secret, password, cookie) are masked in the form. Values are stored in this browser. Switching records the previous server, so the sign-in screen can return you there if the new one needs different credentials. A remote server has to list this dashboard's origin under **Security**, and should use HTTPS: a plain-http address sends its token and headers over the network unencrypted. Prefer a revocable access token to the API secret: saved values are readable by scripts on this dashboard's origin.
 
-**This ORC server** always means the machine running the connected ORC installation, never the browser's machine. **Change** on the SSH row picks that server's own machine or an SSH alias from its `~/.ssh/config`. The choice stays server-wide: it affects every client using that ORC installation, and open terminals and conversations keep the host they started on. A new chat can pin one of those execution hosts in its workspace chip without changing the default: the list offers the connected server itself — the remote machine, running work directly without SSH — followed by its SSH aliases.
+**Local** always means the machine running the connected ORC installation, never the browser's machine. **Change** on the SSH row picks that server's own machine or an SSH alias from its `~/.ssh/config`. The choice stays server-wide: it affects every client using that ORC installation, and open terminals and conversations keep the host they started on. A new chat can pin one of those execution hosts in its workspace chip without changing the default: the list offers the connected server itself — the remote machine, running work directly without SSH — followed by its SSH aliases.
 
-![Chat host list on a remote server: This ORC server (orc.example.com) above its SSH aliases](/screens/chat-hosts-picker.png)
+![Chat host list on a remote server: Local (orc.example.com) above its SSH aliases](/screens/chat-hosts-picker.png)
 
 The desktop app stores its selected server, token and headers in `connection.json` in the app's data folder. This is a client-side target, separate from the server's `~/.orc/config.json`; switching servers does not repoint the CLI or stdio MCP. The integrated preview browser, local file picker, update controls and native notifications are available only in the local dashboard, so a remote window does not show them.
 
@@ -519,11 +611,22 @@ Enabled agents, including custom ACPX ids, appear in the chat agent picker:
 
 ![Chat agent picker](/screens/chat-agent-picker.png)
 
+For Claude Code, Codex and Pi the same picker adds an **Effort** column. Pick the
+default or a level such as Low, High or Extra high; the choice applies to the next
+turn and is kept with that agent's chat options. Other adapters have no effort
+setting.
+
 ## Chat turn progress
 
 Finished turns fold tool calls and intermediate narration into one expandable line;
 your message and the final reply remain visible. Expand it to inspect file diffs,
 commands and output, reads, and searches. Failed tools stay marked.
+
+A turn with more than 80 activities expands to its newest 80 and offers
+**Show all N activities**; the folded line still counts every item, failures
+beyond that window included. An activity kind this build does not know appears
+as a quiet collapsed row with its label and bounded raw data, so newer agents'
+steps stay visible instead of disappearing.
 
 During a response, a quiet status line shows elapsed time and the current tool.
 Scrolling up pauses automatic following; **Jump to latest** returns to the bottom.
@@ -599,14 +702,11 @@ ID, the agent's native session ID used for resume, and the discovered session ID
 this chat continues when it was resumed. Each identifier can be copied.
 **Customize** holds permissions, while-responding behaviour, agent launch options,
 session instructions and
-agent browser control. **Analytics** counts messages, turns, tool calls and
-failures from the transcript, shows start, last-activity and turn timings, and
-reports context and cache usage when the session records it. Explanations sit
-behind the info icon beside each label; new-chat defaults remain in Settings →
-Agents → Chat.
+agent browser control. Context, cache and turn figures live in the transcript and
+the header strip instead of a separate analytics tab. Explanations sit behind the
+info icon beside each label; new-chat defaults remain in Settings → Agents → Chat.
 
 ![Session settings overview with the ORC, agent and resume identifiers](/screens/chat-session-settings-overview-desktop.png)
-![Session analytics with counts, turn timings and cache reuse](/screens/chat-session-settings-analytics-desktop.png)
 
 <img src="/screens/chat-session-settings-customize-phone.png" alt="Session settings customization on a phone" width="260">
 
@@ -626,10 +726,21 @@ The desktop app is an Electron shell around the same dashboard. On top of the br
 | Installs the CLI                           | `~/.orc/bin/orc`, added to your shell `PATH`                                                                                                               |
 | Tray icon                                  | **Open orc**, **Start at login** toggle, **Quit orc**                                                                                                      |
 | Start at login                             | On by default, starts hidden in the tray                                                                                                                   |
-| Keeps running when closed                  | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the tray (or **Cmd+Q** on macOS) quits.                            |
+| Keeps running when closed                  | Closing the window hides it; the tray icon and the daemon keep running. **Quit orc** in the File menu, the tray (or **Cmd+Q** on macOS) quits.             |
 | Recovers from startup failures and crashes | Waits briefly for a starting daemon, then offers **Retry** or **Quit** if it cannot connect                                                                |
 | Remembers the window                       | Size, position and maximized state                                                                                                                         |
 | Updates                                    | Installed macOS, Windows and Linux apps check GitHub Releases at startup and every four hours, download in the background, and offer **Restart to update** |
+
+Menu commands that change the page act on the window itself. **Reload**, **Zoom In**,
+**Zoom Out** and **Actual Size** never reach the page open in the inspector's
+**Browser** tab. **Toggle Developer Tools** appears only when the app runs from
+source.
+
+**File** holds **Connection…**, **Browser and files**, **Start at login** and, on
+Windows and Linux, **Quit orc**. **Help** opens this documentation and the issue
+tracker, plus **About orc** outside macOS. Right-clicking offers **Cut**, **Copy**,
+**Paste** and **Select all** on any text, **Copy link address** on a link, and
+**Copy image** in the inspector's **Browser** tab.
 
 Quitting the app (**Quit orc**) stops the daemon only if the app started it.
 

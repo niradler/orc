@@ -36,6 +36,7 @@ import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useProjects } from "@/hooks/useProjects";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { activeApiHeaders } from "@/lib/api-hosts";
+import { groupChatMessages } from "@/lib/chat-message-groups";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { reconnectDelay, waitToReconnect } from "@/lib/reconnect";
 import { getResourceConnection, subscribeResourceConnection } from "@/lib/resource-events";
@@ -126,6 +127,16 @@ export interface ChatTab {
   respondingAgent: string;
   /** A background turn finished or is waiting for a reply since the tab was last viewed. */
   attention: boolean;
+}
+
+/**
+ * A fresh read returns only the recent window. Keep older pages the user already
+ * loaded, matching them through the oldest message the window and tab share.
+ */
+function mergeLoadedHistory(loaded: ChatMessage[], fresh: ChatMessage[]): ChatMessage[] {
+  if (!fresh.length) return loaded;
+  const first = loaded.findIndex((message) => message.id === fresh[0].id);
+  return first > 0 ? [...loaded.slice(0, first), ...fresh] : fresh;
 }
 
 function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
@@ -490,7 +501,7 @@ function useChatController() {
           ? {}
           : {
               thread: fresh,
-              messages: fresh.messages,
+              messages: mergeLoadedHistory(tab.messages, fresh.messages),
               historyBefore: fresh.historyBefore ?? null,
             },
       );
@@ -535,11 +546,12 @@ function useChatController() {
                 threadId &&
                 (retried || tab?.messages[tab.messages.length - 1]?.role === "user")
               ) {
+                const loaded = find(key)?.messages ?? [];
                 const fresh = await api.chat.get(threadId);
                 if (current())
                   update(key, () => ({
                     thread: fresh,
-                    messages: fresh.messages,
+                    messages: mergeLoadedHistory(loaded, fresh.messages),
                     historyBefore: fresh.historyBefore ?? null,
                     streamText: "",
                     activity: [],
@@ -1527,7 +1539,14 @@ function useChatController() {
     },
     setWorkspace: (workspace: ChatWorkspace) =>
       update(activeRef.current, (current) =>
-        current.thread || current.streaming ? {} : { workspace },
+        current.thread || current.streaming
+          ? {}
+          : {
+              workspace,
+              ...(workspace.cwd
+                ? { projectId: workspace.host ? null : projectForCwd(workspace.cwd) }
+                : {}),
+            },
       ),
     config: tab.config,
     setConfig,
@@ -1607,6 +1626,8 @@ function toThreadMessage(message: ChatMessage): ThreadMessageLike {
         custom: {
           agent: message.agent,
           activity: message.activity,
+          // Kinds this build keeps verbatim, rendered as quiet rows.
+          providerActivity: message.providerActivity,
           attachments: message.attachments,
           // The message renderer needs the exact text for Copy; the parts tree
           // alone does not expose it outside the assistant-ui slot.
@@ -1625,7 +1646,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const chat = useChatController();
   useChatLink(chat);
   const messages = useMemo<ThreadMessageLike[]>(() => {
-    const history = chat.messages.map(toThreadMessage);
+    const history = groupChatMessages(chat.messages).messages.map(toThreadMessage);
     if (chat.streaming)
       history.push({
         id: chat.streamingId,

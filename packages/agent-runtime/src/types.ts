@@ -1,4 +1,4 @@
-import type { ChatQuestion } from "@orc/core/chat";
+import type { ChatQuestion, ChatSubagentPayload } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
 import type { AgentCapabilities } from "@orc/core/types";
 import type { OrcMcpMode } from "./orc-mcp.js";
@@ -73,12 +73,17 @@ export type ImageAttachment = {
 
 export type PermissionResult = "approved" | "denied" | "session";
 
+export type AgentPlanStatus = "pending" | "in_progress" | "completed" | "failed";
+export type AgentPlanEntry = { id: string; status: AgentPlanStatus; content: string };
+
 export type AgentEvent =
   | { type: "capabilities"; data: AgentCapabilities }
   | { type: "question_request"; data: ChatQuestion }
   | { type: "request_resolved"; data: { requestId: string } }
   | { type: "text"; data: string }
   | { type: "thinking"; data: string }
+  | { type: "plan"; data: { id: string; title?: string; entries: AgentPlanEntry[] } }
+  | { type: "subagent"; data: ChatSubagentPayload }
   | { type: "tool_use"; data: { id: string; name: string; input: string } }
   | {
       type: "tool_result";

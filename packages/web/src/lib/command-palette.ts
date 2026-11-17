@@ -61,5 +61,6 @@ export function nextJump<T extends JumpTarget>(
 export const STATE_FILTER_COMMANDS = SESSION_FILTERS.map((filter) => ({
   id: `sessions-state-${filter}`,
   title: filter === "all" ? "Show all sessions" : `Show sessions: ${SESSION_FILTER_LABELS[filter]}`,
-  path: filter === "all" ? "/sessions" : `/sessions?state=${filter}`,
+  path: "/chat?sessionList=show",
+  filter,
 }));

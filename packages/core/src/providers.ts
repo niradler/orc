@@ -90,7 +90,10 @@ export const ProviderProfileSchema = z
   })
   .strict()
   .superRefine((profile, context) => {
-    if (profile.options && profile.options.runtime !== chatRuntime(profile.agent))
+    const expected = chatRuntime(profile.agent);
+    // OpenCode moved from ACPX to direct ACP; keep older saved profiles parseable.
+    const legacyAcp = expected === "opencode" && profile.options?.runtime === "acpx";
+    if (profile.options && profile.options.runtime !== expected && !legacyAcp)
       context.addIssue({
         code: "custom",
         path: ["options"],

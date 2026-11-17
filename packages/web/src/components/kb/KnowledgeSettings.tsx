@@ -3,6 +3,7 @@ import { Download, Trash2 } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -136,14 +137,16 @@ export function KnowledgeSettings() {
 
   return (
     <section data-testid="settings-knowledge" aria-labelledby="settings-knowledge-title">
-      <h2 id="settings-knowledge-title" className="mb-1 text-base font-medium text-on-surface">
-        Knowledge
-      </h2>
-      <p className="mb-4 text-sm text-muted-foreground">
-        How ORC parses uploads and searches knowledge bases. Saved on the server in{" "}
-        <code className="text-primary">~/.orc/config.json</code>; files live in{" "}
-        <code className="break-all text-primary">{s.root}</code>.
-      </p>
+      <div className="mb-4 flex items-center gap-1">
+        <h2 id="settings-knowledge-title" className="text-base font-medium text-on-surface">
+          Knowledge
+        </h2>
+        <HelpPopover label="Knowledge" testId="settings-knowledge-help">
+          How ORC parses uploads and searches knowledge bases. Saved on the server in{" "}
+          <code className="text-primary">~/.orc/config.json</code>; files live in{" "}
+          <code className="break-all text-primary">{s.root}</code>.
+        </HelpPopover>
+      </div>
       <Separator className="mb-4 bg-outline-variant" />
       {s.env_overrides.length > 0 && (
         <p className="mb-4 text-sm text-warning" data-testid="settings-knowledge-env">
@@ -233,9 +236,15 @@ export function KnowledgeSettings() {
             </div>
           ))}
           <div className="space-y-2">
-            <Label htmlFor="settings-kb-parser" className="text-sm text-muted-foreground">
-              Default parser
-            </Label>
+            <div className="flex items-center gap-1">
+              <Label htmlFor="settings-kb-parser" className="text-sm text-muted-foreground">
+                Default parser
+              </Label>
+              <HelpPopover label="Default parser" testId="settings-kb-parser-help">
+                Knowledge bases can override it. Changing parsers applies to new uploads; reparse a
+                document to apply it to existing ones.
+              </HelpPopover>
+            </div>
             <Select
               value={form.parser}
               onValueChange={(v) => set({ parser: v })}
@@ -255,10 +264,6 @@ export function KnowledgeSettings() {
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-outline">
-              Knowledge bases can override it. Changing parsers applies to new uploads; reparse a
-              document to apply it to existing ones.
-            </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -301,22 +306,25 @@ export function KnowledgeSettings() {
         </div>
         <div className="space-y-3">
           <h3 className="text-sm font-medium">Semantic search</h3>
-          <label className="flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              data-testid="settings-session-embeddings"
-              checked={form.session_embeddings}
-              onChange={(e) => set({ session_embeddings: e.target.checked })}
-            />
-            <span>
-              Search coding sessions with embeddings
-              <span className="block text-xs text-outline">
-                Uses the provider below for session passages. Keyword search and transcript reading
-                remain available when off. Enabling sends session text to this provider and indexes
-                discovered project sessions.
-              </span>
-            </span>
-          </label>
+          <div className="flex items-start gap-1">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                data-testid="settings-session-embeddings"
+                checked={form.session_embeddings}
+                onChange={(e) => set({ session_embeddings: e.target.checked })}
+              />
+              <span>Search coding sessions with embeddings</span>
+            </label>
+            <HelpPopover
+              label="Search coding sessions with embeddings"
+              testId="settings-session-embeddings-help"
+            >
+              Uses the provider below for session passages. Keyword search and transcript reading
+              remain available when off. Enabling sends session text to this provider and indexes
+              discovered project sessions.
+            </HelpPopover>
+          </div>
           {status.data && (
             <p className="text-xs text-outline" data-testid="settings-embedding-status">
               {status.data.embedding.ready
@@ -351,9 +359,15 @@ export function KnowledgeSettings() {
             <>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="settings-kb-model" className="text-sm text-muted-foreground">
-                    Model
-                  </Label>
+                  <div className="flex items-center gap-1">
+                    <Label htmlFor="settings-kb-model" className="text-sm text-muted-foreground">
+                      Model
+                    </Label>
+                    <HelpPopover label="Model" testId="settings-kb-model-help">
+                      Changing the model re-embeds every passage in the background; keyword search
+                      keeps working meanwhile.
+                    </HelpPopover>
+                  </div>
                   <Input
                     id="settings-kb-model"
                     data-testid="settings-kb-model"
@@ -396,9 +410,15 @@ export function KnowledgeSettings() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="settings-kb-api-key" className="text-sm text-muted-foreground">
-                  {form.provider === "ollama" ? "Token (hosted or proxied Ollama)" : "API key"}
-                </Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="settings-kb-api-key" className="text-sm text-muted-foreground">
+                    {form.provider === "ollama" ? "Token (hosted or proxied Ollama)" : "API key"}
+                  </Label>
+                  <HelpPopover label="API key" testId="settings-kb-api-key-help">
+                    Stored encrypted with the key in <code>~/.orc/secret.key</code> and never sent
+                    back to the browser. Sent as a bearer token to the base URL.
+                  </HelpPopover>
+                </div>
                 <Input
                   id="settings-kb-api-key"
                   type="password"
@@ -420,15 +440,7 @@ export function KnowledgeSettings() {
                     Remove the saved key
                   </label>
                 )}
-                <p className="text-xs text-outline">
-                  Stored encrypted with the key in <code>~/.orc/secret.key</code> and never sent
-                  back to the browser. Sent as a bearer token to the base URL.
-                </p>
               </div>
-              <p className="text-xs text-outline">
-                Changing the model re-embeds every passage in the background; keyword search keeps
-                working meanwhile.
-              </p>
             </>
           )}
         </div>

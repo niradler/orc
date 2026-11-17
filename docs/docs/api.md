@@ -68,12 +68,19 @@ base64 for a browser upload. Artifact and recording bodies are capped at 16 MB.
 See [MCP preview tools](./mcp.md#desktop-preview-tools) for browser commands and
 permission behavior.
 
-`GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence from a
-stored native session transcript: `latest` (including optional recorded time and
-a conservative `may_be_cold_after` hint) and `totals`. Missing or unsupported
-evidence is `null`. No prompt text, credentials or transcript paths are returned.
+`GET /api/sessions/live/{id}/cache` returns numeric prompt-cache evidence recorded by
+the agent: `latest` (including optional recorded time and a conservative
+`may_be_cold_after` hint) and `totals`. Claude, Codex and Pi are read from the
+stored native transcript; OpenCode is read from its own session database on the
+execution host. Missing or unsupported evidence is `null`. No prompt text,
+credentials or transcript paths are returned.
 The route uses normal API authentication and the session's stored execution host;
 clients cannot supply a file path. The SDK exposes `orc.sessions.cacheUsage(id)`.
+
+`GET /api/sessions/live/{id}/analytics` returns the same analytics as the chat
+route for the chat that owns this native session. It resolves the chat by the
+session's source link, then by its native session id, and answers `404` when no
+chat owns the session. The SDK exposes `orc.sessions.analytics(id)`.
 
 `GET /api/usage/report` returns request-level usage for the selected period:
 totals, per-agent and per-model distributions, UTC day or hour buckets, and
@@ -248,7 +255,7 @@ setup.
 | `POST` | `/jobs/{id}/trigger` | Run now; `?sync=true` waits and returns output |
 | `GET` | `/jobs/{id}/runs` | Run history |
 | `GET` | `/jobs/{id}/runs/{runId}/logs` | Run logs |
-| `GET` | `/jobs/{id}/runs/{runId}/session` | Resolve this run's native conversation; returns `{ session_id }` for Sessions, or `null` if unavailable |
+| `GET` | `/jobs/{id}/runs/{runId}/session` | Resolve this run's native conversation; returns `{ session_id }` for the session viewer, or `null` if unavailable |
 | `GET` `POST` | `/webhooks` | List / create webhooks |
 | `PATCH` `DELETE` | `/webhooks/{id}` | Update / delete |
 | `POST` | `/webhooks/{token}` (no `/api`) | Receive a signed delivery |
@@ -297,9 +304,13 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | --- | --- | --- |
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
-| `GET` | `/sessions/live` | Coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones |
+| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id. `spawned_from_id` is the id of the session that started a top-level session as an independent one (Claude Desktop `start_session`) |
+| `GET` | `/sessions/live/{id}` | One discovered session, for the read-only viewer |
 | `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
+| `GET` | `/sessions/live/{id}/analytics` | Analytics for the chat that owns this session |
+| `GET` | `/sessions/live/{id}/cache` | Recorded prompt-cache usage |
+| `GET` | `/sessions/live/{id}/subagents` | The subagents a session ran, in start order, each with `tool_call_id`: the parent's tool call that started it (null for Cursor, which records none) |
 | `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |
 | `POST` | `/session-messages` | Queue a message from an agent session (`X-ORC-Session`) |
 | `POST` | `/session-messages/{id}/cancel` | Cancel a queued message |
@@ -310,10 +321,11 @@ SSH alias. An existing `threadId` owns its host/directory and rejects these over
 | `GET` `POST` | `/chat/threads` | Chat threads |
 | `GET` | `/chat/threads/by-message/{id}` | Find the thread holding a user message id (send recovery) |
 | `POST` | `/chat/threads/{id}/fork` | Fork a chat at an assistant response |
+| `GET` | `/chat/threads/{id}/analytics` | Chat, tool, turn, context and compaction analytics |
 | `POST` | `/chat/stream` | Stream a chat turn |
 | `GET` `POST` | `/terminals` | List / start terminals |
 | `GET` `PATCH` `DELETE` | `/terminals/{id}` | Read / rename / kill |
-| `GET` | `/terminals/{id}/git/status` | Git status of a terminal checkout |
+| `GET` | `/terminals/{id}/git/status` | Git status of a terminal or chat-session checkout |
 | `GET` | `/git/worktrees` | Checkouts of a repo |
 | `GET` | `/git/branches` | Local, remote and default branches of a repo |
 
@@ -325,8 +337,23 @@ elapsed time. Replay includes the original start; legacy messages may omit `turn
 Before a tool call, a `narration` event moves accumulated prose out of the current
 reply and into its folded activity. Its `text` preserves that prose for expansion.
 
+Assistant messages record the `model` that produced the turn when the session has
+one selected; it is additive, so older transcripts simply omit it. Agents that
+publish a checklist emit `plan` events with an `id`, an optional `title` and
+`entries` (`id`, `status` — `pending`, `in_progress`, `completed` or `failed` —
+and `content`). Providers re-send the whole plan, so a repeated identical update
+changes nothing and an entry keeps one row as its status advances. A provider
+without a plan signal emits no `plan` event. Stored activity kinds this build
+does not know are kept as a `providerActivity` passthrough instead of being
+dropped or failing the transcript.
+
 A turn opens with a `thread` event carrying the conversation metadata and only
 that turn's user message; the full transcript is read from `GET /chat/threads/{id}`.
+`GET /chat/threads/{id}/analytics` counts messages, turns, tool calls and failures
+from the stored chat transcript for every coding agent. When the agent's native
+session records token usage, it adds context growth, cache reuse and compaction
+markers. Agents without readable usage return `context.supported: false` with a
+reason instead of failing the request.
 `POST /chat/stream` accepts an optional `clientMessageId` (UUID) and stores it as
 the user message id, rejecting a repeat with `409`. If a first send's response is
 lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the

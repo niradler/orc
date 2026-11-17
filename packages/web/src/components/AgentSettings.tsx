@@ -31,7 +31,7 @@ function optionsText(profile: ProviderProfile): string {
   return JSON.stringify(
     profile.options?.runtime === "claude-sdk" || profile.options?.runtime === "pi"
       ? profile.options.options
-      : (profile.options?.args ??
+      : ((profile.options && "args" in profile.options ? profile.options.args : undefined) ??
           (["claude-sdk", "pi"].includes(chatRuntime(profile.agent)) ? {} : [])),
     null,
     2,
@@ -214,7 +214,7 @@ export function AgentSettings() {
       const raw = JSON.parse(value);
       const runtime = chatRuntime(profile.agent);
       const options = ChatAgentOptionsSchema.parse(
-        runtime === "claude-sdk" || runtime === "pi"
+        runtime === "claude-sdk" || runtime === "pi" || runtime === "opencode"
           ? { runtime, options: raw }
           : { runtime, args: raw },
       );
@@ -832,9 +832,6 @@ export function AgentSettings() {
         <DialogContent>
           <div className="flex items-center gap-1">
             <DialogTitle>New provider</DialogTitle>
-            <HelpPopover label="New provider" testId="provider-new-help">
-              Choose a coding-agent adapter, then configure its models and environment.
-            </HelpPopover>
           </div>
           <DialogDescription className="sr-only">
             Choose a coding-agent adapter, then configure its models and environment.

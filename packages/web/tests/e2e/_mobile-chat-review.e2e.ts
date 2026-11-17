@@ -129,6 +129,8 @@ for (const theme of ["dark", "light"] as const) {
 
     await page.getByTestId("chat-sessions-button").click();
     await expect(page.getByTestId("chat-sessions-dialog")).toBeVisible();
+    // The Recents tab lists every session flat; Projects groups them.
+    await page.getByTestId("session-navigation-recents").click();
     await expect(
       page
         .getByTestId("chat-sessions-dialog")
@@ -177,7 +179,7 @@ for (const theme of ["dark", "light"] as const) {
     // Appearance (theme + font size) now lives in Settings.
     await page.goto("/settings?settingsSection=appearance");
     await expect(page.getByTestId("settings-theme-dark")).toBeVisible();
-    await expect(page.getByTestId("settings-font-size-default")).toBeVisible();
+    await expect(page.getByTestId("settings-phone-default")).toBeVisible();
     await shot("settings-appearance");
   });
 }

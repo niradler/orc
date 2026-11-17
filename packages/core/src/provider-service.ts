@@ -24,7 +24,7 @@ export function initializeAgentPreferences(
   findBinary: (name: string) => string | null = localAgentBinary,
 ): void {
   const config = loadConfig();
-  if (config.providers || config.preferences.agents !== undefined) return;
+  if (config.preferences.agents !== undefined) return;
   const agents = DEFAULT_ENABLED_AGENTS.filter((id) => {
     const command = config.agent_loop.acp_commands?.[id]?.command;
     if (command) return !!findBinary(command);
@@ -42,6 +42,20 @@ export function initializeAgentPreferences(
         ? { chat: { ...chat, agent: agents[0], providerId: undefined, model: "" } }
         : {}),
     };
+    // A provider list saved by an older build may exist without the discovery
+    // result that owns its enabled flags. Align the default adapters with what
+    // this host has installed instead of leaving every other agent hidden.
+    if (raw.providers) {
+      const saved = StoredProvidersSchema.parse(raw.providers);
+      for (const profile of saved.instances)
+        if ((DEFAULT_ENABLED_AGENTS as readonly string[]).includes(profile.agent))
+          profile.enabled = (agents as readonly string[]).includes(profile.agent);
+      if (!saved.instances.some((profile) => profile.id === saved.default_id && profile.enabled)) {
+        const first = saved.instances.find((profile) => profile.enabled);
+        if (first) saved.default_id = first.id;
+      }
+      raw.providers = StoredProvidersSchema.parse(saved);
+    }
   });
 }
 

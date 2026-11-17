@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { zstdCompressSync } from "node:zlib";
 import { type HostRuntime, hostRuntime } from "@orc/core/exec-host";
 import { readRegistrations, writeRegistration } from "@orc/core/live-session";
 import { getSqlite } from "@orc/db/client";
@@ -343,6 +344,119 @@ test("oversized Codex rollouts keep an estimated lifetime total instead of faili
       cacheWriteTokens: 0,
       reasoningTokens: 0,
       otherTokens: 1234,
+      estimated: true,
+    },
+  ]);
+});
+
+test("reads a rotated Codex rollout and keeps its per-request usage", async () => {
+  const lines = [
+    JSON.stringify({
+      type: "session_meta",
+      timestamp: "2026-10-01T00:00:00Z",
+      payload: { model: "gpt-6" },
+    }),
+    JSON.stringify({
+      type: "event_msg",
+      timestamp: "2026-10-01T00:01:00Z",
+      payload: {
+        type: "token_count",
+        info: {
+          last_token_usage: { input_tokens: 100, cached_input_tokens: 20, output_tokens: 30 },
+        },
+      },
+    }),
+  ].join("\n");
+  const compressed = zstdCompressSync(new TextEncoder().encode(lines));
+  let reads = 0;
+  const runtime: HostRuntime = {
+    ...hostRuntime(),
+    isFile: async () => true,
+    isDirectory: async () => false,
+    stat: async (path) =>
+      path.endsWith(".zst")
+        ? { path, size: compressed.length, mtimeMs: 5000, birthtimeMs: 1000 }
+        : null,
+    readFile: async () => {
+      reads += 1;
+      return compressed;
+    },
+    sqliteQuery: async <T extends object>(path: string): Promise<T[]> =>
+      (path.includes("thread_history")
+        ? []
+        : [
+            {
+              id: "rotated",
+              title: "Rotated",
+              name: null,
+              cwd: "/work",
+              preview: "",
+              first_user_message: "",
+              tokens_used: 130,
+              rollout_path: "/rollout.jsonl",
+              created_at_ms: 1000,
+              created_at: 1,
+              updated_at_ms: 5000,
+              updated_at: 5,
+            },
+          ]) as T[],
+  };
+  const [record] = await codexAdapter(undefined, { runtime }).list(new Map());
+  expect(record?.usageVersion).toBe(1);
+  const usage = await record?.usage?.();
+  expect(reads).toBe(1);
+  expect(usage?.tokens).toBe(130);
+  expect(usage?.model).toBe("gpt-6");
+  expect(usage?.events).toHaveLength(1);
+});
+
+test("a Codex session whose rollout is gone settles with its lifetime total", async () => {
+  let reads = 0;
+  const runtime: HostRuntime = {
+    ...hostRuntime(),
+    isFile: async () => true,
+    isDirectory: async () => false,
+    stat: async () => null,
+    readFile: async () => {
+      reads += 1;
+      throw new Error("rollout is gone");
+    },
+    sqliteQuery: async <T extends object>(path: string): Promise<T[]> =>
+      (path.includes("thread_history")
+        ? []
+        : [
+            {
+              id: "pruned",
+              title: "Pruned",
+              name: null,
+              cwd: "/work",
+              preview: "",
+              first_user_message: "",
+              tokens_used: 777,
+              rollout_path: "/rollout.jsonl",
+              created_at_ms: 1000,
+              created_at: 1,
+              updated_at_ms: 5000,
+              updated_at: 5,
+            },
+          ]) as T[],
+  };
+  const [record] = await codexAdapter(undefined, { runtime }).list(new Map());
+  expect(record?.usageVersion).toBe(1);
+  const usage = await record?.usage?.();
+  expect(reads).toBe(0);
+  expect(usage?.tokens).toBe(777);
+  expect(usage?.events).toEqual([
+    {
+      key: "session",
+      ts: 5000,
+      model: null,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      reasoningTokens: 0,
+      otherTokens: 777,
       estimated: true,
     },
   ]);

@@ -74,10 +74,12 @@ for (const width of [1440, 390]) {
       await settingsSection(page, "channels");
       await page.getByTestId("channel-add").click();
       const editor = page.getByTestId("channel-editor").filter({ visible: true });
+      // Click the summary text, not its center: at phone widths the center lands on the
+      // HelpPopover info button, whose preventDefault() keeps the section collapsed.
       await editor
         .locator("summary")
         .filter({ hasText: /^Inbound routing/ })
-        .click();
+        .click({ position: { x: 8, y: 8 } });
       await editor.getByRole("button", { name: "Add routing rule", exact: true }).click();
       await editor.getByTestId("channel-route-project").selectOption(late.id);
       await expect(editor.getByTestId("channel-route-project")).toHaveValue(late.id);

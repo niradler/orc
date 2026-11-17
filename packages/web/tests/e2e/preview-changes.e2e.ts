@@ -78,41 +78,34 @@ for (const width of [1440, 390])
     });
   });
 
-test("quiet Overview guidance when no terminal matches the session folder", async ({ page }) => {
-  const { terminal } = await mockSessionHome(page);
+test("Git works from the session folder when no terminal exists", async ({ page }) => {
+  await mockSessionHome(page);
   await mockPreviewBridge(page);
-  let created = false;
-  await page.route(/\/api\/terminals(\?.*)?$/, (r) => {
-    if (r.request().method() === "POST") {
-      created = true;
-      return r.fulfill({ json: terminal });
-    }
-    return r.fulfill({
+  await page.route(/\/api\/terminals(\?.*)?$/, (r) =>
+    r.fulfill({
       json: {
         enabled: true,
         ready: true,
         reason: null,
         launchers: ["shell"],
         host: null,
-        terminals: created ? [terminal] : [],
+        terminals: [],
       },
-    });
-  });
+    }),
+  );
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
   await openInspector(page);
-  await expect(page.getByTestId("session-inspector-tab-diff")).toBeDisabled();
-  const empty = page.getByTestId("session-inspector-git-empty");
-  await expect(empty).toBeVisible();
-  await expect(empty).toContainText("needs a running terminal");
-  await expect(page.getByTestId("session-inspector-git-empty").getByRole("alert")).toHaveCount(0);
-
-  // Opening a terminal makes the Changes tab available.
-  await page.getByTestId("session-inspector-open-terminal").click();
-  await expect(page.getByTestId("session-drawer")).toBeVisible();
-  await page.getByTestId("session-drawer-open").click();
+  await expect(page.getByTestId("session-inspector-git-empty")).toHaveCount(0);
   await expect(page.getByTestId("session-inspector-tab-diff")).toBeEnabled();
+  await expect(page.getByTestId("session-inspector-branch")).toContainText("fix/cart-rounding");
   await page.getByTestId("session-inspector-tab-diff").click();
-  await expect(panelOf(page).getByTestId("terminal-git-panel")).toBeVisible();
+  const panel = panelOf(page);
+  await expect(panel.getByTestId("terminal-git-panel")).toBeVisible();
+  await expect(panel.getByTestId("git-change-entry")).toHaveAttribute(
+    "data-path",
+    "src/cart/total.ts",
+  );
+  await expect(panel.getByTestId("git-diff-working-section")).toContainText("Math.round");
 });
 
 test("wide inspector splits the file list and diff; drafts survive tab switches", async ({
@@ -191,7 +184,7 @@ test("quiet no-session state when no chat session is selected", async ({ page })
   await page.goto("/chat?project=all");
   await openInspector(page);
   const empty = page.getByTestId("session-inspector-git-empty");
-  await expect(empty).toContainText("needs a running terminal");
+  await expect(empty).toContainText("No folder is available");
   await expect(page.getByTestId("session-inspector-folder")).toHaveCount(0);
   await expect(page.getByTestId("session-inspector-terminals-error")).toHaveCount(0);
 });
@@ -224,7 +217,7 @@ test("deleted files offer copy-path but not open-file", async ({ page }) => {
   await expect(modified.getByTestId("git-open-file")).toBeVisible();
 });
 
-test("a failed terminals load shows an error with retry in the Overview", async ({ page }) => {
+test("a failed terminals load does not block the session's Git activity", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await mockSessionHome(page);
   await mockPreviewBridge(page);
@@ -235,8 +228,7 @@ test("a failed terminals load shows an error with retry in the Overview", async 
   );
   await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
   await openInspector(page);
-  const error = page.getByTestId("session-inspector-terminals-error");
-  await expect(error).toContainText("Could not load terminals");
-  await expect(page.getByTestId("session-inspector-terminals-retry")).toBeVisible();
-  await expect(page.getByTestId("session-inspector-open-terminal")).toHaveCount(0);
+  await expect(page.getByTestId("session-inspector-terminals-error")).toHaveCount(0);
+  await expect(page.getByTestId("session-inspector-branch")).toContainText("fix/cart-rounding");
+  await expect(page.getByTestId("session-inspector-tab-diff")).toBeEnabled();
 });

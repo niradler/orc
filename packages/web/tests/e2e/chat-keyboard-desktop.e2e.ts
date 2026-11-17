@@ -48,7 +48,7 @@ test("desktop composer keeps the full workspace controls in both themes", async 
     await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
     await expect
       .poll(() => panel.evaluate((element) => getComputedStyle(element).backgroundColor))
-      .toBe(theme === "dark" ? "rgb(0, 0, 0)" : "rgb(250, 250, 250)");
+      .toBe(theme === "dark" ? "rgb(31, 31, 30)" : "rgb(250, 250, 250)");
     for (const id of [
       "chat-agent-model-button",
       "chat-workspace-folder",

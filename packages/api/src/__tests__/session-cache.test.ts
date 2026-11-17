@@ -52,7 +52,7 @@ test("should deduplicate Claude input, include cache writes in the denominator, 
   });
 });
 
-test("should count Claude compactions with their before and after context size", () => {
+test("should count Claude compactions with their recorded trigger and before and after context size", () => {
   const compact = (timestamp: string, compactMetadata: unknown) => ({
     type: "system",
     subtype: "compact_boundary",
@@ -65,16 +65,81 @@ test("should count Claude compactions with their before and after context size",
       claude("before", 70, 20),
       compact("2026-11-06T12:10:00Z", { trigger: "auto", preTokens: 448563, postTokens: 41112 }),
       claude("after", 40, 5),
-      compact("2026-11-06T12:20:00Z", { preTokens: "bad" }),
+      compact("2026-11-06T12:20:00Z", {
+        trigger: "manual",
+        preTokens: 41112,
+        postTokens: 12000,
+      }),
+      compact("2026-11-06T12:30:00Z", { preTokens: "bad", trigger: "because-it-was-large" }),
     ]),
   );
   expect(result.compactions).toEqual([
-    { recorded_at: "2026-11-06T12:10:00.000Z", pre_tokens: 448563, post_tokens: 41112 },
-    { recorded_at: "2026-11-06T12:20:00.000Z", pre_tokens: null, post_tokens: null },
+    {
+      recorded_at: "2026-11-06T12:10:00.000Z",
+      pre_tokens: 448563,
+      post_tokens: 41112,
+      trigger: "auto",
+    },
+    {
+      recorded_at: "2026-11-06T12:20:00.000Z",
+      pre_tokens: 41112,
+      post_tokens: 12000,
+      trigger: "manual",
+    },
+    {
+      recorded_at: "2026-11-06T12:30:00.000Z",
+      pre_tokens: null,
+      post_tokens: null,
+      trigger: null,
+    },
   ]);
   expect(result.requests).toBe(2);
   expect(result.output_tokens).toBe(1998);
   expect(result.timeline?.map((point) => point.context_tokens)).toEqual([100, 55]);
+});
+
+test("should count Codex compactions with the context before and after them", () => {
+  const usage = (timestamp: string, input: number, total: number) => ({
+    type: "event_msg",
+    timestamp,
+    payload: {
+      type: "token_count",
+      info: {
+        last_token_usage: { input_tokens: input, cached_input_tokens: 0 },
+        total_token_usage: { input_tokens: total, cached_input_tokens: 0, output_tokens: 1 },
+      },
+    },
+  });
+  const result = readSessionCacheUsage(
+    "codex",
+    bytes([
+      usage("2026-11-06T12:00:00Z", 180_000, 180_000),
+      { type: "compacted", timestamp: "2026-11-06T12:05:00Z", payload: { message: "summary" } },
+      {
+        type: "event_msg",
+        timestamp: "2026-11-06T12:05:00Z",
+        payload: { type: "context_compacted" },
+      },
+      usage("2026-11-06T12:06:00Z", 22_000, 202_000),
+      { type: "compacted", timestamp: "2026-11-06T12:30:00Z", payload: { message: "again" } },
+      usage("2026-11-06T12:30:00Z", 0, 202_000),
+    ]),
+  );
+  expect(result.latest?.input_tokens).toBe(22_000);
+  expect(result.compactions).toEqual([
+    {
+      recorded_at: "2026-11-06T12:05:00.000Z",
+      pre_tokens: 180_000,
+      post_tokens: 22_000,
+      trigger: null,
+    },
+    {
+      recorded_at: "2026-11-06T12:30:00.000Z",
+      pre_tokens: 22_000,
+      post_tokens: null,
+      trigger: null,
+    },
+  ]);
 });
 
 test("should downsample a long timeline to its per-bucket context peaks", () => {
@@ -119,7 +184,7 @@ test("should use Codex reported cumulative counters without adding duplicate sna
     cache_write_tokens: 100,
   });
   expect(result.output_tokens).toBe(300);
-  expect(result.compactions).toBeNull();
+  expect(result.compactions).toEqual([]);
   expect(result.timeline).toHaveLength(1);
   const invalid = {
     ...row,
@@ -155,6 +220,138 @@ test("should hide unsupported, malformed or unreported cache evidence rather tha
     readSessionCacheUsage("claude", bytes([{ ...missingTime, timestamp: undefined }])).latest
       ?.may_be_cold_after,
   ).toBeNull();
+});
+
+test("should read Pi usage and context edits on the active branch", () => {
+  const header = {
+    type: "session",
+    version: 3,
+    id: "00000000-0000-4000-8000-000000000001",
+    timestamp: "2026-11-06T12:00:00Z",
+    cwd: "/tmp",
+  };
+  const assistant = (id: string, parentId: string | null, timestamp: string, usage: unknown) => ({
+    type: "message",
+    id,
+    parentId,
+    timestamp,
+    message: { role: "assistant", content: [], usage },
+  });
+  const edit = {
+    type: "context_edit",
+    id: "edit",
+    parentId: "m1",
+    timestamp: "2026-11-06T12:10:00Z",
+    targetId: "m1",
+    replacement: { content: [] },
+  };
+  const result = readSessionCacheUsage(
+    "pi",
+    bytes([
+      header,
+      assistant("m1", null, "2026-11-06T12:01:00Z", {
+        input: 100,
+        output: 20,
+        cacheRead: 900,
+        cacheWrite: 50,
+      }),
+      edit,
+      assistant("m2", "edit", "2026-11-06T12:11:00Z", {
+        input: 10,
+        output: 5,
+        cacheRead: 40,
+        cacheWrite: 0,
+      }),
+    ]),
+  );
+  expect(result.timeline?.map((point) => point.context_tokens)).toEqual([1050, 50]);
+  expect(result.totals).toEqual({
+    input_tokens: 1100,
+    cached_input_tokens: 940,
+    cache_write_tokens: 50,
+  });
+  expect(result.output_tokens).toBe(25);
+  expect(result.requests).toBe(2);
+  expect(result.compactions).toEqual([
+    {
+      recorded_at: "2026-11-06T12:10:00.000Z",
+      pre_tokens: null,
+      post_tokens: null,
+      trigger: null,
+    },
+  ]);
+});
+
+test("should read OpenCode request usage from its database", async () => {
+  const rows = [
+    {
+      id: "m1",
+      type: "assistant",
+      time_created: 1_000,
+      data: JSON.stringify({
+        role: "assistant",
+        model: { providerID: "anthropic", modelID: "claude" },
+        time: { created: 1_000 },
+        tokens: { input: 100, output: 10, reasoning: 0, cache: { read: 400, write: 50 } },
+      }),
+    },
+    {
+      id: "m2",
+      type: "compaction",
+      time_created: 2_000,
+      data: JSON.stringify({
+        role: "assistant",
+        model: { providerID: "anthropic", modelID: "claude" },
+        time: { created: 2_000 },
+        tokens: { input: 20, output: 5, reasoning: 0, cache: { read: 0, write: 0 } },
+      }),
+    },
+    {
+      id: "m3",
+      type: "compaction",
+      time_created: 3_000,
+      data: JSON.stringify({ trigger: "manual" }),
+    },
+  ];
+  const result = await loadSessionCacheUsage(
+    {
+      isFile: async () => true,
+      readFile: async () => new Uint8Array(),
+      sqliteQuery: async <T extends object>() => rows as T[],
+    },
+    "opencode",
+    "opencode.db",
+    "session-1",
+  );
+  expect(result.latest).toMatchObject({
+    input_tokens: 20,
+    cached_input_tokens: 0,
+    cache_write_tokens: 0,
+  });
+  expect(result.totals).toEqual({
+    input_tokens: 570,
+    cached_input_tokens: 400,
+    cache_write_tokens: 50,
+  });
+  expect(result.output_tokens).toBe(15);
+  expect(result.requests).toBe(2);
+  expect(result.timeline?.map((point) => point.context_tokens)).toEqual([550, 20]);
+  expect(result.compactions).toEqual([
+    // The compaction message records no reason, so the trigger stays unknown.
+    {
+      recorded_at: new Date(2_000).toISOString(),
+      pre_tokens: null,
+      post_tokens: null,
+      trigger: null,
+    },
+    // An explicit stored reason is honoured rather than guessed.
+    {
+      recorded_at: new Date(3_000).toISOString(),
+      pre_tokens: null,
+      post_tokens: null,
+      trigger: "manual",
+    },
+  ]);
 });
 
 test("should keep private source errors out of cache endpoint failures", async () => {

@@ -143,11 +143,14 @@ describe("session jump", () => {
   });
 
   test("should offer a palette command per state filter", () => {
-    expect(STATE_FILTER_COMMANDS.map((command) => command.path)).toEqual([
-      "/sessions",
-      "/sessions?state=needs-you",
-      "/sessions?state=working",
-      "/sessions?state=done",
+    expect(STATE_FILTER_COMMANDS.map((command) => command.filter)).toEqual([
+      "all",
+      "needs-you",
+      "working",
+      "done",
     ]);
+    expect(
+      STATE_FILTER_COMMANDS.every((command) => command.path === "/chat?sessionList=show"),
+    ).toBe(true);
   });
 });

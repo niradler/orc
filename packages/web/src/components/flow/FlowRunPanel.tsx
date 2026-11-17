@@ -5,6 +5,7 @@ import type { FlowNodeRun, FlowRun } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FlowDetailSheet } from "@/components/flow/FlowDetailSheet";
 import { FlowGraph, FlowGraphLegend } from "@/components/flow/FlowGraph";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -303,7 +304,15 @@ function HumanGateForm({
       )}
 
       <div className="space-y-1.5">
-        <Label className="font-label text-xs font-medium text-outline">Outcome</Label>
+        <div className="flex items-center gap-1">
+          <Label className="font-label text-xs font-medium text-outline">Outcome</Label>
+          {outcomes.length === 0 && (
+            <HelpPopover label="Outcome" testId="flow-gate-outcome-help">
+              This node routes everything through a catch-all edge, so any outcome continues the
+              flow.
+            </HelpPopover>
+          )}
+        </div>
         {outcomes.length > 0 ? (
           <Select value={outcome} onValueChange={setOutcome}>
             <SelectTrigger
@@ -322,20 +331,14 @@ function HumanGateForm({
             </SelectContent>
           </Select>
         ) : (
-          <>
-            <Input
-              aria-label="Outcome"
-              data-testid="flow-gate-outcome-input"
-              value={outcome}
-              onChange={(e) => setOutcome(e.target.value)}
-              placeholder="e.g. approved"
-              className="bg-background border-control-border text-on-surface font-body text-sm min-h-11 sm:min-h-9"
-            />
-            <p className="font-body text-sm text-outline">
-              This node routes everything through a catch-all edge, so any outcome continues the
-              flow.
-            </p>
-          </>
+          <Input
+            aria-label="Outcome"
+            data-testid="flow-gate-outcome-input"
+            value={outcome}
+            onChange={(e) => setOutcome(e.target.value)}
+            placeholder="e.g. approved"
+            className="bg-background border-control-border text-on-surface font-body text-sm min-h-11 sm:min-h-9"
+          />
         )}
       </div>
 
@@ -514,7 +517,7 @@ function Ledger({
               )}
               {nodeRun.gateway_session_id && (
                 <Link
-                  to={`/sessions/${nodeRun.gateway_session_id}`}
+                  to={`/chat?sessionLive=${nodeRun.gateway_session_id}`}
                   onClick={(e) => e.stopPropagation()}
                   className="font-mono text-xs text-primary hover:underline mt-1 inline-block"
                   data-testid="flow-ledger-session-link"

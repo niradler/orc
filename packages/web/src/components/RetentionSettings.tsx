@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,14 +27,16 @@ export function RetentionSettings() {
   });
   return (
     <section className="space-y-3" aria-labelledby="retention-title">
-      <h3 id="retention-title" className="text-sm font-medium">
-        Automatic cleanup
-      </h3>
-      <p className="max-w-2xl text-sm text-outline">
-        Notifications expire even when unresolved. Their source requests are kept independently.
-        Audit events remain until their own expiry. These settings apply across ORC clients; shorter
-        periods also apply to existing history.
-      </p>
+      <div className="flex items-center gap-1">
+        <h3 id="retention-title" className="text-sm font-medium">
+          Automatic cleanup
+        </h3>
+        <HelpPopover label="automatic cleanup" testId="retention-help">
+          Notifications expire even when unresolved. Their source requests are kept independently.
+          Audit events remain until their own expiry. These settings apply across ORC clients;
+          shorter periods also apply to existing history.
+        </HelpPopover>
+      </div>
       <form
         className="flex flex-wrap items-end gap-3"
         onSubmit={(event) => {

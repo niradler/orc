@@ -9,6 +9,7 @@ import type { CreateProjectInput, ProjectStatus } from "@/api/client";
 import { api } from "@/api/client";
 import { FormDialog } from "@/components/FormDialog";
 import { GithubSyncFields } from "@/components/GithubSyncFields";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -30,10 +31,18 @@ export function CreateProjectDialog({
   open,
   onClose,
   onFirstTask,
+  initialName,
+  initialScope,
+  onCreated,
+  allowFirstTask = true,
 }: {
   open: boolean;
   onClose: () => void;
   onFirstTask: (id: string) => void;
+  initialName?: string;
+  initialScope?: string;
+  onCreated?: (id: string) => void;
+  allowFirstTask?: boolean;
 }) {
   const steps = useFormSteps(
     [
@@ -43,11 +52,11 @@ export function CreateProjectDialog({
     ],
     open,
   );
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState<ProjectStatus>("active");
   const [tags, setTags] = useState("");
-  const [scope, setScope] = useState("");
+  const [scope, setScope] = useState(initialScope ?? "");
   const [gitRemoteUrl, setGitRemoteUrl] = useState("");
   const [githubSync, setGithubSync] = useState<GithubSyncConfig>({
     enabled: false,
@@ -56,7 +65,7 @@ export function CreateProjectDialog({
   const [maxWorkers, setMaxWorkers] = useState("");
   const [workspace, setWorkspace] = useState<WorkspaceEnvironment>(defaultWorkspaceEnvironment);
   const createProject = useCreateProject();
-  const [firstTask, setFirstTask] = useState(true);
+  const [firstTask, setFirstTask] = useState(allowFirstTask);
   const [folderError, setFolderError] = useState("");
   const dirty =
     JSON.stringify([
@@ -72,28 +81,28 @@ export function CreateProjectDialog({
       workspace,
     ]) !==
     JSON.stringify([
-      "",
+      initialName ?? "",
       "",
       "active",
       "",
+      initialScope ?? "",
       "",
       "",
-      "",
-      true,
+      allowFirstTask,
       { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
       defaultWorkspaceEnvironment(),
     ]);
   function resetForm() {
     steps.reset();
-    setName("");
+    setName(initialName ?? "");
     setDescription("");
     setStatus("active");
     setTags("");
-    setScope("");
+    setScope(initialScope ?? "");
     setGitRemoteUrl("");
     setGithubSync({ enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS });
     setMaxWorkers("");
-    setFirstTask(true);
+    setFirstTask(allowFirstTask);
     setWorkspace(defaultWorkspaceEnvironment());
     setFolderError("");
     createProject.reset();
@@ -127,6 +136,7 @@ export function CreateProjectDialog({
       onSuccess: (project) => {
         resetForm();
         closeAfterSave();
+        onCreated?.(project.id);
         if (firstTask) onFirstTask(project.id);
       },
     });
@@ -248,12 +258,17 @@ export function CreateProjectDialog({
                     )}
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
-                    <Label
-                      htmlFor="project-git-remote-url"
-                      className="font-label text-sm text-muted-foreground"
-                    >
-                      Git remote URL (optional)
-                    </Label>
+                    <div className="flex items-center gap-1">
+                      <Label
+                        htmlFor="project-git-remote-url"
+                        className="font-label text-sm text-muted-foreground"
+                      >
+                        Git remote URL (optional)
+                      </Label>
+                      <HelpPopover label="git remote URL" testId="project-git-remote-help">
+                        Repository address without credentials. Leave blank if not needed.
+                      </HelpPopover>
+                    </div>
                     <Input
                       id="project-git-remote-url"
                       className="bg-background border-control-border text-on-surface font-body text-sm"
@@ -262,9 +277,6 @@ export function CreateProjectDialog({
                       onChange={(event) => setGitRemoteUrl(event.target.value)}
                       placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Repository address without credentials. Leave blank if not needed.
-                    </p>
                   </div>
                   <div className="space-y-1.5">
                     <Label className="font-label text-sm  text-muted-foreground">Max workers</Label>
@@ -278,15 +290,17 @@ export function CreateProjectDialog({
                       className="bg-background border-control-border text-on-surface font-body text-sm"
                     />
                   </div>
-                  <label className="flex min-h-11 items-center gap-2 text-[13px] text-muted-foreground md:col-span-2">
-                    <input
-                      type="checkbox"
-                      data-testid="project-first-task"
-                      checked={firstTask}
-                      onChange={(event) => setFirstTask(event.target.checked)}
-                    />
-                    Create the first task after saving
-                  </label>
+                  {allowFirstTask && (
+                    <label className="flex min-h-11 items-center gap-2 text-[13px] text-muted-foreground md:col-span-2">
+                      <input
+                        type="checkbox"
+                        data-testid="project-first-task"
+                        checked={firstTask}
+                        onChange={(event) => setFirstTask(event.target.checked)}
+                      />
+                      Create the first task after saving
+                    </label>
+                  )}
                   <GithubSyncFields value={githubSync} onChange={setGithubSync} />
                 </FormStepPanel>
                 <FormStepPanel steps={steps} id="workspace">

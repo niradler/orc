@@ -58,7 +58,7 @@ export function TaskSessions({ taskId }: { taskId: string }) {
               <span className="font-label text-xs text-primary w-14 shrink-0">{s.agent}</span>
               <Link
                 to={scopedSessionPath(
-                  `/sessions?session=${encodeURIComponent(s.id)}`,
+                  `/chat?sessionLive=${encodeURIComponent(s.id)}`,
                   params.get("project") ?? s.project_id,
                 )}
                 data-testid="task-session-link"

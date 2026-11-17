@@ -4,6 +4,7 @@ import {
   type ChatAgentOptions,
   ChatAgentOptionsMapSchema,
   ChatAgentOptionsSchema,
+  chatRuntime,
 } from "../chat-options";
 
 test("should accept ACPX permission and timeout arguments without shell parsing", () => {
@@ -78,5 +79,26 @@ test("should validate Codex config arguments while retaining managed settings", 
     expect(ChatAgentOptionsSchema.safeParse({ runtime: "codex", args }).success).toBe(false);
   expect(
     ChatAgentOptionsMapSchema.safeParse({ codex: { runtime: "acpx", args: [] } }).success,
+  ).toBe(false);
+});
+
+test("OpenCode effort options parse and legacy ACPX arguments stay readable", () => {
+  expect(chatRuntime("opencode")).toBe("opencode");
+  expect(
+    ChatAgentOptionsSchema.safeParse({ runtime: "opencode", options: { effort: "high" } }).success,
+  ).toBe(true);
+  expect(
+    ChatAgentOptionsSchema.safeParse({ runtime: "opencode", options: { effort: "not a value!" } })
+      .success,
+  ).toBe(false);
+  expect(
+    ChatAgentOptionsMapSchema.safeParse({ opencode: { runtime: "opencode", options: {} } }).success,
+  ).toBe(true);
+  // Saved ACPX arguments from before direct ACP must not break settings load.
+  expect(
+    ChatAgentOptionsMapSchema.safeParse({ opencode: { runtime: "acpx", args: [] } }).success,
+  ).toBe(true);
+  expect(
+    ChatAgentOptionsMapSchema.safeParse({ opencode: { runtime: "codex", args: [] } }).success,
   ).toBe(false);
 });

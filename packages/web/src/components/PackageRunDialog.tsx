@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { type AgentSetup, api, type PackageFull } from "@/api/client";
 import { FolderPickerDialog } from "@/components/FolderPickerDialog";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -303,18 +304,18 @@ export function PackageRunDialog({
                     Configuration to apply
                   </summary>
                   {profile.data && (
-                    <>
+                    <div className="flex items-center gap-1">
                       <p>
                         {profile.data.name} · agent instructions
                         {profile.data.fields.model ? ` · ${profile.data.fields.model}` : ""}
                       </p>
                       {host && (
-                        <p className="text-xs text-outline">
+                        <HelpPopover label="Supporting files" testId="setup-supporting-files-help">
                           Supporting files referenced by this agent are not transferred. Make them
                           available at the referenced paths on {host}.
-                        </p>
+                        </HelpPopover>
                       )}
-                    </>
+                    </div>
                   )}
                   {components.isFetching && <p>Checking package contents…</p>}
                   {components.data?.map((pkg) => (

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CLAUDE_TOKENS_VERSION = 1;
+export const CLAUDE_TOKENS_VERSION = 2;
 
 /** Bumped when a transcript parser gains a new request field; forces one re-index. */
 export const USAGE_EVENT_VERSION = 1;
@@ -135,6 +135,8 @@ export const SessionCacheUsageSchema = z.object({
         recorded_at: z.string().datetime().nullable(),
         pre_tokens: z.number().nonnegative().nullable(),
         post_tokens: z.number().nonnegative().nullable(),
+        /** Only set when the provider recorded why it compacted; never inferred. */
+        trigger: z.enum(["manual", "auto"]).nullable().default(null),
       }),
     )
     .nullable(),

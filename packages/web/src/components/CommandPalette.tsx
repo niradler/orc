@@ -18,6 +18,7 @@ import {
   STATE_FILTER_COMMANDS,
   searchHitPath,
 } from "@/lib/command-palette";
+import { applySessionFilter, parseFilter } from "@/lib/session-filter";
 import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import { TERMINAL_PALETTE_EVENT, type TerminalPaletteRequest } from "@/lib/terminal-palette";
 import { terminalStatus } from "@/lib/terminal-presentation";
@@ -373,7 +374,10 @@ export function CommandPalette({
       command.title,
       "Filter agent sessions by state",
       "Sessions",
-      () => go(command.path),
+      () => {
+        applySessionFilter(parseFilter(command.filter));
+        go(command.path);
+      },
       "filter state needs you working done",
     );
   for (const section of WORKSPACE_SECTIONS)
@@ -436,7 +440,7 @@ export function CommandPalette({
         group: "Sessions",
         run: () =>
           go(
-            `/sessions?session=${encodeURIComponent(session.id)}`,
+            `/chat?sessionLive=${encodeURIComponent(session.id)}`,
             session.project_id ?? "unassigned",
           ),
       });
@@ -476,11 +480,12 @@ export function CommandPalette({
         size="sm"
         aria-label="Search and run commands"
         aria-keyshortcuts="Control+k Meta+k"
+        className="max-lg:border-transparent"
         onClick={() => changeOpen(true)}
       >
         <Search className="size-4" />
         <span className="hidden lg:inline">Search anything…</span>
-        <kbd className="hidden sm:inline text-xs text-outline">⌘/Ctrl K</kbd>
+        <kbd className="hidden sm:inline pointer-coarse:hidden text-xs text-outline">⌘/Ctrl K</kbd>
       </Button>
       <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent

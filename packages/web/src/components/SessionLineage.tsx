@@ -1,10 +1,11 @@
 import type { SessionLineage as Lineage } from "@orc/core/session-messages";
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
 import { useChat } from "@/hooks/useChat";
+import { useOpenLiveSession } from "@/hooks/useOpenLiveSession";
+import { useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionLineage } from "@/hooks/useSessions";
 
 type Node = NonNullable<Lineage["parent"]>;
@@ -26,7 +27,8 @@ function NodeLink({ node, onOpen }: { node: Node; onOpen: (node: Node) => void }
 export function SessionLineage({ sessionId }: { sessionId: string | null }) {
   const { data } = useSessionLineage(sessionId);
   const chat = useChat();
-  const navigate = useNavigate();
+  const openSession = useOpenLiveSession();
+  const home = useSessionHome();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const parent = data?.parent ?? null;
@@ -35,12 +37,13 @@ export function SessionLineage({ sessionId }: { sessionId: string | null }) {
 
   async function openNode(node: Node): Promise<void> {
     setError(null);
-    if (node.kind === "session") {
-      navigate(`/sessions?session=${encodeURIComponent(node.id)}&project=all`);
-      return;
-    }
     try {
+      if (node.kind === "session") {
+        await openSession(node.id);
+        return;
+      }
       chat.openThread(await api.chat.get(node.id));
+      if (home.viewId) home.go({ viewId: null }, { replace: true });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The session could not be opened.");
     }
@@ -49,7 +52,7 @@ export function SessionLineage({ sessionId }: { sessionId: string | null }) {
   return (
     <section
       data-testid="session-lineage"
-      className="mx-auto mb-2 flex w-full min-w-0 max-w-3xl flex-wrap items-center gap-x-2 text-xs text-on-surface-variant"
+      className="mx-auto mb-2 flex w-full min-w-0 max-w-(--chat-width) flex-wrap items-center gap-x-2 text-xs text-on-surface-variant"
     >
       <GitBranch aria-hidden="true" size={14} className="shrink-0" />
       {parent && (

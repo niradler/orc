@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { type ChatThread, ChatThreadSchema } from "@orc/core/chat";
+import { type ChatThread, parseChatThread } from "@orc/core/chat";
 
 type ChatSummary = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   agent: string | null;
@@ -7,6 +7,8 @@ type ChatSummary = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   sourceId: string | null;
   host: string | null;
   projectId: string | null;
+  spawnedFrom: string | null;
+  resumed: number;
 };
 
 export function installChat(sqlite: Database): void {
@@ -21,7 +23,7 @@ export class ChatStore {
     const row = this.db
       .query<{ data: string }, [string]>("SELECT data FROM chat_threads WHERE id = ?")
       .get(id);
-    return row ? ChatThreadSchema.parse(JSON.parse(row.data)) : null;
+    return row ? parseChatThread(JSON.parse(row.data)) : null;
   }
   list(): ChatSummary[] {
     return this.db
@@ -46,8 +48,14 @@ export class ChatStore {
           CASE WHEN json_valid(data) THEN
             CASE WHEN json_type(data, '$.projectId') = 'text'
               THEN json_extract(data, '$.projectId') END
-          END AS projectId
-        FROM chat_threads ORDER BY updated_at DESC LIMIT 100`,
+          END AS projectId,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.spawnedBy.sessionId') = 'text'
+              THEN json_extract(data, '$.spawnedBy.sessionId') END
+          END AS spawnedFrom,
+          CASE WHEN json_valid(data) THEN json_type(data, '$.importedMessages') IS NOT NULL ELSE 0 END
+            AS resumed
+        FROM chat_threads ORDER BY updated_at DESC`,
       )
       .all();
   }
@@ -60,6 +68,15 @@ export class ChatStore {
       )
       .all(runtimeId, backend, host ?? "")
       .flatMap((row) => this.get(row.id) ?? []);
+  }
+  bySource(sourceId: string): ChatThread | null {
+    const row = this.db
+      .query<{ id: string }, [string]>(
+        `SELECT id FROM chat_threads WHERE json_valid(data)
+          AND json_extract(data, '$.sourceId')=? ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(sourceId);
+    return row ? this.get(row.id) : null;
   }
   children(sessionIds: string[]): ChatThread[] {
     if (!sessionIds.length) return [];
@@ -90,6 +107,17 @@ export class ChatStore {
       )
       .get(messageId);
     return row ? this.get(row.id) : null;
+  }
+  /** Records a source session without rewriting the whole row, so a read path
+   *  cannot clobber a turn that saved concurrently. */
+  setSourceId(id: string, sourceId: string): void {
+    this.db
+      .query(
+        `UPDATE chat_threads SET data = json_set(data, '$.sourceId', ?)
+          WHERE id = ? AND json_valid(data)
+            AND coalesce(json_extract(data, '$.sourceId'), '') = ''`,
+      )
+      .run(sourceId, id);
   }
   save(thread: ChatThread): void {
     this.db

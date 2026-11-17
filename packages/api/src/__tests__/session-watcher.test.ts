@@ -25,6 +25,8 @@ type Row = {
   tokens_used: number | null;
   tokens_estimated: boolean;
   task: { id: string } | null;
+  parent_id: string | null;
+  spawned_from_id: string | null;
 };
 
 let app: ReturnType<typeof createApp>;
@@ -61,15 +63,19 @@ beforeAll(() => {
   app = setupTestApp();
 });
 
-afterAll(() => {
+afterAll(async () => {
   teardownTestApp();
   // Windows keeps a just-closed fs.watch handle on the directory for a moment.
-  rmSync(root, {
-    recursive: true,
-    force: true,
-    maxRetries: 10,
-    retryDelay: 100,
-  });
+  // Bun ignores rmSync's retry options, so retry the busy ones ourselves.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 50) throw error;
+      await Bun.sleep(100);
+    }
+  }
 });
 
 describe("claude adapter: live registry", () => {
@@ -177,6 +183,51 @@ describe("claude adapter: live registry", () => {
 });
 
 describe("claude adapter: ended sessions, tokens and summary", () => {
+  test("desktop start_session links nest a spawned session under the session that started it", async () => {
+    const desktop = join(root, "desktop-spawn", "org", "user");
+    mkdirSync(desktop, { recursive: true });
+    const write = (desktopId: string, cliId: string, extra: Record<string, unknown> = {}) =>
+      writeFileSync(
+        join(desktop, `${desktopId}.json`),
+        JSON.stringify({
+          sessionId: desktopId,
+          cliSessionId: cliId,
+          cwd: "/tmp/spawn-repo",
+          title: cliId,
+          createdAt: 1_780_000_000_000,
+          lastActivityAt: 1_780_000_500_000,
+          ...extra,
+        }),
+      );
+    write("local_root", "spawn-root");
+    write("local_child", "spawn-child", { spawnedFrom: { sessionId: "local_root", taskId: "t" } });
+    write("local_grand", "spawn-grand", { spawnedFrom: { sessionId: "local_child" } });
+    write("local_gone", "spawn-orphan", { spawnedFrom: { sessionId: "local_missing" } });
+    write("local_bad", "spawn-bad", { spawnedFrom: "not an object" });
+
+    await runSync(
+      [
+        claudeAdapter({
+          registry: join(root, "empty-registry"),
+          desktop: join(root, "desktop-spawn"),
+          projects: null,
+        }),
+      ],
+      { force: true },
+    );
+
+    const all = await live({ active: false });
+    const idOf = (cliId: string) => all.find((r) => r.session_id === cliId)?.id;
+    const spawnedFrom = (cliId: string) => all.find((r) => r.session_id === cliId)?.spawned_from_id;
+    expect(idOf("spawn-root")).toBeDefined();
+    expect(spawnedFrom("spawn-root")).toBeNull();
+    expect(spawnedFrom("spawn-child")).toBe(idOf("spawn-root"));
+    expect(spawnedFrom("spawn-grand")).toBe(idOf("spawn-child"));
+    expect(spawnedFrom("spawn-orphan")).toBeNull();
+    expect(spawnedFrom("spawn-bad")).toBeNull();
+    expect(all.find((r) => r.session_id === "spawn-child")?.parent_id).toBeNull();
+  });
+
   test("desktop metadata becomes an ended session with summary and de-duplicated tokens", async () => {
     const desktop = join(root, "desktop", "org", "user");
     const projects = join(root, "projects", "-tmp-ended-repo");
@@ -428,6 +479,89 @@ describe("codex adapter", () => {
     ]);
     const [second] = await adapter.list(known);
     expect(second?.usage).toBeUndefined();
+  });
+});
+
+describe("claude adapter: missing transcript", () => {
+  test("settles a registry session with no transcript and keeps its lifetime total", async () => {
+    const dir = join(root, "registry-without-transcript");
+    mkdirSync(dir);
+    const id = "0f0f0f0f-1111-4222-8333-444444444444";
+    writeFileSync(
+      join(dir, "987654.json"),
+      JSON.stringify({
+        pid: DEAD_PID,
+        sessionId: id,
+        cwd: "/tmp/some-repo",
+        status: "stopped",
+        startedAt: 1_790_000_000_000,
+        updatedAt: 1_790_000_100_000,
+      }),
+    );
+    const adapter = claudeAdapter({ registry: dir, desktop: null, projects: null });
+    const [fresh] = await adapter.list(new Map());
+    if (!fresh) throw new Error("claude record missing");
+    expect(fresh.usageVersion).toBe(USAGE_EVENT_VERSION);
+    expect(await fresh.usage?.()).toEqual({ events: [], tokens: 0, model: null });
+
+    const [known] = await adapter.list(
+      new Map([
+        [
+          id,
+          {
+            lastActivityMs: 1_790_000_100_000,
+            tokensUsed: 321,
+            usageVersion: 0,
+            session: fresh,
+          },
+        ],
+      ]),
+    );
+    const usage = await known?.usage?.();
+    expect(usage?.tokens).toBe(321);
+    expect(usage?.events).toEqual([
+      {
+        key: "session",
+        ts: 1_790_000_100_000,
+        model: null,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
+        otherTokens: 321,
+        estimated: true,
+      },
+    ]);
+  });
+
+  test("settles a known session whose registry entry and transcript are both gone", async () => {
+    const dir = join(root, "registry-empty");
+    mkdirSync(dir);
+    const id = "0f0f0f0f-1111-4222-8333-555555555555";
+    const lastActivityAt = new Date(1_790_000_100_000);
+    const [record] = await claudeAdapter({ registry: dir, desktop: null, projects: null }).list(
+      new Map([
+        [
+          id,
+          {
+            lastActivityMs: lastActivityAt.getTime(),
+            tokensUsed: 99,
+            usageVersion: 0,
+            session: {
+              backend: "claude",
+              externalId: id,
+              title: "New session",
+              status: "stopped" as const,
+              createdAt: new Date(1_790_000_000_000),
+              lastActivityAt,
+            },
+          },
+        ],
+      ]),
+    );
+    expect(record?.usageVersion).toBe(USAGE_EVENT_VERSION);
+    expect(await record?.usage?.()).toMatchObject({ tokens: 99 });
   });
 });
 

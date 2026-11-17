@@ -2,7 +2,9 @@ import { OrcError } from "@orc/core/errors";
 import type { HostRuntime } from "@orc/core/exec-host";
 import type { CacheTokenUsage, SessionCacheUsage } from "@orc/core/usage";
 import { z } from "zod";
+import { parsePiSession } from "./pi.js";
 import { MAX_TRANSCRIPT_BYTES } from "./transcript.js";
+import { parseOpenCodeUsage } from "./usage-parsers.js";
 
 const Count = z.number().int().nonnegative();
 const ClaudeUsage = z.object({
@@ -41,6 +43,20 @@ function timestamp(value: unknown): string | null {
   return Number.isFinite(millis) ? new Date(millis).toISOString() : null;
 }
 
+/** Only a provider that recorded this literal reason is trusted; timing is never a substitute. */
+function recordedTrigger(value: unknown): "manual" | "auto" | null {
+  return value === "manual" || value === "auto" ? value : null;
+}
+
+function parsedObject(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return object(value);
+  try {
+    return object(JSON.parse(value));
+  } catch {
+    return {};
+  }
+}
+
 function codexTokens(value: z.infer<typeof CodexUsage>): CacheTokenUsage {
   return {
     input_tokens: value.input_tokens,
@@ -50,12 +66,21 @@ function codexTokens(value: z.infer<typeof CodexUsage>): CacheTokenUsage {
 }
 
 export async function loadSessionCacheUsage(
-  runtime: Pick<HostRuntime, "isFile" | "readFile">,
+  runtime: Pick<HostRuntime, "isFile" | "readFile"> & Partial<Pick<HostRuntime, "sqliteQuery">>,
   backend: string,
   path: string,
+  externalId: string | null = null,
 ): Promise<SessionCacheUsage> {
   try {
     if (!(await runtime.isFile(path))) return emptySessionCacheUsage();
+    if (backend === "opencode") {
+      if (!externalId || !runtime.sqliteQuery) return emptySessionCacheUsage();
+      return await readOpenCodeCacheUsage(
+        runtime as Pick<HostRuntime, "sqliteQuery">,
+        path,
+        externalId,
+      );
+    }
     return readSessionCacheUsage(backend, await runtime.readFile(path, MAX_TRANSCRIPT_BYTES));
   } catch {
     throw new OrcError("Session cache usage could not be read", "CACHE_UNAVAILABLE", 503);
@@ -73,6 +98,166 @@ export function emptySessionCacheUsage(): SessionCacheUsage {
   };
 }
 
+type CachePoint = {
+  recorded_at: string | null;
+  input_tokens: number;
+  cached_input_tokens: number;
+  cache_write_tokens: number | null;
+  output_tokens: number | null;
+};
+
+function recordCachePoint(
+  result: SessionCacheUsage,
+  timeline: NonNullable<SessionCacheUsage["timeline"]>,
+  point: CachePoint,
+): void {
+  const tokens: CacheTokenUsage = {
+    input_tokens: point.input_tokens,
+    cached_input_tokens: point.cached_input_tokens,
+    cache_write_tokens: point.cache_write_tokens,
+  };
+  if (
+    !result.latest ||
+    !point.recorded_at ||
+    !result.latest.recorded_at ||
+    point.recorded_at >= result.latest.recorded_at
+  )
+    result.latest = { ...tokens, recorded_at: point.recorded_at, may_be_cold_after: null };
+  const totals = result.totals ?? {
+    input_tokens: 0,
+    cached_input_tokens: 0,
+    cache_write_tokens: 0,
+  };
+  totals.input_tokens += tokens.input_tokens;
+  totals.cached_input_tokens += tokens.cached_input_tokens;
+  totals.cache_write_tokens =
+    totals.cache_write_tokens !== null && tokens.cache_write_tokens !== null
+      ? totals.cache_write_tokens + tokens.cache_write_tokens
+      : null;
+  result.totals = totals;
+  result.output_tokens = (result.output_tokens ?? 0) + (point.output_tokens ?? 0);
+  result.requests = (result.requests ?? 0) + 1;
+  timeline.push({
+    request: timeline.length + 1,
+    recorded_at: point.recorded_at,
+    context_tokens: point.input_tokens,
+    cached_input_tokens: point.cached_input_tokens,
+    output_tokens: point.output_tokens,
+  });
+}
+
+/** Pi records per-assistant usage on the active branch and context edits for compaction. */
+function readPiCacheUsage(bytes: Uint8Array): SessionCacheUsage {
+  const result = emptySessionCacheUsage();
+  let parsed: ReturnType<typeof parsePiSession>;
+  try {
+    parsed = parsePiSession(new TextDecoder().decode(bytes));
+  } catch {
+    return result;
+  }
+  if (!parsed) return result;
+  const compactions: NonNullable<SessionCacheUsage["compactions"]> = [];
+  for (const entry of parsed.branch) {
+    if (entry.type !== "context_edit") continue;
+    // Pi's context edits record what changed, never why, so the trigger stays unknown.
+    compactions.push({
+      recorded_at: timestamp(entry.timestamp),
+      pre_tokens: null,
+      post_tokens: null,
+      trigger: null,
+    });
+  }
+  result.compactions = compactions;
+  const timeline: NonNullable<SessionCacheUsage["timeline"]> = [];
+  for (const entry of parsed.messages) {
+    const usage = entry.message?.usage;
+    if (entry.message?.role !== "assistant" || !usage) continue;
+    const cached = usage.cacheRead ?? 0;
+    const writes = usage.cacheWrite ?? 0;
+    recordCachePoint(result, timeline, {
+      recorded_at: timestamp(entry.timestamp),
+      input_tokens: (usage.input ?? 0) + cached + writes,
+      cached_input_tokens: cached,
+      cache_write_tokens: writes,
+      output_tokens: usage.output ?? null,
+    });
+  }
+  if (timeline.length) result.timeline = downsample(timeline);
+  return result;
+}
+
+type OpenCodeUsageRow = { id: string; data: string; time_created: number };
+
+async function openCodeRows<T extends object>(
+  runtime: Pick<HostRuntime, "sqliteQuery">,
+  path: string,
+  sql: string,
+): Promise<T[]> {
+  try {
+    return await runtime.sqliteQuery<T>(path, sql);
+  } catch (error) {
+    if (/no such (table|column)/i.test(error instanceof Error ? error.message : String(error)))
+      return [];
+    throw error;
+  }
+}
+
+/** OpenCode keeps per-request usage in its local database rather than the transcript file. */
+async function readOpenCodeCacheUsage(
+  runtime: Pick<HostRuntime, "sqliteQuery">,
+  path: string,
+  sessionId: string,
+): Promise<SessionCacheUsage> {
+  const result = emptySessionCacheUsage();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return result;
+  const current = await openCodeRows<OpenCodeUsageRow & { type: string }>(
+    runtime,
+    path,
+    `SELECT id, type, data, time_created FROM session_message WHERE session_id = '${sessionId}' AND type IN ('assistant', 'compaction') ORDER BY seq`,
+  );
+  let rows: OpenCodeUsageRow[];
+  let compactions: { time: number; trigger: "manual" | "auto" | null }[];
+  if (current.length) {
+    rows = current;
+    compactions = current
+      .filter((row) => row.type === "compaction")
+      .map((row) => ({
+        time: row.time_created,
+        trigger: recordedTrigger(parsedObject(row.data).trigger),
+      }));
+  } else {
+    rows = (
+      await openCodeRows<OpenCodeUsageRow & { role: string | null }>(
+        runtime,
+        path,
+        `SELECT id, json_extract(data, '$.role') AS role, data, time_created FROM message WHERE session_id = '${sessionId}' ORDER BY time_created`,
+      )
+    ).filter((row) => row.role === "assistant");
+    compactions = [];
+  }
+  if (!rows.length) return result;
+  const usage = parseOpenCodeUsage(rows);
+  const timeline: NonNullable<SessionCacheUsage["timeline"]> = [];
+  for (const event of usage.events) {
+    recordCachePoint(result, timeline, {
+      recorded_at: event.ts > 0 ? new Date(event.ts).toISOString() : null,
+      input_tokens: event.inputTokens + event.cacheReadTokens + event.cacheWriteTokens,
+      cached_input_tokens: event.cacheReadTokens,
+      cache_write_tokens: event.cacheWriteTokens,
+      output_tokens: event.outputTokens,
+    });
+  }
+  result.compactions = compactions.map((entry) => ({
+    recorded_at:
+      Number.isFinite(entry.time) && entry.time > 0 ? new Date(entry.time).toISOString() : null,
+    pre_tokens: null,
+    post_tokens: null,
+    trigger: entry.trigger,
+  }));
+  if (timeline.length) result.timeline = downsample(timeline);
+  return result;
+}
+
 const TIMELINE_POINTS = 200;
 
 function downsample<T extends { context_tokens: number }>(points: T[]): T[] {
@@ -86,12 +271,14 @@ function downsample<T extends { context_tokens: number }>(points: T[]): T[] {
 }
 
 export function readSessionCacheUsage(backend: string, bytes: Uint8Array): SessionCacheUsage {
+  if (backend === "pi") return readPiCacheUsage(bytes);
   const result = emptySessionCacheUsage();
   if (backend !== "claude" && backend !== "codex") return result;
   const compactions: NonNullable<SessionCacheUsage["compactions"]> = [];
   const timeline: NonNullable<SessionCacheUsage["timeline"]> = [];
   let codexTotal: number | null = null;
-  if (backend === "claude") result.compactions = compactions;
+  result.compactions = compactions;
+  const codexCompactedAt: number[] = [];
   const seen = new Set<string>();
   for (const line of new TextDecoder().decode(bytes).split("\n")) {
     let row: Record<string, unknown>;
@@ -112,6 +299,7 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
           recorded_at: recordedAt,
           pre_tokens: tokens(meta.preTokens),
           post_tokens: tokens(meta.postTokens),
+          trigger: recordedTrigger(meta.trigger),
         });
         continue;
       }
@@ -164,11 +352,21 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
         output_tokens: value.output_tokens ?? null,
       });
     } else {
+      if (row.type === "compacted") {
+        compactions.push({
+          recorded_at: recordedAt,
+          pre_tokens: timeline.at(-1)?.context_tokens ?? null,
+          post_tokens: null,
+          trigger: null,
+        });
+        codexCompactedAt.push(timeline.length);
+        continue;
+      }
       const payload = object(row.payload);
       if (row.type !== "event_msg" || payload.type !== "token_count") continue;
       const info = object(payload.info);
       const latest = CodexUsage.safeParse(info.last_token_usage);
-      if (!latest.success) continue;
+      if (!latest.success || latest.data.input_tokens === 0) continue;
       const totals = CodexUsage.safeParse(info.total_token_usage);
       const total = totals.success ? totals.data.input_tokens : null;
       if (total === null || total !== codexTotal)
@@ -196,6 +394,10 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
       }
     }
   }
+  codexCompactedAt.forEach((at, index) => {
+    const compaction = compactions[index];
+    if (compaction) compaction.post_tokens = timeline[at]?.context_tokens ?? null;
+  });
   if (timeline.length) result.timeline = downsample(timeline);
   return result;
 }

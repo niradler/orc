@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { changes } from "@orc/core/changes";
 import { OrcError } from "@orc/core/errors";
 import {
+  CLAUDE_TOKENS_VERSION,
   USAGE_EVENT_VERSION,
   USAGE_RAW_RETENTION_DAYS,
   UsageHistorySchema,
@@ -99,7 +100,8 @@ test("should exclude old Claude counts until they have been refreshed with cache
   expect(stale.totals.tokens).toBe(baseline.totals.tokens);
   expect(stale.totals.unknown_sessions).toBe(baseline.totals.unknown_sessions + 1);
   sqlite.run(
-    "UPDATE gateway_sessions SET tokens_used = 1500, tokens_version = 1 WHERE id = 'usage-old-claude'",
+    "UPDATE gateway_sessions SET tokens_used = 1500, tokens_version = ? WHERE id = 'usage-old-claude'",
+    [CLAUDE_TOKENS_VERSION],
   );
   const refreshed = UsageHistorySchema.parse(
     await (await app.request("/api/usage/history?days=0", { headers })).json(),
@@ -205,6 +207,20 @@ test("should report request totals, model facets and time buckets with filters",
   expect(all.since).toBeNull();
   expect(all.totals.total_tokens).toBe(220);
   expect((await app.request("/api/usage/report?days=2", { headers })).status).toBe(400);
+
+  sqlite.run("INSERT INTO projects (id, name) VALUES ('report-project', 'Report project')");
+  sqlite.run("UPDATE gateway_sessions SET project_id = 'report-project' WHERE id = 'report3'");
+  const scoped = UsageReportSchema.parse(
+    await (
+      await app.request("/api/usage/report?days=0&project_id=report-project", { headers })
+    ).json(),
+  );
+  expect(scoped.totals.total_tokens).toBe(30);
+  expect(scoped.agents.map((row) => row.agent)).toEqual(["gemini"]);
+  const unassigned = UsageReportSchema.parse(
+    await (await app.request("/api/usage/report?days=0&project_id=unassigned", { headers })).json(),
+  );
+  expect(unassigned.totals.total_tokens).toBe(190);
 });
 
 test("should replace a session ledger idempotently and record its latest model", () => {

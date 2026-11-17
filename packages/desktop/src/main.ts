@@ -17,8 +17,16 @@ import {
   net,
   screen,
   session,
+  shell,
   Tray,
 } from "electron";
+import {
+  appMenuTemplate,
+  DOCUMENTATION_URL,
+  ISSUES_URL,
+  nextZoomLevel,
+  type ZoomDirection,
+} from "./app-menu.js";
 import { loadDesktopConfig, saveDesktopConnection } from "./connection.js";
 import {
   applyConnectionDraft,
@@ -38,6 +46,7 @@ import {
   webOrigin,
   writeConnectionSettings,
 } from "./connection-settings.js";
+import { attachContextMenu } from "./context-menu-window.js";
 import { type Daemon, ensureDaemon } from "./daemon.js";
 import { acknowledgeMacInstall } from "./mac-install.js";
 import {
@@ -199,11 +208,61 @@ function localWindowActive(): boolean {
 
 function updateLocalActions(): void {
   const enabled = localWindowActive();
+  const login = autostartEnabled();
   for (const menu of [Menu.getApplicationMenu(), trayMenu]) {
-    const item = menu?.getMenuItemById("browser-and-files");
-    if (item) item.enabled = enabled;
+    const browser = menu?.getMenuItemById("browser-and-files");
+    if (browser) browser.enabled = enabled;
+    const startAtLogin = menu?.getMenuItemById("start-at-login");
+    if (startAtLogin) startAtLogin.checked = login;
   }
   if (trayMenu) tray?.setContextMenu(trayMenu);
+}
+
+/**
+ * Reload, developer tools and zoom belong to the window's own page; the native
+ * menu roles would act on whichever embedded browser tab had focus.
+ */
+function reloadMainWindow(force: boolean): void {
+  if (!win || win.isDestroyed()) return;
+  if (force) win.webContents.reloadIgnoringCache();
+  else win.webContents.reload();
+}
+
+function toggleMainWindowDevTools(): void {
+  if (win && !win.isDestroyed()) win.webContents.toggleDevTools();
+}
+
+function zoomMainWindow(direction: ZoomDirection): void {
+  if (!win || win.isDestroyed()) return;
+  win.webContents.setZoomLevel(nextZoomLevel(win.webContents.getZoomLevel(), direction));
+}
+
+function installApplicationMenu(): void {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      appMenuTemplate(
+        { platform: process.platform, packaged: app.isPackaged },
+        {
+          showConnectionSettings: () => void showConnectionSettings(),
+          openViewer: () => {
+            showWindow();
+            openDesktopViewer();
+          },
+          autostart: autostartEnabled,
+          setAutostart: (enabled) => {
+            setAutostart(enabled);
+            updateLocalActions();
+          },
+          reload: reloadMainWindow,
+          toggleDevTools: toggleMainWindowDevTools,
+          zoom: zoomMainWindow,
+          openDocumentation: () => void shell.openExternal(DOCUMENTATION_URL),
+          reportIssue: () => void shell.openExternal(ISSUES_URL),
+          showAbout: () => app.showAboutPanel(),
+        },
+      ),
+    ),
+  );
 }
 
 function openWindow(url: string): void {
@@ -214,7 +273,7 @@ function openWindow(url: string): void {
     minWidth: 900,
     minHeight: 600,
     title: "orc",
-    backgroundColor: "#0a0d19",
+    backgroundColor: "#1f1f1e",
     show: false,
     ...(app.isPackaged ? {} : { icon: iconPath }),
     webPreferences: {
@@ -223,6 +282,9 @@ function openWindow(url: string): void {
       nodeIntegration: false,
       sandbox: true,
       webviewTag: false,
+      // A hidden window throttles its renderer, which delays the first paint this
+      // window waits for; throttling returns once the dashboard is showing.
+      backgroundThrottling: false,
       // A remote page gets only the connection bridge; preview, updates and native
       // notifications stay exclusive to the local dashboard.
       additionalArguments:
@@ -231,6 +293,9 @@ function openWindow(url: string): void {
   });
   const created = win;
   if (state.maximized) win.maximize();
+  // Menu zoom owns the window scale; pinch zoom would fight it.
+  win.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
+  attachContextMenu(win.webContents);
   attachDesktopPreview(win, origin, localOrigin);
   win.webContents.on("did-navigate", (_event, url) => {
     const next = webOrigin(url);
@@ -253,8 +318,11 @@ function openWindow(url: string): void {
   });
   win.on("page-title-updated", (_event, title) => showNeedsYou(title));
   win.on("focus", closeNotifications);
-  win.webContents.setUserAgent(withAppVersion(win.webContents.getUserAgent(), app.getVersion()));
-  win.once("ready-to-show", () => win?.show());
+  win.webContents.setUserAgent(withAppVersion(win.webContents.getUserAgent(), displayVersion));
+  win.once("ready-to-show", () => {
+    win?.show();
+    win?.webContents.setBackgroundThrottling(true);
+  });
   win.on("session-end", () => {
     quitting = true;
   });
@@ -568,10 +636,14 @@ function createTray(): void {
       },
     },
     {
+      id: "start-at-login",
       label: "Start at login",
       type: "checkbox",
       checked: autostartEnabled(),
-      click: (item) => setAutostart(item.checked),
+      click: (item) => {
+        setAutostart(item.checked);
+        updateLocalActions();
+      },
     },
     { type: "separator" },
     { label: "Quit orc", click: () => app.quit() },
@@ -621,34 +693,7 @@ async function start(): Promise<void> {
   hardenSession();
   installRequestHeaders();
   registerConnectionIpc();
-  Menu.setApplicationMenu(
-    Menu.buildFromTemplate([
-      ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
-      {
-        label: "File",
-        submenu: [
-          {
-            label: "Connection…",
-            accelerator: "CmdOrCtrl+,",
-            click: () => void showConnectionSettings(),
-          },
-          {
-            label: "Browser and files",
-            id: "browser-and-files",
-            accelerator: "CmdOrCtrl+Shift+B",
-            click: () => {
-              showWindow();
-              openDesktopViewer();
-            },
-          },
-          { role: "close" },
-        ],
-      },
-      { role: "editMenu" },
-      { role: "viewMenu" },
-      { role: "windowMenu" },
-    ]),
-  );
+  installApplicationMenu();
   listenForNotifications();
   try {
     await bringUp();
@@ -675,10 +720,8 @@ async function start(): Promise<void> {
 app.setName("orc");
 app.enableSandbox();
 if (process.platform === "win32") app.setAppUserModelId("dev.orc.desktop");
-app.setAboutPanelOptions({
-  applicationName: "orc",
-  applicationVersion: [app.getVersion(), process.env.ORC_BUILD_TAG].filter(Boolean).join("-"),
-});
+const displayVersion = [app.getVersion(), process.env.ORC_BUILD_TAG].filter(Boolean).join("-");
+app.setAboutPanelOptions({ applicationName: "orc", applicationVersion: displayVersion });
 
 if (!app.requestSingleInstanceLock() || process.argv.includes(QUIT_FLAG)) {
   app.quit();

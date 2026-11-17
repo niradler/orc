@@ -9,6 +9,7 @@ import { AttentionSettings } from "@/components/AttentionSettings";
 import { BrowserSettings } from "@/components/BrowserSettings";
 import { ChannelSettings } from "@/components/ChannelSettings";
 import { ChatSettingsForm } from "@/components/ChatSettingsForm";
+import { HelpPopover } from "@/components/HelpPopover";
 import { HostsSettings } from "@/components/HostsSettings";
 import { IntegrationsSettings } from "@/components/IntegrationsSettings";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
@@ -37,7 +38,17 @@ import {
   type SettingsGroupId,
 } from "@/lib/settings-navigation";
 import { TERMINAL_FONT_KEY } from "@/lib/terminal-runtime";
-import { FONT_SIZES, setFontSize, setTheme, useFontSize, useTheme } from "@/lib/theme";
+import {
+  CHAT_FONTS,
+  CHAT_WIDTHS,
+  DARK_BACKGROUNDS,
+  FONT_SIZES,
+  setAppearance,
+  setTheme,
+  UI_FONTS,
+  useAppearance,
+  useTheme,
+} from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { useViewParam } from "@/lib/view-params";
 
@@ -85,7 +96,7 @@ export default function Settings() {
   const mounted = (id: SettingsGroupId) => visited.has(id) || id === activeGroup;
 
   const { theme } = useTheme();
-  const fontSize = useFontSize();
+  const appearance = useAppearance();
   const [terminalFont, setTerminalFont] = useState(
     () => localStorage.getItem(TERMINAL_FONT_KEY) ?? "",
   );
@@ -208,8 +219,13 @@ export default function Settings() {
             {mounted("general") && (
               <div hidden={activeGroup !== "general"} className="space-y-8">
                 <section aria-label="Appearance settings">
-                  <h2 className="mb-2 text-base font-medium">Appearance</h2>
-                  <p className="mb-5 text-xs text-muted-foreground">Changes save immediately.</p>
+                  <div className="mb-5 flex items-center gap-1">
+                    <h2 className="text-base font-medium">Appearance</h2>
+                    <HelpPopover label="appearance settings" testId="settings-appearance-help">
+                      <p>Changes save immediately.</p>
+                      <p className="mt-2">Saved in this browser. Terminals keep their own font.</p>
+                    </HelpPopover>
+                  </div>
                   <div className="space-y-6">
                     <div>
                       <h3 className="mb-2 text-sm font-medium">Theme</h3>
@@ -228,40 +244,61 @@ export default function Settings() {
                         ))}
                       </fieldset>
                     </div>
-                    <div>
-                      <h3 className="mb-2 text-sm font-medium">Font size</h3>
-                      <fieldset aria-label="Font size" className="flex flex-wrap gap-2">
-                        {FONT_SIZES.map(({ value, label, hint }) => (
-                          <Button
-                            key={value}
-                            variant={fontSize === value ? "secondary" : "outline"}
-                            aria-pressed={fontSize === value}
-                            data-testid={`settings-font-size-${value}`}
-                            title={hint}
-                            onClick={() => setFontSize(value)}
-                          >
-                            {label}
-                          </Button>
-                        ))}
-                      </fieldset>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Scales interface text in this browser; terminals keep their own font.
-                      </p>
-                    </div>
+                    {(
+                      [
+                        {
+                          key: "darkBackground",
+                          title: "Dark background",
+                          options: DARK_BACKGROUNDS,
+                        },
+                        { key: "font", title: "Interface font", options: UI_FONTS },
+                        { key: "desktop", title: "Interface text on desktop", options: FONT_SIZES },
+                        { key: "phone", title: "Interface text on phone", options: FONT_SIZES },
+                        { key: "chatFont", title: "Chat message font", options: CHAT_FONTS },
+                        { key: "chatDesktop", title: "Chat text on desktop", options: FONT_SIZES },
+                        { key: "chatPhone", title: "Chat text on phone", options: FONT_SIZES },
+                        { key: "chatWidth", title: "Chat width", options: CHAT_WIDTHS },
+                      ] as const
+                    ).map(({ key, title, options }) => (
+                      <div key={key}>
+                        <h3 className="mb-2 text-sm font-medium">{title}</h3>
+                        <fieldset aria-label={title} className="flex flex-wrap gap-2">
+                          {options.map(({ value, label, hint }) => (
+                            <Button
+                              key={value}
+                              variant={appearance[key] === value ? "secondary" : "outline"}
+                              aria-pressed={appearance[key] === value}
+                              data-testid={`settings-${key}-${value}`}
+                              title={hint}
+                              onClick={() => setAppearance({ [key]: value })}
+                            >
+                              {label}
+                            </Button>
+                          ))}
+                        </fieldset>
+                      </div>
+                    ))}
                   </div>
                 </section>
                 <section aria-label="Terminal settings" className="border-t border-border pt-8">
-                  <h2 className="mb-2 text-base font-medium">Terminals</h2>
-                  <p className="mb-5 text-xs text-muted-foreground">
-                    Applies to newly opened terminals.
-                  </p>
+                  <div className="mb-5 flex items-center gap-1">
+                    <h2 className="text-base font-medium">Terminals</h2>
+                    <HelpPopover label="terminal settings" testId="settings-terminals-help">
+                      Applies to newly opened terminals.
+                    </HelpPopover>
+                  </div>
                   <div className="grid gap-4 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]">
                     <div>
-                      <Label htmlFor="settings-terminal-font">Terminal font family</Label>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        Nerd Fonts support prompt and agent icons. Leave blank to choose
-                        automatically.
-                      </p>
+                      <div className="flex items-center gap-1">
+                        <Label htmlFor="settings-terminal-font">Terminal font family</Label>
+                        <HelpPopover
+                          label="terminal font family"
+                          testId="settings-terminal-font-help"
+                        >
+                          Nerd Fonts support prompt and agent icons. Leave blank to choose
+                          automatically.
+                        </HelpPopover>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Input
@@ -413,13 +450,16 @@ export default function Settings() {
                   <ServerSettings />
                 </div>
                 <section aria-label="Settings storage" className="mt-8 border-t border-border pt-8">
-                  <h2 className="mb-3 text-base font-medium">Data locations</h2>
-                  <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    Workspace preferences and SSH selection are saved in the server's{" "}
-                    <code>~/.orc/config.json</code>. Saved ORC servers and their tokens are kept in
-                    this browser; sign-in uses an HttpOnly cookie, never the API secret. The desktop
-                    app keeps its selected server, token and headers in the app's data folder.
-                  </p>
+                  <div className="flex items-center gap-1">
+                    <h2 className="text-base font-medium">Data locations</h2>
+                    <HelpPopover label="data locations" testId="settings-data-locations-help">
+                      Workspace preferences and SSH selection are saved in the server's{" "}
+                      <code>~/.orc/config.json</code>. Saved ORC servers and their tokens are kept
+                      in this browser; sign-in uses an HttpOnly cookie, never the API secret. The
+                      desktop app keeps its selected server, token and headers in the app's data
+                      folder.
+                    </HelpPopover>
+                  </div>
                 </section>
               </div>
             )}

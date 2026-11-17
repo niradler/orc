@@ -1,8 +1,11 @@
 {
   "name": "@orc/task-service",
-  "version": "0.1.66",
+  "version": "0.1.68",
   "type": "module",
   "main": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",

@@ -35,7 +35,7 @@ function firstText(input: unknown, keys: string[]): string | undefined {
 /** What a detached tool call is doing: its command line, or the subagent it handed work to. */
 function toolLabel(tool: Extract<ChatActivity, { type: "tool" }>): string {
   const view = toolView(tool);
-  if (view.kind === "command") return view.command.split("\n")[0]?.trim() || tool.name;
+  if (view.kind === "run") return view.command.split("\n")[0]?.trim() || tool.name;
   let input: unknown;
   try {
     input = tool.input.trim() ? JSON.parse(tool.input) : null;

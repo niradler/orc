@@ -1,5 +1,8 @@
 import { agentForSessionBackend } from "@orc/core/coding-agents";
 import type { LiveSession } from "@/api/client";
+import { formatTokenCount } from "./token-count";
+
+export { formatTokenCount };
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
 
@@ -44,16 +47,6 @@ export function scopedSessionPath(path: string, project: string | null): string 
   const params = new URLSearchParams(query);
   params.set("project", project);
   return `${pathname}?${params}`;
-}
-
-export function formatTokenCount(n: number, estimated: boolean): string {
-  const text =
-    n >= 1_000_000
-      ? `${(n / 1_000_000).toFixed(1)}M`
-      : n >= 1000
-        ? `${Math.round(n / 1000)}k`
-        : `${n}`;
-  return estimated ? `~${text}` : text;
 }
 
 export function formatTokens(s: LiveSession): string {

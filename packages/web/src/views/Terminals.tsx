@@ -5,7 +5,6 @@ import type { CreateTerminalInput, Terminal } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { ResumeActions } from "@/components/ResumeActions";
-import { SessionHomeLink } from "@/components/SessionHomeLink";
 import { ContinueInChat } from "@/components/terminals/ContinueInChat";
 import { NewTerminalMenu, useTerminalLaunchDraft } from "@/components/terminals/NewTerminalMenu";
 import { RenameTerminal } from "@/components/terminals/RenameTerminal";
@@ -43,7 +42,7 @@ function SessionLinks({ liveSessionId }: { liveSessionId: string }) {
   return (
     <div className="shrink-0 flex items-center gap-3">
       <Link
-        to={`${workspaceDestination("/sessions", project, params.toString())}&session=${encodeURIComponent(liveSessionId)}`}
+        to={`${workspaceDestination("/chat", project, params.toString())}&sessionLive=${encodeURIComponent(liveSessionId)}`}
         data-testid="terminal-open-session"
         className={LINK_CLASS}
       >
@@ -374,12 +373,9 @@ export default function Terminals() {
           className="relative shrink-0 flex flex-col min-h-0 border-r border-outline-variant bg-background"
         >
           <div className="flex shrink-0 items-center gap-1 px-3 py-1.5">
-            <h2 className="min-w-0 flex-1 text-sm font-medium text-on-surface">Sessions</h2>
-            <SessionHomeLink
-              terminalId={terminalId}
-              label="Open sessions view"
-              testId="terminals-open-home"
-            />
+            <h2 className="min-w-0 flex-1 truncate text-sm font-medium text-on-surface">
+              Terminals
+            </h2>
             {worktreeManager}
             {newMenu}
           </div>

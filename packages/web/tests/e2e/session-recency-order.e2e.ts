@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { ChatSettingsSchema, type ChatThread } from "@orc/core/chat";
 import { expect, type Page, test } from "@playwright/test";
 import { closeChatHistory, openChatHistory } from "./_chat-ui";
+import { openFinalFormStep } from "./_form-ui";
 import { API_SECRET, repoRoot } from "./_helpers";
 
 const screen = (name: string) => join(repoRoot(), "docs", "public", "screens", name);
@@ -285,7 +286,8 @@ test("Projects groups sessions by project and Recents stays a single descending 
   await expect(projectList.getByTestId("session-project-proj-shop")).toContainText("Shop");
   await expect(projectList.getByTestId("session-project-proj-shop")).toContainText("2");
   await expect(projectList.getByTestId("session-project-proj-billing")).toContainText("1");
-  await expect(projectList.getByTestId("session-project-unassigned")).toContainText("1");
+  await expect(projectList.getByTestId("session-project-unassigned")).toHaveCount(0);
+  await expect(projectList.getByTestId("session-folder-group")).toContainText("1");
   await projectList
     .getByTestId("session-project-proj-shop")
     .getByTestId("session-project-toggle")
@@ -501,3 +503,67 @@ test("the per-project new-session button starts a chat in that project", async (
     "Shop",
   );
 });
+
+for (const width of [1440, 390]) {
+  test(`unassigned sessions group by folder and a folder becomes a project at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    const now = Date.now();
+    const shop = { id: "proj-shop", name: "Shop", scope: "/fixture/shop", status: "active" };
+    const sessions = [
+      { ...liveFixture(now, 0, "Shop work", "proj-shop", 1), cwd: "/fixture/shop" },
+      { ...liveFixture(now, 1, "Scratch idea", null, 2), cwd: "/fixture/scratch" },
+      { ...liveFixture(now, 2, "SFT run", null, 3), cwd: "/fixture/nebius-sft" },
+      { ...liveFixture(now, 3, "SFT eval", null, 4), cwd: "/fixture/nebius-sft" },
+    ];
+    let projects = [shop];
+    let created: unknown = null;
+    await stubSessionRoutes(page, sessions, projects);
+    await page.route(/\/api\/projects(\?.*)?$/, (route) => {
+      if (route.request().method() !== "POST")
+        return route.fulfill({ json: { projects, total: projects.length } });
+      created = route.request().postDataJSON();
+      const project = {
+        id: "proj-sft",
+        name: "nebius-sft",
+        scope: "/fixture/nebius-sft",
+        status: "active",
+      };
+      projects = [shop, project];
+      return route.fulfill({ status: 201, json: project });
+    });
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/tasks?chat=full");
+    await openChatHistory(page);
+    await relaxList(page);
+    await page.getByTestId("session-navigation-projects").click();
+    const list = page.getByTestId("session-project-list");
+    const folders = list.getByTestId("session-folder-group");
+    await expect(folders).toHaveCount(2);
+    const sft = folders.filter({ hasText: "nebius-sft" });
+    await expect(sft).toContainText("2");
+    await expect(sft.getByTestId("session-project-toggle")).toHaveAttribute(
+      "title",
+      "/fixture/nebius-sft",
+    );
+    await sft.getByTestId("session-project-toggle").click();
+    await expect(sft).toContainText("SFT run");
+    await expect(sft).not.toContainText("Scratch idea");
+    await page.screenshot({ path: testInfo.outputPath(`folder-groups-${width}.png`) });
+
+    await sft.getByTestId("session-folder-adopt").click();
+    // #402: adopt opens the prefilled New project dialog instead of posting directly.
+    const dialog = page.getByTestId("form-dialog");
+    await expect(dialog.getByTestId("project-name-input")).toHaveValue("nebius-sft");
+    await openFinalFormStep(page);
+    await dialog.getByTestId("project-submit").click();
+    await expect
+      .poll(() => created)
+      .toMatchObject({ name: "nebius-sft", scope: "/fixture/nebius-sft" });
+    await expect(folders).toHaveCount(1);
+    const adopted = list.getByTestId("session-project-proj-sft");
+    await expect(adopted).toContainText("SFT run");
+    await expect(adopted).toContainText("SFT eval");
+    await page.screenshot({ path: testInfo.outputPath(`folder-adopted-${width}.png`) });
+  });
+}

@@ -84,9 +84,6 @@ export function TerminalActions({
           <CopyPlus size={14} />
           Duplicate tab
         </button>
-        <p className="px-3 pb-2 text-xs text-on-surface-variant">
-          Duplicate starts a fresh session in the same folder.
-        </p>
         <div className="border-t border-outline-variant pt-1">
           <button
             type="button"

@@ -2,10 +2,12 @@ import type { Database } from "bun:sqlite";
 import { realpath } from "node:fs/promises";
 import { posix, relative } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
+import { ChatAnalyticsSchema } from "@orc/core/chat-analytics";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
 import { SessionCacheUsageSchema } from "@orc/core/usage";
-import { getDb } from "@orc/db/client";
+import { ChatStore } from "@orc/db/chat";
+import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
 import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { previewSession } from "../desktop-preview/session.js";
@@ -14,6 +16,7 @@ import { gitStatus } from "../git/panel.js";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, sessionWaitingForHuman, syncNow } from "../session-watcher.js";
 import { emptySessionCacheUsage, loadSessionCacheUsage } from "../sessions/cache-usage.js";
+import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
@@ -52,6 +55,13 @@ const LiveSessionSchema = z
     id: z.string(),
     agent: z.string(),
     session_id: z.string().nullable(),
+    parent_id: z.string().nullable().default(null).openapi({
+      description: "Live session id of the session that spawned this subagent",
+    }),
+    spawned_from_id: z.string().nullable().default(null).openapi({
+      description:
+        "Live session id of the session that started this one as an independent session (Claude Desktop start_session)",
+    }),
     name: z.string().nullable(),
     summary: z.string().nullable(),
     tokens_used: z.number().nullable(),
@@ -102,6 +112,15 @@ const liveListRoute = createRoute({
         .default("false")
         .transform((v) => v === "true")
         .openapi({ description: "Include sessions a human hid from the list" }),
+      include_children: z
+        .enum(["true", "false"])
+        .optional()
+        .default("false")
+        .transform((v) => v === "true")
+        .openapi({
+          description:
+            "Also return the subagent sessions of the listed sessions; limit counts top-level sessions only",
+        }),
       limit: z.coerce.number().int().min(1).max(5000).optional().default(100),
     }),
   },
@@ -239,6 +258,21 @@ const liveSyncRoute = createRoute({
   },
 });
 
+const liveGetRoute = createRoute({
+  method: "get",
+  path: "/sessions/live/{id}",
+  tags: ["Sessions"],
+  summary: "Read one discovered session",
+  request: { params: z.object({ id: z.string().min(1).max(200) }) },
+  responses: {
+    200: {
+      description: "Session",
+      content: { "application/json": { schema: LiveSessionSchema } },
+    },
+    404: { description: "Session not found" },
+  },
+});
+
 const liveUpdateRoute = createRoute({
   method: "patch",
   path: "/sessions/live/{id}",
@@ -329,7 +363,32 @@ function toDto(s: typeof sessions.$inferSelect) {
 
 type GatewayRow = typeof gateway_sessions.$inferSelect;
 
+const nativeKey = (backend: string, host: string | null, runtimeId: string | null) =>
+  JSON.stringify([backend, host, runtimeId]);
+
 async function toLiveDtos(rows: GatewayRow[]) {
+  const parentIds = [
+    ...new Set(
+      rows.flatMap((row) =>
+        [row.parent_session_id, row.spawned_from_session_id].filter((id): id is string => !!id),
+      ),
+    ),
+  ];
+  const parents = parentIds.length
+    ? await getDb().query.gateway_sessions.findMany({
+        where: and(
+          eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+          inArray(gateway_sessions.runtime_session_id, parentIds),
+        ),
+        columns: { id: true, backend: true, execution_host: true, runtime_session_id: true },
+      })
+    : [];
+  const parentByNative = new Map(
+    parents.map((row) => [
+      nativeKey(row.backend, row.execution_host ?? null, row.runtime_session_id),
+      row.id,
+    ]),
+  );
   const handoffs = rows.length
     ? await getDb().query.session_handoffs.findMany({
         where: inArray(
@@ -357,6 +416,16 @@ async function toLiveDtos(rows: GatewayRow[]) {
       id: r.id,
       agent: r.backend,
       session_id: r.runtime_session_id ?? null,
+      parent_id: r.parent_session_id
+        ? (parentByNative.get(
+            nativeKey(r.backend, r.execution_host ?? null, r.parent_session_id),
+          ) ?? null)
+        : null,
+      spawned_from_id: r.spawned_from_session_id
+        ? (parentByNative.get(
+            nativeKey(r.backend, r.execution_host ?? null, r.spawned_from_session_id),
+          ) ?? null)
+        : null,
       name: r.display_title ?? r.title ?? null,
       summary: r.summary ?? null,
       tokens_used: r.tokens_used ?? null,
@@ -390,12 +459,15 @@ async function toLiveDtos(rows: GatewayRow[]) {
 }
 
 app.openapi(liveListRoute, async (c) => {
-  const { agent, task_id, active, include_hidden, limit, project_id } = c.req.valid("query");
+  const { agent, task_id, active, include_hidden, include_children, limit, project_id } =
+    c.req.valid("query");
   const bodyIds = task_id ? await sessionIdsOfTask(task_id) : [];
   const rows = await getDb().query.gateway_sessions.findMany({
     where: and(
       eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+      isNull(gateway_sessions.parent_session_id),
       include_hidden ? undefined : isNull(gateway_sessions.hidden_at),
+      sql`NOT (coalesce(${gateway_sessions.tokens_used}, -1) = 0 AND ${gateway_sessions.summary} IS NULL)`,
       project_id === "unassigned"
         ? isNull(gateway_sessions.project_id)
         : project_id
@@ -423,7 +495,26 @@ app.openapi(liveListRoute, async (c) => {
     orderBy: [desc(gateway_sessions.last_activity_at)],
     limit,
   });
-  return c.json({ sessions: await toLiveDtos(rows) });
+  const listed = new Set(
+    rows.map((row) => nativeKey(row.backend, row.execution_host ?? null, row.runtime_session_id)),
+  );
+  const parentIds = [...new Set(rows.flatMap((row) => row.runtime_session_id ?? []))];
+  const children =
+    include_children && parentIds.length
+      ? (
+          await getDb().query.gateway_sessions.findMany({
+            where: and(
+              eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+              include_hidden ? undefined : isNull(gateway_sessions.hidden_at),
+              inArray(gateway_sessions.parent_session_id, parentIds),
+            ),
+            orderBy: [desc(gateway_sessions.last_activity_at)],
+          })
+        ).filter((row) =>
+          listed.has(nativeKey(row.backend, row.execution_host ?? null, row.parent_session_id)),
+        )
+      : [];
+  return c.json({ sessions: await toLiveDtos([...rows, ...children]) });
 });
 
 app.openapi(liveSearchRoute, async (c) => {
@@ -452,6 +543,19 @@ app.openapi(liveSearchRoute, async (c) => {
   );
 });
 
+// Registered after the static /sessions/live/search route: Hono matches in
+// registration order, so {id} would otherwise swallow "search".
+app.openapi(liveGetRoute, async (c) => {
+  const { id } = c.req.valid("param");
+  const row = await getDb().query.gateway_sessions.findFirst({
+    where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
+  });
+  if (!row) throw new NotFoundError("Session", id);
+  const [session] = await toLiveDtos([row]);
+  if (!session) throw new NotFoundError("Session", id);
+  return c.json(session, 200);
+});
+
 app.openapi(
   createRoute({
     method: "get",
@@ -476,10 +580,60 @@ app.openapi(
     });
     if (!row) throw new NotFoundError("Session", id);
     c.header("Cache-Control", "no-store");
-    if (!row.transcript_path || (row.backend !== "claude" && row.backend !== "codex"))
+    if (!row.transcript_path || !["claude", "codex", "pi", "opencode"].includes(row.backend))
       return c.json(emptySessionCacheUsage(), 200);
     const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
-    return c.json(await loadSessionCacheUsage(runtime, row.backend, row.transcript_path), 200);
+    return c.json(
+      await loadSessionCacheUsage(
+        runtime,
+        row.backend,
+        row.transcript_path,
+        row.runtime_session_id ?? null,
+      ),
+      200,
+    );
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/sessions/live/{id}/analytics",
+    tags: ["Sessions"],
+    summary: "Read chat, turn, tool, context and cache analytics for a native session",
+    request: { params: z.object({ id: z.string().min(1).max(200) }) },
+    responses: {
+      200: {
+        description: "Analytics for the chat that owns this native session",
+        content: { "application/json": { schema: ChatAnalyticsSchema } },
+      },
+      404: { description: "Session, or its chat, not found" },
+    },
+  }),
+  async (c) => {
+    const { id } = c.req.valid("param");
+    const row = await getDb().query.gateway_sessions.findFirst({
+      where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
+    });
+    if (!row) throw new NotFoundError("Session", id);
+    const threads = new ChatStore(getSqlite());
+    const thread =
+      threads.bySource(id) ??
+      (row.runtime_session_id
+        ? (threads.byRuntime(row.backend, row.execution_host ?? null, row.runtime_session_id)[0] ??
+          null)
+        : null);
+    if (!thread) throw new NotFoundError("Chat for session", id);
+    c.header("Cache-Control", "no-store");
+    return c.json(
+      await chatAnalyticsFor(thread, {
+        backend: row.backend,
+        model: row.model ?? null,
+        transcript_path: row.transcript_path ?? null,
+        runtime_session_id: row.runtime_session_id ?? null,
+      }),
+      200,
+    );
   },
 );
 

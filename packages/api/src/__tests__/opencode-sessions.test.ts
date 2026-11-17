@@ -155,6 +155,20 @@ test("should list OpenCode sessions from both storage generations, newest first"
       usageVersion: 1,
       usage: expect.any(Function),
     },
+    {
+      backend: "opencode",
+      externalId: "ses_child",
+      parentId: "ses_main",
+      title: "Subagent",
+      cwd: "/work/app",
+      status: "stopped",
+      createdAt: new Date(1100),
+      lastActivityAt: new Date(1200),
+      transcriptPath: dbPath,
+      tokensUsed: null,
+      usageVersion: 1,
+      usage: expect.any(Function),
+    },
   ]);
 });
 
@@ -179,6 +193,33 @@ test("should list legacy-only OpenCode databases without v2 tables", async () =>
 
 test("should return no sessions when OpenCode is not installed", async () => {
   expect(await opencodeAdapter(join(dir, "missing.db"), runtime).list(new Map())).toEqual([]);
+});
+
+test("should report a session as running while OpenCode keeps writing its row", async () => {
+  const livePath = join(dir, "live.db");
+  const live = new Database(livePath);
+  live.run(`CREATE TABLE session_v2 (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, title TEXT,
+    model TEXT, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, tokens_input INTEGER,
+    tokens_output INTEGER, tokens_reasoning INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER)`);
+  const now = Date.now();
+  live.run(
+    "INSERT INTO session_v2 (id, directory, title, time_created, time_updated) VALUES ('ses_live', '/work/live', 'Working now', ?, ?)",
+    [now - 60_000, now],
+  );
+  live.run(
+    "INSERT INTO session_v2 (id, directory, title, time_created, time_updated) VALUES ('ses_done', '/work/live', 'Finished', ?, ?)",
+    [now - 600_000, now - 300_000],
+  );
+  live.close();
+  const records = await opencodeAdapter(livePath, runtime).list(new Map());
+  expect(
+    records
+      .map((record) => [record.externalId, record.status])
+      .sort(([a], [b]) => String(a).localeCompare(String(b))),
+  ).toEqual([
+    ["ses_done", "stopped"],
+    ["ses_live", "running"],
+  ]);
 });
 
 test("should index OpenCode compaction requests instead of dropping their tokens", async () => {

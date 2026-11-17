@@ -24,7 +24,9 @@ export function supportsManualCompaction(agent: string): boolean {
   return agent === "claude" || agent === "codex" || agent === "pi";
 }
 
-/** Agents whose model catalog ORC can discover without starting a conversation turn. */
+/**
+ * Agents whose model catalog ORC can discover without starting a conversation turn.
+ */
 export function supportsModelDiscovery(agent: string): boolean {
   return agent === "claude" || agent === "codex" || agent === "pi" || agent === "opencode";
 }

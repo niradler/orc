@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { LiveSession } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useUpdateLiveSession } from "@/hooks/useSessions";
 
@@ -41,11 +42,8 @@ export function RenameSession({
         if (!next) onClose();
       }}
     >
-      <DialogContent>
+      <DialogContent aria-describedby={undefined}>
         <DialogTitle>Rename session</DialogTitle>
-        <DialogDescription>
-          The name stays after a restart and a re-sync. The agent keeps its own title.
-        </DialogDescription>
         <form
           className="space-y-4"
           onSubmit={(event) => {
@@ -54,8 +52,15 @@ export function RenameSession({
             void save(trimmed);
           }}
         >
-          <label htmlFor={`session-name-${session.id}`} className="block space-y-2">
-            <span className="text-sm">Session name</span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-1">
+              <label htmlFor={`session-name-${session.id}`} className="text-sm">
+                Session name
+              </label>
+              <HelpPopover label="Session name" testId="session-rename-help">
+                The name stays after a restart and a re-sync. The agent keeps its own title.
+              </HelpPopover>
+            </div>
             <Input
               id={`session-name-${session.id}`}
               data-testid="session-rename-input"
@@ -65,7 +70,7 @@ export function RenameSession({
               required
               disabled={update.isPending}
             />
-          </label>
+          </div>
           {error && (
             <p role="alert" data-testid="session-rename-error" className="text-sm text-error">
               {error}

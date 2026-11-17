@@ -1,5 +1,6 @@
 export const SESSION_TERMINAL_PARAM = "sessionTerminal";
 export const SESSION_LIVE_PARAM = "sessionLive";
+export const SESSION_VIEW_PARAM = "sessionView";
 export const SESSION_LIST_PARAM = "sessionList";
 export const INSPECTOR_PARAM = "inspector";
 export const DRAWER_PARAM = "drawer";
@@ -14,6 +15,7 @@ export const INSPECTOR_TABS: InspectorTab[] = ["overview", "diff", "files", "bro
 export interface SessionHomeState {
   terminalId: string | null;
   liveId: string | null;
+  viewId: string | null;
   listHidden: boolean;
   listOpen: boolean;
   inspector: InspectorTab | null;
@@ -23,6 +25,7 @@ export interface SessionHomeState {
 const HOME_PARAMS = [
   SESSION_TERMINAL_PARAM,
   SESSION_LIVE_PARAM,
+  SESSION_VIEW_PARAM,
   SESSION_LIST_PARAM,
   INSPECTOR_PARAM,
   DRAWER_PARAM,
@@ -33,6 +36,7 @@ export function readSessionHome(params: URLSearchParams): SessionHomeState {
   return {
     terminalId: params.get(SESSION_TERMINAL_PARAM) || null,
     liveId: params.get(SESSION_LIVE_PARAM) || null,
+    viewId: params.get(SESSION_VIEW_PARAM) || null,
     listHidden: params.get(SESSION_LIST_PARAM) === "hide",
     listOpen: params.get(SESSION_LIST_PARAM) === "show",
     // `pr` links predate the combined Changes tab; PR review lives inside it.
@@ -56,8 +60,12 @@ export function patchSessionHome(
   patch: Partial<SessionHomeState>,
 ): URLSearchParams {
   const next = new URLSearchParams(params);
-  if ("terminalId" in patch) put(next, SESSION_TERMINAL_PARAM, patch.terminalId ?? null);
+  if ("terminalId" in patch) {
+    put(next, SESSION_TERMINAL_PARAM, patch.terminalId ?? null);
+    if (!("viewId" in patch)) next.delete(SESSION_VIEW_PARAM);
+  }
   if ("liveId" in patch) put(next, SESSION_LIVE_PARAM, patch.liveId ?? null);
+  if ("viewId" in patch) put(next, SESSION_VIEW_PARAM, patch.viewId ?? null);
   if ("listHidden" in patch) put(next, SESSION_LIST_PARAM, patch.listHidden ? "hide" : null);
   if ("listOpen" in patch) {
     if (patch.listOpen) next.set(SESSION_LIST_PARAM, "show");
@@ -77,7 +85,7 @@ export function clearSessionHome(params: URLSearchParams): URLSearchParams {
 /** A link into the Chat page from another page, keeping the project scope. */
 export function sessionHomeSearch(
   search: string,
-  target: { terminalId?: string; liveId?: string } = {},
+  target: { terminalId?: string; liveId?: string; viewId?: string } = {},
 ): string {
   const current = new URLSearchParams(search);
   const next = new URLSearchParams();
@@ -85,6 +93,7 @@ export function sessionHomeSearch(
   if (project) next.set("project", project);
   if (target.terminalId) next.set(SESSION_TERMINAL_PARAM, target.terminalId);
   else if (target.liveId) next.set(SESSION_LIVE_PARAM, target.liveId);
+  else if (target.viewId) next.set(SESSION_VIEW_PARAM, target.viewId);
   return `?${next.toString()}`;
 }
 

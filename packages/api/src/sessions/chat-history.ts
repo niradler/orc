@@ -2,21 +2,23 @@ import { appendChatActivity, type ChatMessage } from "@orc/core/chat";
 import type { TranscriptTurn } from "./transcript.js";
 
 /** Display the imported transcript without replaying it as a new prompt. */
-export function chatHistory(turns: TranscriptTurn[], agent: string): ChatMessage[] {
+export function chatHistory(turns: TranscriptTurn[], agent: string, model?: string): ChatMessage[] {
   const messages: ChatMessage[] = [];
+  const timed = new Set<ChatMessage>();
   for (const turn of turns) {
     if (turn.role === "system") continue;
     const content = turn.blocks
       .filter((block) => block.type === "text")
       .map((block) => block.text)
       .join("\n");
-    const timestamp = turn.time ? Date.parse(turn.time) : Date.now();
+    const timestamp = turn.time ? Date.parse(turn.time) : Number.NaN;
     const message: ChatMessage = {
       id: crypto.randomUUID(),
       role: turn.role === "user" ? "user" : "assistant",
       content,
       timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
       agent,
+      ...(model ? { model } : {}),
       activity: [],
     };
     for (const block of turn.blocks) {
@@ -56,7 +58,29 @@ export function chatHistory(turns: TranscriptTurn[], agent: string): ChatMessage
         });
       }
     }
+    if (Number.isFinite(timestamp)) timed.add(message);
     if (message.content || message.activity?.length) messages.push(message);
   }
+  let prompt: ChatMessage | undefined;
+  let answer: ChatMessage | undefined;
+  const close = () => {
+    if (
+      prompt &&
+      answer &&
+      timed.has(prompt) &&
+      timed.has(answer) &&
+      answer.timestamp >= prompt.timestamp
+    )
+      answer.turn = { startedAt: prompt.timestamp, finishedAt: answer.timestamp };
+    answer = undefined;
+  };
+  for (const message of messages) {
+    if (message.role === "assistant") answer = message;
+    else {
+      close();
+      prompt = message;
+    }
+  }
+  close();
   return messages;
 }

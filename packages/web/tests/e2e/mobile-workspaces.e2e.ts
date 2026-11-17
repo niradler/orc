@@ -274,7 +274,9 @@ test("desktop full-screen chat keeps its messages when returning to the panel", 
   await page.getByTestId("chat-fullscreen-button").click();
   await expect(page.getByTestId("session-home")).toBeVisible();
   await expect(page.getByTestId("session-home")).toContainText("FULLSCREEN-CONTINUITY");
-  await page.getByTestId("chat-close-button").click();
+  // The chat page has no close button; leaving it reopens the side chat on the next page.
+  await expect(page.getByTestId("chat-close-button")).toHaveCount(0);
+  await page.goBack();
   await expect(page.getByTestId("session-home")).toBeHidden();
   await expect(page.getByTestId("chat-panel")).toContainText("FULLSCREEN-CONTINUITY");
 });

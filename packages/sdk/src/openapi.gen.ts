@@ -602,6 +602,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -623,7 +624,25 @@ export interface paths {
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -720,6 +739,7 @@ export interface paths {
                                 sourceId?: string | null;
                                 host?: string | null;
                                 projectId?: string | null;
+                                spawnedFrom?: string | null;
                             }[];
                         };
                     };
@@ -896,6 +916,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -917,7 +938,25 @@ export interface paths {
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -1132,6 +1171,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -1153,7 +1193,25 @@ export interface paths {
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -1371,6 +1429,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -1392,7 +1451,25 @@ export interface paths {
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -1485,12 +1562,155 @@ export interface paths {
                         "application/json": {
                             changed: boolean;
                             running: boolean;
+                            live: {
+                                id: string;
+                                agent: string;
+                                tokens_used: number | null;
+                                tokens_estimated: boolean;
+                                /** @enum {string} */
+                                status: "idle" | "running" | "stopped" | "error";
+                                /** Format: date-time */
+                                created_at: string;
+                                /** Format: date-time */
+                                last_activity_at: string | null;
+                            } | null;
                             queued: {
                                 id: string;
                                 title: string;
                             }[];
                         };
                     };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/threads/{id}/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Session analytics for this chat: message, turn and tool counts from the stored transcript, plus context and cache usage recorded by the agent. */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Chat session analytics */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            messages: number;
+                            userMessages: number;
+                            assistantMessages: number;
+                            turns: number;
+                            toolCalls: number;
+                            toolFailures: number;
+                            attachments: number;
+                            startedAt: number | null;
+                            lastActivityAt: number | null;
+                            outcomes: {
+                                completed: number;
+                                stopped: number;
+                                failed: number;
+                                running: number;
+                            };
+                            durations: {
+                                averageMs: number | null;
+                                medianMs: number | null;
+                                p95Ms: number | null;
+                                totalMs: number | null;
+                            };
+                            tools: {
+                                name: string;
+                                calls: number;
+                                failures: number;
+                            }[];
+                            toolTotal: number;
+                            skills: {
+                                name: string;
+                                loads: number;
+                            }[];
+                            turnTimeline: {
+                                index: number;
+                                startedAt: number;
+                                durationMs: number | null;
+                                /** @enum {string} */
+                                outcome: "completed" | "stopped" | "failed" | "running";
+                                toolCalls: number;
+                                toolFailures: number;
+                                responseChars: number;
+                            }[];
+                            turnTimelineTruncated: boolean;
+                            context: {
+                                backend: string;
+                                model: string | null;
+                                supported: boolean;
+                                reason: string | null;
+                                usage: {
+                                    latest: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                        cache_write_tokens: number | null;
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        /** Format: date-time */
+                                        may_be_cold_after: string | null;
+                                    } | null;
+                                    totals: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                        cache_write_tokens: number | null;
+                                    } | null;
+                                    output_tokens: number | null;
+                                    requests: number | null;
+                                    compactions: {
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        pre_tokens: number | null;
+                                        post_tokens: number | null;
+                                        /**
+                                         * @default null
+                                         * @enum {string|null}
+                                         */
+                                        trigger: "manual" | "auto" | null;
+                                    }[] | null;
+                                    timeline: {
+                                        request: number;
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        context_tokens: number;
+                                        cached_input_tokens: number;
+                                        output_tokens: number | null;
+                                    }[] | null;
+                                };
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Chat not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };
@@ -1657,6 +1877,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -1678,7 +1899,25 @@ export interface paths {
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -1956,6 +2195,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -1977,7 +2217,25 @@ export interface paths {
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -2077,6 +2335,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -2098,7 +2357,25 @@ export interface paths {
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -2283,6 +2560,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -2304,7 +2582,25 @@ export interface paths {
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -2576,6 +2872,7 @@ export interface paths {
                                     outcome?: "completed" | "stopped" | "failed";
                                 };
                                 agent?: string;
+                                model?: string;
                                 activity?: ({
                                     /** @enum {string} */
                                     type: "thinking";
@@ -2597,7 +2894,25 @@ export interface paths {
                                     type: "status";
                                     id: string;
                                     text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
                                 })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
                                 attachments?: {
                                     id: string;
                                     name: string;
@@ -7869,6 +8184,8 @@ export interface paths {
                     granularity?: "day" | "hour";
                     agent?: string;
                     model?: string;
+                    /** @description Project id, or unassigned for sessions without a project */
+                    project_id?: string;
                 };
                 header?: never;
                 path?: never;
@@ -17754,6 +18071,8 @@ export interface paths {
                     active?: "true" | "false";
                     /** @description Include sessions a human hid from the list */
                     include_hidden?: "true" | "false";
+                    /** @description Also return the subagent sessions of the listed sessions; limit counts top-level sessions only */
+                    include_children?: "true" | "false";
                     limit?: number;
                 };
                 header?: never;
@@ -17834,6 +18153,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/live/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one discovered session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LiveSession"];
+                    };
+                };
+                /** @description Session not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Rename, hide or link a live session
+         * @description Send any of task_id (null unlinks), display_title (null restores the agent's title) or hidden. A rename and a hide survive re-sync and restart.
+         */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        task_id?: string | null;
+                        display_title?: string | null;
+                        hidden?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated session */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["LiveSession"];
+                    };
+                };
+                /** @description Session or task not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/sessions/live/{id}/cache": {
         parameters: {
             query?: never;
@@ -17881,6 +18285,11 @@ export interface paths {
                                 recorded_at: string | null;
                                 pre_tokens: number | null;
                                 post_tokens: number | null;
+                                /**
+                                 * @default null
+                                 * @enum {string|null}
+                                 */
+                                trigger: "manual" | "auto" | null;
                             }[] | null;
                             timeline: {
                                 request: number;
@@ -17902,6 +18311,137 @@ export interface paths {
                 };
                 /** @description Cache data could not be read */
                 503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read chat, turn, tool, context and cache analytics for a native session */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Analytics for the chat that owns this native session */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            messages: number;
+                            userMessages: number;
+                            assistantMessages: number;
+                            turns: number;
+                            toolCalls: number;
+                            toolFailures: number;
+                            attachments: number;
+                            startedAt: number | null;
+                            lastActivityAt: number | null;
+                            outcomes: {
+                                completed: number;
+                                stopped: number;
+                                failed: number;
+                                running: number;
+                            };
+                            durations: {
+                                averageMs: number | null;
+                                medianMs: number | null;
+                                p95Ms: number | null;
+                                totalMs: number | null;
+                            };
+                            tools: {
+                                name: string;
+                                calls: number;
+                                failures: number;
+                            }[];
+                            toolTotal: number;
+                            skills: {
+                                name: string;
+                                loads: number;
+                            }[];
+                            turnTimeline: {
+                                index: number;
+                                startedAt: number;
+                                durationMs: number | null;
+                                /** @enum {string} */
+                                outcome: "completed" | "stopped" | "failed" | "running";
+                                toolCalls: number;
+                                toolFailures: number;
+                                responseChars: number;
+                            }[];
+                            turnTimelineTruncated: boolean;
+                            context: {
+                                backend: string;
+                                model: string | null;
+                                supported: boolean;
+                                reason: string | null;
+                                usage: {
+                                    latest: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                        cache_write_tokens: number | null;
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        /** Format: date-time */
+                                        may_be_cold_after: string | null;
+                                    } | null;
+                                    totals: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                        cache_write_tokens: number | null;
+                                    } | null;
+                                    output_tokens: number | null;
+                                    requests: number | null;
+                                    compactions: {
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        pre_tokens: number | null;
+                                        post_tokens: number | null;
+                                        /**
+                                         * @default null
+                                         * @enum {string|null}
+                                         */
+                                        trigger: "manual" | "auto" | null;
+                                    }[] | null;
+                                    timeline: {
+                                        request: number;
+                                        /** Format: date-time */
+                                        recorded_at: string | null;
+                                        context_tokens: number;
+                                        cached_input_tokens: number;
+                                        output_tokens: number | null;
+                                    }[] | null;
+                                };
+                            } | null;
+                        };
+                    };
+                };
+                /** @description Session, or its chat, not found */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -18038,62 +18578,6 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/api/sessions/live/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        /**
-         * Rename, hide or link a live session
-         * @description Send any of task_id (null unlinks), display_title (null restores the agent's title) or hidden. A rename and a hide survive re-sync and restart.
-         */
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": {
-                        task_id?: string | null;
-                        display_title?: string | null;
-                        hidden?: boolean;
-                    };
-                };
-            };
-            responses: {
-                /** @description Updated session */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["LiveSession"];
-                    };
-                };
-                /** @description Session or task not found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
         trace?: never;
     };
     "/api/sessions": {
@@ -19175,6 +19659,53 @@ export interface paths {
                                 kind: "chat" | "session";
                                 status: string;
                                 task_id: string | null;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/subagents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The subagents a session ran, each with the tool call that started it */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Subagents in start order */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            subagents: {
+                                id: string;
+                                session_id: string | null;
+                                title: string;
+                                status: string;
+                                tool_call_id: string | null;
+                                created_at: number;
                             }[];
                         };
                     };
@@ -20683,7 +21214,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Browse or preview files inside a terminal checkout */
+        /** Browse or preview files inside a terminal or session checkout */
         get: {
             parameters: {
                 query?: {
@@ -20719,7 +21250,7 @@ export interface paths {
                 };
             };
         };
-        /** Save an existing text file inside a terminal checkout */
+        /** Save an existing text file inside a terminal or session checkout */
         put: {
             parameters: {
                 query?: never;
@@ -20811,7 +21342,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Open pull requests for this terminal's current branch */
+        /** Open pull requests for this checkout's current branch */
         get: {
             parameters: {
                 query?: never;
@@ -20879,7 +21410,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Git status for a terminal checkout */
+        /** Git status for a terminal or chat session checkout */
         get: {
             parameters: {
                 query?: never;
@@ -22628,6 +23159,16 @@ export interface components {
             id: string;
             agent: string;
             session_id: string | null;
+            /**
+             * @description Live session id of the session that spawned this subagent
+             * @default null
+             */
+            parent_id: string | null;
+            /**
+             * @description Live session id of the session that started this one as an independent session (Claude Desktop start_session)
+             * @default null
+             */
+            spawned_from_id: string | null;
             name: string | null;
             summary: string | null;
             tokens_used: number | null;

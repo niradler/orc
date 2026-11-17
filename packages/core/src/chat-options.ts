@@ -159,7 +159,20 @@ export const ClaudeChatOptionsSchema = z
   .strict();
 export type ClaudeChatOptions = z.infer<typeof ClaudeChatOptionsSchema>;
 
+/** OpenCode effort levels are model-dependent, so the value is validated by the
+ *  live ACP config option rather than a fixed enum here. */
+export const OpenCodeChatOptionsSchema = z
+  .object({
+    effort: z
+      .string()
+      .regex(/^[a-z][a-z0-9_-]{0,31}$/i)
+      .optional(),
+  })
+  .strict();
+export type OpenCodeChatOptions = z.infer<typeof OpenCodeChatOptionsSchema>;
+
 export const ChatAgentOptionsSchema = z.discriminatedUnion("runtime", [
+  z.object({ runtime: z.literal("opencode"), options: OpenCodeChatOptionsSchema }).strict(),
   z
     .object({
       runtime: z.literal("pi"),
@@ -195,6 +208,7 @@ export function chatRuntime(agent: string): ChatAgentOptions["runtime"] {
   if (agent === "claude") return "claude-sdk";
   if (agent === "codex") return "codex";
   if (agent === "pi") return "pi";
+  if (agent === "opencode") return "opencode";
   return "acpx";
 }
 export const ChatAgentOptionsMapSchema = z
@@ -202,13 +216,18 @@ export const ChatAgentOptionsMapSchema = z
   .superRefine((value, context) => {
     if (Object.keys(value).length > 20)
       context.addIssue({ code: "custom", message: "Too many agent configurations" });
-    for (const [agent, options] of Object.entries(value))
-      if (options.runtime !== chatRuntime(agent))
+    for (const [agent, options] of Object.entries(value)) {
+      const expected = chatRuntime(agent);
+      // OpenCode moved from ACPX to direct ACP; saved ACPX arguments stay
+      // parseable so the composer can offer to clear them.
+      const legacyAcp = expected === "opencode" && options.runtime === "acpx";
+      if (options.runtime !== expected && !legacyAcp)
         context.addIssue({
           code: "custom",
           path: [agent],
-          message: `Options must target ${chatRuntime(agent)} for ${agent}`,
+          message: `Options must target ${expected} for ${agent}`,
         });
+    }
   });
 export function acpxPermissionArgs(values: string[]): boolean {
   return values.some((value) => ["--approve-all", "--approve-reads", "--deny-all"].includes(value));

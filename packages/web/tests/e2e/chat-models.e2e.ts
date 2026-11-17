@@ -1,6 +1,6 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
 import { expect, test } from "@playwright/test";
-import { chooseChatAgent, chooseChatModel, openChatModel } from "./_chat-ui";
+import { chooseChatAgent, chooseChatEffort, chooseChatModel, openChatModel } from "./_chat-ui";
 import { API_SECRET, gotoView } from "./_helpers";
 
 for (const width of [320, 1440]) {
@@ -53,6 +53,7 @@ for (const width of [320, 1440]) {
     await chooseChatAgent(page, "gemini");
     await openChatModel(page);
     await expect(page.getByTestId("chat-model-warning")).toHaveCount(0);
+    await expect(page.getByTestId("chat-effort-select")).toHaveCount(0);
     await page.getByTestId("chat-model-option-custom").click();
     await page.getByTestId("chat-custom-model").fill("--bad");
     await page.getByTestId("chat-custom-model-apply").click();
@@ -63,11 +64,18 @@ for (const width of [320, 1440]) {
     await expect(pill).toHaveAccessibleName(/provider\/custom-model/);
     await chooseChatAgent(page, "codex");
     await chooseChatModel(page, "codex-native");
+    await chooseChatEffort(page, "high");
+    await expect(pill).toHaveAccessibleName(/High effort/);
+    await page.keyboard.press("Escape");
     await page.screenshot({ path: testInfo.outputPath(`chat-models-${width}.png`) });
     const sent = page.waitForRequest((request) => request.url().endsWith("/api/chat/stream"));
     await page.getByTestId("chat-input").filter({ visible: true }).fill("Test selected model");
     await page.getByTestId("chat-send-button").filter({ visible: true }).click();
-    expect((await sent).postDataJSON()).toMatchObject({ agent: "codex", model: "codex-native" });
+    expect((await sent).postDataJSON()).toMatchObject({
+      agent: "codex",
+      model: "codex-native",
+      agentOptions: { codex: { runtime: "codex", args: ["-c", 'model_reasoning_effort="high"'] } },
+    });
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();
     expect(agents).toContain("claude");
     expect(agents).toContain("gemini");

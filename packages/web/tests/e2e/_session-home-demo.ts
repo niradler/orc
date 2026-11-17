@@ -141,6 +141,14 @@ export async function mockSessionHome(page: Page, now = Date.now()) {
   await page.route("**/api/sessions/live?**", (r) =>
     r.fulfill({ json: { sessions: live, total: live.length, has_more: false } }),
   );
+  await page.route("**/api/sessions/live/*/transcript?**", (r) =>
+    r.fulfill({ json: { total: 0, offset: 0, matches: [], turns: [] } }),
+  );
+  await page.route(/\/api\/sessions\/live\/([^/?]+)$/, (r) => {
+    const id = new URL(r.request().url()).pathname.split("/").pop();
+    const match = live.find((session) => session.id === id);
+    return match ? r.fulfill({ json: match }) : r.fallback();
+  });
   await page.route("**/api/sessions/archive?**", (r) =>
     r.fulfill({ json: { sessions: [], has_more: false } }),
   );
@@ -158,55 +166,59 @@ export async function mockSessionHome(page: Page, now = Date.now()) {
         })
       : r.fallback(),
   );
-  await page.route(`**/api/terminals/${HOME.terminal}/git/status`, (r) =>
-    r.fulfill({
-      json: {
-        root: "/home/demo/acme-shop",
-        branch: "fix/cart-rounding",
-        files: [{ path: "src/cart/total.ts", index: " ", working: "M", original: null }],
-        branches: ["main", "fix/cart-rounding"],
-      },
-    }),
-  );
-  await page.route(`**/api/terminals/${HOME.terminal}/git/github`, (r) =>
-    r.fulfill({
-      json: {
-        auth: "gh",
-        login: "demo",
-        items: [
-          {
-            repo: "acme/shop",
-            number: 418,
-            title: "Round cart totals to cents",
-            url: "https://github.com/acme/shop/pull/418",
-            kind: "pr",
-            state: "open",
-            branch: "fix/cart-rounding",
-            assignees: [],
-            task_ids: [],
-          },
-        ],
-        errors: [],
-        truncated: false,
-      },
-    }),
-  );
-  await page.route(`**/api/terminals/${HOME.terminal}/git/diff?**`, (r) =>
-    r.fulfill({
-      json: {
-        diff: [
-          "diff --git a/src/cart/total.ts b/src/cart/total.ts",
-          "--- a/src/cart/total.ts",
-          "+++ b/src/cart/total.ts",
-          "@@ -1,3 +1,3 @@",
-          " export function total(items: Item[]) {",
-          "-  return items.reduce((sum, item) => sum + item.price, 0);",
-          "+  return Math.round(items.reduce((sum, item) => sum + item.price, 0) * 100) / 100;",
-          " }",
-        ].join("\n"),
-        truncated: false,
-      },
-    }),
-  );
+  // The session's own folder is a checkout too, so the inspector works without
+  // any terminal; keep both mock ids serving the same repository.
+  for (const checkoutId of [HOME.terminal, HOME.chatA]) {
+    await page.route(`**/api/terminals/${checkoutId}/git/status`, (r) =>
+      r.fulfill({
+        json: {
+          root: "/home/demo/acme-shop",
+          branch: "fix/cart-rounding",
+          files: [{ path: "src/cart/total.ts", index: " ", working: "M", original: null }],
+          branches: ["main", "fix/cart-rounding"],
+        },
+      }),
+    );
+    await page.route(`**/api/terminals/${checkoutId}/git/github`, (r) =>
+      r.fulfill({
+        json: {
+          auth: "gh",
+          login: "demo",
+          items: [
+            {
+              repo: "acme/shop",
+              number: 418,
+              title: "Round cart totals to cents",
+              url: "https://github.com/acme/shop/pull/418",
+              kind: "pr",
+              state: "open",
+              branch: "fix/cart-rounding",
+              assignees: [],
+              task_ids: [],
+            },
+          ],
+          errors: [],
+          truncated: false,
+        },
+      }),
+    );
+    await page.route(`**/api/terminals/${checkoutId}/git/diff?**`, (r) =>
+      r.fulfill({
+        json: {
+          diff: [
+            "diff --git a/src/cart/total.ts b/src/cart/total.ts",
+            "--- a/src/cart/total.ts",
+            "+++ b/src/cart/total.ts",
+            "@@ -1,3 +1,3 @@",
+            " export function total(items: Item[]) {",
+            "-  return items.reduce((sum, item) => sum + item.price, 0);",
+            "+  return Math.round(items.reduce((sum, item) => sum + item.price, 0) * 100) / 100;",
+            " }",
+          ].join("\n"),
+          truncated: false,
+        },
+      }),
+    );
+  }
   return { chats, live, terminal };
 }

@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -79,7 +80,13 @@ function DesktopUpdates({ state }: { state: DesktopUpdateState }) {
         </p>
       )}
       <div className="mt-4 grid gap-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:items-center">
-        <Label htmlFor="about-update-channel">Channel</Label>
+        <div className="flex items-center gap-1">
+          <Label htmlFor="about-update-channel">Channel</Label>
+          <HelpPopover label="update channel" testId="about-update-channel-help">
+            Stable follows GitHub releases. Preview also includes prereleases. The bundled daemon
+            restarts with the app. Tasks and sessions stay in the data folder.
+          </HelpPopover>
+        </div>
         <Select
           value={state.channel}
           onValueChange={(value) => {
@@ -105,10 +112,6 @@ function DesktopUpdates({ state }: { state: DesktopUpdateState }) {
         />
         Check for updates
       </label>
-      <p className="mt-1 text-xs text-muted-foreground">
-        Stable follows GitHub releases. Preview also includes prereleases. The bundled daemon
-        restarts with the app. Tasks and sessions stay in the data folder.
-      </p>
       {state.phase === "downloaded" && state.releaseNotes && (
         <pre
           className="mt-4 max-h-48 overflow-auto whitespace-pre-wrap font-sans text-sm text-foreground"

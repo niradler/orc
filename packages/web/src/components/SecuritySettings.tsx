@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy } from "lucide-react";
 import { useState } from "react";
 import { api, getApiUrl } from "@/api/client";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -98,7 +99,13 @@ export function SecuritySettings({ active }: { active: boolean }) {
         <h2 className="text-base font-medium">Defaults</h2>
         {settings.error && <p role="alert">{settings.error.message}</p>}
         <div className="space-y-2">
-          <Label htmlFor="security-session-days">Default sign-in lifetime (days)</Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor="security-session-days">Default sign-in lifetime (days)</Label>
+            <HelpPopover label="sign-in lifetime" testId="security-session-days-help">
+              Suggested expiry on the sign-in screen. Anyone signing in can pick a date up to a year
+              ahead.
+            </HelpPopover>
+          </div>
           <Input
             id="security-session-days"
             data-testid="security-session-days"
@@ -112,13 +119,15 @@ export function SecuritySettings({ active }: { active: boolean }) {
             value={days ?? String(settings.data?.session_days ?? "")}
             onChange={(event) => setDays(event.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
-            Suggested expiry on the sign-in screen. Anyone signing in can pick a date up to a year
-            ahead.
-          </p>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="security-cors-origins">Allowed web UI origins</Label>
+          <div className="flex items-center gap-1">
+            <Label htmlFor="security-cors-origins">Allowed web UI origins</Label>
+            <HelpPopover label="allowed web UI origins" testId="security-cors-origins-help">
+              One per line. Leave empty when the web UI and API share an address. Listing an origin
+              lets it call this API with the sign-in cookie, which then requires HTTPS.
+            </HelpPopover>
+          </div>
           <textarea
             id="security-cors-origins"
             data-testid="security-cors-origins"
@@ -128,10 +137,6 @@ export function SecuritySettings({ active }: { active: boolean }) {
             value={origins ?? settings.data?.cors_origins.join("\n") ?? ""}
             onChange={(event) => setOrigins(event.target.value)}
           />
-          <p className="text-xs text-muted-foreground">
-            One per line. Leave empty when the web UI and API share an address. Listing an origin
-            lets it call this API with the sign-in cookie, which then requires HTTPS.
-          </p>
         </div>
         <Button data-testid="security-save" type="submit" disabled={loading}>
           {save.isPending ? "Saving…" : "Save security settings"}
@@ -147,11 +152,13 @@ export function SecuritySettings({ active }: { active: boolean }) {
           token.mutate();
         }}
       >
-        <h2 className="text-base font-medium">API access token</h2>
-        <p className="text-sm text-muted-foreground">
-          Send it as <code>Authorization: Bearer &lt;token&gt;</code> from scripts and MCP clients
-          instead of the API secret. Changing the API secret revokes every token.
-        </p>
+        <div className="flex items-center gap-1">
+          <h2 className="text-base font-medium">API access token</h2>
+          <HelpPopover label="API access token" testId="security-token-help">
+            Send it as <code>Authorization: Bearer &lt;token&gt;</code> from scripts and MCP clients
+            instead of the API secret. Changing the API secret revokes every token.
+          </HelpPopover>
+        </div>
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-2">
             <Label htmlFor="security-token-secret">API secret</Label>

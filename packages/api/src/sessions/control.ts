@@ -1,6 +1,7 @@
 import { changes } from "@orc/core/changes";
 import type { ChatThread } from "@orc/core/chat";
 import { ForbiddenError } from "@orc/core/errors";
+import { execHostFor, hostRuntime } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import {
   SESSION_MESSAGE_MAX_BODY,
@@ -8,6 +9,7 @@ import {
   type SessionMessageCreate,
   type SessionMessageResult,
   type SessionMessageSender,
+  type SessionSubagents,
   sessionMessageBackend,
   sessionMessageContext,
   sessionMessageHookSupported,
@@ -15,6 +17,7 @@ import {
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
 import { SessionMessageStore } from "@orc/db/session-messages";
+import { subagentToolCalls } from "./subagent-links.js";
 import { chatControl } from "./turns.js";
 
 const logger = createLogger("session-control");
@@ -140,7 +143,12 @@ type LineageRow = {
   runtime_session_id: string | null;
   backend: string;
   execution_host: string | null;
+  parent_session_id?: string | null;
+  spawned_from_session_id?: string | null;
 };
+
+const LINEAGE_COLUMNS =
+  "id, coalesce(display_title, title) AS title, status, task_id, runtime_session_id, backend, execution_host, parent_session_id, spawned_from_session_id";
 
 function chatNode(thread: ChatThread): SessionLineage["children"][number] {
   const last = [...thread.messages].reverse().find((message) => message.role === "assistant");
@@ -166,12 +174,14 @@ function sessionNode(row: LineageRow): SessionLineage["children"][number] {
 export function sessionLineage(id: string): SessionLineage {
   const sqlite = getSqlite();
   const chats = new ChatStore(sqlite);
-  const row = sqlite
-    .query<LineageRow, [string]>(
-      "SELECT id, title, status, task_id, runtime_session_id, backend, execution_host FROM gateway_sessions WHERE id = ?1 OR runtime_session_id = ?1 ORDER BY updated_at DESC LIMIT 1",
-    )
-    .get(id);
   const own = chats.get(id);
+  const row = sqlite
+    .query<LineageRow, [string, string | null, string | null, string | null]>(
+      `SELECT ${LINEAGE_COLUMNS} FROM gateway_sessions
+       WHERE id = ?1 OR runtime_session_id = ?1 OR id = ?2 OR (runtime_session_id = ?3 AND backend = ?4)
+       ORDER BY updated_at DESC LIMIT 1`,
+    )
+    .get(id, own?.sourceId ?? null, own?.runtimeId ?? null, own?.backend ?? null);
   const threads = own
     ? [own]
     : row?.runtime_session_id
@@ -200,18 +210,57 @@ export function sessionLineage(id: string): SessionLineage {
             "SELECT origin_session_id FROM tasks WHERE id = ?",
           )
           .get(row.task_id)?.origin_session_id
-      : null);
+      : null) ??
+    row?.parent_session_id ??
+    row?.spawned_from_session_id;
   const parentChat = parentId ? chats.get(parentId) : null;
   const parentRow =
     parentId && !parentChat
       ? sqlite
-          .query<LineageRow, [string]>(
-            "SELECT id, title, status, task_id, runtime_session_id, backend, execution_host FROM gateway_sessions WHERE id = ?1 OR runtime_session_id = ?1 ORDER BY updated_at DESC LIMIT 1",
+          .query<LineageRow, [string, string | null]>(
+            `SELECT ${LINEAGE_COLUMNS} FROM gateway_sessions WHERE (id = ?1 OR runtime_session_id = ?1) AND (?2 IS NULL OR backend = ?2) ORDER BY updated_at DESC LIMIT 1`,
           )
-          .get(parentId)
+          .get(parentId, row?.backend ?? null)
       : null;
   return {
     parent: parentChat ? chatNode(parentChat) : parentRow ? sessionNode(parentRow) : null,
     children: [...chats.children(ids).map(chatNode), ...delegated.map(sessionNode)],
+  };
+}
+
+type SubagentRow = LineageRow & { transcript_path: string | null; created_at: number };
+
+export async function sessionSubagents(id: string): Promise<SessionSubagents> {
+  const sqlite = getSqlite();
+  const thread = new ChatStore(sqlite).get(id);
+  const parent = sqlite
+    .query<SubagentRow, [string, string | null, string | null]>(
+      `SELECT ${LINEAGE_COLUMNS}, transcript_path, created_at FROM gateway_sessions
+       WHERE (id = ?1 OR runtime_session_id = ?1 OR (runtime_session_id = ?2 AND backend = ?3))
+       AND parent_session_id IS NULL ORDER BY updated_at DESC LIMIT 1`,
+    )
+    .get(id, thread?.runtimeId ?? null, thread?.backend ?? null);
+  if (!parent?.runtime_session_id) return { subagents: [] };
+  const children = sqlite
+    .query<SubagentRow, [string, string, string]>(
+      `SELECT ${LINEAGE_COLUMNS}, transcript_path, created_at FROM gateway_sessions
+       WHERE backend = ?1 AND parent_session_id = ?2 AND coalesce(execution_host, '') = ?3
+       ORDER BY created_at, id LIMIT 500`,
+    )
+    .all(parent.backend, parent.runtime_session_id, parent.execution_host ?? "");
+  const calls = await subagentToolCalls(
+    hostRuntime(execHostFor(parent.execution_host)),
+    parent,
+    children,
+  );
+  return {
+    subagents: children.map((child) => ({
+      id: child.id,
+      session_id: child.runtime_session_id,
+      title: child.title ?? "Subagent",
+      status: child.status,
+      tool_call_id: (child.runtime_session_id && calls.get(child.runtime_session_id)) || null,
+      created_at: child.created_at,
+    })),
   };
 }
