@@ -890,6 +890,17 @@ export function HistoryRow({
                       Ready to resume
                     </span>
                   )}
+                  {entry.kind === "native" &&
+                    entry.session.send &&
+                    entry.session.send.status !== "error" && (
+                      <span
+                        data-testid="session-sent"
+                        className="shrink-0 text-[10px] text-outline"
+                        title={`Continue this session on ${entry.session.send.host_label}`}
+                      >
+                        Sent to {entry.session.send.host_label}
+                      </span>
+                    )}
                   {hidden && (
                     <span
                       data-testid="chat-session-hidden-badge"

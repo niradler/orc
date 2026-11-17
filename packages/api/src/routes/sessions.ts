@@ -13,6 +13,7 @@ import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { previewSession } from "../desktop-preview/session.js";
 import { checkoutFiles } from "../git/files.js";
 import { gitStatus } from "../git/panel.js";
+import { latestSendsFor, sendDto } from "../handoffs/send.js";
 import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, liveRunFields, syncNow } from "../session-watcher.js";
 import { emptySessionCacheUsage, loadSessionCacheUsage } from "../sessions/cache-usage.js";
@@ -96,6 +97,17 @@ const LiveSessionSchema = z
         status: z.enum(["ready", "resumed"]),
       })
       .nullable(),
+    send: z
+      .object({
+        id: z.string(),
+        status: z.enum(["preparing", "ready", "error"]),
+        host_label: z.string(),
+        host_url: z.string(),
+        remote_session_id: z.string().nullable(),
+        error: z.string().nullable(),
+      })
+      .nullable()
+      .openapi({ description: "The latest move of this session to another ORC installation" }),
     last_activity_at: z.string().datetime().nullable(),
     created_at: z.string().datetime(),
   })
@@ -411,6 +423,7 @@ async function toLiveDtos(rows: GatewayRow[]) {
       })
     : [];
   const handoffsBySession = new Map(handoffs.map((row) => [row.live_session_id, row]));
+  const sendsBySession = await latestSendsFor(rows.map((row) => row.id));
   const taskIds = [...new Set(rows.map((r) => r.task_id).filter((id): id is string => !!id))];
   const linked =
     taskIds.length > 0
@@ -422,6 +435,8 @@ async function toLiveDtos(rows: GatewayRow[]) {
   const fromBody = await bodyLinkIndex();
   return rows.map((r) => {
     const handoff = handoffsBySession.get(r.id);
+    const sendRow = sendsBySession.get(r.id);
+    const send = sendRow ? sendDto(sendRow) : null;
     const t = r.task_id
       ? byId.get(r.task_id)
       : fromBody.get((r.runtime_session_id ?? "").toLowerCase());
@@ -462,6 +477,16 @@ async function toLiveDtos(rows: GatewayRow[]) {
               status: handoff.status,
             }
           : null,
+      send: send
+        ? {
+            id: send.id,
+            status: send.status,
+            host_label: send.host_label,
+            host_url: send.host_url,
+            remote_session_id: send.remote_session_id,
+            error: send.error,
+          }
+        : null,
       task: t ? { id: t.id, title: t.title, status: t.status } : null,
       last_activity_at: r.last_activity_at?.toISOString() ?? null,
       created_at: r.created_at.toISOString(),
@@ -500,6 +525,7 @@ app.openapi(liveListRoute, async (c) => {
         ? or(
             ne(gateway_sessions.status, "stopped"),
             sql`EXISTS (SELECT 1 FROM session_handoffs h WHERE h.live_session_id = ${gateway_sessions.id} AND h.status = 'ready')`,
+            sql`EXISTS (SELECT 1 FROM session_sends s WHERE s.live_session_id = ${gateway_sessions.id} AND s.status = 'ready')`,
           )
         : undefined,
     ),

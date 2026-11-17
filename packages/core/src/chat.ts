@@ -602,6 +602,9 @@ export const ChatThreadSchema = z.object({
   // Set when an account switch drops the native session; the next turn replays
   // bounded prior context so the conversation can continue in the new account.
   providerSwitch: z.object({ from: z.string() }).optional(),
+  // A moved session's one-time handoff briefing; the first turn delivers it and
+  // clears it, so later turns never repeat it.
+  handoffBriefing: z.string().max(16000).optional(),
   spawnedBy: ChatSpawnSchema.optional(),
   updatedAt: z.number(),
 });

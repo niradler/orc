@@ -12,8 +12,9 @@ export const HANDOFF_TTL_MS = 15 * 60 * 1000;
 export const SessionHandoffInputSchema = z
   .object({
     project: z.string().trim().min(1).max(200),
-    agent: z.enum(["claude", "codex"]),
-    session_id: z.uuid(),
+    agent: z.enum(["claude", "codex", "opencode", "pi"]),
+    // Claude/Codex/Pi use UUIDs; OpenCode uses ses_… ids.
+    session_id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/),
     source_cwd: z.string().min(1).max(4096),
     subdirectory: z
       .string()
@@ -38,6 +39,9 @@ export const SessionHandoffInputSchema = z
       .regex(/^[a-fA-F0-9]{40}$/)
       .transform((value) => value.toLowerCase()),
     title: z.string().trim().min(1).max(120).optional(),
+    // One-time handoff briefing delivered with the first resumed chat turn:
+    // where the session came from, branch and commit, files left on the source.
+    briefing: z.string().trim().min(1).max(16000).optional(),
   })
   .strict();
 
@@ -61,7 +65,7 @@ export const SessionBundleSchema = z
 export const SessionHandoffSchema = z.object({
   id: z.string(),
   project_id: z.string().nullable(),
-  agent: z.enum(["claude", "codex"]),
+  agent: z.enum(["claude", "codex", "opencode", "pi"]),
   source_session_id: z.string(),
   session_id: z.string(),
   host: z.string().nullable(),

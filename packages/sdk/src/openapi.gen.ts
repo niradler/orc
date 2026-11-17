@@ -844,6 +844,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -1212,6 +1213,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -1518,6 +1520,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -1827,6 +1830,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -2337,6 +2341,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -2712,6 +2717,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3168,6 +3174,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3531,6 +3538,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -19378,8 +19386,7 @@ export interface paths {
                     "application/json": {
                         project: string;
                         /** @enum {string} */
-                        agent: "claude" | "codex";
-                        /** Format: uuid */
+                        agent: "claude" | "codex" | "opencode" | "pi";
                         session_id: string;
                         source_cwd: string;
                         /** @default  */
@@ -19390,6 +19397,7 @@ export interface paths {
                         branch: string;
                         commit: string;
                         title?: string;
+                        briefing?: string;
                     };
                 };
             };
@@ -19404,7 +19412,7 @@ export interface paths {
                             id: string;
                             project_id: string | null;
                             /** @enum {string} */
-                            agent: "claude" | "codex";
+                            agent: "claude" | "codex" | "opencode" | "pi";
                             source_session_id: string;
                             session_id: string;
                             host: string | null;
@@ -19460,7 +19468,7 @@ export interface paths {
                             id: string;
                             project_id: string | null;
                             /** @enum {string} */
-                            agent: "claude" | "codex";
+                            agent: "claude" | "codex" | "opencode" | "pi";
                             source_session_id: string;
                             session_id: string;
                             host: string | null;
@@ -19528,7 +19536,7 @@ export interface paths {
                             id: string;
                             project_id: string | null;
                             /** @enum {string} */
-                            agent: "claude" | "codex";
+                            agent: "claude" | "codex" | "opencode" | "pi";
                             source_session_id: string;
                             session_id: string;
                             host: string | null;
@@ -19583,7 +19591,7 @@ export interface paths {
                             id: string;
                             project_id: string | null;
                             /** @enum {string} */
-                            agent: "claude" | "codex";
+                            agent: "claude" | "codex" | "opencode" | "pi";
                             source_session_id: string;
                             session_id: string;
                             host: string | null;
@@ -19600,6 +19608,189 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/send-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What a Send to host move would carry, and whether the session is eligible */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Send preview */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            eligible: boolean;
+                            reason: string | null;
+                            /** @enum {string|null} */
+                            agent: "claude" | "codex" | "opencode" | "pi" | null;
+                            repository: string | null;
+                            remote: string;
+                            branch: string | null;
+                            cwd: string | null;
+                            subdirectory: string;
+                            title: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/send-to": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a session to another ORC installation: snapshot and push its repo state, upload the native transcript and prepare it for resume there
+         * @description The destination URL, token and proxy headers come from the client's saved hosts and are used for this request only; they are not stored. Orchestration failures are recorded on the returned send with status error.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        host_label: string;
+                        url: string;
+                        /** @default  */
+                        token?: string;
+                        /** @default [] */
+                        headers?: {
+                            name: string;
+                            value: string;
+                        }[];
+                        project: string;
+                        /** @default  */
+                        note?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description The recorded send, ready or with its error */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            live_session_id: string;
+                            /** @enum {string} */
+                            status: "preparing" | "ready" | "error";
+                            host_label: string;
+                            host_url: string;
+                            project: string;
+                            handoff_id: string | null;
+                            remote_session_id: string | null;
+                            branch: string | null;
+                            commit: string | null;
+                            left_behind: string[];
+                            error: string | null;
+                            /** Format: date-time */
+                            created_at: string;
+                            /** Format: date-time */
+                            updated_at: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/sessions/live/{id}/sends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** This session's send history, newest first */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session sends */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sends: {
+                                id: string;
+                                live_session_id: string;
+                                /** @enum {string} */
+                                status: "preparing" | "ready" | "error";
+                                host_label: string;
+                                host_url: string;
+                                project: string;
+                                handoff_id: string | null;
+                                remote_session_id: string | null;
+                                branch: string | null;
+                                commit: string | null;
+                                left_behind: string[];
+                                error: string | null;
+                                /** Format: date-time */
+                                created_at: string;
+                                /** Format: date-time */
+                                updated_at: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -23926,6 +24117,16 @@ export interface components {
                 commit: string;
                 /** @enum {string} */
                 status: "ready" | "resumed";
+            } | null;
+            /** @description The latest move of this session to another ORC installation */
+            send: {
+                id: string;
+                /** @enum {string} */
+                status: "preparing" | "ready" | "error";
+                host_label: string;
+                host_url: string;
+                remote_session_id: string | null;
+                error: string | null;
             } | null;
             /** Format: date-time */
             last_activity_at: string | null;
