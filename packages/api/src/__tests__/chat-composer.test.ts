@@ -72,11 +72,12 @@ test("commands validate input, warn when discovery fails, and retry on the next 
         agent: "claude",
         enabled: true,
         executable,
+        model: "",
         environment: [],
       },
     ],
     default_id: "claude-commands-fixture",
-  } as typeof config.providers;
+  };
   const commands = () =>
     get(
       `/chat/commands?agent=claude&providerId=claude-commands-fixture&host=__local__&cwd=${encodeURIComponent(cwd)}`,
