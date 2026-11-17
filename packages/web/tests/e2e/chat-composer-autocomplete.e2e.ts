@@ -87,12 +87,14 @@ for (const width of [1440, 390]) {
     await input.fill("");
     await input.pressSequentially("@missing-folder/");
     await expect(page.getByTestId("chat-prompt-status")).toHaveText("Folder not readable");
+    await page.screenshot({ path: testInfo.outputPath(`file-mentions-error-${width}.png`) });
     await input.press("Escape");
     await expect(menu).toHaveCount(0);
 
     await input.fill("");
     await input.pressSequentially("/zzqqxx");
     await expect(page.getByTestId("chat-prompt-status")).toHaveText("No matches");
+    await page.screenshot({ path: testInfo.outputPath(`agent-commands-empty-${width}.png`) });
     await input.press("Escape");
     await expect(menu).toHaveCount(0);
 
