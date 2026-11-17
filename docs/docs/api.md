@@ -322,6 +322,9 @@ folder under the working directory; both take the same `threadId`, `host` and `c
 | `POST` | `/session-messages/{id}/cancel` | Cancel a queued message |
 | `POST` | `/session-messages/{id}/move` | Reorder a queued message |
 | `GET` | `/sessions/live/search` | Search sessions |
+| `GET` | `/sessions/live/{id}/send-preview` | What a Send to host move would carry, and whether the session is eligible |
+| `POST` | `/sessions/live/{id}/send-to` | Move a session to another ORC installation (destination URL, token, headers and project in the body; credentials are used for the request only). Orchestration failures return the recorded send with `status: error` |
+| `GET` | `/sessions/live/{id}/sends` | The session's send history, newest first |
 | `GET` | `/sessions/archive` | Search archived session passages |
 | `POST` | `/session-handoffs` | Start a session handoff |
 | `GET` `POST` | `/chat/threads` | Chat threads |

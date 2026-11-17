@@ -412,6 +412,32 @@ export const session_handoffs = sqliteTable("session_handoffs", {
 });
 
 /**
+ * A session this installation sent to another ORC installation. Credentials for
+ * the destination travel with the send request only and are never stored here.
+ */
+export const session_sends = sqliteTable(
+  "session_sends",
+  {
+    id: text("id").primaryKey(),
+    live_session_id: text("live_session_id")
+      .notNull()
+      .references(() => gateway_sessions.id, { onDelete: "cascade" }),
+    host_label: text("host_label").notNull(),
+    host_url: text("host_url").notNull(),
+    project: text("project").notNull(),
+    handoff_id: text("handoff_id"),
+    remote_session_id: text("remote_session_id"),
+    branch: text("branch"),
+    commit: text("commit"),
+    left_behind: text("left_behind", { mode: "json" }).$type<string[]>().notNull(),
+    status: text("status", { enum: ["preparing", "ready", "error"] }).notNull(),
+    error: text("error"),
+    ...timestamps,
+  },
+  (t) => [index("session_sends_live_idx").on(t.live_session_id, t.created_at)],
+);
+
+/**
  * Durable inbox for messages sent to a live or exited agent session. Rows are
  * delivered at the next hook safe point, or by a bounded resume for idle sessions.
  */
