@@ -510,13 +510,22 @@ Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_
 
 Speech powers composer dictation in the web and desktop app and voice messages in
 channels. Dictation is available once `speech.enabled` is true and the selected
-provider has an `api_key`; `GET /api/speech/status` reports it and
-`POST /api/speech/transcribe` (multipart field `audio`, up to 25 MB) returns
-`{ "text": "..." }`. Each provider also accepts `base_url` and `model`, for example
+provider has an `api_key`; `GET /api/speech/status` reports it with `max_bytes`,
+the largest clip the provider takes (25 MB for openai and groq, 7.4 MB for qwen,
+whose 10 MB cap applies after base64). `POST /api/speech/transcribe` (multipart
+field `audio`) returns `{ "text": "..." }` and rejects a larger clip with 413.
+Dictation stops on its own before the limit: after five minutes, or about 3 min
+50 s on qwen. Each provider also accepts `base_url` and `model`, for example
 to point `openai` at another OpenAI-compatible transcription endpoint.
 `speech.language` is sent to every provider (`language` for openai and groq,
 `asr_options.language` for qwen). `speech.provider` and `tts.provider` are chosen
 independently; an unknown provider fails when the config loads.
+
+Audio goes to the provider as recorded, so voice needs no ffmpeg. Dictation
+records 16 kHz mono WAV in the browser, and Telegram voice notes arrive as
+OGG/Opus; openai, groq and qwen all accept WAV, OGG, WebM, MP3 and MP4/M4A.
+OpenAI voice replies are requested as OGG/Opus and arrive as Telegram voice
+notes. Qwen returns WAV, which Telegram receives as a file.
 
 Channels answer a voice message with a voice reply. With `tts.mode: "always"` they
 also speak replies to text messages. Spoken replies drop code blocks and markdown,

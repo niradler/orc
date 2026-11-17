@@ -60,9 +60,9 @@ for (const [label, size] of [
           chatPosts.push(request.url());
       });
       let release: (() => void) | undefined;
-      let uploaded = 0;
+      let uploaded = Buffer.alloc(0);
       await page.route("**/api/speech/transcribe", async (route: Route) => {
-        uploaded = route.request().postDataBuffer()?.length ?? 0;
+        uploaded = route.request().postDataBuffer() ?? Buffer.alloc(0);
         await new Promise<void>((resolve) => {
           release = resolve;
         });
@@ -100,7 +100,16 @@ for (const [label, size] of [
       if (label === "desktop") await input.press("Enter");
       await shoot(page, `transcribing-${label}`);
       await expect.poll(() => release !== undefined).toBe(true);
-      expect(uploaded).toBeGreaterThan(1000);
+      expect(uploaded.toString("latin1")).toContain(
+        'filename="dictation.wav"\r\nContent-Type: audio/wav',
+      );
+      const wav = uploaded.subarray(uploaded.indexOf("RIFF"));
+      expect(wav.toString("latin1", 8, 16)).toBe("WAVEfmt ");
+      expect([wav.readUInt16LE(20), wav.readUInt16LE(22), wav.readUInt32LE(24)]).toEqual([
+        1, 1, 16_000,
+      ]);
+      expect(wav.readUInt16LE(34)).toBe(16);
+      expect(wav.readUInt32LE(40) / 32_000).toBeGreaterThan(0.9);
       release?.();
 
       await expect(input).toHaveValue("fix the login bug");
@@ -197,6 +206,43 @@ for (const [label, size] of [
       expect(calls).toBe(1);
       await page.keyboard.press("Escape");
       await expect(pill).toHaveCount(0);
+    });
+
+    test("a suspended audio context errors instead of recording silence", async ({ page }) => {
+      await page.addInitScript(() => {
+        const w = window as unknown as { streams: MediaStream[] };
+        w.streams = [];
+        const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          const stream = await original(constraints);
+          w.streams.push(stream);
+          return stream;
+        };
+        AudioContext.prototype.resume = () => Promise.resolve();
+        Object.defineProperty(BaseAudioContext.prototype, "state", { get: () => "suspended" });
+      });
+      await openComposer(page, true);
+      let transcribed = false;
+      await page.route("**/api/speech/transcribe", (route) => {
+        transcribed = true;
+        return route.fulfill({ json: { text: "silence" } });
+      });
+      await page.getByTestId("chat-dictation-button").click();
+      await expect(page.getByTestId("chat-dictation-pill")).toHaveAttribute("data-phase", "error");
+      await expect(page.getByTestId("chat-dictation-error")).toHaveText(
+        "Audio didn't start. Tap Retry.",
+      );
+      await expect(page.getByTestId("chat-dictation-retry")).toBeVisible();
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            (window as unknown as { streams: MediaStream[] }).streams.some((stream) =>
+              stream.getTracks().some((track) => track.readyState === "live"),
+            ),
+          ),
+        )
+        .toBe(false);
+      expect(transcribed).toBe(false);
     });
 
     test("a blocked microphone says how to fix it and offers a retry", async ({ page }) => {

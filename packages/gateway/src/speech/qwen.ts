@@ -1,12 +1,5 @@
 import type { OrcConfig } from "@orc/core/config";
-import {
-  convertAudio,
-  mimeForFormat,
-  requestSignal,
-  type SpeechToText,
-  type TextToSpeech,
-  transcribable,
-} from "./audio.js";
+import { mimeForFormat, requestSignal, type SpeechToText, type TextToSpeech } from "./audio.js";
 
 export function qwenSpeechToText(config: OrcConfig): SpeechToText | null {
   const { language, qwen } = config.speech;
@@ -17,8 +10,9 @@ export function qwenSpeechToText(config: OrcConfig): SpeechToText | null {
     "",
   );
   return {
+    maxBytes: 7_400_000,
     async transcribe(input) {
-      const { audio, format } = await transcribable(input);
+      const { audio, format } = input;
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: "POST",
         headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -80,8 +74,9 @@ export function qwenTextToSpeech(config: OrcConfig): TextToSpeech | null {
         throw new Error(body.message ?? `TTS request failed (${response.status})`);
       if (!body.output?.audio?.url) throw new Error("Qwen TTS did not return audio.");
       const audioResponse = await fetch(body.output.audio.url, { signal: requestSignal(signal) });
-      const audio = new Uint8Array(await audioResponse.arrayBuffer());
-      return { audio: await convertAudio(audio, "wav", "ogg"), format: "ogg" };
+      if (!audioResponse.ok)
+        throw new Error(`Qwen TTS audio download failed (${audioResponse.status})`);
+      return { audio: new Uint8Array(await audioResponse.arrayBuffer()), format: "wav" };
     },
   };
 }
