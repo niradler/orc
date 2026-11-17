@@ -382,7 +382,7 @@ app.openapi(
       .catch(
         (): ChatAgentCommands => ({
           commands: [],
-          warning: "The agent's commands could not be loaded. ORC prompts and skills still work.",
+          warning: "Agent commands unavailable",
         }),
       );
     if (commandCatalogs.size >= 32) {

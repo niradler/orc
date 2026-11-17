@@ -116,18 +116,16 @@ export function useChatPromptMenu(
   const status = !open
     ? null
     : !command && files.isError
-      ? "This folder could not be read on the session's host."
+      ? "Folder not readable"
       : matches.length
         ? command
           ? (agentCommands.data?.warning ?? null)
           : null
         : loading
-          ? command
-            ? "Loading commands…"
-            : "Loading files…"
+          ? "Loading…"
           : command
-            ? (agentCommands.data?.warning ?? "No matching commands.")
-            : "No matching files or folders.";
+            ? (agentCommands.data?.warning ?? "No matches")
+            : "No matches";
   const index = Math.min(active, Math.max(matches.length - 1, 0));
   const commandNames = useMemo(
     () =>

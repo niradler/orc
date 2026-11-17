@@ -37,7 +37,7 @@ for (const width of [1440, 390]) {
         json:
           agent === "claude"
             ? claudeCommands
-            : { commands: [], warning: "The agent's commands could not be loaded." },
+            : { commands: [], warning: "Agent commands unavailable" },
       });
     });
     const root = repoRoot();
@@ -86,20 +86,22 @@ for (const width of [1440, 390]) {
 
     await input.fill("");
     await input.pressSequentially("@missing-folder/");
-    await expect(page.getByTestId("chat-prompt-status")).toContainText("could not be read");
+    await expect(page.getByTestId("chat-prompt-status")).toHaveText("Folder not readable");
     await input.press("Escape");
     await expect(menu).toHaveCount(0);
 
     await input.fill("");
     await input.pressSequentially("/zzqqxx");
-    await expect(page.getByTestId("chat-prompt-status")).toContainText("No matching commands");
+    await expect(page.getByTestId("chat-prompt-status")).toHaveText("No matches");
     await input.press("Escape");
     await expect(menu).toHaveCount(0);
 
     await chooseChatAgent(page, "codex");
+    await input.click();
+    await expect(input).toBeFocused();
     await input.fill("");
     await input.pressSequentially("/");
-    await expect(page.getByTestId("chat-prompt-status")).toContainText("could not be loaded");
+    await expect(page.getByTestId("chat-prompt-status")).toHaveText("Agent commands unavailable");
     expect(agents).toContain("codex");
     expect(errors).toEqual([]);
   });
