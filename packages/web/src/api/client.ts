@@ -8,6 +8,7 @@ import type {
 } from "@orc/core/channels";
 import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
 import type { ChatAnalytics } from "@orc/core/chat-analytics";
+import type { TerminalLaunchOptions } from "@orc/core/chat-options";
 import type { PreviewFile, PreviewRequest } from "@orc/core/desktop-preview";
 import type { GithubSyncState } from "@orc/core/github-sync";
 import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
@@ -334,7 +335,7 @@ export type CreateTerminalInput = {
   project_id?: string;
   dev?: boolean;
   setup?: AgentSetup;
-};
+} & TerminalLaunchOptions;
 
 export type Worktree = {
   path: string;

@@ -107,6 +107,7 @@ beforeAll(async () => {
   require("node:fs").mkdirSync(binDir, { recursive: true });
   installFakeBinary("claude");
   installFakeBinary("codex");
+  installFakeBinary("opencode");
   // The remote-unavailable case must not depend on real DNS or SSH timing.
   installFakeBinary("ssh", 255);
   process.env.PATH = `${binDir}${delimiter}${originalPath}`;
@@ -1104,5 +1105,63 @@ test("native terminal provider environment and model stay out of metadata and pl
     ).toBe(400);
   } finally {
     loadConfig(previous);
+  }
+});
+
+test("new agent terminals map model, effort and mode to each CLI's flags", async () => {
+  const launch = (body: Record<string, unknown>) =>
+    req(app, "POST", "/terminals", { cwd: root, host: null, ...body });
+  const tail = async (body: Record<string, unknown>, length: number) => {
+    const response = await launch(body);
+    expect(response.status).toBe(201);
+    return ptys.at(-1)?.argv.slice(-length);
+  };
+  expect(
+    await tail({ kind: "claude", model: "opus", effort: "max", permissionMode: "plan" }, 6),
+  ).toEqual(["--model", "opus", "--effort", "max", "--permission-mode", "plan"]);
+  expect(await tail({ kind: "claude", permissionMode: "default" }, 1)).not.toContain(
+    "--permission-mode",
+  );
+  expect(
+    await tail(
+      { kind: "codex", model: "gpt-5.5", effort: "high", permissionMode: "acceptEdits" },
+      8,
+    ),
+  ).toEqual([
+    "--model",
+    "gpt-5.5",
+    "-c",
+    'model_reasoning_effort="high"',
+    "--sandbox",
+    "workspace-write",
+    "--ask-for-approval",
+    "on-request",
+  ]);
+  expect(await tail({ kind: "codex", permissionMode: "default" }, 4)).toEqual([
+    "--sandbox",
+    "read-only",
+    "--ask-for-approval",
+    "on-request",
+  ]);
+  expect(await tail({ kind: "codex", permissionMode: "bypassPermissions" }, 4)).toEqual([
+    "--sandbox",
+    "danger-full-access",
+    "--ask-for-approval",
+    "never",
+  ]);
+  expect(
+    await tail({ kind: "opencode", model: "openai/gpt-5", permissionMode: "plan" }, 4),
+  ).toEqual(["--model", "openai/gpt-5", "--agent", "plan"]);
+  for (const body of [
+    { kind: "codex", permissionMode: "plan" },
+    { kind: "opencode", effort: "high" },
+    { kind: "claude", effort: "high; rm" },
+    { kind: "claude", model: "-x" },
+    { kind: "shell", model: "opus" },
+    { kind: "shell", dev: true, permissionMode: "plan" },
+  ]) {
+    const count = ptys.length;
+    expect((await launch(body)).status).toBe(400);
+    expect(ptys.length).toBe(count);
   }
 });

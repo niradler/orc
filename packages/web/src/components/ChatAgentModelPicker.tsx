@@ -1,10 +1,18 @@
+import type { ComposerProfile } from "@orc/core/chat";
 import { agentLabel } from "@orc/core/coding-agents";
+import { ulid } from "@orc/core/ids";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { Plus, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { AgentModelPicker } from "@/components/AgentModelPicker";
+import { chipHeading } from "@/components/ComposerChip";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { providerSelection } from "@/hooks/chat-provider-config";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
-import { useEnabledAgents, useProviders } from "@/hooks/useAgents";
+import { useComposerPreferences, useEnabledAgents, useProviders } from "@/hooks/useAgents";
 import { useChat } from "@/hooks/useChat";
 import { useSsh } from "@/hooks/useSsh";
 import {
@@ -12,9 +20,16 @@ import {
   agentEffortChoices,
   agentEffortValue,
   agentModelLabel,
+  effectivePermissionMode,
   liveEffortChoices,
+  permissionModes,
+  permissionText,
   withAgentEffort,
+  withPermissionMode,
 } from "@/lib/composer-chips";
+
+const profileChip =
+  "inline-flex min-h-8 items-center px-2 text-xs hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus max-sm:min-h-11 pointer-coarse:min-h-11";
 
 export function ChatAgentModelPicker() {
   const chat = useChat();
@@ -90,6 +105,58 @@ export function ChatAgentModelPicker() {
   const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
+  const navigate = useNavigate();
+  const preferences = useComposerPreferences();
+  const favorites = new Set(
+    preferences.favorites.filter((entry) => entry.agent === config.agent).map((entry) => entry.id),
+  );
+  const [naming, setNaming] = useState<string | null>(null);
+  const modes = permissionModes(capabilities);
+  function applyProfile(profile: ComposerProfile): void {
+    const provider = providers.find((item) => item.id === profile.providerId);
+    const providerId = provider?.id;
+    const base = provider
+      ? providerSelection(config, undefined, provider).config
+      : { ...config, agent: profile.agent, providerId: undefined };
+    let next = withAgentEffort({ ...base, model: profile.model }, profile.effort);
+    if (profile.permissionMode) next = withPermissionMode(next, profile.permissionMode);
+    const options = next.agentOptions[profile.agent];
+    if (
+      started &&
+      (profile.agent !== config.agent ||
+        (providerId ?? profile.agent) !== (config.providerId ?? config.agent))
+    ) {
+      chat.startAgentConversation(
+        profile.agent,
+        providerId,
+        profile.model,
+        options,
+        profile.permissionMode,
+      );
+      return;
+    }
+    void chat.changePermissions(next);
+    if (thread && options) void chat.applyAgentOptions(profile.agent, options).catch(() => {});
+  }
+  function saveProfile(name: string): void {
+    const mode = effectivePermissionMode(config);
+    const profile: ComposerProfile = {
+      id: ulid(),
+      name,
+      agent: config.agent,
+      ...(config.providerId ? { providerId: config.providerId } : {}),
+      model: config.model,
+      effort: effortValue,
+      ...(modes.includes(mode) ? { permissionMode: mode } : {}),
+    };
+    preferences.save({
+      composer_profiles: [
+        ...preferences.profiles.filter((item) => item.name !== name),
+        profile,
+      ].slice(-50),
+    });
+    setNaming(null);
+  }
   const fixedModel = capabilities?.modelSelection === false;
   const modelsDisabled = streaming || !ready || fixedModel;
 
@@ -125,6 +192,121 @@ export function ChatAgentModelPicker() {
         chat.selectProvider(profile);
         return false;
       }}
+      favorites={favorites}
+      onFavorite={(model) =>
+        preferences.save({
+          favorite_models: favorites.has(model)
+            ? preferences.favorites.filter(
+                (entry) => entry.agent !== config.agent || entry.id !== model,
+              )
+            : [...preferences.favorites, { agent: config.agent, id: model }].slice(-100),
+        })
+      }
+      onProviderSettings={(id) =>
+        navigate(
+          `/settings?settingsSection=agents&agentsTab=providers&provider=${encodeURIComponent(id)}`,
+        )
+      }
+      footer={(close) => (
+        <div data-testid="chat-profiles" className="mt-1.5 border-t border-border pt-1.5">
+          <p className={chipHeading}>Profiles</p>
+          <div className="flex flex-wrap items-center gap-1 px-1">
+            {preferences.profiles.map((profile) => (
+              <span
+                key={profile.id}
+                className="inline-flex min-w-0 items-center overflow-hidden rounded-md border border-border"
+              >
+                <button
+                  type="button"
+                  data-testid={`chat-profile-${profile.id}`}
+                  disabled={!ready || streaming}
+                  title={[
+                    agentLabel(profile.agent),
+                    profile.model || "Agent default",
+                    profile.effort,
+                    profile.permissionMode &&
+                      permissionText(profile.permissionMode, undefined).label,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  onClick={() => {
+                    applyProfile(profile);
+                    close();
+                  }}
+                  className={`${profileChip} min-w-0 truncate`}
+                >
+                  {profile.name}
+                </button>
+                <button
+                  type="button"
+                  data-testid={`chat-profile-delete-${profile.id}`}
+                  aria-label={`Delete profile ${profile.name}`}
+                  onClick={() =>
+                    preferences.save({
+                      composer_profiles: preferences.profiles.filter(
+                        (item) => item.id !== profile.id,
+                      ),
+                    })
+                  }
+                  className={`${profileChip} border-l border-border text-muted-foreground`}
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </span>
+            ))}
+            {naming === null ? (
+              <button
+                type="button"
+                data-testid="chat-profile-new"
+                onClick={() => setNaming("")}
+                className={`${profileChip} gap-1 rounded-md text-muted-foreground`}
+              >
+                <Plus size={12} aria-hidden="true" />
+                Save current
+              </button>
+            ) : (
+              <form
+                className="flex w-full min-w-0 gap-1"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  if (naming.trim()) saveProfile(naming.trim());
+                }}
+              >
+                <Input
+                  data-testid="chat-profile-name"
+                  aria-label="Profile name"
+                  placeholder="Profile name"
+                  autoFocus
+                  maxLength={60}
+                  value={naming}
+                  onChange={(event) => setNaming(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Escape") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setNaming(null);
+                  }}
+                  className="min-w-0"
+                />
+                <Button
+                  type="submit"
+                  data-testid="chat-profile-save"
+                  disabled={!naming.trim()}
+                  className="min-h-8 px-2"
+                >
+                  Save
+                </Button>
+              </form>
+            )}
+          </div>
+          {preferences.error && (
+            <p role="alert" className="px-2 pt-1 text-xs text-error">
+              {preferences.error.message}
+            </p>
+          )}
+        </div>
+      )}
       selectedModel={config.model}
       agents={agents}
       choices={choices}

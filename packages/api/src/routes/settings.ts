@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { ChatSettingsSchema } from "@orc/core/chat";
+import { ChatSettingsSchema, ComposerProfileSchema, FavoriteModelSchema } from "@orc/core/chat";
 import { AGENT_ID_PATTERN, ProviderPathsSchema } from "@orc/core/coding-agents";
 import { loadConfig, OrcConfigSchema, updateGlobalConfig } from "@orc/core/config";
 import { McpServerSettingsSchema } from "@orc/core/mcp-prompts";
@@ -196,6 +196,8 @@ const PreferencesSchema = z
     notification_retention_days: z.number().int().min(1).max(3650).optional(),
     audit_retention_days: z.number().int().min(1).max(3650).optional(),
     chat: ChatSettingsSchema.optional(),
+    favorite_models: z.array(FavoriteModelSchema).max(100).optional(),
+    composer_profiles: z.array(ComposerProfileSchema).max(50).optional(),
     agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
     provider_paths: ProviderPathsSchema.optional(),
   })

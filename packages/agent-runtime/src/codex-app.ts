@@ -1,5 +1,5 @@
 import { ChatAnswersSchema, type ChatQuestion, ChatQuestionSchema } from "@orc/core/chat";
-import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
+import { ChatAgentOptionsSchema, codexPermissionPreset } from "@orc/core/chat-options";
 import { type ExecHost, ensureSshMaster, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { CODEX_CAPABILITIES } from "./capabilities.js";
@@ -636,14 +636,8 @@ export class CodexAppSession implements AgentSession {
               : {}),
           cwd: this.opts.cwd,
           model: this.opts.model,
-          approvalPolicy: mode === "default" ? "on-request" : "never",
+          ...codexPermissionPreset(mode),
           approvalsReviewer: "user",
-          sandbox:
-            mode === "bypassPermissions"
-              ? "danger-full-access"
-              : mode === "acceptEdits"
-                ? "workspace-write"
-                : "read-only",
           ...(this.opts.systemPromptAppend
             ? { developerInstructions: this.opts.systemPromptAppend }
             : {}),
@@ -687,14 +681,15 @@ export class CodexAppSession implements AgentSession {
 
   private collaborationMode(): Record<string, unknown> {
     const live = this.liveMode ?? this.threadMode;
+    const preset = live && codexPermissionPreset(live);
     const policy =
-      live && live !== this.threadMode
+      live && preset && live !== this.threadMode
         ? {
-            approvalPolicy: live === "default" ? "on-request" : "never",
+            approvalPolicy: preset.approvalPolicy,
             sandboxPolicy:
-              live === "bypassPermissions"
+              preset.sandbox === "danger-full-access"
                 ? { type: "dangerFullAccess" }
-                : live === "acceptEdits"
+                : preset.sandbox === "workspace-write"
                   ? {
                       type: "workspaceWrite",
                       writableRoots: [],
