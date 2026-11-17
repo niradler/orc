@@ -1,0 +1,54 @@
+[
+  {
+    "value": "default",
+    "displayName": "Default (recommended)",
+    "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks",
+    "supportsEffort": true,
+    "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
+    "supportsAdaptiveThinking": true,
+    "supportsFastMode": true,
+    "supportsAutoMode": true
+  },
+  {
+    "value": "opus[1m]",
+    "displayName": "Opus",
+    "description": "Opus 4.8 with 1M context · Best for everyday, complex tasks",
+    "supportsEffort": true,
+    "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
+    "supportsAdaptiveThinking": true,
+    "supportsFastMode": true,
+    "supportsAutoMode": true
+  },
+  {
+    "value": "claude-fable-5-2[1m]",
+    "displayName": "Fable",
+    "description": "Fable 5.2 · Most capable for your hardest and longest-running tasks",
+    "supportsEffort": true,
+    "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
+    "supportsAdaptiveThinking": true,
+    "supportsAutoMode": true
+  },
+  {
+    "value": "sonnet",
+    "displayName": "Sonnet",
+    "description": "Sonnet 4.6 · Efficient for routine tasks",
+    "supportsEffort": true,
+    "supportedEffortLevels": ["low", "medium", "high", "max"],
+    "supportsAdaptiveThinking": true,
+    "supportsAutoMode": true
+  },
+  {
+    "value": "sonnet[1m]",
+    "displayName": "Sonnet (1M context)",
+    "description": "Sonnet 4.6 with 1M context · Draws from usage credits · $3/$15 per Mtok",
+    "supportsEffort": true,
+    "supportedEffortLevels": ["low", "medium", "high", "max"],
+    "supportsAdaptiveThinking": true,
+    "supportsAutoMode": true
+  },
+  {
+    "value": "haiku",
+    "displayName": "Haiku",
+    "description": "Haiku 4.5 · Fastest for quick answers"
+  }
+]

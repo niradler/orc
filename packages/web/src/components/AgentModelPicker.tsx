@@ -22,6 +22,7 @@ export function AgentModelPicker({
   selectedModel,
   agents,
   choices,
+  descriptions,
   onAgent,
   onModel,
   efforts,
@@ -46,6 +47,7 @@ export function AgentModelPicker({
   selectedModel: string;
   agents: string[];
   choices: Map<string, string>;
+  descriptions?: ReadonlyMap<string, string>;
   onAgent: (agent: string) => boolean;
   onModel: (model: string) => void;
   efforts?: AgentEffortChoice[] | undefined;
@@ -70,6 +72,7 @@ export function AgentModelPicker({
   const [custom, setCustom] = useState(false);
   const [model, setModel] = useState("");
   const [error, setError] = useState("");
+  const [query, setQuery] = useState("");
   const agentList = useRef<HTMLDivElement>(null);
   const modelList = useRef<HTMLDivElement>(null);
   const effortList = useRef<HTMLDivElement>(null);
@@ -77,9 +80,15 @@ export function AgentModelPicker({
   const modelName = choices.get(selectedModel) || selectedModel || "Agent default";
   const summary = suppliedSummary ?? modelName;
   const effortChoices = efforts ?? [];
+  const modelRows = [["", "Agent default"] as const, ...choices].filter(([id, label]) =>
+    `${id} ${label} ${descriptions?.get(id) ?? ""}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
+  );
   function reset(): void {
     setCustom(false);
     setError("");
+    setQuery("");
   }
   function chooseAgent(next: string): void {
     reset();
@@ -88,6 +97,7 @@ export function AgentModelPicker({
   }
   function chooseModel(next: string): void {
     onModel(next);
+    reset();
     setOpen(false);
   }
   function columns(event: KeyboardEvent<HTMLElement>): void {
@@ -234,8 +244,31 @@ export function AgentModelPicker({
             )}
           >
             <p className={chipHeading}>Model</p>
+            {choices.size > 6 && (
+              <Input
+                data-testid={`${testIdPrefix}-model-search`}
+                aria-label="Search models"
+                placeholder="Search models"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  const first = modelRows[0];
+                  if (event.key === "Enter" && first && !modelsDisabled) {
+                    event.preventDefault();
+                    chooseModel(first[0]);
+                  } else if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    focusChipOption(modelList.current, false);
+                  }
+                }}
+                className="mb-1 min-w-0"
+              />
+            )}
             <div className="max-h-64 overflow-y-auto">
-              {[["", "Agent default"] as const, ...choices].map(([id, label]) => (
+              {modelRows.length === 0 && (
+                <p className="px-2 py-1 text-xs text-muted-foreground">No models match</p>
+              )}
+              {modelRows.map(([id, label]) => (
                 <button
                   type="button"
                   key={id || "default"}
@@ -251,7 +284,17 @@ export function AgentModelPicker({
                   onClick={() => chooseModel(id)}
                   className={chipOption}
                 >
-                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  <span className="flex min-w-0 flex-1 flex-col py-1">
+                    <span className="truncate">{label}</span>
+                    {descriptions?.get(id) && (
+                      <span
+                        title={descriptions.get(id)}
+                        className="truncate text-xs text-muted-foreground"
+                      >
+                        {descriptions.get(id)}
+                      </span>
+                    )}
+                  </span>
                   {selectedModel === id && <Check size={14} aria-hidden="true" />}
                 </button>
               ))}

@@ -66,7 +66,10 @@ export function ChatAgentModelPicker() {
   const effortChoices =
     config.agent === "opencode"
       ? liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices)
-      : agentEffortChoices(config.agent);
+      : agentEffortChoices(
+          config.agent,
+          catalog.data?.models.find((entry) => entry.id === config.model)?.efforts,
+        );
   const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
@@ -108,6 +111,13 @@ export function ChatAgentModelPicker() {
       selectedModel={config.model}
       agents={agents}
       choices={choices}
+      descriptions={
+        new Map(
+          (catalog.data?.models ?? []).flatMap((entry) =>
+            entry.description ? [[entry.id, entry.description] as const] : [],
+          ),
+        )
+      }
       ready={ready}
       streaming={streaming}
       modelsDisabled={modelsDisabled}
@@ -126,7 +136,20 @@ export function ChatAgentModelPicker() {
         setConfig({ ...config, agent, providerId: undefined, model: "" });
         return false;
       }}
-      onModel={(model) => setConfig({ ...config, model })}
+      onModel={(model) => {
+        const next = { ...config, model };
+        const supported = agentEffortChoices(
+          config.agent,
+          catalog.data?.models.find((entry) => entry.id === model)?.efforts,
+        );
+        setConfig(
+          effortValue &&
+            config.agent !== "opencode" &&
+            !supported.some((choice) => choice.value === effortValue)
+            ? withAgentEffort(next, "")
+            : next,
+        );
+      }}
       efforts={effortChoices}
       effort={effortValue}
       onEffort={(value) => {

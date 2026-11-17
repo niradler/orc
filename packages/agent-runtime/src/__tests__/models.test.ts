@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseAgentModels, readAgentModelCatalog, readTextModelCatalog } from "../models";
+import claudeModels from "./fixtures/claude-initialize-models.json";
+import codexModels from "./fixtures/codex-model-list.json";
 
 describe("native model discovery", () => {
   test("validates IDs, hides hidden rows and normalizes labels without exposing extra fields", () => {
@@ -18,6 +20,41 @@ describe("native model discovery", () => {
     expect(parseAgentModels([{ value: "sonnet", displayName: "Sonnet" }], "claude")).toEqual([
       { id: "sonnet", label: "Sonnet" },
     ]);
+  });
+
+  test("keeps descriptions and supported efforts from real Claude and Codex catalogs", () => {
+    const claude = parseAgentModels(claudeModels, "claude");
+    expect(claude.find((model) => model.id === "sonnet")).toEqual({
+      id: "sonnet",
+      label: "Sonnet",
+      description: "Sonnet 4.6 · Efficient for routine tasks",
+      efforts: ["low", "medium", "high", "max"],
+    });
+    expect(claude.find((model) => model.id === "haiku")).toEqual({
+      id: "haiku",
+      label: "Haiku",
+      description: "Haiku 4.5 · Fastest for quick answers",
+    });
+    expect(parseAgentModels(codexModels.data, "codex")).toEqual([
+      {
+        id: "gpt-6.1-sol",
+        label: "GPT-6.1-Sol",
+        description: "Latest workhorse model for coding and everyday work.",
+        efforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
+      },
+      {
+        id: "gpt-6-luna",
+        label: "GPT-6-Luna",
+        description: "Fast and affordable model for easier tasks.",
+        efforts: ["low", "medium", "high", "xhigh", "max"],
+      },
+    ]);
+    expect(
+      parseAgentModels(
+        [{ value: "x", supportedEffortLevels: ["low", "--bad", 3, "x y"], description: 7 }],
+        "claude",
+      ),
+    ).toEqual([{ id: "x", label: "x", efforts: ["low"] }]);
   });
 
   test("Codex initializes and pages model/list without starting any turns", async () => {

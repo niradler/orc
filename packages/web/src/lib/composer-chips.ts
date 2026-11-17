@@ -122,6 +122,7 @@ const EFFORT_LABELS: Record<string, string> = {
   high: "High",
   xhigh: "Extra high",
   max: "Max",
+  ultra: "Ultra",
 };
 /** Effort values each adapter accepts, in increasing order. */
 const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
@@ -132,9 +133,12 @@ const CODEX_EFFORT_KEY = "model_reasoning_effort";
 export type AgentEffortChoice = { value: string; label: string };
 
 /** Effort choices the current adapter exposes in the composer; empty when it has none. */
-export function agentEffortChoices(agent: string): AgentEffortChoice[] {
+export function agentEffortChoices(
+  agent: string,
+  modelEfforts?: readonly string[],
+): AgentEffortChoice[] {
   const runtime = chatRuntime(agent);
-  const values =
+  const known: readonly string[] =
     runtime === "claude-sdk"
       ? CLAUDE_EFFORTS
       : runtime === "pi"
@@ -142,6 +146,11 @@ export function agentEffortChoices(agent: string): AgentEffortChoice[] {
         : runtime === "codex"
           ? CODEX_EFFORTS
           : [];
+  const reported =
+    runtime === "codex"
+      ? (modelEfforts ?? [])
+      : (modelEfforts ?? []).filter((value) => known.includes(value));
+  const values = known.length && reported.length ? reported : known;
   return values.map((value) => ({ value, label: EFFORT_LABELS[value] ?? value }));
 }
 

@@ -118,3 +118,59 @@ test("choosing a custom model does not submit an existing composer draft", async
   await expect(page.getByTestId("chat-input")).toHaveValue("Unsent draft while choosing a model");
   expect(posts).toBe(0);
 });
+
+for (const width of [390, 1440]) {
+  test(`model picker shows descriptions, searches and narrows efforts at ${width}px`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    await request.patch("/api/settings", {
+      headers: { Authorization: `Bearer ${API_SECRET}` },
+      data: { chat: ChatSettingsSchema.parse({ agent: "codex" }) },
+    });
+    const models = ["sol", "terra", "astra", "luna", "nova", "vega", "orion"].map((name) => ({
+      id: `gpt-${name}`,
+      label: `GPT ${name}`,
+      description: `${name} model description`,
+      efforts: name === "luna" ? ["low", "medium", "high"] : ["low", "medium", "high", "xhigh"],
+    }));
+    await page.route("**/api/chat/models?**", (route) =>
+      route.fulfill({ json: { models, warning: null } }),
+    );
+    await page.setViewportSize({ width, height: 900 });
+    await gotoView(page, "activity");
+    await page.goto("/?chat=open");
+    await openChatModel(page);
+    await expect(page.getByTestId("chat-model-option-gpt-sol")).toContainText(
+      "sol model description",
+    );
+    await page.screenshot({ path: testInfo.outputPath(`model-picker-${width}.png`) });
+    await page.getByTestId("chat-model-option-gpt-sol").click();
+    await chooseChatEffort(page, "xhigh");
+    await page.getByTestId("chat-model-search").fill("zzz");
+    await expect(page.getByTestId("chat-model-select")).toContainText("No models match");
+    await page.getByTestId("chat-model-search").fill("luna");
+    await expect(page.getByTestId("chat-model-option-gpt-luna")).toBeVisible();
+    await expect(page.getByTestId("chat-model-option-gpt-sol")).toHaveCount(0);
+    await page.getByTestId("chat-model-search").press("Enter");
+    await expect(page.getByTestId("chat-model-select")).toBeHidden();
+    await openChatModel(page);
+    await expect(page.getByTestId("chat-effort-option-default")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(page.getByTestId("chat-model-search")).toHaveValue("");
+    await expect(page.getByTestId("chat-model-option-gpt-luna")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    await expect(page.getByTestId("chat-effort-option-high")).toBeVisible();
+    await expect(page.getByTestId("chat-effort-option-xhigh")).toHaveCount(0);
+    await expect(page.getByTestId("chat-effort-option-minimal")).toHaveCount(0);
+    const picker = await page.getByTestId("chat-agent-model-picker").boundingBox();
+    expect(picker && picker.x >= 0 && picker.x + picker.width <= width).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });
+}

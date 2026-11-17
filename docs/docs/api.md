@@ -294,7 +294,9 @@ provider identity. The run-session resolver checks run ownership and discovers o
 that native conversation on its recorded execution host. It does not switch the
 global execution host. Existing authentication protects both endpoints.
 
-`GET /chat/models` also accepts optional `host` and `cwd` for a job destination.
+`GET /chat/models` returns each model's `id` and `label`, plus `description` and
+`efforts` (supported effort values) when the agent reports them.
+It also accepts optional `host` and `cwd` for a job destination.
 Omit `host` to follow the selected host, use `__local__` to pin local, or supply an
 SSH alias. An existing `threadId` owns its host/directory and rejects these overrides.
 

@@ -365,6 +365,8 @@ export interface paths {
                             models: {
                                 id: string;
                                 label: string;
+                                description?: string;
+                                efforts?: string[];
                             }[];
                             warning: string | null;
                         };
