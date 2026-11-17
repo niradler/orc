@@ -33,6 +33,6 @@ export function microphoneError(err: unknown): string {
   if (name === "NotAllowedError" || name === "SecurityError")
     return "Microphone blocked. Allow it in site settings.";
   if (name === "NotFoundError" || name === "OverconstrainedError") return "No microphone found.";
-  if (name === "NotReadableError") return "The microphone is in use by another app.";
-  return err instanceof Error ? err.message : "Could not start the microphone.";
+  if (name === "NotReadableError") return "Microphone in use by another app.";
+  return err instanceof Error ? err.message : "Microphone failed to start.";
 }

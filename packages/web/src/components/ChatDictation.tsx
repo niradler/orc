@@ -92,8 +92,7 @@ export function useDictation(
     discard.current = false;
     setPhase("starting");
     try {
-      if (!navigator.mediaDevices?.getUserMedia)
-        throw new Error("Dictation needs HTTPS or localhost to reach the microphone.");
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone needs HTTPS.");
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true },
       });
@@ -230,7 +229,7 @@ export function ChatDictationButton({
             type="button"
             data-testid="chat-dictation-button"
             data-available="false"
-            aria-label="Dictation is off"
+            aria-label="Dictation off"
             className={cn(touchTarget, "text-outline hover:bg-surface hover:text-on-surface")}
           >
             <Mic size={16} />
@@ -239,22 +238,16 @@ export function ChatDictationButton({
         <PopoverContent
           data-testid="chat-dictation-unavailable"
           align="start"
-          className="w-72 text-sm"
+          className="w-auto text-sm"
         >
-          <p className="font-medium text-on-surface">Dictation is off</p>
-          <p className="mt-1 text-on-surface-variant">
-            Speak a prompt into the draft instead of typing it. Turn it on by configuring a speech
-            provider on the ORC server: set <code>speech.provider</code> and its API key, or{" "}
-            <code>ORC_SPEECH_PROVIDER</code> with <code>ORC_OPENAI_API_KEY</code>,{" "}
-            <code>ORC_GROQ_API_KEY</code> or <code>ORC_QWEN_API_KEY</code>.
-          </p>
+          Dictation off ·{" "}
           <a
-            className="mt-2 inline-block text-primary underline"
+            className="text-primary underline"
             href="https://niradler.github.io/orc/docs/configuration#speech-tts"
             target="_blank"
             rel="noreferrer"
           >
-            Speech configuration
+            Set up
           </a>
         </PopoverContent>
       </Popover>
@@ -342,11 +335,11 @@ export function ChatDictationPill({ dictation }: { dictation: Dictation }) {
         phase === "recording" && "ring-1 ring-error/60",
       )}
     >
-      <ActionHelp label={phase === "error" ? "Dismiss" : "Cancel dictation (Esc)"}>
+      <ActionHelp label={phase === "error" ? "Dismiss" : "Cancel (Esc)"}>
         <button
           type="button"
           data-testid="chat-dictation-cancel"
-          aria-label={phase === "error" ? "Dismiss" : "Cancel dictation"}
+          aria-label={phase === "error" ? "Dismiss" : "Cancel"}
           onPointerDown={keepFocus}
           onClick={dictation.cancel}
           className={cn(touchTarget, "rounded-full text-on-surface-variant hover:bg-surface")}
@@ -358,7 +351,7 @@ export function ChatDictationPill({ dictation }: { dictation: Dictation }) {
         {phase === "recording" && (
           <>
             <span className="size-2.5 shrink-0 rounded-full bg-error motion-safe:animate-pulse" />
-            <span className="text-error">Recording</span>
+            <span className="sr-only">Recording</span>
             <DictationClock startedAt={dictation.startedAt} />
             <DictationLevel analyser={dictation.analyser} />
           </>
@@ -366,9 +359,7 @@ export function ChatDictationPill({ dictation }: { dictation: Dictation }) {
         {(phase === "starting" || phase === "transcribing") && (
           <>
             <LoaderCircle size={14} className="shrink-0 motion-safe:animate-spin" />
-            <span className="truncate">
-              {phase === "starting" ? "Starting microphone…" : "Transcribing…"}
-            </span>
+            <span className="sr-only">{phase === "starting" ? "Starting" : "Transcribing"}</span>
           </>
         )}
         {phase === "error" && (
@@ -385,11 +376,11 @@ export function ChatDictationPill({ dictation }: { dictation: Dictation }) {
         )}
       </span>
       {phase === "recording" && (
-        <ActionHelp label="Insert transcript (Enter)">
+        <ActionHelp label="Insert (Enter)">
           <button
             type="button"
             data-testid="chat-dictation-stop"
-            aria-label="Insert transcript"
+            aria-label="Insert"
             onPointerDown={keepFocus}
             onClick={dictation.stop}
             className={cn(touchTarget, "rounded-full bg-primary text-primary-foreground")}
@@ -399,11 +390,11 @@ export function ChatDictationPill({ dictation }: { dictation: Dictation }) {
         </ActionHelp>
       )}
       {phase === "error" && (
-        <ActionHelp label="Try again">
+        <ActionHelp label="Retry">
           <button
             type="button"
             data-testid="chat-dictation-retry"
-            aria-label="Try again"
+            aria-label="Retry"
             onPointerDown={keepFocus}
             onClick={dictation.retry}
             className={cn(touchTarget, "rounded-full text-on-surface-variant hover:bg-surface")}

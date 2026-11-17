@@ -720,15 +720,15 @@ Use **Ctrl/Cmd+Shift+V** to paste inline instead. Typing `@` does not attach fil
 
 The microphone beside the attach button speaks a prompt into the draft. It is
 off until the server has a speech provider configured (see
-[Configuration](./configuration.md#speech-tts)); until then it opens a short note on how
-to turn it on. Press it, or **Cmd/Ctrl+Shift+D** in the composer, to start
+[Configuration](./configuration.md#speech-tts)); until then it shows **Dictation off · Set up**,
+linking to that page. Press it, or **Cmd/Ctrl+Shift+D** in the composer, to start
 recording. The composer tools turn into a recording bar with elapsed time and an
 input level. **Insert** (or **Enter**, or the shortcut again) stops and
 transcribes; **Cancel** (or **Escape**) discards the clip. The transcript lands at
 the cursor, replacing any selection, and is never sent for you. Send, Queue and
 Send now stay disabled while recording and transcribing. A recording stops on its
 own after five minutes. A blocked or missing microphone, or a failed
-transcription, shows the reason with **Try again**, which resends the same clip
+transcription, shows the reason with **Retry**, which resends the same clip
 when the recording itself succeeded. The browser needs HTTPS or `localhost` to
 reach the microphone. The audio goes to the ORC server, which forwards it to the
 configured provider; the provider key never leaves the server.

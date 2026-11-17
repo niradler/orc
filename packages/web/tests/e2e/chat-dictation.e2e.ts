@@ -44,11 +44,8 @@ for (const [label, size] of [
       const mic = page.getByTestId("chat-dictation-button");
       await expect(mic).toHaveAttribute("data-available", "false");
       await mic.click();
-      await expect(page.getByTestId("chat-dictation-unavailable")).toContainText(
-        "Dictation is off",
-      );
-      await expect(page.getByTestId("chat-dictation-unavailable")).toContainText(
-        "ORC_SPEECH_PROVIDER",
+      await expect(page.getByTestId("chat-dictation-unavailable")).toHaveText(
+        "Dictation off · Set up",
       );
       await shoot(page, `unconfigured-${label}`);
       await expectNoHorizontalScroll(page);
