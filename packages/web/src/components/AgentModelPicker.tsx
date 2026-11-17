@@ -301,7 +301,7 @@ export function AgentModelPicker({
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => {
                   const first = modelRows[0];
-                  if (event.key === "Enter" && first && !modelsDisabled) {
+                  if (event.key === "Enter" && query.trim() && first && !modelsDisabled) {
                     event.preventDefault();
                     chooseModel(first[0]);
                   } else if (event.key === "ArrowDown") {

@@ -56,7 +56,8 @@ function words(text: string): string[] {
 
 export function informativeDescription(description: string, label: string, agent: string): string {
   const known = new Set([...words(label), ...words(agent), "model"]);
-  return words(description).some((word) => !known.has(word)) ? description : "";
+  const found = words(description);
+  return !found.length || found.some((word) => !known.has(word)) ? description : "";
 }
 
 export function parseAgentModels(value: unknown, agent: string): AgentModel[] {

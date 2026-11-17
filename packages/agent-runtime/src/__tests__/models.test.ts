@@ -75,6 +75,7 @@ describe("native model discovery", () => {
       informativeDescription("Sonnet 5 · Efficient for routine tasks", "Sonnet", "claude"),
     ).toBe("Sonnet 5 · Efficient for routine tasks");
     expect(informativeDescription("Haiku 4.5", "Haiku", "claude")).toBe("Haiku 4.5");
+    expect(informativeDescription("最速のモデル", "Fast", "pi")).toBe("最速のモデル");
   });
 
   test("Codex initializes and pages model/list without starting any turns", async () => {

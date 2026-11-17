@@ -1,5 +1,6 @@
 import { agentLabel } from "@orc/core/coding-agents";
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { api } from "@/api/client";
 import { AgentModelPicker } from "@/components/AgentModelPicker";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
@@ -59,7 +60,6 @@ export function ChatAgentModelPicker() {
     : catalog.data?.warning;
   const modelName = choices.get(config.model) || config.model || "Agent default";
   const effortValue = agentEffortValue(config);
-  const effort = agentEffort(config);
   const capabilities = useAgentCapabilities(config.agent, thread);
   // OpenCode's effort levels are model-dependent: the session reports them live,
   // and the model catalog probes them for a chat that has not started yet.
@@ -74,6 +74,19 @@ export function ChatAgentModelPicker() {
     );
   };
   const effortChoices = effortsFor(config.model);
+  const staleEffort =
+    config.agent !== "opencode" &&
+    !!effortValue &&
+    !!catalog.data?.models.some((item) => item.id === config.model) &&
+    !effortChoices.some((choice) => choice.value === effortValue);
+  const effort = staleEffort ? null : agentEffort(config);
+  useEffect(() => {
+    if (!staleEffort) return;
+    const next = withAgentEffort(config, "");
+    setConfig(next);
+    const options = next.agentOptions[config.agent];
+    if (thread && options) void chat.applyAgentOptions(config.agent, options).catch(() => {});
+  }, [staleEffort, config, setConfig, thread, chat]);
   const name = selectedProvider?.name ?? agentLabel(config.agent);
   const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;

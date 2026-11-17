@@ -225,3 +225,86 @@ test("phone picker uses Agent, Model and Effort tabs that advance on each pick",
   await expect(tab("effort")).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test("a saved effort the selected model does not report is neither shown nor sent", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: {
+      chat: ChatSettingsSchema.parse({
+        agent: "claude",
+        model: "haiku",
+        agentOptions: { claude: { runtime: "claude-sdk", options: { effort: "high" } } },
+      }),
+    },
+  });
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({
+      json: {
+        models: [
+          { id: "sonnet", label: "Sonnet", efforts: ["low", "medium", "high"] },
+          { id: "haiku", label: "Haiku" },
+        ],
+        warning: null,
+      },
+    }),
+  );
+  await gotoView(page, "activity");
+  await page.goto("/?chat=open");
+  const pill = page.getByTestId("chat-agent-model-button").filter({ visible: true });
+  await expect(pill).toHaveAccessibleName(/Haiku/);
+  await expect(pill).not.toHaveAccessibleName(/effort/);
+  await openChatModel(page);
+  await expect(page.getByTestId("chat-effort-select")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  const sent = page.waitForRequest((request) => request.url().endsWith("/api/chat/stream"));
+  await page.getByTestId("chat-input").filter({ visible: true }).fill("Stale effort");
+  await page.getByTestId("chat-send-button").filter({ visible: true }).click();
+  const body = (await sent).postDataJSON();
+  expect(body.model).toBe("haiku");
+  expect(body.agentOptions?.claude?.options?.effort).toBeUndefined();
+});
+
+test("a failed catalog keeps the full effort list and explains the failure", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({ agent: "claude", model: "haiku" }) },
+  });
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ status: 500, json: { error: "boom" } }),
+  );
+  await gotoView(page, "activity");
+  await page.goto("/?chat=open");
+  await openChatModel(page);
+  await expect(page.getByTestId("chat-model-warning")).toContainText("Models could not be loaded");
+  await showPickerTab(page, "effort");
+  for (const value of ["low", "medium", "high", "xhigh", "max"])
+    await expect(page.getByTestId(`chat-effort-option-${value}`)).toBeVisible();
+});
+
+test("a selected model missing from the catalog keeps the full effort list", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({ agent: "claude", model: "custom-claude" }) },
+  });
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [{ id: "haiku", label: "Haiku" }], warning: null } }),
+  );
+  await gotoView(page, "activity");
+  await page.goto("/?chat=open");
+  await openChatModel(page);
+  await expect(page.getByTestId("chat-model-option-custom-claude")).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  for (const value of ["low", "medium", "high", "xhigh", "max"])
+    await expect(page.getByTestId(`chat-effort-option-${value}`)).toBeVisible();
+});
