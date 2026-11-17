@@ -78,6 +78,27 @@ async function sessionRows(
   }
 }
 
+export async function opencodeSessionUpdated(
+  runtime: HostRuntime,
+  dbPath: string,
+  sessionId: string,
+): Promise<number | null> {
+  if (!SESSION_ID.test(sessionId)) return null;
+  const rows = [
+    ...(await queryTable<{ time_updated: number }>(
+      runtime,
+      dbPath,
+      `SELECT time_updated FROM session_v2 WHERE id = '${sessionId}'`,
+    )),
+    ...(await queryTable<{ time_updated: number }>(
+      runtime,
+      dbPath,
+      `SELECT time_updated FROM session WHERE id = '${sessionId}'`,
+    )),
+  ];
+  return rows.length ? Math.max(...rows.map((row) => row.time_updated)) : null;
+}
+
 export async function opencodeDbPath(runtime: HostRuntime): Promise<string> {
   const home = await runtime.home();
   const sep = runtime.host.kind === "ssh" || !home.includes("\\") ? "/" : "\\";
@@ -115,6 +136,15 @@ export function opencodeAdapter(
             grew = true;
           }
       }
+      const asking = new Set(
+        (
+          await queryTable<{ session_id: string }>(
+            runtime,
+            path,
+            `SELECT DISTINCT session_id FROM part WHERE session_id IN (SELECT id FROM session WHERE time_updated > ${Date.now() - 86_400_000}) AND json_extract(data, '$.type') = 'tool' AND json_extract(data, '$.tool') = 'question' AND json_extract(data, '$.state.status') IN ('pending', 'running')`,
+          )
+        ).map((row) => row.session_id),
+      );
       const seen = new Set<string>();
       const records: SessionRecord[] = [];
       for (const raw of [...current, ...legacy, ...children]) {
@@ -138,7 +168,13 @@ export function opencodeAdapter(
           // OpenCode persists the session row as the turn and its parts advance,
           // so recent writes are the only cross-version liveness signal: its
           // lifecycle columns (time_busy/time_idle) stay stale after a turn.
-          status: statusFromMtime(row.time_updated),
+          ...(asking.has(row.id)
+            ? {
+                status: "running",
+                pendingHuman: true,
+                waitingFor: { reason: "question", tool: null },
+              }
+            : { status: statusFromMtime(row.time_updated), pendingHuman: false }),
           createdAt: new Date(row.time_created),
           lastActivityAt: new Date(row.time_updated),
           transcriptPath: path,

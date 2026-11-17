@@ -52,6 +52,7 @@ for await (const line of createInterface({input:process.stdin})) {
   else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold'||mode==='steer-extension'||mode==='steer-decline'||mode==='steer-legacy') {}
   else if(mode==='client-fs'||mode==='client-terminal') {emit({id:'client-access',method:mode==='client-fs'?'fs/write_text_file':'terminal/create',params:mode==='client-fs'?{sessionId:session,path:process.cwd()+'/forbidden.txt',content:'must not write'}:{sessionId:session,command:'node',args:['-e',"require('fs').writeFileSync('forbidden.txt','must not run')"],env:[]}});}
   else if(mode==='result-exit') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'last frame'}});emit({id:promptId,result:{stopReason:'end_turn'}});process.exit(0);}
+  else if(mode==='usage') {update(session,{sessionUpdate:'usage_update',used:0,size:0});update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'USAGE'}});update(session,{sessionUpdate:'usage_update',used:19828,size:200000,cost:{amount:0,currency:'USD'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
   else if(mode==='effort') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'EFFORT OK'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
   else if(mode==='effort-switch') {update(session,{sessionUpdate:'config_option_update',configOptions:[{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'low',options:[{value:'low',name:'Low'},{value:'medium',name:'Medium'}]}]});update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'SWITCHED'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
   else if(mode==='child-chatty') {
@@ -493,6 +494,36 @@ test("ACP refreshes effort choices when the agent reports a config option update
     { value: "low", label: "Low" },
     { value: "medium", label: "Medium" },
   ]);
+});
+
+test("ACP reports the context window from the agent's usage update and omits it when none came", async () => {
+  const { session } = fixture({}, "usage");
+  await session.initialize();
+  await session.send("Hi");
+  const events = await run(session);
+  expect(events.find((e) => e.type === "text")?.data).toBe("USAGE");
+  expect(events.find((e) => e.type === "result")?.data).toMatchObject({ contextWindow: 200000 });
+  const quiet = fixture({}, "effort").session;
+  await quiet.initialize();
+  await quiet.send("Hi");
+  const result = (await run(quiet)).find((e) => e.type === "result");
+  expect(result?.type === "result" && "contextWindow" in result.data).toBe(false);
+});
+
+test("ACP sends an agent slash command bare so the agent runs it, and other turns with the ORC preamble", async () => {
+  const { session, cwd } = fixture({ systemPromptAppend: "ORC PREAMBLE" }, "effort");
+  await session.initialize();
+  await session.send("/hello world");
+  await run(session);
+  await session.send("/var/log/app.log is empty");
+  await run(session);
+  const prompts = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((message) => message.method === "session/prompt")
+    .map((message) => message.params.prompt[0].text);
+  expect(prompts).toEqual(["/hello world", "ORC PREAMBLE\n\n/var/log/app.log is empty"]);
 });
 
 test("ACP keeps a long subagent delegation under the output limit", async () => {

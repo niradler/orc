@@ -157,7 +157,7 @@ test("should mark Gemini and unsplit totals as estimated instead of inventing a 
   expect(usage.events[0]?.model).toBeNull();
 });
 
-test("should keep the latest permission mode from Claude and Codex transcripts", () => {
+test("should keep the latest permission mode from Claude, Codex and OpenCode sessions", () => {
   const jsonl = (lines: object[]) => lines.map((line) => JSON.stringify(line)).join("\n");
   const claude = parseClaudeUsage(
     jsonl([
@@ -182,4 +182,17 @@ test("should keep the latest permission mode from Claude and Codex transcripts",
   expect(parseCodexUsage(jsonl([context(undefined, { granular: {} })]), null).permissionMode).toBe(
     "default/granular",
   );
+  const assistant = (id: string, fields: object) => ({
+    id,
+    data: JSON.stringify({ role: "assistant", tokens: { input: 1, output: 1 }, ...fields }),
+  });
+  expect(
+    parseOpenCodeUsage([
+      assistant("m1", { agent: "build", mode: "build" }),
+      assistant("m2", { agent: "plan", mode: "plan" }),
+      { id: "m3", data: "not json" },
+    ]).permissionMode,
+  ).toBe("plan");
+  expect(parseOpenCodeUsage([assistant("m1", { mode: "build" })]).permissionMode).toBe("build");
+  expect(parseOpenCodeUsage([assistant("m1", {})]).permissionMode).toBeNull();
 });

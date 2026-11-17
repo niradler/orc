@@ -18,6 +18,7 @@ import {
 import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
 import { changes } from "@orc/core/changes";
 import {
+  AGENT_COMMAND_PATTERN,
   appendChatActivity,
   CHAT_HISTORY_PAGE_SIZE,
   CHAT_SUBAGENT_DONE,
@@ -121,6 +122,7 @@ import { chatHistory } from "../sessions/chat-history.js";
 import { isClaudeProcessName } from "../sessions/claude.js";
 import { projectIdFor } from "../sessions/common.js";
 import { notifySpawner, spawnChain } from "../sessions/control.js";
+import { opencodeSessionUpdated } from "../sessions/opencode.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { readTranscriptBytes, type TranscriptTurn } from "../sessions/transcript.js";
 import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
@@ -846,9 +848,16 @@ async function linkNativeSource(thread: ChatThread): Promise<ChatThread> {
 async function transcriptMark(thread: ChatThread, source?: NativeSource | null) {
   const row = source === undefined ? await nativeSource(thread) : source;
   if (!row?.transcript_path) return null;
-  const info = await hostRuntime(execHostFor(thread.host))
-    .stat(row.transcript_path)
-    .catch(() => null);
+  const runtime = hostRuntime(execHostFor(thread.host));
+  if (row.backend === "opencode" && row.runtime_session_id) {
+    const updated = await opencodeSessionUpdated(
+      runtime,
+      row.transcript_path,
+      row.runtime_session_id,
+    ).catch(() => null);
+    return updated === null ? null : `opencode:${updated}`;
+  }
+  const info = await runtime.stat(row.transcript_path).catch(() => null);
   return info ? `${info.size}:${info.mtimeMs}` : null;
 }
 
@@ -2603,7 +2612,7 @@ async function beginTurn(
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
         const message =
-          setup.context && !/^\/[\p{L}\p{N}][\p{L}\p{N}_:.-]*(?:\s|$)/u.test(turn)
+          setup.context && !AGENT_COMMAND_PATTERN.test(turn)
             ? withOrcContext(turn, setup.context)
             : turn;
         const sent =

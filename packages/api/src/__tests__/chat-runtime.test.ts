@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
   appendFileSync,
@@ -905,6 +906,57 @@ describe("native chat runtime", () => {
     const saved = (await (await request(`/chat/threads/${prepared.id}`)).json()) as ChatThread;
     expect(saved.messages).toHaveLength(502);
     expect(saved.historyBefore).toBe(605);
+  });
+
+  test("should flag an OpenCode chat as changed only when its own session moves, not when the shared database does", async () => {
+    getDb()
+      .insert(bridge_chats)
+      .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
+      .onConflictDoNothing()
+      .run();
+    const dbPath = join(home, "opencode-mark.db");
+    const db = new Database(dbPath);
+    db.run(`CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, title TEXT NOT NULL,
+      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL)`);
+    db.run(
+      "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, data TEXT)",
+    );
+    db.run(
+      "CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)",
+    );
+    db.run("INSERT INTO session VALUES ('ses_mine', NULL, ?, 'Mine', 1000, 2000)", [home]);
+    db.run("INSERT INTO session VALUES ('ses_other', NULL, ?, 'Other', 1000, 2000)", [home]);
+    db.close();
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-opencode-mark",
+        backend: "opencode",
+        mode: "direct",
+        status: "stopped",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: "ses_mine",
+        cwd: home,
+        transcript_path: dbPath,
+      })
+      .run();
+    const thread = (await (
+      await request("/chat/threads", { sourceSessionId: "source-opencode-mark" })
+    ).json()) as ChatThread;
+    expect(thread.transcriptMark).toBe("opencode:2000");
+    const changed = async () =>
+      ((await (await request(`/chat/threads/${thread.id}/session`)).json()) as { changed: boolean })
+        .changed;
+    const write = (sql: string) => {
+      const handle = new Database(dbPath);
+      handle.run(sql);
+      handle.close();
+    };
+    write("UPDATE session SET time_updated = 9000 WHERE id = 'ses_other'");
+    write("INSERT INTO part VALUES ('prt_other', 'msg', 'ses_other', 9000, '{}')");
+    expect(await changed()).toBe(false);
+    write("UPDATE session SET time_updated = 3000 WHERE id = 'ses_mine'");
+    expect(await changed()).toBe(true);
   });
 
   test("should flag a native session that changed on disk and rebuild the chat from it", async () => {

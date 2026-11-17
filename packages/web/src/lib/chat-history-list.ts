@@ -47,6 +47,7 @@ const SESSION_MODE_LABELS: Record<string, string> = {
   ...PERMISSION_LABELS,
   default: "Ask first",
   plan: "Plan",
+  build: "Build",
   auto: "Auto",
   "danger-full-access": "Full access",
   "workspace-write": "Workspace write",

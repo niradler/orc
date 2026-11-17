@@ -688,10 +688,12 @@ phone touch targets are at least 44px. Send stays visible at the right.
 Type `/` to list ORC saved prompts and skills together with the agent's own
 commands and skills. Claude reports its slash commands, plugin commands and
 installed skills, matched by name or alias (`/review` finds `/code-review`);
-Codex reports its skills, which insert as `$name`. Each row shows its argument
-hint and source (the plugin, `user`, `repo`, or the agent for built-ins). A
-saved prompt or ORC skill with the same name wins. A message that starts with an
-agent command reaches the agent first, so Claude runs it natively. Type `@` to
+Codex reports its skills, which insert as `$name`. OpenCode reports its built-in,
+project and user commands, MCP prompts and skills. Each row shows its argument
+hint and source (the plugin, `user`, `repo`, `command`, `skill`, or the agent for
+built-ins). A saved prompt or ORC skill with the same name wins. A message that
+starts with an agent command reaches the agent first, so Claude and OpenCode run
+it natively. Type `@` to
 list files and folders under the conversation's working directory on its
 execution host, SSH hosts included; choosing a folder lists its contents, and
 choosing a file inserts `@path`. Dot files appear once the name you type starts

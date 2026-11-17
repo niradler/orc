@@ -193,6 +193,9 @@ export function codexAdapter(
               cwd: r.cwd,
               status,
               ...(pendingHuman !== undefined ? { pendingHuman } : {}),
+              ...(pendingHuman
+                ? { waitingFor: { reason: "question" as const, tool: "request_user_input" } }
+                : {}),
               createdAt: new Date(r.created_at_ms ?? r.created_at * 1000),
               lastActivityAt,
               transcriptPath: r.rollout_path,
