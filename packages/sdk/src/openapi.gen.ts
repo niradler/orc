@@ -23720,6 +23720,10 @@ export interface components {
             summary: string | null;
             tokens_used: number | null;
             tokens_estimated: boolean;
+            /** @default null */
+            model: string | null;
+            /** @default null */
+            permission_mode: string | null;
             cwd: string | null;
             host: string | null;
             pid: number | null;

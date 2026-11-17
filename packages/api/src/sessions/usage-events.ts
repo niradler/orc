@@ -223,9 +223,15 @@ export function writeSessionUsage(
       replaceSessionRows(sqlite, sessionId, agent, events);
       sqlite
         .query(
-          "UPDATE gateway_sessions SET model = ?, usage_version = ?, usage_synced_at = ? WHERE id = ?",
+          "UPDATE gateway_sessions SET model = ?, permission_mode = coalesce(?, permission_mode), usage_version = ?, usage_synced_at = ? WHERE id = ?",
         )
-        .run(usage.model, version, Math.floor(Date.now() / 1000), sessionId);
+        .run(
+          usage.model,
+          usage.permissionMode ?? null,
+          version,
+          Math.floor(Date.now() / 1000),
+          sessionId,
+        );
     })
     .immediate();
   return events.length;
