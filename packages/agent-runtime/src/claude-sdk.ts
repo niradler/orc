@@ -900,6 +900,9 @@ class ClaudeSDKSession implements AgentSession {
 
   setPermissionMode(mode: LivePermissionMode): void {
     this.liveMode = mode;
+    this.turn?.query
+      ?.setPermissionMode(mode === "bypassPermissions" ? "acceptEdits" : mode)
+      .catch((error) => logger.warn("Claude permission mode change failed", { mode, error }));
     for (const [requestId, pending] of this.permissionResolvers)
       if (permissionModeAllows(mode, pending.tool)) this.respondPermission(requestId, "approved");
   }

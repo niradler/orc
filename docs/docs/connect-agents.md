@@ -375,7 +375,7 @@ browser-login or native-rule-hook handlers. The agent runs its own tools under
 its own sandbox. ACP approval prompts are not a sandbox, and ORC's live
 permission-mode selector is unavailable for ACP: the protocol has no approval-mode
 handshake, and OpenCode's `session/set_mode` selects its build/plan agent rather
-than ORC's `default`/`acceptEdits`/`bypassPermissions` modes.
+than ORC's permission modes.
 
 If the agent does not advertise HTTP MCP, select **Native configuration** for its
 MCP connection before starting chat. Existing agent login and native MCP settings

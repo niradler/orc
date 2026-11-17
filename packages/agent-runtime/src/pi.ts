@@ -37,7 +37,7 @@ import {
   type SessionOpts,
 } from "./types.js";
 
-export const PI_CAPABILITIES: AgentCapabilities = Object.freeze({
+export const PI_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapabilities>({
   ...UNKNOWN_CAPABILITIES,
   source: "adapter",
   resume: true,
@@ -47,6 +47,7 @@ export const PI_CAPABILITIES: AgentCapabilities = Object.freeze({
   approvals: true,
   questions: true,
   livePermissions: true,
+  permissionModes: ["default", "acceptEdits", "bypassPermissions"],
   interrupt: true,
   steering: true,
   mcp: true,

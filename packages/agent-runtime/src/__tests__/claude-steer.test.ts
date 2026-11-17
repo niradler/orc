@@ -17,7 +17,7 @@ const react = ${react};
 mock.module("@anthropic-ai/claude-agent-sdk", () => ({
   HOOK_EVENTS: [],
   query: ({ prompt, options }) => {
-    const handle = { received: [], options, interrupts: 0, interruptOptions: undefined, closed: 0, returnDelay: 0 };
+    const handle = { received: [], options, modes: [], interrupts: 0, interruptOptions: undefined, closed: 0, returnDelay: 0 };
     queries.push(handle);
     activeQueries++;
     maxActiveQueries = Math.max(maxActiveQueries, activeQueries);
@@ -48,6 +48,7 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
     })();
     return {
       [Symbol.asyncIterator]: () => stream,
+      setPermissionMode: async (mode) => { handle.modes.push(mode); },
       interrupt: async (options) => { handle.interrupts++; handle.interruptOptions = options; await handle.onInterrupt(handle); },
       return: async () => {
         handle.closed++;
@@ -579,6 +580,38 @@ try {
   if (result?.data?.outcome !== "stopped") throw new Error("turn did not end as stopped");
   console.log("verified");
 } finally { await session.close(); }
+`,
+  );
+});
+
+test("a running plan turn switches the native permission mode", () => {
+  expectSuccess(
+    harness(`async (handle, msg) => {
+      handle.emit({type:"system",subtype:"init",session_id:"plan-fixture"});
+      handle.emit(textMessage("planning"));
+      await gate;
+      handle.emit(resultMessage("plan-fixture", msg.uuid));
+      handle.finish();
+    }`) +
+      `
+let openGate;
+const gate = new Promise((resolve) => { openGate = resolve; });
+const planned = await createBackend("claude").startSession({cwd:process.cwd(),orcMcp:false,executionHost:null,permissionMode:"plan"});
+try {
+  await planned.send("plan it");
+  const events = [];
+  const reading = (async () => { for await (const event of planned.events()) events.push(event); })();
+  await waitFor(events, (event) => event.type === "text");
+  if (queries[0].options.permissionMode !== "plan") throw new Error("turn did not start in plan mode");
+  planned.setPermissionMode("acceptEdits");
+  planned.setPermissionMode("bypassPermissions");
+  await Bun.sleep(5);
+  if (JSON.stringify(queries[0].modes) !== JSON.stringify(["acceptEdits", "acceptEdits"]))
+    throw new Error("native modes: " + JSON.stringify(queries[0].modes));
+  openGate();
+  await reading;
+  console.log("verified");
+} finally { openGate(); await planned.close(); await session.close(); }
 `,
   );
 });

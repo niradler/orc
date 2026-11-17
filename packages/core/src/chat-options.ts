@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-export const ChatPermissionModeSchema = z.enum(["default", "acceptEdits", "bypassPermissions"]);
+export const ChatPermissionModeSchema = z.enum([
+  "default",
+  "plan",
+  "acceptEdits",
+  "auto",
+  "bypassPermissions",
+]);
 const argument = z
   .string()
   .min(1)

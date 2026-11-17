@@ -561,6 +561,13 @@ app.openapi(
   },
 );
 
+function permissionModeSupported(
+  backend: string,
+  mode: z.infer<typeof ChatPermissionModeSchema>,
+): boolean {
+  return createBackend(backend).capabilities?.permissionModes?.includes(mode) === true;
+}
+
 const STEER_LIMIT = 32;
 /** The message may already be in the conversation, so a client must not resend it. */
 const STEER_UNCONFIRMED = "STEER_UNCONFIRMED";
@@ -1822,6 +1829,8 @@ app.openapi(
     const { thread } = run;
     if (!run.session?.setPermissionMode)
       throw new ValidationError("This backend does not support changing live permissions.");
+    if (!permissionModeSupported(thread.backend, mode))
+      throw new ValidationError("This agent does not support this permission mode.");
     const updated: ChatThread = {
       ...thread,
       config: structuredClone(thread.config),
@@ -2109,7 +2118,9 @@ async function openChat(
   if (body.permissionMode !== undefined) {
     if (createBackend(thread.backend).capabilities?.livePermissions === false)
       throw new ValidationError("This backend does not support ORC permission modes.");
-    thread.config.permissionMode = body.permissionMode;
+    thread.config.permissionMode = permissionModeSupported(thread.backend, body.permissionMode)
+      ? body.permissionMode
+      : "default";
   }
   // Only a new conversation adopts the composer preference; an existing one owns
   // its setting, so another device cannot silently replace it.
@@ -2930,9 +2941,7 @@ async function startChild(
     ...(agent ? { agent } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(projectId ? { projectId } : {}),
-    ...(backend && createBackend(backend).capabilities?.livePermissions !== false
-      ? { permissionMode }
-      : {}),
+    ...(backend && permissionModeSupported(backend, permissionMode) ? { permissionMode } : {}),
     ...(sameAgent && source
       ? {
           agentOptions: source.config.agentOptions,

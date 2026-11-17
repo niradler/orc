@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ChatPermissionModeSchema } from "./chat-options.js";
 
 export const TaskStatusSchema = z.enum([
   "todo",
@@ -61,6 +62,7 @@ export const AgentCapabilitiesSchema = z.object({
   mcp: z.boolean(),
   fork: z.boolean(),
   rollback: z.boolean(),
+  permissionModes: z.array(ChatPermissionModeSchema).optional(),
   /** Live effort levels the adapter exposes for the session's current model
    *  (OpenCode's ACP thought_level config option). Absent when the agent has none. */
   effortChoices: z

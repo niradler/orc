@@ -1503,6 +1503,7 @@ describe("native chat runtime", () => {
       .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
     const path = `/chat/runs/${opened.runId}/permission-mode`;
     expect((await request(path, { mode: "yolo" })).status).toBe(400);
+    expect((await request(path, { mode: "plan" })).status).toBe(400);
     const changed = await request(path, { mode: "bypassPermissions" });
     expect(changed.status).toBe(200);
     expect(((await changed.json()) as ChatThread).config.permissionMode).toBe("bypassPermissions");
@@ -1516,6 +1517,11 @@ describe("native chat runtime", () => {
     expect(saved.config.permissionMode).toBe("bypassPermissions");
     expect((await request(path, { mode: "default" })).status).toBe(409);
     waitPermission = false;
+  });
+
+  test("a mode the agent does not offer starts as ask in chat", async () => {
+    await turn({ permissionMode: "plan", messages: [{ role: "user", content: "plan it" }] });
+    expect(calls.at(-1)?.opts.permissionMode).toBe("default");
   });
 
   test("a settings save failure does not loosen a pending permission", async () => {
