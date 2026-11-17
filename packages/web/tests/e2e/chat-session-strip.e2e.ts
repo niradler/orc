@@ -64,6 +64,7 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-message-duration")).toContainText("1m 58s");
     await expect(page.getByTestId("chat-turn-divider-model")).toHaveCount(0);
     await expect(page.getByTestId("chat-turn-divider-compaction")).toHaveCount(0);
+    await expect(page.getByTestId("chat-context-meter")).toHaveCount(0);
 
     await page.screenshot({
       path: testInfo.outputPath(
@@ -140,3 +141,91 @@ test("chat header state stays inside a 320px phone", async ({ page }, testInfo) 
     animations: "disabled",
   });
 });
+
+for (const width of [1440, 390]) {
+  test(`chat composer shows the context meter at ${width}px`, async ({ page }, testInfo) => {
+    const now = Date.now();
+    const at = (minutes: number) => now - minutes * 60_000;
+    const suffix = width === 1440 ? "desktop" : "phone";
+    const thread: ChatThread = {
+      id: HOME.chatA,
+      title: "Round cart totals to cents",
+      config: ChatSettingsSchema.parse({ agent: "claude", model: "claude-opus-4-1" }),
+      cwd: "/home/demo/acme-shop",
+      host: null,
+      runtimeId: null,
+      sourceId: "live-demo-claude",
+      backend: "claude-code",
+      updatedAt: at(1),
+      messages: [
+        { id: "q1", role: "user", content: "Round cart totals to cents.", timestamp: at(30) },
+        {
+          id: "a1",
+          role: "assistant",
+          content: "Rounding now happens once at the money boundary.",
+          timestamp: at(25),
+          turn: { startedAt: at(29), finishedAt: at(25), outcome: "completed" },
+        },
+        { id: "q3", role: "user", content: "Add a test for refunds.", timestamp: at(10) },
+        {
+          id: "a3",
+          role: "assistant",
+          content: "Added `refund.test.ts` covering partial refunds.",
+          timestamp: at(5),
+          turn: { startedAt: at(9), finishedAt: at(5), outcome: "completed" },
+        },
+      ],
+    };
+    await page.setViewportSize({ width, height: 844 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.addInitScript(() => localStorage.setItem("orc_theme", "dark"));
+    await mockSessionHome(page, now);
+    await page.route(`**/api/chat/threads/${HOME.chatA}`, (route) =>
+      route.fulfill({ json: thread }),
+    );
+    await page.route("**/api/sessions/live/live-demo-claude/cache", (route) =>
+      route.fulfill({
+        json: {
+          latest: {
+            input_tokens: 48_210,
+            cached_input_tokens: 41_120,
+            cache_write_tokens: null,
+            recorded_at: new Date(at(5)).toISOString(),
+            may_be_cold_after: null,
+          },
+          totals: null,
+          output_tokens: null,
+          requests: 12,
+          compactions: [
+            {
+              recorded_at: new Date(at(12)).toISOString(),
+              pre_tokens: 182_000,
+              post_tokens: 24_000,
+              trigger: "auto",
+            },
+          ],
+          timeline: null,
+        },
+      }),
+    );
+
+    await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+    await expect(page.getByTestId("chat-message-content").last()).toContainText("refund.test.ts");
+
+    const meter = page.getByTestId("chat-context-meter");
+    await expect(meter).toHaveText("48k");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0);
+    await page.screenshot({
+      path: testInfo.outputPath(`chat-context-meter-${suffix}.png`),
+      animations: "disabled",
+    });
+    await meter.click();
+    const popover = page.getByTestId("chat-context-meter-popover");
+    await expect(popover).toContainText("48,210 context tokens · 85% cached");
+    await expect(popover).toContainText("1 compaction has summarized");
+    await page.screenshot({
+      path: testInfo.outputPath(`chat-context-meter-open-${suffix}.png`),
+      animations: "disabled",
+    });
+  });
+}

@@ -52,7 +52,7 @@ import {
 import { ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatSelectionToolbar } from "@/components/ChatSelectionToolbar";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
-import { useChatContextUsage } from "@/components/ChatSessionStrip";
+import { ChatContextMeter, useChatContextUsage } from "@/components/ChatSessionStrip";
 import { ChatTurnDivider } from "@/components/ChatTurnMeta";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
@@ -1660,6 +1660,10 @@ export function ChatPanel({
                     <ChatPermissionChip />
                   </div>
                   <div className="flex items-center gap-1">
+                    <ChatContextMeter
+                      usage={latestUsage ?? frozenUsage}
+                      compactions={contextUsage.data?.compactions?.length ?? 0}
+                    />
                     {streaming && canSteerLive && (
                       <ActionHelp
                         label="Queue message"
