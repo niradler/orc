@@ -818,6 +818,20 @@ export const api = {
         cwd,
         providerId,
       }),
+    commands: (agent: string, threadId?: string, host?: string | null, providerId?: string) =>
+      req<import("@orc/core/chat").ChatAgentCommands>("GET", "/chat/commands", undefined, {
+        agent,
+        threadId,
+        host: host === null ? "__local__" : host,
+        providerId,
+      }),
+    files: (path: string, threadId?: string, host?: string | null, cwd?: string) =>
+      req<import("@orc/core/chat").ChatFiles>("GET", "/chat/files", undefined, {
+        path,
+        threadId,
+        host: host === null ? "__local__" : host,
+        cwd,
+      }),
     list: (includeHidden = false) =>
       req<{
         threads: {

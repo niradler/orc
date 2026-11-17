@@ -674,7 +674,7 @@ export function ChatPanel({
   const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
   const promptMenuOpen = useRef(false);
-  promptMenuOpen.current = promptMenu.matches.length > 0;
+  promptMenuOpen.current = promptMenu.open;
   // Escape leaves focus chat, except while an overlay or an IME composition owns
   // the key: a dialog, a menu, the prompt list, the selection toolbar or IME.
   useEffect(() => {
@@ -1574,7 +1574,7 @@ export function ChatPanel({
                     ref={input}
                     data-testid="chat-input"
                     aria-label="Message your agent"
-                    aria-controls={promptMenu.matches.length ? "chat-prompt-menu" : undefined}
+                    aria-controls={promptMenu.open ? "chat-prompt-menu" : undefined}
                     aria-activedescendant={
                       activeCommandOption ? chatCommandOptionId(activeCommandOption) : undefined
                     }
@@ -1583,7 +1583,7 @@ export function ChatPanel({
                         ? "Running in its own agent. Messages queue for its next safe point."
                         : agentBlocked
                           ? "Running in its own agent. Sending unlocks when it finishes."
-                          : "Ask anything. / for prompts and skills"
+                          : "Ask anything. / for commands, @ for files"
                     }
                     disabled={!ready}
                     value={draft}

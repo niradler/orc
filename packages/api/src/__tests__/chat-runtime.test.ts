@@ -689,6 +689,13 @@ describe("native chat runtime", () => {
       planUpdate = [];
     }
   });
+  test("an agent's own slash command reaches it first so the agent runs it natively", async () => {
+    await turn({
+      messages: [{ role: "user", content: "/code-review high" }],
+      context: { source: "webchat", route: "/tasks" },
+    });
+    expect(calls.at(-1)?.prompt).toBe("/code-review high");
+  });
   test("web chat context reaches the agent but is not stored in the conversation", async () => {
     const result = await turn({
       messages: [{ role: "user", content: "what am I looking at?" }],

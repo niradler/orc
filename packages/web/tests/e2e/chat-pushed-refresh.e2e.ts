@@ -204,7 +204,7 @@ for (const width of [1440, 390]) {
     state.live = { id: "live-1", agent: "claude", status: "idle" };
     await chat.pushSessions();
     await expect(page.getByTestId("chat-agent-running")).toHaveCount(0);
-    await expect(input).toHaveAttribute("placeholder", "Ask anything. / for prompts and skills");
+    await expect(input).toHaveAttribute("placeholder", "Ask anything. / for commands, @ for files");
     await expect(send).toHaveAccessibleName("Send message");
   });
 }

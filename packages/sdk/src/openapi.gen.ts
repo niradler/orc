@@ -333,6 +333,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/chat/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the agent's own slash commands and skills */
+        get: {
+            parameters: {
+                query: {
+                    agent: string;
+                    providerId?: string;
+                    threadId?: string;
+                    host?: string;
+                    cwd?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Commands and skills reported by the selected coding agent */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            commands: {
+                                name: string;
+                                token: string;
+                                description: string;
+                                argumentHint: string;
+                                aliases: string[];
+                                source: string;
+                            }[];
+                            warning: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chat/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a folder under the conversation's working directory on its execution host */
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                    threadId?: string;
+                    host?: string;
+                    cwd?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Files and folders in that folder */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            entries: {
+                                name: string;
+                                directory: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/models": {
         parameters: {
             query?: never;
@@ -344,8 +442,8 @@ export interface paths {
             parameters: {
                 query: {
                     agent: string;
-                    threadId?: string;
                     providerId?: string;
+                    threadId?: string;
                     host?: string;
                     cwd?: string;
                 };
@@ -367,6 +465,10 @@ export interface paths {
                                 label: string;
                             }[];
                             warning: string | null;
+                            effortChoices?: {
+                                value: string;
+                                label: string;
+                            }[];
                         };
                     };
                 };
@@ -425,6 +527,10 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                effortChoices?: {
+                                    value: string;
+                                    label: string;
+                                }[];
                             };
                         };
                     };
@@ -511,6 +617,12 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "pi";
                                         options: {
                                             /** @enum {string} */
@@ -585,6 +697,10 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                effortChoices?: {
+                                    value: string;
+                                    label: string;
+                                }[];
                             };
                             sourceId: string | null;
                             toolAllowlist?: string[];
@@ -600,6 +716,10 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                    };
                                 };
                                 agent?: string;
                                 model?: string;
@@ -635,6 +755,36 @@ export interface paths {
                                     }[];
                                     /** @enum {string} */
                                     type: "plan";
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed";
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
                                 })[];
                                 providerActivity?: {
                                     id: string;
@@ -714,7 +864,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Include chats whose session a human hid from the list */
+                    include_hidden?: "true" | "false";
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -825,6 +978,12 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "pi";
                                         options: {
                                             /** @enum {string} */
@@ -899,6 +1058,10 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                effortChoices?: {
+                                    value: string;
+                                    label: string;
+                                }[];
                             };
                             sourceId: string | null;
                             toolAllowlist?: string[];
@@ -914,6 +1077,10 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                    };
                                 };
                                 agent?: string;
                                 model?: string;
@@ -949,6 +1116,36 @@ export interface paths {
                                     }[];
                                     /** @enum {string} */
                                     type: "plan";
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed";
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
                                 })[];
                                 providerActivity?: {
                                     id: string;
@@ -1080,6 +1277,12 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "pi";
                                         options: {
                                             /** @enum {string} */
@@ -1154,6 +1357,10 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                effortChoices?: {
+                                    value: string;
+                                    label: string;
+                                }[];
                             };
                             sourceId: string | null;
                             toolAllowlist?: string[];
@@ -1169,6 +1376,10 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                    };
                                 };
                                 agent?: string;
                                 model?: string;
@@ -1204,6 +1415,36 @@ export interface paths {
                                     }[];
                                     /** @enum {string} */
                                     type: "plan";
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed";
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
                                 })[];
                                 providerActivity?: {
                                     id: string;
@@ -1338,6 +1579,12 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "pi";
                                         options: {
                                             /** @enum {string} */
@@ -1412,6 +1659,10 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                effortChoices?: {
+                                    value: string;
+                                    label: string;
+                                }[];
                             };
                             sourceId: string | null;
                             toolAllowlist?: string[];
@@ -1427,6 +1678,10 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                    };
                                 };
                                 agent?: string;
                                 model?: string;
@@ -1462,6 +1717,36 @@ export interface paths {
                                     }[];
                                     /** @enum {string} */
                                     type: "plan";
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed";
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
                                 })[];
                                 providerActivity?: {
                                     id: string;
@@ -1786,6 +2071,12 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "pi";
                                         options: {
                                             /** @enum {string} */
@@ -1860,6 +2151,10 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                effortChoices?: {
+                                    value: string;
+                                    label: string;
+                                }[];
                             };
                             sourceId: string | null;
                             toolAllowlist?: string[];
@@ -1875,6 +2170,10 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                    };
                                 };
                                 agent?: string;
                                 model?: string;
@@ -1910,6 +2209,36 @@ export interface paths {
                                     }[];
                                     /** @enum {string} */
                                     type: "plan";
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed";
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
                                 })[];
                                 providerActivity?: {
                                     id: string;
@@ -2008,6 +2337,12 @@ export interface paths {
                         agentOptions?: {
                             [key: string]: {
                                 /** @enum {string} */
+                                runtime: "opencode";
+                                options: {
+                                    effort?: string;
+                                };
+                            } | {
+                                /** @enum {string} */
                                 runtime: "pi";
                                 options: {
                                     /** @enum {string} */
@@ -2104,6 +2439,12 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "pi";
                                         options: {
                                             /** @enum {string} */
@@ -2178,6 +2519,10 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                effortChoices?: {
+                                    value: string;
+                                    label: string;
+                                }[];
                             };
                             sourceId: string | null;
                             toolAllowlist?: string[];
@@ -2193,6 +2538,10 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                    };
                                 };
                                 agent?: string;
                                 model?: string;
@@ -2228,6 +2577,36 @@ export interface paths {
                                     }[];
                                     /** @enum {string} */
                                     type: "plan";
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed";
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
                                 })[];
                                 providerActivity?: {
                                     id: string;
@@ -2333,6 +2712,10 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                    };
                                 };
                                 agent?: string;
                                 model?: string;
@@ -2368,6 +2751,36 @@ export interface paths {
                                     }[];
                                     /** @enum {string} */
                                     type: "plan";
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed";
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
                                 })[];
                                 providerActivity?: {
                                     id: string;
@@ -2469,6 +2882,12 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "pi";
                                         options: {
                                             /** @enum {string} */
@@ -2543,6 +2962,10 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                effortChoices?: {
+                                    value: string;
+                                    label: string;
+                                }[];
                             };
                             sourceId: string | null;
                             toolAllowlist?: string[];
@@ -2558,6 +2981,10 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                    };
                                 };
                                 agent?: string;
                                 model?: string;
@@ -2593,6 +3020,36 @@ export interface paths {
                                     }[];
                                     /** @enum {string} */
                                     type: "plan";
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed";
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
                                 })[];
                                 providerActivity?: {
                                     id: string;
@@ -2781,6 +3238,12 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "pi";
                                         options: {
                                             /** @enum {string} */
@@ -2855,6 +3318,10 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                effortChoices?: {
+                                    value: string;
+                                    label: string;
+                                }[];
                             };
                             sourceId: string | null;
                             toolAllowlist?: string[];
@@ -2870,6 +3337,10 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                    };
                                 };
                                 agent?: string;
                                 model?: string;
@@ -2905,6 +3376,36 @@ export interface paths {
                                     }[];
                                     /** @enum {string} */
                                     type: "plan";
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed";
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
                                 })[];
                                 providerActivity?: {
                                     id: string;
@@ -3070,6 +3571,12 @@ export interface paths {
                         sendWhileRunning?: "steer" | "queue";
                         agentOptions?: {
                             [key: string]: {
+                                /** @enum {string} */
+                                runtime: "opencode";
+                                options: {
+                                    effort?: string;
+                                };
+                            } | {
                                 /** @enum {string} */
                                 runtime: "pi";
                                 options: {
@@ -7294,6 +7801,12 @@ export interface paths {
                                 model: string;
                                 options?: {
                                     /** @enum {string} */
+                                    runtime: "opencode";
+                                    options: {
+                                        effort?: string;
+                                    };
+                                } | {
+                                    /** @enum {string} */
                                     runtime: "pi";
                                     options: {
                                         /** @enum {string} */
@@ -7378,6 +7891,12 @@ export interface paths {
                             model?: string;
                             options?: {
                                 /** @enum {string} */
+                                runtime: "opencode";
+                                options: {
+                                    effort?: string;
+                                };
+                            } | {
+                                /** @enum {string} */
                                 runtime: "pi";
                                 options: {
                                     /** @enum {string} */
@@ -7456,6 +7975,12 @@ export interface paths {
                                 /** @default  */
                                 model: string;
                                 options?: {
+                                    /** @enum {string} */
+                                    runtime: "opencode";
+                                    options: {
+                                        effort?: string;
+                                    };
+                                } | {
                                     /** @enum {string} */
                                     runtime: "pi";
                                     options: {
@@ -7816,6 +8341,12 @@ export interface paths {
                                 agentOptions: {
                                     [key: string]: {
                                         /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
                                         runtime: "pi";
                                         options: {
                                             /** @enum {string} */
@@ -7934,6 +8465,12 @@ export interface paths {
                             agentOptions?: {
                                 [key: string]: {
                                     /** @enum {string} */
+                                    runtime: "opencode";
+                                    options: {
+                                        effort?: string;
+                                    };
+                                } | {
+                                    /** @enum {string} */
                                     runtime: "pi";
                                     options: {
                                         /** @enum {string} */
@@ -8041,6 +8578,12 @@ export interface paths {
                                 /** @default {} */
                                 agentOptions: {
                                     [key: string]: {
+                                        /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
                                         /** @enum {string} */
                                         runtime: "pi";
                                         options: {
@@ -22084,6 +22627,10 @@ export interface components {
                 mcp: boolean;
                 fork: boolean;
                 rollback: boolean;
+                effortChoices?: {
+                    value: string;
+                    label: string;
+                }[];
             };
             /**
              * @description How the backend reaches its agent: in-process needs no external tool, cli spawns a binary, http calls a service.
@@ -23268,6 +23815,12 @@ export interface components {
                 backend: string;
                 options?: {
                     /** @enum {string} */
+                    runtime: "opencode";
+                    options: {
+                        effort?: string;
+                    };
+                } | {
+                    /** @enum {string} */
                     runtime: "pi";
                     options: {
                         /** @enum {string} */
@@ -23390,6 +23943,12 @@ export interface components {
                 prompt: string;
                 backend: string;
                 options?: {
+                    /** @enum {string} */
+                    runtime: "opencode";
+                    options: {
+                        effort?: string;
+                    };
+                } | {
                     /** @enum {string} */
                     runtime: "pi";
                     options: {
@@ -23517,6 +24076,12 @@ export interface components {
                 prompt: string;
                 backend: string;
                 options?: {
+                    /** @enum {string} */
+                    runtime: "opencode";
+                    options: {
+                        effort?: string;
+                    };
+                } | {
                     /** @enum {string} */
                     runtime: "pi";
                     options: {

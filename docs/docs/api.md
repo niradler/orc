@@ -297,6 +297,9 @@ global execution host. Existing authentication protects both endpoints.
 `GET /chat/models` also accepts optional `host` and `cwd` for a job destination.
 Omit `host` to follow the selected host, use `__local__` to pin local, or supply an
 SSH alias. An existing `threadId` owns its host/directory and rejects these overrides.
+`GET /chat/commands?agent=` returns the agent's own slash commands and skills
+(Claude and Codex; other agents return none) and `GET /chat/files?path=` lists one
+folder under the working directory; both take the same `threadId`, `host` and `cwd`.
 
 ### Sessions, chat and terminals
 

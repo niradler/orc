@@ -93,7 +93,7 @@ for (const width of [1440, 390]) {
     );
     await expect(page.getByTestId("chat-input")).toHaveAttribute(
       "placeholder",
-      "Ask anything. / for prompts and skills",
+      "Ask anything. / for commands, @ for files",
     );
     await expect(tools.getByTestId("chat-permission-chip")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

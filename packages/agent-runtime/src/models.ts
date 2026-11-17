@@ -1,4 +1,4 @@
-import { ChatModelSchema } from "@orc/core/chat";
+import { type ChatAgentCommand, ChatModelSchema } from "@orc/core/chat";
 import { supportsModelDiscovery } from "@orc/core/coding-agents";
 import { type ExecHost, hostBinary, hostSpawn } from "@orc/core/exec-host";
 import {
@@ -116,22 +116,7 @@ export async function discoverAgentModels(
       await rpc.close();
     }
   }
-  const custom = host.kind === "local" ? providerExecutable(profile) : undefined;
-  const binary = custom ? Bun.which(custom) : await hostBinary(host, agent);
-  if (!binary) throw new Error("The selected agent is not installed on its execution host.");
-  let command = [binary];
-  if (host.kind === "local" && agent !== "opencode") {
-    if (agent === "codex") command = resolveCodexLaunch(binary);
-    else {
-      const launch = resolveClaudeSdkLaunch(true, (name) =>
-        name === "claude" ? binary : Bun.which(name),
-      );
-      command = [
-        ...(launch.executable ? [launch.executable] : []),
-        launch.pathToClaudeCodeExecutable ?? binary,
-      ];
-    }
-  }
+  const command = await agentCommand(agent, host, profile);
   const environment = resolveProviderEnvironment(profile).env;
   // `opencode models` prints a plain `provider/model` list; no protocol handshake exists.
   if (agent === "opencode")
@@ -139,28 +124,111 @@ export async function discoverAgentModels(
   return readAgentModelCatalog(
     agent,
     host,
-    [
-      ...command,
-      ...(agent === "codex"
-        ? ["app-server", "--listen", "stdio://"]
-        : [
-            "--print",
-            "--input-format",
-            "stream-json",
-            "--output-format",
-            "stream-json",
-            "--verbose",
-            "--no-session-persistence",
-            "--strict-mcp-config",
-            "--mcp-config",
-            '{"mcpServers":{}}',
-            "--settings",
-            '{"disableAllHooks":true}',
-          ]),
-    ],
+    [...command, ...agentProtocolArgs(agent)],
     cwd,
     environment,
   );
+}
+
+async function agentCommand(
+  agent: string,
+  host: ExecHost,
+  profile: ReturnType<typeof providerForAgent>,
+): Promise<string[]> {
+  const custom = host.kind === "local" ? providerExecutable(profile) : undefined;
+  const binary = custom ? Bun.which(custom) : await hostBinary(host, agent);
+  if (!binary) throw new Error("The selected agent is not installed on its execution host.");
+  if (host.kind !== "local" || agent === "opencode") return [binary];
+  if (agent === "codex") return resolveCodexLaunch(binary);
+  const launch = resolveClaudeSdkLaunch(true, (name) =>
+    name === "claude" ? binary : Bun.which(name),
+  );
+  return [
+    ...(launch.executable ? [launch.executable] : []),
+    launch.pathToClaudeCodeExecutable ?? binary,
+  ];
+}
+
+function agentProtocolArgs(agent: string): string[] {
+  return agent === "codex"
+    ? ["app-server", "--listen", "stdio://"]
+    : [
+        "--print",
+        "--input-format",
+        "stream-json",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--no-session-persistence",
+        "--strict-mcp-config",
+        "--mcp-config",
+        '{"mcpServers":{}}',
+        "--settings",
+        '{"disableAllHooks":true}',
+      ];
+}
+
+export async function discoverAgentCommands(
+  agent: string,
+  host: ExecHost,
+  cwd: string,
+  providerId?: string,
+): Promise<ChatAgentCommand[]> {
+  if (agent !== "claude" && agent !== "codex") return [];
+  const profile = providerForAgent(agent, providerId, true);
+  return readAgentCatalog(
+    "commands",
+    agent,
+    host,
+    [...(await agentCommand(agent, host, profile)), ...agentProtocolArgs(agent)],
+    cwd,
+    resolveProviderEnvironment(profile).env,
+  );
+}
+
+function printable(value: unknown, max: number): string {
+  return typeof value === "string"
+    ? Array.from(value)
+        .filter((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127)
+        .join("")
+        .slice(0, max)
+    : "";
+}
+
+export function parseAgentCommands(value: unknown, agent: string): ChatAgentCommand[] {
+  if (!Array.isArray(value)) throw new Error("The agent returned no command catalog.");
+  const commands = new Map<string, ChatAgentCommand>();
+  for (const item of value.slice(0, 1000)) {
+    const row = object(item);
+    const name = printable(row?.name, 200);
+    if (!row || row.enabled === false || !/^[\p{L}\p{N}][\p{L}\p{N}_:.-]*$/u.test(name)) continue;
+    let description = printable(row.description, 1000);
+    let source: string;
+    if (agent === "codex") {
+      source = printable(row.pluginId, 120).split("@")[0] || printable(row.scope, 120) || agent;
+    } else {
+      const plugin = name.includes(":") ? (name.split(":")[0] ?? "") : "";
+      const lead = /^\(([^()]+)\) /.exec(description);
+      if (lead && lead[1] === plugin) description = description.slice(lead[0].length);
+      const tail = /\s*\((user|project|claude\.ai sync)\)$/.exec(description);
+      if (tail) description = description.slice(0, tail.index);
+      source = plugin || tail?.[1] || agent;
+    }
+    commands.set(name, {
+      name,
+      token: `${agent === "codex" ? "$" : "/"}${name}`,
+      description,
+      argumentHint: printable(row.argumentHint, 500),
+      aliases: Array.isArray(row.aliases)
+        ? row.aliases
+            .map((alias) => printable(alias, 200))
+            .filter(Boolean)
+            .slice(0, 20)
+        : [],
+      source,
+    });
+  }
+  return [...commands.values()];
 }
 
 /** Reads a model catalog printed as plain text, one model id per line. */
@@ -222,13 +290,32 @@ export async function readTextModelCatalog(
   }
 }
 
-export async function readAgentModelCatalog(
+export function readAgentModelCatalog(
   agent: string,
   host: ExecHost,
   command: string[],
   cwd: string,
   environment: Record<string, string> = {},
 ): Promise<AgentModel[]> {
+  return readAgentCatalog("models", agent, host, command, cwd, environment);
+}
+
+export function readAgentCatalog(
+  kind: "models",
+  ...args: Parameters<typeof readAgentModelCatalog>
+): Promise<AgentModel[]>;
+export function readAgentCatalog(
+  kind: "commands",
+  ...args: Parameters<typeof readAgentModelCatalog>
+): Promise<ChatAgentCommand[]>;
+export async function readAgentCatalog(
+  kind: "models" | "commands",
+  agent: string,
+  host: ExecHost,
+  command: string[],
+  cwd: string,
+  environment: Record<string, string> = {},
+): Promise<AgentModel[] | ChatAgentCommand[]> {
   const child = await hostSpawn(host, command, {
     cwd,
     stdin: "pipe",
@@ -285,17 +372,32 @@ export async function readAgentModelCatalog(
             if (message.type !== "control_response" || response?.request_id !== "models") continue;
             if (response.subtype !== "success")
               throw new Error("The agent could not list its models.");
-            return parseAgentModels(object(response.response)?.models, agent);
+            const catalog = object(response.response);
+            return kind === "models"
+              ? parseAgentModels(catalog?.models, agent)
+              : parseAgentCommands(catalog?.commands, agent);
           }
           if (message.id !== 1 && message.id !== requestId) continue;
           if (message.error) throw new Error("The agent could not list its models.");
           if (message.id === 1) {
             send({ method: "initialized", params: {} });
-            send({
-              id: requestId,
-              method: "model/list",
-              params: { limit: 100, includeHidden: false },
-            });
+            send(
+              kind === "models"
+                ? {
+                    id: requestId,
+                    method: "model/list",
+                    params: { limit: 100, includeHidden: false },
+                  }
+                : { id: requestId, method: "skills/list", params: { cwds: [cwd] } },
+            );
+          } else if (kind === "commands") {
+            const entries = object(message.result)?.data;
+            return parseAgentCommands(
+              Array.isArray(entries)
+                ? entries.flatMap((entry) => object(entry)?.skills ?? [])
+                : null,
+              agent,
+            );
           } else {
             const result = object(message.result);
             models.push(...parseAgentModels(result?.data, agent));
