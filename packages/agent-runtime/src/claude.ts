@@ -432,7 +432,7 @@ export class ClaudeSession implements AgentSession {
 function createClaudeBackend(): AgentBackend {
   return {
     name: "claude-cli",
-    capabilities: CLAUDE_CAPABILITIES,
+    capabilities: { ...CLAUDE_CAPABILITIES, subagents: false },
     profileCapabilities: { model: true, toolAllowlist: true },
 
     async describe(): Promise<BackendDescription> {

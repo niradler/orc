@@ -1,6 +1,7 @@
 import type { ChatActivity, ChatBackgroundKind } from "@orc/core/chat";
 import type { SessionStatus } from "@orc/core/session-messages";
 import { toolView } from "./chat-tools";
+import { liveSubagentTree, subagentState } from "./subagent-links";
 
 /** One row of work that continues while the agent is not writing anything. */
 export type ChatBackgroundItem = {
@@ -45,10 +46,28 @@ function toolLabel(tool: Extract<ChatActivity, { type: "tool" }>): string {
   return firstText(input, SUBAGENT_LABEL_KEYS) ?? tool.name;
 }
 
-/** Detached calls from one turn, in the order the agent started them. */
+/**
+ * Detached calls from one turn, in the order the agent started them. When the agent reports
+ * its subagents itself, their live tree replaces the detached subagent calls.
+ */
 export function backgroundActivity(activity: ChatActivity[]): ChatBackgroundItem[] {
-  return activity.flatMap((item): ChatBackgroundItem[] => {
+  const reported = activity.some((item) => item.type === "subagent");
+  const subagents = liveSubagentTree(activity).flatMap((node): ChatBackgroundItem[] => {
+    const state = subagentState(node);
+    if (state !== "working" && state !== "needs-you") return [];
+    return [
+      {
+        id: node.id,
+        kind: "subagent",
+        label: node.title,
+        startedAt: node.startedAt ?? null,
+        status: state === "needs-you" ? "waiting" : "running",
+      },
+    ];
+  });
+  const calls = activity.flatMap((item): ChatBackgroundItem[] => {
     if (item.type !== "tool" || !item.background) return [];
+    if (reported && item.background === "subagent") return [];
     return [
       {
         id: item.id,
@@ -59,6 +78,7 @@ export function backgroundActivity(activity: ChatActivity[]): ChatBackgroundItem
       },
     ];
   });
+  return [...calls, ...subagents];
 }
 
 /** Sessions this chat started that still hold work, as background rows. */

@@ -4,11 +4,14 @@ import {
   ChatTurnSchema,
   readChatActivity,
 } from "@orc/core/chat";
-import { Bot, ChevronRight, CircleAlert, EyeOff } from "lucide-react";
+import { ChevronRight, CircleAlert, EyeOff } from "lucide-react";
 import { useMemo, useState } from "react";
+import { SubagentList } from "@/components/ChatControls";
 import { ActivityRow } from "@/components/chat-ui/tool-renderers";
 import { HelpPopover } from "@/components/HelpPopover";
+import { useNow } from "@/hooks/useNow";
 import { useOpenLiveSession } from "@/hooks/useOpenLiveSession";
+import { AGENT_STATES } from "@/lib/agent-state";
 import {
   ACTIVITY_FILTER_LABELS,
   ACTIVITY_FILTERS,
@@ -20,10 +23,12 @@ import {
   filterActivity,
   foldSummary,
   foldTurn,
+  formatDuration,
   parseActivityPrefs,
   windowChatItems,
 } from "@/lib/chat-activity";
-import type { SessionSubagent } from "@/lib/subagent-links";
+import { liveSubagentTree, type SubagentNode, subagentState } from "@/lib/subagent-links";
+import { formatTokenCount } from "@/lib/token-count";
 import { cn } from "@/lib/utils";
 
 function readPrefs(): ActivityPrefs {
@@ -94,17 +99,100 @@ function ActivityFilters({
   );
 }
 
-const SUBAGENT_STATUS: Record<string, string> = {
-  running: "Working",
-  idle: "Idle",
-  stopped: "Done",
-  error: "Failed",
-};
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
 
-function SubagentRows({ items }: { items: SessionSubagent[] }) {
+function treeLabel(roots: readonly SubagentNode[]): string {
+  const all = roots.flatMap(function walk(node): SubagentNode[] {
+    return [node, ...node.children.flatMap(walk)];
+  });
+  const count = (status: SubagentNode["status"]) =>
+    all.filter((node) => node.status === status).length;
+  return [
+    plural(all.length, "subagent"),
+    count("waiting") ? `${count("waiting")} waiting` : "",
+    count("failed") ? `${count("failed")} failed` : "",
+    count("running") ? `${count("running")} running` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function NodeTime({ node }: { node: SubagentNode }) {
+  const now = useNow();
+  const ms =
+    node.status === "running" && node.startedAt !== undefined
+      ? now - node.startedAt
+      : (node.durationMs ?? 0);
+  return ms >= 1000 ? <span className="tabular-nums">{formatDuration(ms)}</span> : null;
+}
+
+function SubagentNodeRow({
+  node,
+  onOpen,
+}: {
+  node: SubagentNode;
+  onOpen: (sessionId: string) => void;
+}) {
+  const state = subagentState(node);
+  const { Icon, tone, spin, label } = AGENT_STATES[state];
+  const content = (
+    <>
+      <Icon
+        aria-hidden="true"
+        size={13}
+        className={cn("shrink-0", tone, spin && "motion-safe:animate-spin")}
+      />
+      <span className="min-w-0 truncate text-on-surface">{node.title}</span>
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-outline">
+        {node.tokens ? (
+          <span className="tabular-nums">{formatTokenCount(node.tokens, false)} tokens</span>
+        ) : null}
+        {node.status === "running" || node.durationMs !== undefined ? (
+          <NodeTime node={node} />
+        ) : null}
+        <span className={cn(state !== "done" && state !== "ended" && tone)}>{label}</span>
+      </span>
+    </>
+  );
+  const row =
+    "flex min-h-7 w-fit max-w-full min-w-0 items-center gap-2 rounded-md px-1.5 text-xs text-on-surface-variant max-sm:min-h-11";
+  return (
+    <div data-testid="chat-subagent" data-status={node.status} data-state={state}>
+      {node.sessionId ? (
+        <button
+          type="button"
+          onClick={() => onOpen(node.sessionId as string)}
+          className={cn(
+            row,
+            "text-left hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus",
+          )}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className={row}>{content}</div>
+      )}
+      {node.children.length > 0 && (
+        <SubagentList
+          label={plural(node.children.length, "subagent")}
+          testId="chat-subagent-children"
+          className="pl-4"
+        >
+          {node.children.map((child) => (
+            <SubagentNodeRow key={child.id} node={child} onOpen={onOpen} />
+          ))}
+        </SubagentList>
+      )}
+    </div>
+  );
+}
+
+function SubagentTree({ roots }: { roots: SubagentNode[] }) {
   const openSession = useOpenLiveSession();
   const [error, setError] = useState<string | null>(null);
-  if (!items.length) return null;
+  if (!roots.length) return null;
   async function open(id: string): Promise<void> {
     setError(null);
     try {
@@ -114,37 +202,18 @@ function SubagentRows({ items }: { items: SessionSubagent[] }) {
     }
   }
   return (
-    <ul data-testid="chat-subagents" className="mb-1 space-y-0.5">
-      {items.map((subagent) => (
-        <li key={subagent.id}>
-          <button
-            type="button"
-            data-testid="chat-subagent"
-            data-status={subagent.status}
-            onClick={() => void open(subagent.id)}
-            className="flex min-h-7 w-fit max-w-full items-center gap-2 rounded-md px-1.5 text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11"
-          >
-            <Bot aria-hidden="true" size={13} className="shrink-0" />
-            <span className="min-w-0 truncate">{subagent.title}</span>
-            <span
-              className={cn(
-                "shrink-0 text-[11px]",
-                subagent.status === "running" ? "text-primary" : "text-outline",
-                subagent.status === "error" && "text-error",
-              )}
-            >
-              {SUBAGENT_STATUS[subagent.status] ?? subagent.status}
-            </span>
-            <ChevronRight aria-hidden="true" size={13} className="shrink-0" />
-          </button>
-        </li>
-      ))}
+    <div className="mb-1 min-w-0">
+      <SubagentList label={treeLabel(roots)} testId="chat-subagents" className="pl-0">
+        {roots.map((node) => (
+          <SubagentNodeRow key={node.id} node={node} onOpen={(id) => void open(id)} />
+        ))}
+      </SubagentList>
       {error && (
-        <li role="alert" className="px-1.5 text-xs text-error">
+        <p role="alert" className="px-1.5 text-xs text-error">
           {error}
-        </li>
+        </p>
       )}
-    </ul>
+    </div>
   );
 }
 
@@ -159,12 +228,12 @@ export function ChatActivityList({
   providerActivity?: unknown;
   turn?: unknown;
   live?: boolean;
-  subagents?: ReadonlyMap<string, SessionSubagent>;
+  subagents?: ReadonlyMap<string, SubagentNode>;
 }) {
+  const stored = useMemo(() => readChatActivity(value), [value]);
   const items = useMemo(() => {
     // The tolerant reader splits kinds this build knows from the ones it keeps
     // verbatim, so raw stored activity and already-split activity both work.
-    const stored = readChatActivity(value);
     const provider = Array.isArray(providerActivity)
       ? providerActivity.flatMap((item) => {
           const parsed = ChatProviderActivitySchema.safeParse(item);
@@ -175,7 +244,7 @@ export function ChatActivityList({
       activity: stored.activity,
       providerActivity: [...stored.provider, ...provider],
     });
-  }, [value, providerActivity]);
+  }, [stored, providerActivity]);
   const [prefs, setPrefs] = useState<ActivityPrefs>(readPrefs);
   const timing = ChatTurnSchema.safeParse(turn);
   const start = timing.success ? timing.data.startedAt : undefined;
@@ -192,14 +261,14 @@ export function ChatActivityList({
     [items, start, end, durationMs],
   );
   const counts = useMemo(() => activityCounts(items), [items]);
-  const started = useMemo(
-    () =>
-      items.flatMap((item) => {
-        const subagent = item.kind === "tool" ? subagents?.get(item.id) : undefined;
-        return subagent ? [subagent] : [];
-      }),
-    [items, subagents],
-  );
+  const tree = useMemo(() => {
+    const live = liveSubagentTree(stored.activity);
+    if (live.length) return live;
+    return items.flatMap((item) => {
+      const subagent = item.kind === "tool" ? subagents?.get(item.id) : undefined;
+      return subagent ? [subagent] : [];
+    });
+  }, [stored, items, subagents]);
   const visible = useMemo(() => filterActivity(items, prefs), [items, prefs]);
   // The window belongs to this turn only: the fold instance is the message's.
   const [showAll, setShowAll] = useState(false);
@@ -273,7 +342,7 @@ export function ChatActivityList({
           )}
         </section>
       </details>
-      <SubagentRows items={started} />
+      <SubagentTree roots={tree} />
     </>
   );
 }

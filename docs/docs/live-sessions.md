@@ -15,15 +15,19 @@ never used, so each `/clear` in one terminal is its own row with its own title, 
 a conversation with no prompt yet reads **New session**. Recency comes from the last
 message, not from the transcript file's modification time.
 
-Subagents show inside the parent's chat, under the turn that started them: Claude
-Code subagents (their `.meta.json` description is the title), Codex spawned threads,
-Cursor subagent composers and OpenCode child sessions. Each row shows the subagent's
-title and live state; pressing it opens the subagent's own session, whose
-**Started by** link leads back to the parent. A call is matched to its subagent by
+Subagents show inside the parent's chat, under the turn that started them, as a
+tree collapsed to one summary line (`3 subagents · 1 failed`): Claude Code
+subagents (their `.meta.json` description is the title, `parentAgentId` nests a
+subagent under the one that spawned it), Codex spawned threads, Cursor subagent
+composers and OpenCode child sessions, at any depth. Each row shows the subagent's
+title and state, and a branch with a failed or waiting subagent reads **Needs you**;
+pressing a row opens the subagent's own session, whose **Started by** link leads
+back to the parent. A call is matched to its subagent by
 the id each agent records (Claude `toolUseId`, Codex `SubAgentActivity`, OpenCode
 `task` metadata); Cursor records none, so its subagents match calls in start order.
 Subagents are not listed in the session list, but a parent row still takes the most
-urgent subagent state and matches a search for a subagent's title. Subagents do not
+urgent subagent state (a failed subagent at any depth marks it **Needs you**) and
+matches a search for a subagent's title. Subagents do not
 raise notifications of their own. Cursor IDE chats take their folder from the
 workspace that holds them, and a transcript whose worktree was deleted falls back to
 the deepest folder that still exists.
@@ -236,6 +240,16 @@ a stuck one:
 - Detached tool rows come from the agent's latest turn and clear when the agent
   replies again: a backend that never reports a background command's exit
   cannot be checked, so ORC does not keep claiming it is running.
-- A subagent an agent runs inside its own backend (Claude `Task`, OpenCode
-  subagents) stays ordinary tool activity in that turn; it is not a session ORC
-  can open or stop.
+- In a chat ORC runs, the agent reports its subagents live and the turn's tree
+  shows each one's status, tokens and duration as it works: Claude from its
+  `task_started` / `task_progress` / `task_notification` events (nested by
+  `parent_task_id`), Codex from `subAgentActivity` items and each child thread's
+  token usage, OpenCode from its `task` tool calls (and from child-session updates
+  when the agent streams them, nested by `parentID`). A subagent waiting on a
+  permission prompt reads **Needs you**, and so does the chat while a subagent in
+  its latest turn failed or waits. Running subagents also show over the composer.
+- A Claude turn stays open while a subagent it started in the background still
+  runs, because ending the turn would stop it; the agent's follow-up reply lands
+  in the same turn. Pi and the ACPX agents report no subagents, so nothing is
+  shown, and **Capabilities** in the conversation details lists **Subagents** only
+  for agents that report them.

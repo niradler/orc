@@ -529,6 +529,7 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                subagents?: boolean;
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -699,6 +700,7 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                subagents?: boolean;
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -761,9 +763,13 @@ export interface paths {
                                     type: "plan";
                                 } | {
                                     id: string;
+                                    parentId?: string;
                                     title?: string;
                                     /** @enum {string} */
-                                    status: "running" | "completed" | "failed";
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
                                     activity: ({
                                         /** @enum {string} */
                                         type: "thinking";
@@ -1062,6 +1068,7 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                subagents?: boolean;
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -1124,9 +1131,13 @@ export interface paths {
                                     type: "plan";
                                 } | {
                                     id: string;
+                                    parentId?: string;
                                     title?: string;
                                     /** @enum {string} */
-                                    status: "running" | "completed" | "failed";
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
                                     activity: ({
                                         /** @enum {string} */
                                         type: "thinking";
@@ -1363,6 +1374,7 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                subagents?: boolean;
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -1425,9 +1437,13 @@ export interface paths {
                                     type: "plan";
                                 } | {
                                     id: string;
+                                    parentId?: string;
                                     title?: string;
                                     /** @enum {string} */
-                                    status: "running" | "completed" | "failed";
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
                                     activity: ({
                                         /** @enum {string} */
                                         type: "thinking";
@@ -1667,6 +1683,7 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                subagents?: boolean;
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -1729,9 +1746,13 @@ export interface paths {
                                     type: "plan";
                                 } | {
                                     id: string;
+                                    parentId?: string;
                                     title?: string;
                                     /** @enum {string} */
-                                    status: "running" | "completed" | "failed";
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
                                     activity: ({
                                         /** @enum {string} */
                                         type: "thinking";
@@ -2172,6 +2193,7 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                subagents?: boolean;
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -2234,9 +2256,13 @@ export interface paths {
                                     type: "plan";
                                 } | {
                                     id: string;
+                                    parentId?: string;
                                     title?: string;
                                     /** @enum {string} */
-                                    status: "running" | "completed" | "failed";
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
                                     activity: ({
                                         /** @enum {string} */
                                         type: "thinking";
@@ -2542,6 +2568,7 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                subagents?: boolean;
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -2604,9 +2631,13 @@ export interface paths {
                                     type: "plan";
                                 } | {
                                     id: string;
+                                    parentId?: string;
                                     title?: string;
                                     /** @enum {string} */
-                                    status: "running" | "completed" | "failed";
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
                                     activity: ({
                                         /** @enum {string} */
                                         type: "thinking";
@@ -2780,9 +2811,13 @@ export interface paths {
                                     type: "plan";
                                 } | {
                                     id: string;
+                                    parentId?: string;
                                     title?: string;
                                     /** @enum {string} */
-                                    status: "running" | "completed" | "failed";
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
                                     activity: ({
                                         /** @enum {string} */
                                         type: "thinking";
@@ -2989,6 +3024,7 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                subagents?: boolean;
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -3051,9 +3087,13 @@ export interface paths {
                                     type: "plan";
                                 } | {
                                     id: string;
+                                    parentId?: string;
                                     title?: string;
                                     /** @enum {string} */
-                                    status: "running" | "completed" | "failed";
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
                                     activity: ({
                                         /** @enum {string} */
                                         type: "thinking";
@@ -3347,6 +3387,7 @@ export interface paths {
                                 mcp: boolean;
                                 fork: boolean;
                                 rollback: boolean;
+                                subagents?: boolean;
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -3409,9 +3450,13 @@ export interface paths {
                                     type: "plan";
                                 } | {
                                     id: string;
+                                    parentId?: string;
                                     title?: string;
                                     /** @enum {string} */
-                                    status: "running" | "completed" | "failed";
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
                                     activity: ({
                                         /** @enum {string} */
                                         type: "thinking";
@@ -20283,6 +20328,7 @@ export interface paths {
                         "application/json": {
                             subagents: {
                                 id: string;
+                                parent_id: string | null;
                                 session_id: string | null;
                                 title: string;
                                 status: string;
@@ -22745,6 +22791,7 @@ export interface components {
                 mcp: boolean;
                 fork: boolean;
                 rollback: boolean;
+                subagents?: boolean;
                 effortChoices?: {
                     value: string;
                     label: string;

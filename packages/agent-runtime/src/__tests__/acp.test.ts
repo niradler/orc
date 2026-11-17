@@ -71,6 +71,21 @@ for await (const line of createInterface({input:process.stdin})) {
    update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'PARENT ANSWER'}});
    emit({id:promptId,result:{stopReason:'end_turn'}});
   }
+  else if(mode==='task-only') {
+   update(session,{sessionUpdate:'tool_call',toolCallId:'task-1',title:'task',kind:'think',status:'pending',rawInput:{}});
+   update(session,{sessionUpdate:'tool_call_update',toolCallId:'task-1',status:'in_progress',kind:'think',title:'outer probe',rawInput:{description:'outer probe',prompt:'Run it',subagent_type:'general'}});
+   update(session,{sessionUpdate:'tool_call_update',toolCallId:'task-2',status:'in_progress',kind:'think',title:'broken probe',rawInput:{description:'broken probe',prompt:'Fail',subagent_type:'general'}});
+   update(session,{sessionUpdate:'tool_call_update',toolCallId:'task-1',status:'completed',title:'outer probe',rawOutput:{output:'<task id="ses_a" state="completed">done</task>',metadata:{parentSessionId:session,sessionId:'ses_a'}}});
+   update(session,{sessionUpdate:'tool_call_update',toolCallId:'task-2',status:'failed',title:'broken probe',rawOutput:{output:'boom'}});
+   emit({id:promptId,result:{stopReason:'end_turn'}});
+  }
+  else if(mode==='child-nested') {
+   const outer={id:'ses_outer',parentID:session,depth:1,title:'Outer'};
+   const inner={id:'ses_inner',parentID:'ses_outer',depth:2,title:'Inner'};
+   update(session,{sessionUpdate:'tool_call',toolCallId:'ses_outer:t1',title:'Read',kind:'read',status:'pending',rawInput:{path:'a'},_meta:{'opencode/child-session':outer}});
+   update(session,{sessionUpdate:'tool_call',toolCallId:'ses_inner:t1',title:'Read',kind:'read',status:'pending',rawInput:{path:'b'},_meta:{'opencode/child-session':inner}});
+   emit({id:promptId,result:{stopReason:'end_turn'}});
+  }
   else if(mode==='child-permission') {emit({id:'child-permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'ses_child:run-1',title:'Run a command',kind:'execute',_meta:{'opencode/child-session':{id:'ses_child',parentID:session,depth:1,title:'Explore the codebase'}}},options:[{optionId:'native-allow',name:'Yes',kind:'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});}
   else {
    update('other-session',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'WRONG SESSION'}});
@@ -497,9 +512,10 @@ test("ACP streams OpenCode child-session updates as one inline subagent transcri
   const events = await run(session);
   const subagents = events.filter((e) => e.type === "subagent");
   expect(subagents.length).toBeGreaterThan(0);
+  expect(new Set(subagents.map((event) => event.data.id))).toEqual(new Set(["task-1"]));
   const last = subagents[subagents.length - 1];
   expect(last?.data).toMatchObject({
-    id: "ses_child",
+    id: "task-1",
     title: "Explore the codebase",
     status: "completed",
     text: "CHILD ANSWER",
@@ -515,6 +531,34 @@ test("ACP streams OpenCode child-session updates as one inline subagent transcri
   expect(text).toBe("PARENT ANSWER");
   // The parent keeps its own task call.
   expect(events.some((e) => e.type === "tool_use" && e.data.id === "task-1")).toBe(true);
+});
+
+test("ACP shows OpenCode task calls as subagents when the child session is not streamed", async () => {
+  const { session } = fixture({}, "task-only");
+  await session.initialize();
+  await session.send("Delegate");
+  const events = await run(session);
+  const latest = new Map<string, Extract<AgentEvent, { type: "subagent" }>["data"]>();
+  for (const event of events) if (event.type === "subagent") latest.set(event.data.id, event.data);
+  expect([...latest.keys()]).toEqual(["task-1", "task-2"]);
+  expect(latest.get("task-1")).toMatchObject({ title: "outer probe", status: "completed" });
+  expect(latest.get("task-2")).toMatchObject({ title: "broken probe", status: "failed" });
+  expect(latest.get("task-1")?.durationMs).toBeGreaterThanOrEqual(0);
+  const first = events.find((event) => event.type === "subagent");
+  expect(first?.type === "subagent" && first.data.status).toBe("running");
+});
+
+test("ACP nests a child session under the child that spawned it", async () => {
+  const { session } = fixture({}, "child-nested");
+  await session.initialize();
+  await session.send("Delegate twice");
+  const events = await run(session);
+  const last = (id: string) =>
+    events.findLast((event) => event.type === "subagent" && event.data.id === id);
+  const inner = last("ses_inner");
+  const outer = last("ses_outer");
+  expect(inner?.type === "subagent" && inner.data.parentId).toBe("ses_outer");
+  expect(outer?.type === "subagent" && outer.data.parentId).toBeUndefined();
 });
 
 test("ACP names the subagent on a child session's permission request", async () => {

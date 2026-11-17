@@ -19,7 +19,11 @@ import {
   type SessionConfigOption,
   type SetSessionConfigOptionResponse,
 } from "@agentclientprotocol/sdk";
-import { CHAT_SUBAGENT_MAX_ITEMS, type ChatSubagentActivity } from "@orc/core/chat";
+import {
+  CHAT_SUBAGENT_MAX_ITEMS,
+  type ChatSubagentActivity,
+  type ChatSubagentPayload,
+} from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { type HostProcess, hostBinary, hostIsDirectory, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
@@ -76,7 +80,7 @@ function thoughtLevelOption(
   return options.find((option) => option.category === "thought_level" && option.type === "select");
 }
 
-type ChildSessionMeta = { id: string; title?: string };
+type ChildSessionMeta = { id: string; title?: string; parentId?: string };
 
 /** OpenCode tags child-session updates with _meta["opencode/child-session"]. */
 function childSessionMeta(update: unknown): ChildSessionMeta | null {
@@ -84,12 +88,15 @@ function childSessionMeta(update: unknown): ChildSessionMeta | null {
     "opencode/child-session"
   ];
   if (!meta || typeof meta !== "object") return null;
-  const record = meta as { id?: unknown; title?: unknown };
+  const record = meta as { id?: unknown; title?: unknown; parentID?: unknown };
   if (typeof record.id !== "string" || !record.id) return null;
   return {
     id: record.id.slice(0, 200),
     ...(typeof record.title === "string" && record.title
       ? { title: record.title.slice(0, 200) }
+      : {}),
+    ...(typeof record.parentID === "string" && record.parentID
+      ? { parentId: record.parentID.slice(0, 200) }
       : {}),
   };
 }
@@ -154,7 +161,10 @@ function appendChildActivity(
 }
 
 type ChildState = {
+  nodeId: string;
+  parentId?: string;
   title?: string;
+  startedAt: number;
   status: "running" | "completed" | "failed";
   parse: (line: string) => AgentEvent[];
   activity: ChatSubagentActivity;
@@ -202,6 +212,8 @@ export class AcpSession implements AgentSession {
   private parse = createAcpxParser();
   /** Live child sessions (OpenCode subagents), keyed by their native session id. */
   private readonly children = new Map<string, ChildState>();
+  /** Task tool calls shown as subagents when the agent does not stream the child session. */
+  private readonly tasks = new Map<string, ChatSubagentPayload>();
   /** Notices from session setup; send() clears the queue, so they wait for the turn. */
   private readonly setupNotes: string[] = [];
   private readonly pending = new Map<
@@ -406,7 +418,21 @@ export class AcpSession implements AgentSession {
   private childUpdate(meta: ChildSessionMeta, params: { update: unknown }): void {
     let state = this.children.get(meta.id);
     if (!state) {
-      state = { status: "running", parse: createAcpxParser(), activity: [], text: "" };
+      const adopted = [...this.tasks.values()].find(
+        (task) =>
+          task.status === "running" &&
+          ![...this.children.values()].some((child) => child.nodeId === task.id),
+      );
+      const parent = meta.parentId ? this.children.get(meta.parentId) : undefined;
+      state = {
+        nodeId: adopted?.id ?? meta.id,
+        ...(parent ? { parentId: parent.nodeId } : {}),
+        startedAt: adopted?.startedAt ?? Date.now(),
+        status: "running",
+        parse: createAcpxParser(),
+        activity: [],
+        text: "",
+      };
       this.children.set(meta.id, state);
     }
     if (meta.title) state.title = meta.title;
@@ -422,20 +448,62 @@ export class AcpSession implements AgentSession {
     }
     // Text and thinking stream into the block silently; pushing every chunk would
     // resend the whole transcript each time. Discrete tool events carry it live.
-    if (discrete) this.pushChild(meta.id, state);
+    if (discrete) this.pushChild(state);
   }
 
-  private pushChild(id: string, state: ChildState): void {
+  private pushChild(state: ChildState): void {
     this.push({
       type: "subagent",
       data: {
-        id,
+        id: state.nodeId,
+        ...(state.parentId ? { parentId: state.parentId } : {}),
         ...(state.title ? { title: state.title } : {}),
         status: state.status,
+        startedAt: state.startedAt,
+        ...(state.status === "running" ? {} : { durationMs: Date.now() - state.startedAt }),
         activity: state.activity,
         ...(state.text ? { text: state.text } : {}),
       },
     });
+  }
+
+  private taskUpdate(update: {
+    sessionUpdate?: string;
+    toolCallId?: string;
+    title?: string | null;
+    status?: string | null;
+    rawInput?: unknown;
+  }): void {
+    if (update.sessionUpdate !== "tool_call" && update.sessionUpdate !== "tool_call_update") return;
+    if (!update.toolCallId) return;
+    const input = (update.rawInput ?? {}) as { subagent_type?: unknown; description?: unknown };
+    const known = this.tasks.get(update.toolCallId);
+    if (!known && typeof input.subagent_type !== "string") return;
+    if ([...this.children.values()].some((child) => child.nodeId === update.toolCallId)) return;
+    const startedAt = known?.startedAt ?? Date.now();
+    const status: ChatSubagentPayload["status"] =
+      update.status === "completed"
+        ? "completed"
+        : update.status === "failed"
+          ? "failed"
+          : update.status === "cancelled"
+            ? "stopped"
+            : "running";
+    const title =
+      typeof input.description === "string" && input.description
+        ? input.description
+        : (known?.title ?? update.title ?? "Subagent");
+    const next: ChatSubagentPayload = {
+      id: update.toolCallId.slice(0, 200),
+      title: title.slice(0, 200),
+      status,
+      startedAt,
+      ...(status === "running" ? {} : { durationMs: Date.now() - startedAt }),
+      activity: [],
+    };
+    if (known && known.status === next.status && known.title === next.title) return;
+    this.tasks.set(update.toolCallId, next);
+    this.push({ type: "subagent", data: next });
   }
 
   /** The parent's task call finished, so the child it names is done too. */
@@ -443,7 +511,7 @@ export class AcpSession implements AgentSession {
     const state = this.children.get(id);
     if (!state || state.status !== "running") return;
     state.status = failed ? "failed" : "completed";
-    this.pushChild(id, state);
+    this.pushChild(state);
   }
 
   async initialize(): Promise<void> {
@@ -500,6 +568,7 @@ export class AcpSession implements AgentSession {
           }
           const finished = completedChildSession(params.update);
           if (finished) this.finishChild(finished.id, finished.failed);
+          this.taskUpdate(params.update);
           if (params.update.sessionUpdate === "plan") {
             const plan = planEvent("plan", params.update.entries ?? []);
             if (plan) this.push(plan);
@@ -741,14 +810,29 @@ export class AcpSession implements AgentSession {
         else if (result.stopReason !== "end_turn")
           this.push({ type: "error", data: `ACP turn ended: ${result.stopReason}` });
         // Close any child block whose task call never reported completion.
-        for (const [id, state] of this.children)
+        for (const state of this.children.values())
           if (state.status === "running") {
             state.status =
               result.stopReason === "end_turn" || result.stopReason === "cancelled"
                 ? "completed"
                 : "failed";
-            this.pushChild(id, state);
+            this.pushChild(state);
           }
+        for (const task of this.tasks.values())
+          if (
+            task.status === "running" &&
+            ![...this.children.values()].some((child) => child.nodeId === task.id)
+          )
+            this.taskUpdate({
+              sessionUpdate: "tool_call_update",
+              toolCallId: task.id,
+              status:
+                result.stopReason === "end_turn"
+                  ? "completed"
+                  : result.stopReason === "cancelled"
+                    ? "cancelled"
+                    : "failed",
+            });
         this.push({
           type: "result",
           data: {

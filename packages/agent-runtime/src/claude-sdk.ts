@@ -11,9 +11,12 @@ import {
   type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import {
+  CHAT_SUBAGENT_DONE,
   ChatAnswersSchema,
   type ChatQuestion,
   ChatQuestionSchema,
+  type ChatSubagentPayload,
+  type ChatSubagentStatus,
   ORC_TASK_GUIDANCE,
 } from "@orc/core/chat";
 import { ChatAgentOptionsSchema, type ClaudeChatOptions } from "@orc/core/chat-options";
@@ -420,6 +423,20 @@ class ClaudeSDKSession implements AgentSession {
   private async driveQuery(turn: ClaudeTurn): Promise<void> {
     const abortController = turn.controller;
     const push = (event: AgentEvent) => this.pushTurn(turn, event);
+    const subagents = new Map<string, ChatSubagentPayload>();
+    const updateSubagent = (id: string | undefined, patch: Partial<ChatSubagentPayload>) => {
+      const current = id ? subagents.get(id) : undefined;
+      if (!current) return;
+      const next = { ...current, ...patch };
+      subagents.set(current.id, next);
+      push({ type: "subagent", data: next });
+    };
+    const subagentsRunning = () =>
+      [...subagents.values()].some((item) => !CHAT_SUBAGENT_DONE.has(item.status));
+    const stopSubagents = () => {
+      for (const item of subagents.values())
+        if (!CHAT_SUBAGENT_DONE.has(item.status)) updateSubagent(item.id, { status: "stopped" });
+    };
     let nativeQuery: Query | undefined;
     let continuationGrace: ReturnType<typeof setTimeout> | undefined;
     const clearContinuationGrace = () => {
@@ -627,6 +644,7 @@ class ClaudeSDKSession implements AgentSession {
             });
             let cancel = () => {};
             let result: PermissionResult;
+            updateSubagent(options?.agentID, { status: "waiting" });
             try {
               result = await new Promise<PermissionResult>((resolve) => {
                 cancel = () => {
@@ -640,6 +658,8 @@ class ClaudeSDKSession implements AgentSession {
               });
             } finally {
               signal.removeEventListener("abort", cancel);
+              if (subagents.get(options?.agentID ?? "")?.status === "waiting")
+                updateSubagent(options?.agentID, { status: "running" });
             }
             if (result === "approved" || result === "session") {
               return { behavior: "allow", updatedInput: input };
@@ -666,6 +686,7 @@ class ClaudeSDKSession implements AgentSession {
       let turnModel: string | undefined;
       const emitResult = (msg: SDKResultMessage) => {
         if (turn.closing) return;
+        stopSubagents();
         turn.closing = true;
         clearContinuationGrace();
         if (msg.is_error && !turn.stopping) {
@@ -726,6 +747,50 @@ class ClaudeSDKSession implements AgentSession {
         if (msg.type === "rate_limit_event") {
           const event = claudeLimitEvent(msg.rate_limit_info);
           if (event) push(event);
+          continue;
+        }
+        if (msg.type === "system" && msg.subtype === "task_started") {
+          if (msg.task_type ? msg.task_type !== "local_agent" : !msg.subagent_type) continue;
+          const parentId =
+            msg.parent_task_id && subagents.has(msg.parent_task_id)
+              ? msg.parent_task_id
+              : undefined;
+          const started: ChatSubagentPayload = {
+            id: msg.task_id,
+            ...(parentId ? { parentId } : {}),
+            title: (msg.description || msg.subagent_type || "Subagent").slice(0, 200),
+            status: "running",
+            startedAt: Date.now(),
+            activity: [],
+          };
+          subagents.set(msg.task_id, started);
+          push({ type: "subagent", data: started });
+          continue;
+        }
+        if (msg.type === "system" && msg.subtype === "task_progress") {
+          const line = (msg.summary || msg.description).slice(0, 2000);
+          updateSubagent(msg.task_id, {
+            tokens: msg.usage.total_tokens,
+            durationMs: msg.usage.duration_ms,
+            activity: line ? [{ type: "status", id: `${msg.task_id}:progress`, text: line }] : [],
+          });
+          continue;
+        }
+        if (msg.type === "system" && msg.subtype === "task_updated") {
+          const status = msg.patch.status;
+          if (status === "completed" || status === "failed" || status === "killed")
+            updateSubagent(msg.task_id, { status: status === "killed" ? "stopped" : status });
+          continue;
+        }
+        if (msg.type === "system" && msg.subtype === "task_notification") {
+          const status: ChatSubagentStatus = msg.status;
+          updateSubagent(msg.task_id, {
+            status,
+            ...(msg.usage
+              ? { tokens: msg.usage.total_tokens, durationMs: msg.usage.duration_ms }
+              : {}),
+          });
+          if (lastResult && !subagentsRunning()) armContinuationGrace();
           continue;
         }
         if (msg.type === "system" && msg.subtype === "init") {
@@ -822,6 +887,7 @@ class ClaudeSDKSession implements AgentSession {
           const moreRuns =
             (typeof queued === "number" && queued > 0) ||
             (trackable && turn.pendingSteers.size > 0);
+          if (!turn.stopping && subagentsRunning()) continue;
           if (!turn.stopping && moreRuns) {
             armContinuationGrace();
             continue;
@@ -833,6 +899,7 @@ class ClaudeSDKSession implements AgentSession {
       // none, or the CLI may exit while steers were still queued.
       if (!turn.closing) {
         if (turn.stopping) {
+          stopSubagents();
           turn.closing = true;
           push(stoppedResult(this.runtimeSessionId));
         } else if (lastResult) {
@@ -841,6 +908,7 @@ class ClaudeSDKSession implements AgentSession {
       }
     } catch (err) {
       if (turn.stopping && !turn.closing) {
+        stopSubagents();
         turn.closing = true;
         push(stoppedResult(this.runtimeSessionId));
       } else if (
@@ -862,6 +930,7 @@ class ClaudeSDKSession implements AgentSession {
             this.opts.redactOutput?.(err instanceof Error ? err.message : String(err)) ??
             (err instanceof Error ? err.message : String(err)),
         });
+        stopSubagents();
         push({
           type: "error",
           data: err instanceof Error ? err.message : String(err),

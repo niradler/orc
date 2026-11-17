@@ -501,3 +501,68 @@ for await (const line of createInterface({input:process.stdin})) {
     await session.close();
   }
 });
+
+test("should report Codex subagent threads as a nested tree with tokens and status", async () => {
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-app-subagents-"));
+  const script = join(cwd, "app.ts");
+  writeFileSync(
+    script,
+    `
+import { createInterface } from "node:readline";
+const emit = value => console.log(JSON.stringify(value));
+const notify = (threadId, method, params) => emit({method, params: {threadId, ...params}});
+const activity = (threadId, kind, agentThreadId, agentPath) =>
+  notify(threadId, 'item/completed', {item:{type:'subAgentActivity', id:kind+agentThreadId, kind, agentThreadId, agentPath, startedAtMs:1000}});
+for await (const line of createInterface({input:process.stdin})) {
+ const msg = JSON.parse(line);
+ if(msg.method === 'initialize') emit({id:msg.id,result:{}});
+ if(msg.method === 'thread/start') emit({id:msg.id,result:{thread:{id:'main'}}});
+ if(msg.method === 'turn/start') {
+   emit({id:msg.id,result:{turn:{id:'turn-1'}}});
+   notify('main','turn/started',{turn:{id:'turn-1'}});
+   activity('main','started','outer','/root/outer');
+   notify('stranger','item/completed',{item:{type:'subAgentActivity',id:'x',kind:'started',agentThreadId:'ghost',agentPath:'/root/ghost'}});
+   notify('outer','turn/started',{turn:{id:'outer-turn'}});
+   activity('outer','started','inner','/root/outer/inner');
+   activity('outer','started','broken','/root/outer/broken');
+   notify('inner','thread/tokenUsage/updated',{tokenUsage:{total:{totalTokens:51868}}});
+   notify('inner','turn/completed',{turn:{id:'inner-turn',status:'completed'}});
+   activity('outer','completed','inner','/root/outer/inner');
+   notify('broken','turn/completed',{turn:{id:'broken-turn',status:'failed'}});
+   activity('main','started','late','/root/late');
+   activity('main','completed','outer','/root/outer');
+   notify('main','item/agentMessage/delta',{itemId:'m',delta:'done'});
+   notify('main','turn/completed',{turn:{id:'turn-1',status:'completed'}});
+ }
+}
+`,
+  );
+  const session = new CodexAppSession({ cwd, orcMcp: false }, { kind: "local" }, async () => [
+    process.execPath,
+    script,
+  ]);
+  const latest = new Map<string, Extract<AgentEvent, { type: "subagent" }>["data"]>();
+  let text = "";
+  try {
+    await session.send("Delegate");
+    for await (const event of session.events()) {
+      if (event.type === "subagent") latest.set(event.data.id, event.data);
+      if (event.type === "text") text += event.data;
+    }
+  } finally {
+    await session.close();
+  }
+  expect(text).toBe("done");
+  expect([...latest.keys()]).toEqual(["outer", "inner", "broken", "late"]);
+  expect(latest.get("outer")).toMatchObject({ title: "outer", status: "completed" });
+  expect(latest.get("outer")?.parentId).toBeUndefined();
+  expect(latest.get("inner")).toMatchObject({
+    parentId: "outer",
+    title: "inner",
+    status: "completed",
+    tokens: 51868,
+    startedAt: 1000,
+  });
+  expect(latest.get("broken")).toMatchObject({ parentId: "outer", status: "failed" });
+  expect(latest.get("late")).toMatchObject({ status: "stopped" });
+});
