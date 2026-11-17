@@ -777,6 +777,7 @@ export class AcpSession implements AgentSession {
     this.outputBytes = 0;
     this.parse = createAcpxParser();
     this.children.clear();
+    this.tasks.clear();
     this.push({ type: "capabilities", data: this.capabilities });
     for (const note of this.setupNotes.splice(0)) this.push({ type: "system_status", data: note });
     if (this.movedFrom && !this.moveNoted) {

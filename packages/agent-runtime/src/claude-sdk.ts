@@ -750,7 +750,8 @@ class ClaudeSDKSession implements AgentSession {
           continue;
         }
         if (msg.type === "system" && msg.subtype === "task_started") {
-          if (msg.task_type ? msg.task_type !== "local_agent" : !msg.subagent_type) continue;
+          if (msg.ambient || (msg.task_type ? msg.task_type !== "local_agent" : !msg.subagent_type))
+            continue;
           const parentId =
             msg.parent_task_id && subagents.has(msg.parent_task_id)
               ? msg.parent_task_id

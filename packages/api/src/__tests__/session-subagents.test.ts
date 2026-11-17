@@ -90,6 +90,20 @@ beforeAll(() => {
       messages: [],
     }),
   );
+  new ChatStore(getSqlite()).save(
+    ChatThreadSchema.parse({
+      id: "44444444-4444-4444-8444-444444444444",
+      title: "Codex chat with no source link",
+      config: { agent: "codex" },
+      cwd: "/tmp",
+      host: null,
+      runtimeId: "codex-parent",
+      backend: "codex-cli",
+      sourceId: null,
+      updatedAt: 1,
+      messages: [],
+    }),
+  );
 });
 
 afterAll(() => {
@@ -117,6 +131,10 @@ test("a session lists its subagents with the tool call that started each", async
     await req(app, "GET", "/sessions/live/33333333-3333-4333-8333-333333333333/subagents")
   ).json();
   expect(chat.subagents).toMatchObject([{ id: "xchild", tool_call_id: "call_9" }]);
+  const unlinked = await (
+    await req(app, "GET", "/sessions/live/44444444-4444-4444-8444-444444444444/subagents")
+  ).json();
+  expect(unlinked.subagents).toMatchObject([{ id: "xchild", tool_call_id: "call_9" }]);
   const none = await (await req(app, "GET", "/sessions/live/cchild1/subagents")).json();
   expect(none.subagents).toEqual([]);
 });

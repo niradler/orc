@@ -104,10 +104,11 @@ test("Claude subagents still running when the stream ends are marked stopped bef
   expect(stoppedAt).toBeLessThan(events.findIndex((event) => event.type === "result"));
 });
 
-test("Claude reports a failed subagent and ignores tasks without a subagent type", () => {
+test("Claude reports a failed subagent and ignores ambient tasks and tasks without a subagent type", () => {
   const events = run(`
       yield started("broken");
       yield {type:"system",subtype:"task_started",task_id:"legacy",description:"no type"};
+      yield started("watcher", {ambient:true, skip_transcript:true});
       yield {type:"system",subtype:"task_progress",task_id:"unknown",description:"x",usage:{total_tokens:1,tool_uses:0,duration_ms:1}};
       yield notified("broken", "failed", 12);
       yield result(10);

@@ -45,7 +45,7 @@ const oldMock = process.env.ORC_E2E_CHAT_MOCK;
 let failResume = false;
 let waitPermission = false;
 let waitQuestion = false;
-let hangTurn: "silent" | "tool" | undefined;
+let hangTurn: "silent" | "tool" | "subagent" | undefined;
 let secretQuestion = false;
 let manyOptions = false;
 const nativeSteers: string[] = [];
@@ -110,6 +110,19 @@ function session(call: (typeof calls)[number]): AgentSession {
     },
     async *events(): AsyncIterable<AgentEvent> {
       if (hangTurn === "silent") {
+        await permission;
+        return;
+      }
+      if (hangTurn === "subagent") {
+        yield { type: "tool_use", data: { id: "agent-1", name: "Agent", input: "{}" } };
+        yield {
+          type: "tool_result",
+          data: { toolUseId: "agent-1", content: "launched", isError: false },
+        };
+        yield {
+          type: "subagent",
+          data: { id: "task-1", title: "Long review", status: "running", activity: [] },
+        };
         await permission;
         return;
       }
@@ -1357,6 +1370,26 @@ describe("native chat runtime", () => {
       const started = Date.now();
       const result = await turn({ messages: [{ role: "user", content: "run a long build" }] });
       // The idle limit must not kill an in-flight tool call; the hard limit does.
+      expect(Date.now() - started).toBeGreaterThanOrEqual(850);
+      expect(
+        result.events.some(
+          (event) => event.type === "error" && event.message.includes("stopped after running"),
+        ),
+      ).toBe(true);
+    } finally {
+      hangTurn = undefined;
+      restore();
+    }
+  });
+
+  test("should keep a turn with a running subagent past the idle limit until the hard limit", async () => {
+    const restore = setChatTurnLimits({ idleMs: 200, recheckMs: 50, hardMs: 900 });
+    hangTurn = "subagent";
+    try {
+      const started = Date.now();
+      const result = await turn({
+        messages: [{ role: "user", content: "delegate a long review" }],
+      });
       expect(Date.now() - started).toBeGreaterThanOrEqual(850);
       expect(
         result.events.some(

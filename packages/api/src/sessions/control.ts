@@ -234,12 +234,20 @@ export async function sessionSubagents(id: string): Promise<SessionSubagents> {
   const sqlite = getSqlite();
   const thread = new ChatStore(sqlite).get(id);
   const parent = sqlite
-    .query<SubagentRow, [string, string | null, string | null, string | null]>(
+    .query<SubagentRow, [string, string | null, string | null]>(
       `SELECT ${LINEAGE_COLUMNS}, transcript_path, created_at FROM gateway_sessions
-       WHERE (id = ?1 OR id = ?4 OR runtime_session_id = ?1 OR (runtime_session_id = ?2 AND backend = ?3))
+       WHERE (id = ?1 OR runtime_session_id = ?1 OR (runtime_session_id = ?2 AND backend = ?3))
        AND parent_session_id IS NULL ORDER BY updated_at DESC LIMIT 1`,
     )
-    .get(id, thread?.runtimeId ?? null, thread?.backend ?? null, thread?.sourceId ?? null);
+    .get(
+      id,
+      thread?.runtimeId ?? null,
+      thread?.backend === "codex-cli"
+        ? "codex"
+        : thread?.backend === "claude-cli"
+          ? "claude"
+          : (thread?.backend ?? null),
+    );
   if (!parent?.runtime_session_id) return { subagents: [] };
   const children = sqlite
     .query<SubagentRow, [string, string, string]>(

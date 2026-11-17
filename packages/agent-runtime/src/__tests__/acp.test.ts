@@ -548,6 +548,22 @@ test("ACP shows OpenCode task calls as subagents when the child session is not s
   expect(first?.type === "subagent" && first.data.status).toBe("running");
 });
 
+test("ACP starts each turn's task subagents fresh", async () => {
+  const { session } = fixture({}, "task-only");
+  await session.initialize();
+  await session.send("Delegate");
+  await run(session);
+  await Bun.sleep(20);
+  const secondTurn = Date.now();
+  await session.send("Delegate again");
+  const events = await run(session);
+  const first = events.find((event) => event.type === "subagent" && event.data.id === "task-1");
+  expect(first?.type === "subagent" && first.data.status).toBe("running");
+  expect(first?.type === "subagent" && (first.data.startedAt ?? 0)).toBeGreaterThanOrEqual(
+    secondTurn,
+  );
+});
+
 test("ACP nests a child session under the child that spawned it", async () => {
   const { session } = fixture({}, "child-nested");
   await session.initialize();

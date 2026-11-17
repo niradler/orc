@@ -140,7 +140,8 @@ function SubagentNodeRow({
   const content = (
     <>
       <Icon
-        aria-hidden="true"
+        role="img"
+        aria-label={label}
         size={13}
         className={cn("shrink-0", tone, spin && "motion-safe:animate-spin")}
       />
@@ -152,7 +153,7 @@ function SubagentNodeRow({
         {node.status === "running" || node.durationMs !== undefined ? (
           <NodeTime node={node} />
         ) : null}
-        <span className={cn(state !== "done" && state !== "ended" && tone)}>{label}</span>
+        {state === "needs-you" || state === "failed" ? <span className={tone}>{label}</span> : null}
       </span>
     </>
   );

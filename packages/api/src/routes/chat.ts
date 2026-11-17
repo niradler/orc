@@ -20,6 +20,7 @@ import { changes } from "@orc/core/changes";
 import {
   appendChatActivity,
   CHAT_HISTORY_PAGE_SIZE,
+  CHAT_SUBAGENT_DONE,
   type ChatAgentCommands,
   ChatAgentCommandsSchema,
   ChatAnswersSchema,
@@ -2363,9 +2364,14 @@ async function beginTurn(
     // human answer or a running tool call is re-checked instead of killed.
     let timedOut = false;
     let toolsPending = 0;
+    const subagents = new Map<string, string>();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const expire = () => {
-      const waiting = run.questions.size > 0 || run.permissions.size > 0 || toolsPending > 0;
+      const waiting =
+        run.questions.size > 0 ||
+        run.permissions.size > 0 ||
+        toolsPending > 0 ||
+        [...subagents.values()].some((status) => !CHAT_SUBAGENT_DONE.has(status));
       if (waiting && Date.now() - startedAt < turnLimits.hardMs) {
         timer = setTimeout(expire, turnLimits.recheckMs);
         return;
@@ -2636,8 +2642,10 @@ async function beginTurn(
           if (event.type === "text" || event.type === "thinking" || event.type === "system_status")
             await emit({ type: event.type, text: event.data });
           else if (event.type === "plan") await emit({ type: "plan", data: event.data });
-          else if (event.type === "subagent") await emit({ type: "subagent", data: event.data });
-          else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
+          else if (event.type === "subagent") {
+            subagents.set(event.data.id, event.data.status);
+            await emit({ type: "subagent", data: event.data });
+          } else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
             notifySpawner(thread, `${runId}:${event.data.requestId}`, "approval");
