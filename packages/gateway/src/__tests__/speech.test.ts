@@ -17,7 +17,7 @@ const spokenWav = fixture("dictation.wav");
 type Received = {
   path: string;
   auth: string | null;
-  name?: string;
+  name: string | undefined;
   type: string;
   bytes: Uint8Array;
 };
@@ -26,8 +26,8 @@ let ttsRequests: Record<string, unknown>[] = [];
 const provider = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
-  async fetch(request) {
-    const { pathname } = new URL(request.url);
+  async fetch(request): Promise<Response> {
+    const { pathname, origin: self } = new URL(request.url);
     const auth = request.headers.get("authorization");
     if (pathname.endsWith("/audio/transcriptions")) {
       const raw = Buffer.from(await request.clone().arrayBuffer()).toString("latin1");
@@ -50,7 +50,13 @@ const provider = Bun.serve({
       const [, type = "", data = ""] =
         /^data:([^;]+);base64,(.*)$/.exec(body.messages[0]?.content[0]?.input_audio.data ?? "") ??
         [];
-      received.push({ path: pathname, auth, type, bytes: Buffer.from(data, "base64") });
+      received.push({
+        path: pathname,
+        auth,
+        name: undefined,
+        type,
+        bytes: Buffer.from(data, "base64"),
+      });
       return Response.json({
         choices: [{ message: { content: "add a retry to the deploy step" } }],
       });
@@ -61,7 +67,7 @@ const provider = Bun.serve({
     }
     if (pathname === "/qwen-tts") {
       ttsRequests.push((await request.json()) as Record<string, unknown>);
-      return Response.json({ output: { audio: { url: `${origin}/qwen-audio.wav` } } });
+      return Response.json({ output: { audio: { url: `${self}/qwen-audio.wav` } } });
     }
     if (pathname === "/qwen-audio.wav") return new Response(spokenWav);
     return new Response("gone", { status: 404 });

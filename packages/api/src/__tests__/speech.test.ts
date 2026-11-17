@@ -15,8 +15,8 @@ let received: {
   model: unknown;
   name: string;
   size: number;
-  type?: string;
-  bytes?: Buffer;
+  type: string | undefined;
+  bytes: Buffer;
 }[] = [];
 let reply = { body: "add a retry to the deploy step", status: 200 };
 const qwenRequests: Record<string, unknown>[] = [];
@@ -135,7 +135,7 @@ test("a WAV dictation reaches the provider unchanged as audio/wav", async () => 
   expect(received.map(({ name, type }) => ({ name, type }))).toEqual([
     { name: "audio.wav", type: "audio/wav" },
   ]);
-  expect(received[0]?.bytes?.equals(wav)).toBe(true);
+  expect(received[0]?.bytes.equals(wav)).toBe(true);
 });
 
 test("an oversized recording is rejected with 413 before reaching the provider", async () => {

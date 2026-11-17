@@ -15,7 +15,7 @@ export function insertDictation(
   return { value: `${head}${gap}${after}`, caret: head.length };
 }
 
-export function wavFile(chunks: Float32Array[], sampleRate: number): Uint8Array {
+export function wavFile(chunks: Float32Array[], sampleRate: number): Uint8Array<ArrayBuffer> {
   const samples = chunks.reduce((total, chunk) => total + chunk.length, 0);
   const view = new DataView(new ArrayBuffer(44 + samples * 2));
   const text = (offset: number, value: string) => {
