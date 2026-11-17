@@ -167,17 +167,12 @@ for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`/?chat=open&chatThread=${parentId}`);
 
-    // The tool call that started the subagent is not counted as a finished tool,
-    // and the tree that opens the child sits outside the fold.
-    const fold = page.getByTestId("chat-turn-fold");
-    await expect(page.getByTestId("chat-turn-fold-label")).toHaveText("Worked for 40s · 1 tool");
     await expect(page.getByTestId("chat-subagents")).toBeVisible();
     await openSubagentTree(page);
     const row = page.getByTestId("chat-subagent");
     const open = row.getByRole("button");
     await expect(row).toContainText("Demo subagent render");
     await expect(open).toBeVisible();
-    await expect(fold).not.toContainText("Demo subagent render");
 
     await page.screenshot({ path: test.info().outputPath(`subagent-parent-${width}.png`) });
     await open.click();

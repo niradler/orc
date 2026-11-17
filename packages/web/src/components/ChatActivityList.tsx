@@ -252,23 +252,16 @@ export function ChatActivityList({
   const end = timing.success ? timing.data.finishedAt : undefined;
   const durationMs = timing.success ? timing.data.durationMs : undefined;
   const outcome = timing.success ? timing.data.outcome : undefined;
-  // The tool call that started a subagent only reports "started", so counting it
-  // reads as a finished or incomplete tool beside the tree row that opens the
-  // child. The call is left out of the summary; the child's own transcript stays.
-  const foldItems = useMemo(
-    () => items.filter((item) => !(item.kind === "tool" && subagents?.has(item.id))),
-    [items, subagents],
-  );
   const fold = useMemo(
     () =>
-      foldTurn(foldItems, {
+      foldTurn(items, {
         ...(start !== undefined ? { startedAt: start } : {}),
         ...(end !== undefined ? { finishedAt: end } : {}),
         ...(durationMs !== undefined ? { durationMs } : {}),
       }),
-    [foldItems, start, end, durationMs],
+    [items, start, end, durationMs],
   );
-  const counts = useMemo(() => activityCounts(foldItems), [foldItems]);
+  const counts = useMemo(() => activityCounts(items), [items]);
   const tree = useMemo(() => {
     const live = liveSubagentTree(stored.activity);
     if (live.length) return live;
@@ -277,82 +270,79 @@ export function ChatActivityList({
       return subagent ? [subagent] : [];
     });
   }, [stored, items, subagents]);
-  const visible = useMemo(() => filterActivity(foldItems, prefs), [foldItems, prefs]);
+  const visible = useMemo(() => filterActivity(items, prefs), [items, prefs]);
   // The window belongs to this turn only: the fold instance is the message's.
   const [showAll, setShowAll] = useState(false);
   const windowed = windowChatItems(visible, showAll);
   if (!items.length && outcome !== "stopped" && outcome !== "failed") return null;
   const summary = foldSummary(fold, live, outcome);
-  const showFold = foldItems.length > 0 || outcome === "stopped" || outcome === "failed";
   const update = (next: ActivityPrefs) => {
     setPrefs(next);
     storePrefs(next);
   };
   return (
     <>
-      {showFold && (
-        <details
-          data-testid="chat-turn-fold"
-          data-live={live || undefined}
-          data-failed={fold.failed > 0 || undefined}
-          className="group/fold mb-1 text-xs text-on-surface-variant"
+      <details
+        data-testid="chat-turn-fold"
+        data-live={live || undefined}
+        data-failed={fold.failed > 0 || undefined}
+        className="group/fold mb-1 text-xs text-on-surface-variant"
+      >
+        <summary
+          data-testid="chat-turn-fold-summary"
+          className="flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11 [&::-webkit-details-marker]:hidden"
         >
-          <summary
-            data-testid="chat-turn-fold-summary"
-            className="flex min-h-7 w-fit max-w-full cursor-pointer list-none items-center gap-2 rounded-md px-1.5 hover:bg-surface hover:text-on-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-sm:min-h-11 [&::-webkit-details-marker]:hidden"
-          >
-            <span data-testid="chat-turn-fold-label" className="min-w-0 truncate">
-              {summary.text}
+          <span data-testid="chat-turn-fold-label" className="min-w-0 truncate">
+            {summary.text}
+          </span>
+          {summary.failure && (
+            <span className="flex shrink-0 items-center gap-1 text-error">
+              <CircleAlert aria-hidden="true" size={12} />
+              {summary.failure}
             </span>
-            {summary.failure && (
-              <span className="flex shrink-0 items-center gap-1 text-error">
-                <CircleAlert aria-hidden="true" size={12} />
-                {summary.failure}
-              </span>
-            )}
-            <ChevronRight
-              aria-hidden="true"
-              size={14}
-              className="shrink-0 group-open/fold:rotate-90 motion-safe:transition-transform"
-            />
-          </summary>
-          <section
-            aria-label="Tool calls"
-            data-testid="chat-activity"
-            className="mt-1 ml-2 max-h-[min(28rem,60dvh)] overflow-y-auto border-l border-outline-variant pl-1"
-          >
-            {fold.tools > 0 && <ActivityFilters prefs={prefs} counts={counts} onChange={update} />}
-            {windowed.hidden > 0 && (
+          )}
+          <ChevronRight
+            aria-hidden="true"
+            size={14}
+            className="shrink-0 group-open/fold:rotate-90 motion-safe:transition-transform"
+          />
+        </summary>
+        <section
+          aria-label="Tool calls"
+          data-testid="chat-activity"
+          className="mt-1 ml-2 max-h-[min(28rem,60dvh)] overflow-y-auto border-l border-outline-variant pl-1"
+        >
+          {fold.tools > 0 && <ActivityFilters prefs={prefs} counts={counts} onChange={update} />}
+          {windowed.hidden > 0 && (
+            <button
+              type="button"
+              data-testid="chat-items-show-all"
+              onClick={() => setShowAll(true)}
+              className="mb-1 min-h-8 rounded-md px-1.5 text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-lg:min-h-11"
+            >
+              Show all {visible.length} activities
+            </button>
+          )}
+          {windowed.shown.map((item) => (
+            <ActivityRow key={`${item.ordinal}-${item.id}`} item={item} live={live} />
+          ))}
+          {fold.tools > 0 && visible.every((item) => item.kind !== "tool") && (
+            <p
+              data-testid="chat-activity-empty"
+              className="flex flex-wrap items-center gap-2 px-1.5 py-1"
+            >
+              No tool calls match this filter.
               <button
                 type="button"
-                data-testid="chat-items-show-all"
-                onClick={() => setShowAll(true)}
-                className="mb-1 min-h-8 rounded-md px-1.5 text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-lg:min-h-11"
+                onClick={() => update({ ...prefs, filter: "all", hideSuccessful: false })}
+                className="min-h-8 rounded-md px-1.5 text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-lg:min-h-11"
               >
-                Show all {visible.length} activities
+                Show all
               </button>
-            )}
-            {windowed.shown.map((item) => (
-              <ActivityRow key={`${item.ordinal}-${item.id}`} item={item} live={live} />
-            ))}
-            {fold.tools > 0 && visible.every((item) => item.kind !== "tool") && (
-              <p
-                data-testid="chat-activity-empty"
-                className="flex flex-wrap items-center gap-2 px-1.5 py-1"
-              >
-                No tool calls match this filter.
-                <button
-                  type="button"
-                  onClick={() => update({ ...prefs, filter: "all", hideSuccessful: false })}
-                  className="min-h-8 rounded-md px-1.5 text-primary hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-lg:min-h-11"
-                >
-                  Show all
-                </button>
-              </p>
-            )}
-          </section>
-        </details>
-      )}
+            </p>
+          )}
+        </section>
+      </details>
       <SubagentTree roots={tree} />
     </>
   );

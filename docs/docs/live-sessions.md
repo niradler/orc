@@ -16,8 +16,7 @@ a conversation with no prompt yet reads **New session**. Recency comes from the 
 message, not from the transcript file's modification time.
 
 Subagents show inside the parent's chat, under the turn that started them, as a
-tree collapsed to one summary line (`3 subagents · 1 failed`), outside the turn's
-folded tool summary: Claude Code
+tree collapsed to one summary line (`3 subagents · 1 failed`): Claude Code
 subagents (their `.meta.json` description is the title, `parentAgentId` nests a
 subagent under the one that spawned it), Codex spawned threads, Cursor subagent
 composers and OpenCode child sessions, at any depth. Each row shows the subagent's
@@ -188,21 +187,21 @@ agent) and to chat channels with `/send <session id> <message>`.
 An agent can start and drive other sessions, the way Claude Code drives its
 subagents:
 
-| MCP tool                          | Does                                                                                               |
-| --------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `session_start`                   | Starts a headless ORC chat with a prompt and returns its `session_id` immediately                  |
-| `session_send`                    | Messages it: `queue`, `steer` or `interrupt`                                                       |
-| `session_status` / `session_list` | Status (`queued`, `running`, `waiting`, `idle`, `failed`, `stopped`), last reply, queue, parent and children |
-| `session_wait` | Blocks until it stops running, waits for a human, or replies (`until: message`); `session_ids` with `mode: all` or `any` waits on several children |
-| `session_stop` | Stops its current turn and, by default (`cascade`), every session it started; queued children are cancelled; messages still queued for a stopped session are cancelled, and messages sent after the stop deliver normally; sessions stay resumable |
+| MCP tool                          | Does                                                                                                                                                                                                                                               |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_start`                   | Starts a headless ORC chat with a prompt and returns its `session_id` immediately                                                                                                                                                                  |
+| `session_send`                    | Messages it: `queue`, `steer` or `interrupt`                                                                                                                                                                                                       |
+| `session_status` / `session_list` | Status (`queued`, `running`, `waiting`, `idle`, `failed`, `stopped`), last reply, queue, parent and children                                                                                                                                       |
+| `session_wait`                    | Blocks until it stops running, waits for a human, or replies (`until: message`); `session_ids` with `mode: all` or `any` waits on several children                                                                                                 |
+| `session_stop`                    | Stops its current turn and, by default (`cascade`), every session it started; queued children are cancelled; messages still queued for a stopped session are cancelled, and messages sent after the stop deliver normally; sessions stay resumable |
 
 `session_start` takes `workspace`:
 
-| `workspace`      | Same project                                                                   | Another project (`project`)               |
-| ---------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
-| `same` (default) | The caller's folder, sharing uncommitted edits                                 | Refused                                   |
-| `worktree` | A new git worktree under `.orc/worktrees/` on a new branch cut from the caller's committed HEAD (uncommitted edits stay behind) | A new worktree of that project's checkout |
-| `project`        | The project's main checkout                                                    | That project's main checkout              |
+| `workspace`      | Same project                                                                                                                    | Another project (`project`)               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `same` (default) | The caller's folder, sharing uncommitted edits                                                                                  | Refused                                   |
+| `worktree`       | A new git worktree under `.orc/worktrees/` on a new branch cut from the caller's committed HEAD (uncommitted edits stay behind) | A new worktree of that project's checkout |
+| `project`        | The project's main checkout                                                                                                     | That project's main checkout              |
 
 Another project must be inside the caller's MCP project scope.
 
