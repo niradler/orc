@@ -3,6 +3,7 @@ import { createLogger } from "@orc/core/logger";
 import { Bot, type Context, InlineKeyboard, InputFile } from "grammy";
 import { registerAdapter } from "./adapter-registry.js";
 import { createChatQueue } from "./chat-queue.js";
+import { formatToExt } from "./speech/audio.js";
 import type {
   GatewayAdapter,
   IncomingMessage,
@@ -275,14 +276,11 @@ export function createTelegramAdapter(startTime: number): TelegramAdapter {
     },
 
     async sendAudio(chatId, audio, format, caption) {
-      const ext = format === "ogg" || format === "oga" ? "ogg" : "mp3";
+      const ext = formatToExt(format);
       const file = new InputFile(audio, `audio.${ext}`);
       const opts = caption ? { caption } : {};
-      if (ext === "ogg") {
-        await bot.api.sendVoice(chatId, file, opts);
-      } else {
-        await bot.api.sendAudio(chatId, file, opts);
-      }
+      if (ext === "ogg") await bot.api.sendVoice(chatId, file, opts);
+      else await bot.api.sendDocument(chatId, file, opts);
     },
 
     async showTyping(chatId) {

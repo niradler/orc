@@ -1,10 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  dictationClock,
-  insertDictation,
-  microphoneError,
-  recordingMime,
-} from "../../src/lib/dictation";
+import { dictationClock, insertDictation, microphoneError, wavFile } from "../../src/lib/dictation";
 
 test("a transcript lands at the cursor with word spacing and the caret after it", () => {
   expect(insertDictation("", 0, 0, "  hello there ")).toEqual({
@@ -31,10 +26,33 @@ test("a transcript lands at the cursor with word spacing and the caret after it"
   expect(insertDictation("keep", 4, 4, "   ")).toBeNull();
 });
 
-test("the recorder prefers opus webm and falls back to what the browser supports", () => {
-  expect(recordingMime(() => true)).toBe("audio/webm;codecs=opus");
-  expect(recordingMime((type) => type === "audio/mp4")).toBe("audio/mp4");
-  expect(recordingMime(() => false)).toBe("");
+test("recorded samples become 16-bit mono WAV behind a 44-byte header", () => {
+  const wav = wavFile([Float32Array.from([0, 1, -1]), Float32Array.from([0.5, 2])], 16_000);
+  expect(Buffer.from(wav).toString("hex")).toBe(
+    [
+      "52494646",
+      "2e000000",
+      "57415645",
+      "666d7420",
+      "10000000",
+      "0100",
+      "0100",
+      "803e0000",
+      "007d0000",
+      "0200",
+      "1000",
+      "64617461",
+      "0a000000",
+      "0000",
+      "ff7f",
+      "0080",
+      "ff3f",
+      "ff7f",
+    ].join(""),
+  );
+  const empty = wavFile([], 16_000);
+  expect(empty.length).toBe(44);
+  expect(new DataView(empty.buffer).getUint32(40, true)).toBe(0);
 });
 
 test("elapsed time reads as minutes and seconds", () => {

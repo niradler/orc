@@ -1879,7 +1879,7 @@ export const api = {
     status: () => req<{ available: boolean }>("GET", "/speech/status"),
     transcribe: async (audio: Blob, signal?: AbortSignal) => {
       const form = new FormData();
-      form.set("audio", audio, "dictation");
+      form.set("audio", audio, "dictation.wav");
       const res = await apiFetch("/speech/transcribe", { method: "POST", body: form, signal });
       const json = (await res.json().catch(() => ({}))) as {
         text?: string;

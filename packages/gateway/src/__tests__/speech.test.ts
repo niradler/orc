@@ -1,52 +1,233 @@
-import { expect, test } from "bun:test";
-import { loadConfig, type OrcConfig } from "@orc/core/config";
-import { convertAudio } from "../speech/audio.js";
-import { speechText } from "../speech.js";
+import { afterAll, expect, mock, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadConfig, type OrcConfig, resetConfig } from "@orc/core/config";
+import { speechText, speechToText, textToSpeech } from "../speech.js";
 
-const ffmpeg = Bun.which("ffmpeg");
+const home = mkdtempSync(join(tmpdir(), "orc-speech-"));
+process.env.ORC_HOME = home;
+resetConfig();
 
-async function tone(seconds: number): Promise<Uint8Array> {
-  const proc = Bun.spawn({
-    cmd: [
-      ffmpeg ?? "ffmpeg",
-      "-f",
-      "lavfi",
-      "-i",
-      `sine=frequency=440:duration=${seconds}`,
-      "-f",
-      "wav",
-      "-",
-    ],
-    stdout: "pipe",
-    stderr: "ignore",
-  });
-  return new Uint8Array(await new Response(proc.stdout).arrayBuffer());
-}
+const fixture = (name: string) =>
+  new Uint8Array(readFileSync(join(import.meta.dir, "fixtures", name)));
+const voiceNote = fixture("voice.ogg");
+const spokenWav = fixture("dictation.wav");
 
-test.skipIf(!ffmpeg)("ffmpeg conversion leaves the event loop free", async () => {
-  const wav = await tone(600);
-  let ticks = 0;
-  let longestGap = 0;
-  let last = performance.now();
-  const timer = setInterval(() => {
-    const now = performance.now();
-    longestGap = Math.max(longestGap, now - last);
-    last = now;
-    ticks++;
-  }, 5);
-  const started = performance.now();
-  const ogg = await convertAudio(wav, "wav", "ogg");
-  const elapsed = performance.now() - started;
-  clearInterval(timer);
-  expect(new TextDecoder().decode(ogg.slice(0, 4))).toBe("OggS");
-  expect(elapsed).toBeGreaterThan(100);
-  expect(ticks).toBeGreaterThan(elapsed / 50);
-  expect(longestGap).toBeLessThan(100);
+type Received = {
+  path: string;
+  auth: string | null;
+  name?: string;
+  type: string;
+  bytes: Uint8Array;
+};
+let received: Received[] = [];
+let ttsRequests: Record<string, unknown>[] = [];
+const provider = Bun.serve({
+  hostname: "127.0.0.1",
+  port: 0,
+  async fetch(request) {
+    const { pathname } = new URL(request.url);
+    const auth = request.headers.get("authorization");
+    if (pathname.endsWith("/audio/transcriptions")) {
+      const raw = Buffer.from(await request.clone().arrayBuffer()).toString("latin1");
+      const [, name, type = ""] =
+        /name="file"; filename="([^"]+)"\r\nContent-Type: ([^\r]+)/.exec(raw) ?? [];
+      const file = (await request.formData()).get("file") as File;
+      received.push({
+        path: pathname,
+        auth,
+        name,
+        type,
+        bytes: new Uint8Array(await file.arrayBuffer()),
+      });
+      return new Response("add a retry to the deploy step\n");
+    }
+    if (pathname.endsWith("/chat/completions")) {
+      const body = (await request.json()) as {
+        messages: { content: { input_audio: { data: string } }[] }[];
+      };
+      const [, type = "", data = ""] =
+        /^data:([^;]+);base64,(.*)$/.exec(body.messages[0]?.content[0]?.input_audio.data ?? "") ??
+        [];
+      received.push({ path: pathname, auth, type, bytes: Buffer.from(data, "base64") });
+      return Response.json({
+        choices: [{ message: { content: "add a retry to the deploy step" } }],
+      });
+    }
+    if (pathname.endsWith("/audio/speech")) {
+      ttsRequests.push((await request.json()) as Record<string, unknown>);
+      return new Response(voiceNote, { headers: { "Content-Type": "audio/ogg" } });
+    }
+    if (pathname === "/qwen-tts") {
+      ttsRequests.push((await request.json()) as Record<string, unknown>);
+      return Response.json({ output: { audio: { url: `${origin}/qwen-audio.wav` } } });
+    }
+    if (pathname === "/qwen-audio.wav") return new Response(spokenWav);
+    return new Response("gone", { status: 404 });
+  },
+});
+const origin = `http://127.0.0.1:${provider.port}`;
+
+afterAll(() => {
+  provider.stop(true);
+  rmSync(home, { recursive: true, force: true });
 });
 
-test.skipIf(!ffmpeg)("a conversion that overruns its timeout is killed", async () => {
-  const wav = await tone(600);
-  await expect(convertAudio(wav, "wav", "ogg", 20)).rejects.toThrow("timed out after 20ms");
+const sttConfig = (name: "openai" | "groq" | "qwen") =>
+  loadConfig({
+    speech: {
+      enabled: true,
+      provider: name,
+      [name]: { api_key: `${name}-key`, base_url: `${origin}/${name}` },
+    },
+  } as unknown as Partial<OrcConfig>);
+
+const clips = [
+  {
+    source: "Telegram voice note",
+    file: "voice.ogg",
+    format: "ogg",
+    type: "audio/ogg",
+    ext: "ogg",
+  },
+  {
+    source: "Telegram .oga voice file",
+    file: "voice.ogg",
+    format: "oga",
+    type: "audio/ogg",
+    ext: "ogg",
+  },
+  {
+    source: "Chrome recording",
+    file: "dictation.webm",
+    format: "webm",
+    type: "audio/webm",
+    ext: "webm",
+  },
+  { source: "Firefox recording", file: "voice.ogg", format: "ogg", type: "audio/ogg", ext: "ogg" },
+  {
+    source: "Safari recording",
+    file: "dictation.mp4",
+    format: "mp4",
+    type: "audio/mp4",
+    ext: "mp4",
+  },
+  {
+    source: "Telegram m4a audio",
+    file: "dictation.mp4",
+    format: "x-m4a",
+    type: "audio/mp4",
+    ext: "m4a",
+  },
+  { source: "ORC dictation", file: "dictation.wav", format: "wav", type: "audio/wav", ext: "wav" },
+];
+
+for (const name of ["openai", "groq", "qwen"] as const)
+  for (const clip of clips)
+    test(`${name} receives a ${clip.source} byte for byte as ${clip.type}`, async () => {
+      received = [];
+      const audio = fixture(clip.file);
+      const stt = speechToText(sttConfig(name));
+      expect(await stt?.transcribe({ audio, format: clip.format })).toBe(
+        "add a retry to the deploy step",
+      );
+      expect(received).toHaveLength(1);
+      const [request] = received;
+      expect(request?.auth).toBe(`Bearer ${name}-key`);
+      expect(request?.type).toBe(clip.type);
+      expect(Buffer.from(request?.bytes ?? []).equals(Buffer.from(audio))).toBe(true);
+      if (name === "qwen") expect(request?.path).toBe("/qwen/chat/completions");
+      else expect(request?.name).toBe(`audio.${clip.ext}`);
+    });
+
+test("OpenAI speech is requested as an OGG/Opus voice note", async () => {
+  ttsRequests = [];
+  const tts = textToSpeech(
+    loadConfig({
+      tts: {
+        enabled: true,
+        provider: "openai",
+        openai: { api_key: "k", base_url: `${origin}/v1` },
+      },
+    } as unknown as Partial<OrcConfig>),
+  );
+  const speech = await tts?.synthesize("deploy finished");
+  expect(ttsRequests).toEqual([
+    { model: "tts-1", input: "deploy finished", voice: "alloy", response_format: "opus" },
+  ]);
+  expect(speech?.format).toBe("ogg");
+  expect(new TextDecoder().decode(speech?.audio.slice(0, 4))).toBe("OggS");
+});
+
+const qwenTts = (base_url: string) =>
+  textToSpeech(
+    loadConfig({
+      tts: { enabled: true, provider: "qwen", qwen: { api_key: "k", base_url } },
+    } as unknown as Partial<OrcConfig>),
+  );
+
+test("Qwen speech comes back as the WAV it returns, unconverted", async () => {
+  ttsRequests = [];
+  const speech = await qwenTts(`${origin}/qwen-tts`)?.synthesize("deploy finished");
+  expect(ttsRequests).toMatchObject([
+    { model: "qwen3-tts-flash", input: { text: "deploy finished" } },
+  ]);
+  expect(speech?.format).toBe("wav");
+  expect(Buffer.from(speech?.audio ?? []).equals(Buffer.from(spokenWav))).toBe(true);
+});
+
+test("a Qwen audio link that fails to download is an error, not an empty voice reply", async () => {
+  const failing = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: (request) =>
+      new URL(request.url).pathname === "/tts"
+        ? Response.json({ output: { audio: { url: `${origin}/expired.wav` } } })
+        : new Response("gone", { status: 404 }),
+  });
+  try {
+    await expect(
+      qwenTts(`http://127.0.0.1:${failing.port}/tts`)?.synthesize("hi") ?? Promise.resolve(),
+    ).rejects.toThrow("Qwen TTS audio download failed (404)");
+  } finally {
+    failing.stop(true);
+  }
+});
+
+test("Telegram sends OGG as a voice note and WAV as a file", async () => {
+  const calls: { method: string; name: string }[] = [];
+  const grammy = await import("grammy");
+  mock.module("grammy", () => ({
+    ...grammy,
+    Bot: class extends grammy.Bot {
+      constructor(token: string) {
+        super(token);
+        this.api.config.use(async (_prev, method, payload) => {
+          const file =
+            (payload as { voice?: unknown; document?: unknown }).voice ??
+            (payload as { document?: unknown }).document;
+          calls.push({ method, name: (file as { filename?: string })?.filename ?? "" });
+          return { ok: true, result: true } as never;
+        });
+      }
+    },
+  }));
+  process.env.ORC_TELEGRAM_TOKEN = "123:test";
+  resetConfig();
+  try {
+    const { createTelegramAdapter } = await import("../telegram.js");
+    const telegram = createTelegramAdapter(Date.now());
+    await telegram.sendAudio("1", voiceNote, "ogg", "Voice reply");
+    await telegram.sendAudio("1", spokenWav, "wav", "Voice reply");
+    expect(calls).toEqual([
+      { method: "sendVoice", name: "audio.ogg" },
+      { method: "sendDocument", name: "audio.wav" },
+    ]);
+  } finally {
+    delete process.env.ORC_TELEGRAM_TOKEN;
+    resetConfig();
+  }
 });
 
 test("a reply is shortened for speech without code or markdown", () => {

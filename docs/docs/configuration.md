@@ -518,6 +518,12 @@ to point `openai` at another OpenAI-compatible transcription endpoint.
 `asr_options.language` for qwen). `speech.provider` and `tts.provider` are chosen
 independently; an unknown provider fails when the config loads.
 
+Audio goes to the provider as recorded, so voice needs no ffmpeg. Dictation
+records 16 kHz mono WAV in the browser, and Telegram voice notes arrive as
+OGG/Opus; openai, groq and qwen all accept WAV, OGG, WebM, MP3 and MP4/M4A.
+OpenAI voice replies are requested as OGG/Opus and arrive as Telegram voice
+notes. Qwen returns WAV, which Telegram receives as a file.
+
 Channels answer a voice message with a voice reply. With `tts.mode: "always"` they
 also speak replies to text messages. Spoken replies drop code blocks and markdown,
 and a reply longer than `tts.max_text_len` (0 means no limit) is cut at the last

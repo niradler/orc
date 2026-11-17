@@ -60,9 +60,9 @@ for (const [label, size] of [
           chatPosts.push(request.url());
       });
       let release: (() => void) | undefined;
-      let uploaded = 0;
+      let uploaded = Buffer.alloc(0);
       await page.route("**/api/speech/transcribe", async (route: Route) => {
-        uploaded = route.request().postDataBuffer()?.length ?? 0;
+        uploaded = route.request().postDataBuffer() ?? Buffer.alloc(0);
         await new Promise<void>((resolve) => {
           release = resolve;
         });
@@ -100,7 +100,16 @@ for (const [label, size] of [
       if (label === "desktop") await input.press("Enter");
       await shoot(page, `transcribing-${label}`);
       await expect.poll(() => release !== undefined).toBe(true);
-      expect(uploaded).toBeGreaterThan(1000);
+      expect(uploaded.toString("latin1")).toContain(
+        'filename="dictation.wav"\r\nContent-Type: audio/wav',
+      );
+      const wav = uploaded.subarray(uploaded.indexOf("RIFF"));
+      expect(wav.toString("latin1", 8, 16)).toBe("WAVEfmt ");
+      expect([wav.readUInt16LE(20), wav.readUInt16LE(22), wav.readUInt32LE(24)]).toEqual([
+        1, 1, 16_000,
+      ]);
+      expect(wav.readUInt16LE(34)).toBe(16);
+      expect(wav.readUInt32LE(40) / 32_000).toBeGreaterThan(0.9);
       release?.();
 
       await expect(input).toHaveValue("fix the login bug");

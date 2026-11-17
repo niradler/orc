@@ -104,8 +104,8 @@ every approval command means the same transition. Missing notifications: inspect
 authorized_users, adapter health, chosen chat and actual human-gate state.
 
 Telegram voice input uses configured `speech` (openai/groq/qwen); voice replies use
-`tts` (openai/qwen). Inspect enabled/provider/credentials, the execution host's
-ffmpeg availability and provider connectivity. `voice_only` versus `always` controls
+`tts` (openai/qwen). Inspect enabled/provider/credentials and provider
+connectivity. `voice_only` versus `always` controls
 reply behavior. Configure within scope and verify a user-authorized voice exchange;
 do not send messages to other people as a test or expose provider keys in logs.
 
