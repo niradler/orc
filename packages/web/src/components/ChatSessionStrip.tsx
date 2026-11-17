@@ -2,21 +2,13 @@ import type { CacheTokenUsage } from "@orc/core/usage";
 import { useQuery } from "@tanstack/react-query";
 import { Gauge } from "lucide-react";
 import { lazy, Suspense } from "react";
-import { api } from "@/api/client";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { sessionCacheQuery } from "@/lib/session-cache";
 import { formatTokenCount } from "@/lib/token-count";
 import { cn } from "@/lib/utils";
 
 export function useChatContextUsage(sourceId: string | null | undefined, live: boolean) {
-  return useQuery({
-    // Same key as SessionCacheUsage: one read feeds both surfaces.
-    queryKey: ["session-cache", sourceId ?? "", live],
-    queryFn: () => api.sessions.cacheUsage(sourceId ?? ""),
-    enabled: !!sourceId,
-    staleTime: 15_000,
-    refetchInterval: live ? 15_000 : false,
-    retry: 1,
-  });
+  return useQuery(sessionCacheQuery(sourceId, live));
 }
 
 type ContextUsage = Pick<CacheTokenUsage, "input_tokens" | "cached_input_tokens">;
