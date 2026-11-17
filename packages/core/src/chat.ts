@@ -238,13 +238,25 @@ const ChatStatusSchema = z.object({ type: z.literal("status"), id: z.string(), t
  * so it updates in place instead of appending a row per child event.
  */
 export const CHAT_SUBAGENT_MAX_ITEMS = 50;
-export const ChatSubagentStatusSchema = z.enum(["running", "completed", "failed"]);
+export const CHAT_SUBAGENT_DONE = new Set(["completed", "failed", "stopped"]);
+export const ChatSubagentStatusSchema = z.enum([
+  "running",
+  "waiting",
+  "completed",
+  "failed",
+  "stopped",
+]);
 export type ChatSubagentStatus = z.infer<typeof ChatSubagentStatusSchema>;
 export const ChatSubagentPayloadSchema = z.object({
   /** The child session's native id. */
   id: z.string().min(1).max(200),
+  /** The subagent that spawned this one; absent when the main agent did. */
+  parentId: z.string().min(1).max(200).optional(),
   title: z.string().max(200).optional(),
   status: ChatSubagentStatusSchema,
+  startedAt: z.number().finite().nonnegative().optional(),
+  durationMs: z.number().finite().nonnegative().optional(),
+  tokens: z.number().int().nonnegative().optional(),
   activity: z
     .array(z.discriminatedUnion("type", [ChatThinkingSchema, ChatToolSchema, ChatStatusSchema]))
     .max(CHAT_SUBAGENT_MAX_ITEMS),

@@ -62,6 +62,7 @@ export const AgentCapabilitiesSchema = z.object({
   mcp: z.boolean(),
   fork: z.boolean(),
   rollback: z.boolean(),
+  subagents: z.boolean().optional(),
   permissionModes: z.array(ChatPermissionModeSchema).optional(),
   permissionLabels: z
     .partialRecord(
