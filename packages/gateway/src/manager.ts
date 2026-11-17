@@ -597,6 +597,10 @@ class GatewayManager {
     const tts = textToSpeech(config);
     const spoken = speechText(text, config.tts.max_text_len);
     const adapter = this.adapters.get(message.platform);
+    if (config.tts.enabled && !tts) {
+      logger.warn("TTS failed", { err: "TTS API key is not configured." });
+      return;
+    }
     if (!tts || !spoken || !adapter || !("sendAudio" in adapter)) return;
     try {
       const speech = await tts.synthesize(spoken);
