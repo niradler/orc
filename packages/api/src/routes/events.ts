@@ -50,7 +50,7 @@ app.openapi(
           if (stopped) break;
           if (pending.size || scoped.size) {
             const global = [...pending];
-            const resources = [...scoped].filter((resource) => !pending.has(resource));
+            const resources = [...scoped];
             const ids = [...sessions];
             pending.clear();
             scoped.clear();

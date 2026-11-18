@@ -128,32 +128,65 @@ export class ChatStore {
   }
   relatedSessionIds(ids: string[], paths: string[]): string[] {
     if (!ids.length && !paths.length) return [];
-    return this.db
+    type Row = {
+      id: string;
+      runtime_session_id: string | null;
+      parent_session_id: string | null;
+      backend: string;
+      execution_host: string | null;
+    };
+    const marks = (values: unknown[]) => values.map(() => "?").join(",");
+    const columns = "id, runtime_session_id, parent_session_id, backend, execution_host";
+    const touched = this.db
+      .query<Row, string[]>(
+        `SELECT ${columns} FROM gateway_sessions WHERE id IN (${marks(ids)}) OR transcript_path IN (${marks(paths)})`,
+      )
+      .all(...ids, ...paths);
+    const parentIds = touched.flatMap((row) => row.parent_session_id ?? []);
+    const parents = this.db
+      .query<Row, string[]>(
+        `SELECT ${columns} FROM gateway_sessions WHERE runtime_session_id IN (${marks(parentIds)})`,
+      )
+      .all(...parentIds)
+      .filter((parent) =>
+        touched.some(
+          (row) =>
+            row.parent_session_id === parent.runtime_session_id && row.backend === parent.backend,
+        ),
+      );
+    const rows = [...touched, ...parents];
+    const sources = rows.map((row) => row.id);
+    const runtimes = rows.flatMap((row) => row.runtime_session_id ?? []);
+    const threads = this.db
       .query<
         {
           id: string;
-          runtime_session_id: string | null;
-          parent_session_id: string | null;
-          backend: string;
-          execution_host: string | null;
+          sourceId: string | null;
+          runtimeId: string | null;
+          backend: string | null;
+          host: string | null;
         },
         string[]
       >(
-        `SELECT id, runtime_session_id, parent_session_id, backend, execution_host FROM gateway_sessions
-         WHERE id IN (${ids.map(() => "?").join(",")}) OR transcript_path IN (${paths.map(() => "?").join(",")})`,
+        `SELECT id, json_extract(data, '$.sourceId') AS sourceId, json_extract(data, '$.runtimeId') AS runtimeId,
+           json_extract(data, '$.backend') AS backend, json_extract(data, '$.host') AS host
+         FROM chat_threads WHERE json_valid(data)
+           AND (json_extract(data, '$.sourceId') IN (${marks(sources)}) OR json_extract(data, '$.runtimeId') IN (${marks(runtimes)}))`,
       )
-      .all(...ids, ...paths)
-      .flatMap((row) => [
-        row.id,
-        row.runtime_session_id,
-        row.parent_session_id,
-        this.bySource(row.id)?.id,
-        ...(row.runtime_session_id
-          ? this.byRuntime(row.backend, row.execution_host, row.runtime_session_id).map(
-              (thread) => thread.id,
-            )
-          : []),
-      ])
-      .filter((id): id is string => !!id);
+      .all(...sources, ...runtimes)
+      .filter(
+        (thread) =>
+          (thread.sourceId !== null && sources.includes(thread.sourceId)) ||
+          rows.some(
+            (row) =>
+              row.runtime_session_id === thread.runtimeId &&
+              (thread.backend === row.backend || thread.backend === `${row.backend}-cli`) &&
+              (thread.host ?? null) === row.execution_host,
+          ),
+      );
+    return [
+      ...rows.flatMap((row) => [row.id, row.runtime_session_id, row.parent_session_id]),
+      ...threads.map((thread) => thread.id),
+    ].filter((id): id is string => !!id);
   }
 }

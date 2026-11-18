@@ -385,6 +385,10 @@ function queueTokens(id: string, compute: () => Promise<number | null>, version 
           .update(gateway_sessions)
           .set({ tokens_used: tokens, tokens_version: version })
           .where(eq(gateway_sessions.id, id));
+        changes.publishSessions(
+          "session-activity",
+          new ChatStore(getSqlite()).relatedSessionIds([id], []),
+        );
       }
     })
     .catch((err) => logger.error("token count failed", err));
@@ -663,7 +667,6 @@ export function startSessionWatcher(
       : opts.registryDir;
   let stopped = false;
   let requested = false;
-  let changedFiles = false;
   const changedPaths = new Set<string>();
   let syncing = false;
   let debounce: ReturnType<typeof setTimeout> | undefined;
@@ -672,17 +675,14 @@ export function startSessionWatcher(
   const fileWatchers: (() => void)[] = [];
   let watcherGeneration = 0;
   const processes = new Map<string, () => void>();
-  const schedule = (changed: boolean | string[] = false): void => {
+  const schedule = (changed: string[] = []): void => {
     if (stopped) return;
-    if (Array.isArray(changed)) for (const path of changed) changedPaths.add(path);
-    else changedFiles ||= changed;
+    for (const path of changed) changedPaths.add(path);
     requested = true;
     if (debounce || syncing) return;
     debounce = setTimeout(() => {
       debounce = undefined;
       requested = false;
-      const notify = changedFiles;
-      changedFiles = false;
       const paths = [...changedPaths];
       changedPaths.clear();
       syncing = true;
@@ -690,12 +690,10 @@ export function startSessionWatcher(
         .then(() => {
           const active = [...touched];
           touched.clear();
-          if (notify) changes.publish("sessions");
-          else
-            changes.publishSessions(
-              "session-activity",
-              new ChatStore(getSqlite()).relatedSessionIds(active, paths),
-            );
+          changes.publishSessions(
+            "session-activity",
+            new ChatStore(getSqlite()).relatedSessionIds(active, paths),
+          );
         })
         .catch((error) => logger.error("Session change sync failed", error))
         .finally(() => {
@@ -761,7 +759,7 @@ export function startSessionWatcher(
           const paths = [...roots, db, `${db}-wal`, `${db}-shm`];
           if (stopped || generation !== watcherGeneration) return;
           if (host.kind === "ssh")
-            fileWatchers.push(watchRemotePaths(host, paths, () => schedule(true)));
+            fileWatchers.push(watchRemotePaths(host, paths, () => schedule()));
           else
             for (const path of paths)
               fileWatchers.push(
@@ -790,7 +788,7 @@ export function startSessionWatcher(
           watchRemotePaths(
             host,
             sources.map((path) => `~/${path}`),
-            () => schedule(true),
+            () => schedule(),
           ),
         );
       else {

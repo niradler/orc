@@ -109,16 +109,6 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   "session-activity": ["sessions", "session", "chat-threads", "palette-live-sessions"],
 };
 
-const SESSION_DETAILS = new Set([
-  "live-one",
-  "children",
-  "transcript",
-  "messages",
-  "lineage",
-  "subagents",
-]);
-const QUIET_DETAILS = new Set(["transcript", "messages", "lineage", "subagents"]);
-
 const changeListeners = new Set<(resources: ChangeResource[]) => void>();
 export function subscribeResourceChanges(
   listener: (resources: ChangeResource[]) => void,
@@ -129,30 +119,8 @@ export function subscribeResourceChanges(
   };
 }
 
-function matches(resource: ChangeResource, sessions: string[] | undefined, key: QueryKey): boolean {
-  const root = String(key[0]);
-  if (!QUERY_ROOTS[resource].includes(root)) return false;
-  const own =
-    root === "session" ||
-    root === "session-cache" ||
-    root === "chat-analytics" ||
-    (root === "chat-threads" && key[1] === "session") ||
-    (root === "sessions" && SESSION_DETAILS.has(String(key[1])));
-  if (sessions && own)
-    return key.some((part) => typeof part === "string" && sessions.includes(part));
-  if (resource === "session-activity")
-    return (
-      !own &&
-      !sessions &&
-      root !== "chat-threads" &&
-      !(root === "sessions" && key[1] === "live" && (key[2] === true || key[2] === "summary"))
-    );
-  if (resource === "session-messages") return key[1] === "messages";
-  return !(root === "sessions" && QUIET_DETAILS.has(String(key[1])));
-}
-
-// A running session publishes `sessions` changes about every 100 ms; one trailing refresh
-// per window keeps that from re-reading every mounted list for each transcript write.
+// Busy sessions publish changes in bursts; one trailing refresh per window keeps a burst
+// from re-reading the same mounted queries for each write.
 const COALESCE_MS = 350;
 
 interface PendingRefresh {
@@ -168,9 +136,34 @@ const pendingRefreshes = new WeakMap<QueryClient, PendingRefresh>();
 function flushPending(client: QueryClient, pending: PendingRefresh): void {
   clearTimeout(pending.timer);
   pendingRefreshes.delete(client);
-  refreshQueries(client, (key) =>
-    pending.changes.some((change) => matches(change.resource, change.sessions, key)),
-  ).then(pending.resolve, pending.reject);
+  refreshQueries(client, (key) => {
+    const root = String(key[0]);
+    const own =
+      root === "session" ||
+      root === "session-cache" ||
+      root === "chat-analytics" ||
+      (root === "chat-threads" && key[1] === "session") ||
+      (root === "sessions" &&
+        ["live-one", "children", "transcript", "messages", "lineage", "subagents"].includes(
+          String(key[1]),
+        ));
+    return pending.changes.some(({ resource, sessions }) => {
+      if (!QUERY_ROOTS[resource].includes(root)) return false;
+      if (sessions && own)
+        return key.some((part) => typeof part === "string" && sessions.includes(part));
+      if (resource === "session-activity")
+        return (
+          !own &&
+          !sessions &&
+          root !== "chat-threads" &&
+          !(root === "sessions" && key[1] === "live" && (key[2] === true || key[2] === "summary"))
+        );
+      if (resource === "session-messages") return key[1] === "messages";
+      return !(
+        root === "sessions" && ["transcript", "messages", "subagents"].includes(String(key[1]))
+      );
+    });
+  }).then(pending.resolve, pending.reject);
 }
 
 export function invalidateResources(

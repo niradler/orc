@@ -207,9 +207,9 @@ describe("resource events", () => {
       await invalidateResources(client, ["session-activity"]);
       expect(reads).toEqual({ list: 2, active: 1, viewed: 2, thread: 2, other: 1, tasks: 1 });
       await invalidateResources(client, ["sessions"]);
-      expect(reads).toEqual({ list: 3, active: 2, viewed: 2, thread: 3, other: 2, tasks: 1 });
+      expect(reads).toEqual({ list: 3, active: 2, viewed: 3, thread: 3, other: 2, tasks: 1 });
       await invalidateResources(client, ["session-messages"]);
-      expect(reads).toEqual({ list: 3, active: 2, viewed: 2, thread: 3, other: 2, tasks: 1 });
+      expect(reads).toEqual({ list: 3, active: 2, viewed: 3, thread: 3, other: 2, tasks: 1 });
     } finally {
       for (const stop of unsubscribe) stop();
       client.clear();

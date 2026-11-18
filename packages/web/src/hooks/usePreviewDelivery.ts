@@ -125,8 +125,13 @@ export function usePreviewDelivery(
     const offConnection = subscribeResourceConnection(() => {
       if (getResourceConnection() === "connected") sync();
     });
+    const visible = () => {
+      if (document.visibilityState === "visible") sync();
+    };
+    document.addEventListener("visibilitychange", visible);
     return () => {
       stopped = true;
+      document.removeEventListener("visibilitychange", visible);
       clearInterval(heartbeat);
       offChange();
       offConnection();

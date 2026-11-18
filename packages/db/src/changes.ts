@@ -52,13 +52,6 @@ const TABLE_RESOURCES: Record<string, ChangeResource> = {
   scratchpads: "scratchpads",
   workspace_environments: "workspaces",
 };
-const ACTIVITY_COLUMNS = [
-  "last_activity_at",
-  "tokens_used",
-  "tokens_version",
-  "usage_version",
-  "usage_synced_at",
-];
 const observers = new WeakMap<Database, () => void>();
 
 export function installChangeTracking(sqlite: Database, path: string): void {
@@ -113,7 +106,17 @@ export function installChangeTracking(sqlite: Database, path: string): void {
           ].includes(name),
       );
     const activity =
-      table === "gateway_sessions" ? all.filter((name) => ACTIVITY_COLUMNS.includes(name)) : [];
+      table === "gateway_sessions"
+        ? all.filter((name) =>
+            [
+              "last_activity_at",
+              "tokens_used",
+              "tokens_version",
+              "usage_version",
+              "usage_synced_at",
+            ].includes(name),
+          )
+        : [];
     const changed = (columns: string[]) =>
       columns.map((name) => `OLD."${name}" IS NOT NEW."${name}"`).join(" OR ");
     const triggers: [string, string, string, ChangeResource][] = [
