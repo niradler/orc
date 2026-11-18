@@ -427,6 +427,7 @@ test.describe("provider help", () => {
         const trigger = page.getByTestId("provider-binary-help");
         const content = page.getByTestId("provider-binary-help-content");
         await expect(content).toBeHidden();
+        await trigger.scrollIntoViewIfNeeded();
         await trigger.hover();
         await expect(content).toBeVisible();
         await expect(content).toContainText("SSH uses its remote installation");
@@ -434,15 +435,8 @@ test.describe("provider help", () => {
         await expect(content).toBeVisible();
         await page.keyboard.press("Escape");
         await expect(content).toBeHidden();
-        // The provider form re-renders while binary details settle. Focus again until the
-        // trigger keeps its open state so this checks keyboard focus, not render timing.
-        await expect
-          .poll(async () => {
-            await page.getByTestId("provider-name").focus();
-            await trigger.focus();
-            return content.isVisible();
-          })
-          .toBe(true);
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+        await trigger.focus();
         await expect(content).toBeVisible();
         await page.keyboard.press("Escape");
         await expect(content).toBeHidden();

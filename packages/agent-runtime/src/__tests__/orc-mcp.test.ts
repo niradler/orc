@@ -6,6 +6,7 @@ type QueryArgs = {
   prompt: string;
   options: {
     permissionMode?: string;
+    settingSources?: string[];
     maxTurns?: number;
     maxBudgetUsd?: number;
     effort?: string;
@@ -242,6 +243,27 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
     } finally {
       finishQuery();
       await session.close();
+    }
+  });
+
+  test("should load local Claude settings for open chats and none for allowlisted ones", async () => {
+    const open = await createBackend("claude").startSession({ cwd: process.cwd() });
+    const restricted = await createBackend("claude").startSession({
+      cwd: process.cwd(),
+      autoApprove: true,
+      toolAllowlist: ["Read"],
+    });
+    try {
+      await open.send("go");
+      await restricted.send("go");
+      await Bun.sleep(20);
+      expect(queries.map((entry) => entry.options.settingSources)).toEqual([
+        ["user", "project", "local"],
+        [],
+      ]);
+    } finally {
+      await open.close();
+      await restricted.close();
     }
   });
 
