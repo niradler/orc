@@ -79,8 +79,14 @@ export function workspacePortEnv(base: number, count: number): Record<string, st
   return env;
 }
 
-export function isWorktreePath(path: string): boolean {
-  return /[\\/](?:\.orc|\.claude|\.codex)[\\/]worktrees[\\/]/i.test(path);
+export function worktreeDir(path: string): string | null {
+  return /^.*?[\\/](?:\.orc|\.claude|\.codex)[\\/]worktrees[\\/][^\\/]+/i.exec(path)?.[0] ?? null;
+}
+
+export function workspaceConfigured(workspace: WorkspaceEnvironment): boolean {
+  return Boolean(
+    workspace.setup_script?.trim() || workspace.dev_script?.trim() || workspace.port_base !== null,
+  );
 }
 
 /**
@@ -135,4 +141,6 @@ export interface WorkspaceEnvironmentStore {
   }): void;
   /** Every port already handed to a workspace on this machine, across projects. */
   usedPorts(): number[];
+  list(): WorkspaceRecord[];
+  remove(path: string): void;
 }

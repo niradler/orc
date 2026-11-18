@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { createServer, isIP } from "node:net";
 import { type ExecHost, hostExec } from "./exec-host.js";
 import { type JobOutputRedactor, resolveJobEnvironment } from "./job-environment.js";
@@ -108,6 +109,9 @@ export async function ensureWorkspaceEnvironment(
 
   const base = input.workspace.port_base ?? DEFAULT_WORKSPACE_PORT_BASE;
   const count = input.workspace.port_count;
+  if (input.host.kind === "local")
+    for (const row of input.store.list())
+      if (!row.host && !existsSync(row.worktree_path)) input.store.remove(row.worktree_path);
 
   let record: WorkspaceRecord | null = null;
   let portBase = base;

@@ -2,6 +2,8 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { type ExecHost, hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
+import { getSqlite } from "@orc/db/client";
+import { deleteWorkspaceEnvironment } from "@orc/db/workspaces";
 import { mergedByPull, worktreePulls } from "../git/github.js";
 import { gitBranches } from "../git/panel.js";
 import { knownWorktrees, worktreeDeps } from "../git/registry.js";
@@ -143,6 +145,7 @@ app.openapi(removeRoute, async (c) => {
     },
     worktreeDeps(host),
   );
+  deleteWorkspaceEnvironment(getSqlite(), body.path);
   return c.body(null, 204);
 });
 
@@ -250,6 +253,7 @@ app.openapi(
           { ...item, merged_head: prMerged ? (tree.head ?? undefined) : undefined },
           deps,
         );
+        deleteWorkspaceEnvironment(getSqlite(), item.path);
         results.push({ path: item.path, removed: true, error: null });
       } catch (error) {
         results.push({

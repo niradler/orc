@@ -1,8 +1,11 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
+import { workspaceEnvironmentByPath } from "@orc/db/workspaces";
 import { prepareJobWorkspace } from "../job-workspace.js";
+import { workspaceEnvFor } from "../workspace-env.js";
 
 const repository = mkdtempSync(join(tmpdir(), "orc-job-worktree-"));
 function git(args: string[], cwd = repository): string {
@@ -19,9 +22,30 @@ beforeAll(() => {
   git(["commit", "-m", "Fixture"]);
 });
 afterAll(() => {
+  closeDb();
   rmSync(repository, { recursive: true, force: true });
 });
+function project(id: string, workspace: Record<string, unknown>): void {
+  getSqlite()
+    .query("INSERT INTO projects(id,name,scope,workspace) VALUES(?,?,?,?)")
+    .run(
+      id,
+      id,
+      repository,
+      JSON.stringify({
+        setup_script: null,
+        dev_script: null,
+        setup_timeout_secs: 900,
+        port_base: null,
+        port_count: 10,
+        env: [],
+        ...workspace,
+      }),
+    );
+}
 test("should remove only a successful clean managed worktree with cleanup opted in", async () => {
+  createTestDb();
+  project("job-ports", { port_base: 43000, port_count: 2 });
   const workspace = await prepareJobWorkspace({ kind: "local" }, repository, "clean", {
     mode: "worktree",
     base_ref: "HEAD",
@@ -29,8 +53,30 @@ test("should remove only a successful clean managed worktree with cleanup opted 
   });
   expect(workspace.cwd).not.toBe(repository);
   expect(git(["rev-parse", "HEAD"], workspace.cwd)).toBe(git(["rev-parse", "HEAD"]));
+  expect((await workspaceEnvFor({ kind: "local" }, workspace.cwd, "job-ports")).env.PORT).toBe(
+    "43000",
+  );
+  expect(workspaceEnvironmentByPath(getSqlite(), workspace.cwd)?.port_base).toBe(43000);
   expect(await workspace.cleanup(true)).toContain("removed");
   expect(existsSync(workspace.cwd)).toBe(false);
+  expect(workspaceEnvironmentByPath(getSqlite(), workspace.cwd)).toBeNull();
+});
+test("should inject ports only for a configured project and key a worktree subfolder on its worktree", async () => {
+  createTestDb();
+  project("plain", { env: [{ name: "ONLY", value: "1", secret: false }] });
+  project("ports", { port_base: 44000, port_count: 2 });
+  const worktree = join(repository, ".orc", "worktrees", "runner-sub");
+  const sub = join(worktree, "src");
+  mkdirSync(sub, { recursive: true });
+  const plain = await workspaceEnvFor({ kind: "local" }, sub, "plain");
+  expect(plain.env).toEqual({ ONLY: "1" });
+  expect(plain.setup).toBeNull();
+  const ports = await workspaceEnvFor({ kind: "local" }, sub, "ports");
+  expect(ports.env.PORT).toBe("44000");
+  expect(ports.env.ORC_WORKTREE).toBe(worktree);
+  expect(ports.setup?.worktree_path).toBe(worktree);
+  expect(workspaceEnvironmentByPath(getSqlite(), sub)).toBeNull();
+  rmSync(worktree, { recursive: true, force: true });
 });
 test("should preserve failed, opted-out, dirty, ignored-file and newly committed worktrees", async () => {
   for (const scenario of ["failed", "opted-out", "dirty", "ignored", "commit"]) {

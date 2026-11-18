@@ -13,11 +13,12 @@ import {
 import {
   DEFAULT_WORKSPACE_PORT_BASE,
   defaultWorkspaceEnvironment,
-  isWorktreePath,
   parseWorkspaceEnvironment,
   type WorkspaceEnvironmentStore,
   type WorkspaceRecord,
+  workspaceConfigured,
   workspacePortEnv,
+  worktreeDir,
   worktreeRoot,
 } from "../workspace-settings.js";
 
@@ -87,6 +88,10 @@ function fakeStore(existing: WorkspaceRecord | null = null) {
           ? []
           : Array.from({ length: item.port_count ?? 0 }, (_, index) => base + index);
       }),
+    list: () => [...records.values()],
+    remove: (path) => {
+      records.delete(path);
+    },
   };
   return { store, records };
 }
@@ -166,12 +171,29 @@ describe("workspace settings", () => {
   });
 
   test("recognizes managed worktrees", () => {
-    expect(isWorktreePath("/repo/.orc/worktrees/feature")).toBe(true);
-    expect(isWorktreePath("C:\\repo\\.claude\\worktrees\\feature")).toBe(true);
-    expect(isWorktreePath("/repo")).toBe(false);
+    expect(worktreeDir("/repo/.orc/worktrees/feature")).toBe("/repo/.orc/worktrees/feature");
+    expect(worktreeDir("/repo/.orc/worktrees/feature/packages/web")).toBe(
+      "/repo/.orc/worktrees/feature",
+    );
+    expect(worktreeDir("C:\\repo\\.claude\\worktrees\\feature\\src")).toBe(
+      "C:\\repo\\.claude\\worktrees\\feature",
+    );
+    expect(worktreeDir("/repo")).toBeNull();
     expect(worktreeRoot("/repo/.orc/worktrees/feature")).toBe("/repo");
     expect(worktreeRoot("C:\\repo\\.codex\\worktrees\\feature\\")).toBe("C:\\repo");
     expect(worktreeRoot("/repo")).toBeNull();
+  });
+
+  test("only scripts or an explicit port range turn the workspace environment on", () => {
+    const defaults = defaultWorkspaceEnvironment();
+    expect(workspaceConfigured(defaults)).toBe(false);
+    expect(
+      workspaceConfigured({ ...defaults, env: [{ name: "A", value: "1", secret: false }] }),
+    ).toBe(false);
+    expect(workspaceConfigured({ ...defaults, setup_script: "  " })).toBe(false);
+    expect(workspaceConfigured({ ...defaults, setup_script: "bun install" })).toBe(true);
+    expect(workspaceConfigured({ ...defaults, dev_script: "bun run dev" })).toBe(true);
+    expect(workspaceConfigured({ ...defaults, port_base: 4000 })).toBe(true);
   });
 });
 

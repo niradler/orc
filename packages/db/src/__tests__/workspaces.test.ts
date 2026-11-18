@@ -122,4 +122,62 @@ describe("workspace environments", () => {
     expect(store.byPath("/repo/.orc/worktrees/two")?.port_base).toBe(4200);
     expect(store.usedPorts()).toEqual(expect.arrayContaining([4100, 4200]));
   });
+
+  test("reports a setup that outlived its timeout as interrupted", () => {
+    const now = Math.floor(Date.now() / 1000);
+    for (const [name, started] of [
+      ["crashed", now - 3700],
+      ["live", now - 10],
+    ] as const) {
+      createWorkspaceEnvironment(sqlite, {
+        worktree_path: `/repo/.orc/worktrees/${name}`,
+        project_id: "project-d",
+        repo_root: "/repo",
+        git_branch: null,
+        host: null,
+        port_base: name === "crashed" ? 4400 : 4500,
+        port_count: 1,
+      });
+      setWorkspaceSetup(sqlite, {
+        path: `/repo/.orc/worktrees/${name}`,
+        status: "running",
+        started,
+        ended: null,
+      });
+    }
+    const crashed = workspaceEnvironmentByPath(sqlite, "/repo/.orc/worktrees/crashed");
+    expect(crashed?.setup_status).toBe("failed");
+    expect(crashed?.setup_output).toContain("interrupted");
+    expect(crashed?.setup_ended_at).toBeGreaterThanOrEqual(now);
+    expect(workspaceEnvironmentByPath(sqlite, "/repo/.orc/worktrees/live")?.setup_status).toBe(
+      "running",
+    );
+    expect(
+      listWorkspaceEnvironments(sqlite, "project-d")
+        .map((row) => row.setup_status)
+        .sort(),
+    ).toEqual(["failed", "running"]);
+
+    sqlite
+      .query("INSERT INTO projects(id,name,workspace) VALUES('project-e','project-e',?)")
+      .run(JSON.stringify({ setup_timeout_secs: 60 }));
+    createWorkspaceEnvironment(sqlite, {
+      worktree_path: "/repo/.orc/worktrees/short",
+      project_id: "project-e",
+      repo_root: "/repo",
+      git_branch: null,
+      host: null,
+      port_base: 4600,
+      port_count: 1,
+    });
+    setWorkspaceSetup(sqlite, {
+      path: "/repo/.orc/worktrees/short",
+      status: "running",
+      started: now - 200,
+      ended: null,
+    });
+    expect(workspaceEnvironmentByPath(sqlite, "/repo/.orc/worktrees/short")?.setup_status).toBe(
+      "failed",
+    );
+  });
 });
