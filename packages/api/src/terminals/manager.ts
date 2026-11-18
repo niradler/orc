@@ -56,6 +56,7 @@ export interface CreateTerminalInput {
   name?: string | undefined;
   liveSessionId?: string | null | undefined;
   metadata?: TerminalMetadata | undefined;
+  notice?: string | null | undefined;
 }
 
 export interface TerminalManagerOptions {
@@ -195,6 +196,11 @@ export class TerminalManager {
       previewBuffer: "",
       decoder: new TextDecoder(),
     };
+    if (input.notice) {
+      const notice = new TextEncoder().encode(`\x1b[33m${input.notice}\x1b[0m\r\n`);
+      entry.scrollback.push(notice);
+      entry.scrollbackSize = notice.length;
+    }
     entry.pty = this.options.spawn(input.launch.spawnArgv ?? input.launch.argv, {
       cwd: input.launch.host ? undefined : input.launch.cwd,
       env: buildPtyEnv({ ...this.options.env, ...input.launch.env }),

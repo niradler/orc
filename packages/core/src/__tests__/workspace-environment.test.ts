@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -179,6 +179,12 @@ describe("workspace settings", () => {
       "C:\\repo\\.claude\\worktrees\\feature",
     );
     expect(worktreeDir("/repo")).toBeNull();
+    expect(worktreeDir("/repo/.orc/worktrees/a/.claude/worktrees/b/src")).toBe(
+      "/repo/.orc/worktrees/a/.claude/worktrees/b",
+    );
+    expect(worktreeRoot("/repo/.orc/worktrees/a/.claude/worktrees/b")).toBe(
+      "/repo/.orc/worktrees/a",
+    );
     expect(worktreeRoot("/repo/.orc/worktrees/feature")).toBe("/repo");
     expect(worktreeRoot("C:\\repo\\.codex\\worktrees\\feature\\")).toBe("C:\\repo");
     expect(worktreeRoot("/repo")).toBeNull();
@@ -194,6 +200,7 @@ describe("workspace settings", () => {
     expect(workspaceConfigured({ ...defaults, setup_script: "bun install" })).toBe(true);
     expect(workspaceConfigured({ ...defaults, dev_script: "bun run dev" })).toBe(true);
     expect(workspaceConfigured({ ...defaults, port_base: 4000 })).toBe(true);
+    expect(workspaceConfigured({ ...defaults, port_count: 4 })).toBe(true);
   });
 });
 
@@ -264,6 +271,42 @@ describe("workspace runtime", () => {
     });
     expect(attempts).toBe(2);
     expect(setup.port_base).toBe(3202);
+  });
+
+  test("reclaims only provably deleted worktrees, other projects' only when the range is full", async () => {
+    const repo = join(home, "repo");
+    const worktrees = join(repo, ".orc", "worktrees");
+    mkdirSync(join(worktrees, "live"), { recursive: true });
+    const { store, records } = fakeStore();
+    const seed = (path: string, base: number, projectId = "project-1") =>
+      records.set(path, { ...record(path, base, 10), project_id: projectId });
+    seed(join(worktrees, "live"), 3100);
+    seed(join(worktrees, "deleted"), 3110);
+    seed(join(home, "unmounted", ".orc", "worktrees", "gone"), 3120);
+    seed(join(worktrees, "other-deleted"), 3130, "project-2");
+    const ensure = (name: string, workspace = defaultWorkspaceEnvironment()) =>
+      ensureWorkspaceEnvironment({
+        store,
+        host: localHost,
+        projectId: "project-1",
+        path: join(worktrees, name),
+        repoRoot: repo,
+        platform: "linux",
+        workspace,
+        isPortFree: () => true,
+      });
+
+    expect((await ensure("next")).port_base).toBe(3110);
+    expect(records.has(join(worktrees, "deleted"))).toBe(false);
+    expect(records.has(join(worktrees, "live"))).toBe(true);
+    expect(records.has(join(home, "unmounted", ".orc", "worktrees", "gone"))).toBe(true);
+    expect(records.has(join(worktrees, "other-deleted"))).toBe(true);
+
+    const full = { ...defaultWorkspaceEnvironment(), port_base: 65526, port_count: 10 };
+    records.delete(join(worktrees, "other-deleted"));
+    seed(join(worktrees, "other-deleted"), 65526, "project-2");
+    expect((await ensure("last", full)).port_base).toBe(65526);
+    expect(records.has(join(worktrees, "other-deleted"))).toBe(false);
   });
 
   test("skips socket probing for SSH hosts", async () => {

@@ -219,19 +219,23 @@ turns and job actions that run in that project's folders.
   `::` are shown as `localhost`, and later URLs in the same terminal are ignored.
 - **Port range** gives each workspace a stable block instead of a single port.
   The first workspace of a project starts at 3100 with 10 ports unless
-  **Port range start** or **Ports per workspace** is changed (1-100). Later workspaces
+  **Port range start** or **Ports per workspace** is changed (1-100); changing
+  either turns ports on even without scripts. Later workspaces
   take the next free block, and blocks never overlap on the same API host, even
   across projects. Ports already bound on a local host are skipped; SSH hosts
   cannot be probed, so only ORC's own allocations are avoided there. A block is
-  released when ORC removes the worktree, and a local block whose folder no longer
-  exists is reclaimed for the next workspace.
+  released when ORC removes the worktree. A local block whose folder was deleted
+  while its repository is still present is reclaimed by the project's next
+  workspace, or by any project once no block is free. If no block can be found,
+  the terminal or chat still starts without ports and says why.
 - **Environment** holds extra variables for every launch in the project. Mark
   sensitive values **Secret** to encrypt them with ORC's machine key; secrets are
   write-only and read back as empty placeholders. An untouched placeholder keeps
   the saved value. `ORC_` names are reserved for ORC.
 
-Once a project has a setup script, a dev script or a **Port range start**,
-workspaces export `PORT`, `ORC_PORT`, `ORC_PORT_END`, `ORC_PORT_COUNT` and
+Once a project has a setup script, a dev script, a **Port range start** or a
+changed **Ports per workspace**, workspaces export `PORT`, `ORC_PORT`,
+`ORC_PORT_END`, `ORC_PORT_COUNT` and
 `ORC_PORT_1`…`ORC_PORT_<count>`, plus `ORC_PROJECT_ID` and `ORC_WORKSPACE`
 (`ORC_WORKTREE` only inside a managed worktree). Without any of them, only the
 project environment values are added. Any folder inside a managed worktree shares

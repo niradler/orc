@@ -274,7 +274,8 @@ const deleteRoute = createRoute({
   },
 });
 
-// Bun closes a request idle for 255s (runtime.ts idleTimeout), so a sync wait must end first.
+// Bun closes a bodyless request left unanswered for 255s (runtime.ts idleTimeout), and a trigger
+// usually has no body, so a sync wait must end first.
 const MAX_SYNC_WAIT_SECS = 240;
 
 const triggerRoute = createRoute({

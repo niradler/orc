@@ -68,6 +68,7 @@ export interface WorkspaceLaunch {
   env: Record<string, string>;
   previewUrl: string | null;
   setup: WorkspaceRecord | null;
+  warning: string | null;
 }
 
 const EMPTY_LAUNCH: WorkspaceLaunch = {
@@ -76,12 +77,13 @@ const EMPTY_LAUNCH: WorkspaceLaunch = {
   env: {},
   previewUrl: null,
   setup: null,
+  warning: null,
 };
 
 /**
  * Ports, environment and one-time setup for a folder a terminal or agent will
- * use. Setup runs only for managed worktrees; a plain project checkout just
- * gets a stable port block.
+ * use, once the project configures a workspace environment. Setup runs only
+ * for managed worktrees; a plain project checkout just gets a stable port block.
  */
 export async function workspaceLaunch(
   host: ExecHost,
@@ -101,6 +103,7 @@ export async function workspaceLaunch(
     env: resolved.env,
     previewUrl: null,
     setup: null,
+    warning: null,
   };
   if (!workspaceConfigured(config)) return launch;
   const path = worktree ?? cwd;
@@ -117,7 +120,10 @@ export async function workspaceLaunch(
     });
   } catch (error) {
     logger.error(`Workspace environment failed for ${path}: ${String(error)}`);
-    return launch;
+    return {
+      ...launch,
+      warning: `Workspace ports are unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    };
   }
 
   const base = record.port_base ?? config.port_base ?? 3100;

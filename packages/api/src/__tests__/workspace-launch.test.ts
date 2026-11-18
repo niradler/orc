@@ -126,12 +126,16 @@ describe("workspace launch environment", () => {
     expect(fromSub.env.ORC_WORKTREE).toBe(worktree);
     expect(workspaceEnvironmentByPath(getSqlite(), sub)).toBeNull();
     expect(workspaceEnvironmentByPath(getSqlite(), worktree)?.port_base).toBe(41000);
+    const bySub = await req(app, "GET", `/workspaces?path=${encodeURIComponent(sub)}`);
+    expect(
+      (await bySub.json()).workspaces.map((row: { worktree_path: string }) => row.worktree_path),
+    ).toEqual([worktree]);
     for (const terminal of [fromSub, fromRoot])
       await req(app, "DELETE", `/terminals/${terminal.id}`);
 
     const removed = await req(app, "POST", "/git/worktrees/remove", {
       cwd: scope,
-      path: worktree,
+      path: `${worktree}/`,
       force: true,
     });
     expect(removed.status).toBe(204);
@@ -152,5 +156,27 @@ describe("workspace launch environment", () => {
     expect(next.status).toBe(201);
     expect(next.env.PORT).toBe("65526");
     expect(workspaceEnvironmentByPath(getSqlite(), first)).toBeNull();
+  });
+
+  test("a launch with no free port block starts without ports and says why", async () => {
+    const { scope } = await project("full", { port_base: 65526, port_count: 10 });
+    const first = join(scope, ".orc", "worktrees", "first");
+    const second = join(scope, ".orc", "worktrees", "second");
+    mkdirSync(first, { recursive: true });
+    mkdirSync(second, { recursive: true });
+    getSqlite().query("DELETE FROM workspace_environments WHERE port_base >= 65526").run();
+    expect((await shell(first)).env.PORT).toBe("65526");
+
+    const blocked = await shell(second);
+    expect(blocked.status).toBe(201);
+    expect(blocked.env.PORT).toBeUndefined();
+    let shown = "";
+    getTerminalManager().attach(blocked.id as string, {
+      output: (data) => {
+        shown += new TextDecoder().decode(data);
+      },
+      exit: () => {},
+    })();
+    expect(shown).toContain("Workspace ports are unavailable: No free 10-port block above 65526");
   });
 });

@@ -3,7 +3,7 @@ import { loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { type ExecHost, hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
 import { getSqlite } from "@orc/db/client";
-import { deleteWorkspaceEnvironment } from "@orc/db/workspaces";
+import { deleteWorkspaceEnvironment, listWorkspaceEnvironments } from "@orc/db/workspaces";
 import { mergedByPull, worktreePulls } from "../git/github.js";
 import { gitBranches } from "../git/panel.js";
 import { knownWorktrees, worktreeDeps } from "../git/registry.js";
@@ -131,11 +131,19 @@ app.openapi(branchesRoute, async (c) => {
   return c.json(await gitBranches(host, cwd), 200);
 });
 
+function forgetWorkspace(path: string, platform: NodeJS.Platform): void {
+  const sqlite = getSqlite();
+  for (const row of listWorkspaceEnvironments(sqlite))
+    if (samePath(row.worktree_path, path, platform))
+      deleteWorkspaceEnvironment(sqlite, row.worktree_path);
+}
+
 app.openapi(removeRoute, async (c) => {
   const config = loadConfig();
   requireTerminals(config);
   const body = c.req.valid("json");
   const host = selectedTerminalHost(config, body.host);
+  const deps = worktreeDeps(host);
   await removeWorktree(
     {
       cwd: await checkedFolder(body.cwd, host),
@@ -143,9 +151,9 @@ app.openapi(removeRoute, async (c) => {
       force: body.force,
       delete_branch: body.delete_branch,
     },
-    worktreeDeps(host),
+    deps,
   );
-  deleteWorkspaceEnvironment(getSqlite(), body.path);
+  forgetWorkspace(body.path, deps.platform);
   return c.body(null, 204);
 });
 
@@ -253,7 +261,7 @@ app.openapi(
           { ...item, merged_head: prMerged ? (tree.head ?? undefined) : undefined },
           deps,
         );
-        deleteWorkspaceEnvironment(getSqlite(), item.path);
+        forgetWorkspace(item.path, deps.platform);
         results.push({ path: item.path, removed: true, error: null });
       } catch (error) {
         results.push({
