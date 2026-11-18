@@ -526,7 +526,9 @@ class ClaudeSDKSession implements AgentSession {
             : {}),
           permissionMode,
           settingSources:
-            this.opts.toolAllowlist !== undefined || this.opts.ruleGuard ? [] : ["user", "project"],
+            this.opts.toolAllowlist !== undefined || this.opts.ruleGuard
+              ? []
+              : ["user", "project", "local"],
           ...(this.opts.toolAllowlist !== undefined
             ? {
                 tools: this.opts.toolAllowlist.filter((name) => !name.startsWith("mcp__")),

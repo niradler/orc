@@ -41,8 +41,9 @@ export function withLifecycle(
         const previous = records.get(live.externalId);
         const keepNativeStatus =
           previous !== undefined &&
-          (adapter.backend === "claude" || adapter.backend === "codex") &&
-          live.status !== "stopped";
+          live.status !== "stopped" &&
+          (adapter.backend === "codex" ||
+            (adapter.backend === "claude" && previous.status !== "stopped"));
         records.set(live.externalId, {
           ...previous,
           ...live,

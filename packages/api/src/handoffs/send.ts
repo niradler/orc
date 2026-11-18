@@ -1,4 +1,4 @@
-import { lstat, mkdtemp, rm } from "node:fs/promises";
+import { lstat, mkdtemp, realpath, rm } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
@@ -149,7 +149,9 @@ async function resolveSource(
   // Throws when an https URL carries credentials; the destination must fetch it without secrets.
   repositoryIdentity(repository);
   const current = await run(["git", "-C", root, "branch", "--show-current"]);
-  const subdirectory = relative(root, row.cwd).split(sep).join("/");
+  const subdirectory = relative(await realpath(root), await realpath(row.cwd))
+    .split(sep)
+    .join("/");
   if (subdirectory.startsWith(".."))
     return { reason: "The session folder is outside its repository." };
   return {

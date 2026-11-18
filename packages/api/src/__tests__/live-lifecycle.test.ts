@@ -9,6 +9,7 @@ import { readRegistrations, writeRegistration } from "@orc/core/live-session";
 import { getSqlite } from "@orc/db/client";
 import webpush from "web-push";
 import { runSync, startSessionWatcher } from "../session-watcher.js";
+import { claudeAdapter } from "../sessions/claude.js";
 import { codexAdapter } from "../sessions/codex.js";
 import { cursorAgentAdapter } from "../sessions/cursor-agent.js";
 import { geminiAdapter } from "../sessions/gemini.js";
@@ -195,6 +196,44 @@ describe("lifecycle parity", () => {
         root,
       ),
     ).toThrow();
+  });
+
+  test("a live Claude registration stays idle when the stored session is reported to settle usage", async () => {
+    const registry = join(root, "claude-settle");
+    const claudeHome = join(root, "claude-settle-home");
+    mkdirSync(claudeHome, { recursive: true });
+    const now = Date.now();
+    writeRegistration(
+      {
+        backend: "claude",
+        externalId: "claude-settle",
+        pid: process.pid,
+        title: "Claude settle",
+        status: "idle",
+        createdAt: now,
+        updatedAt: now,
+      },
+      registry,
+    );
+    const adapter = withLifecycle(
+      {
+        ...claudeAdapter({ registry: claudeHome, desktop: null, projects: claudeHome }),
+        minIntervalMs: 0,
+      },
+      registry,
+    );
+    const status = async () =>
+      (
+        (await (await req(app, "GET", "/sessions/live?agent=claude&active=false")).json())
+          .sessions as {
+          session_id: string;
+          status: string;
+        }[]
+      ).find((row) => row.session_id === "claude-settle")?.status;
+    await runSync([adapter], { force: true });
+    expect(await status()).toBe("idle");
+    await runSync([adapter], { force: true });
+    expect(await status()).toBe("idle");
   });
 });
 

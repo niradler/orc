@@ -68,7 +68,7 @@ type SteeringResponse = {
 
 /** Effort levels from a thought_level select option, flattening option groups. */
 function effortChoicesOf(option: SessionConfigOption | undefined): AcpEffortChoice[] | undefined {
-  if (!option || option.type !== "select" || option.category !== "thought_level") return undefined;
+  if (option?.type !== "select" || option.category !== "thought_level") return undefined;
   const choices = option.options
     .flatMap((entry) => ("group" in entry ? entry.options : [entry]))
     .slice(0, 16)
@@ -520,7 +520,7 @@ export class AcpSession implements AgentSession {
   /** The parent's task call finished, so the child it names is done too. */
   private finishChild(id: string, failed: boolean): void {
     const state = this.children.get(id);
-    if (!state || state.status !== "running") return;
+    if (state?.status !== "running") return;
     state.status = failed ? "failed" : "completed";
     this.pushChild(state);
   }
