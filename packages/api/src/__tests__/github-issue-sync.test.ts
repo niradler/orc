@@ -167,7 +167,6 @@ describe("GitHub issues as native tasks", () => {
       title: "Session-link verification",
       project_id: projectId,
       status: "stopped",
-      transcript_path: "/tmp/issue-session-probe.jsonl",
     });
     const linked = await req(app, "PATCH", "/sessions/live/linked-issue-session", {
       task_id: task.id,

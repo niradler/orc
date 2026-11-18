@@ -1307,10 +1307,12 @@ async function remotePythonJson<T>(
   }
 }
 
+export const LIST_FILES_LIMIT = 20_000;
+
 export async function listHostFiles(
   host: ExecHost,
   path: string,
-  maxFiles = 20_000,
+  maxFiles = LIST_FILES_LIMIT,
 ): Promise<HostFileInfo[]> {
   const target = await expandHostPath(host, path);
   if (host.kind === "ssh") {

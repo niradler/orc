@@ -87,6 +87,7 @@ export function codexAdapter(
   } = {},
 ): SessionAdapter {
   const runtime = options.runtime ?? hostRuntime(LOCAL_HOST);
+  const missing = new Set<string>();
   return {
     backend: "codex",
     minIntervalMs: 5_000,
@@ -169,12 +170,17 @@ export function codexAdapter(
               }
             const lastActivityAt = new Date(Math.max(updated, live ?? 0));
             const before = known.get(r.id);
+            const keepPrevious = !rollout && !missing.has(r.id);
+            if (rollout) missing.delete(r.id);
+            else missing.add(r.id);
             const record: SessionRecord = {
               backend: "codex",
               externalId: r.id,
               ...(codexParent(r.source) ? { parentId: codexParent(r.source) } : {}),
               title: oneLine(
-                promptText(r.name) ||
+                (r.name && !r.first_user_message?.startsWith(r.name.replace(/(\.\.\.|…)$/, ""))
+                  ? r.name
+                  : "") ||
                   (displayPath(r.title) !== displayPath(r.cwd) ? promptText(r.title) : "") ||
                   promptText(r.first_user_message) ||
                   pathLabel(r.cwd) ||
@@ -194,7 +200,11 @@ export function codexAdapter(
               transcriptPath:
                 r.source?.startsWith('{"subagent"') && !codexParent(r.source)
                   ? null
-                  : (rollout?.path ?? null),
+                  : rollout
+                    ? rollout.path
+                    : keepPrevious
+                      ? (before?.session?.transcriptPath ?? null)
+                      : null,
               tokensUsed: r.tokens_used > 0 ? r.tokens_used : null,
             };
             const expected = r.tokens_used > 0 ? r.tokens_used : null;

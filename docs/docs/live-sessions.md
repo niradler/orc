@@ -41,9 +41,10 @@ files. They form a tree, so a spawned session that starts more shows them under
 itself, and the parent row counts them as **N sessions**. A spawned session keeps
 its own notifications and usage.
 
-The list shows only sessions that can be opened. An ended Claude, Codex, Gemini,
-OpenCode or Pi session leaves it when its transcript is gone, including a session
-that ended before any prompt was sent, and returns when the file comes back. A Codex
+The list shows only sessions that can be opened. An ended Claude, Codex, Gemini or
+Pi session leaves it when its transcript file is gone, including a session that
+ended before any prompt was sent, and returns when the file comes back. A task's
+session list keeps its linked sessions either way. A Codex
 rollout compressed in place (`.jsonl.zst`) stays listed and opens as before. Codex's
 own review and approval runs are not listed. Titles skip slash-command and IDE
 wrappers and terminal color codes, and a Cursor chat whose title was never generated

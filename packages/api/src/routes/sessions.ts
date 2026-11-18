@@ -517,11 +517,13 @@ app.openapi(liveListRoute, async (c) => {
       isNull(gateway_sessions.parent_session_id),
       include_hidden ? undefined : isNull(gateway_sessions.hidden_at),
       sql`NOT (coalesce(${gateway_sessions.tokens_used}, -1) = 0 AND ${gateway_sessions.summary} IS NULL)`,
-      or(
-        isNotNull(gateway_sessions.transcript_path),
-        ne(gateway_sessions.status, "stopped"),
-        notInArray(gateway_sessions.backend, NATIVE_CHAT_AGENTS),
-      ),
+      task_id
+        ? undefined
+        : or(
+            isNotNull(gateway_sessions.transcript_path),
+            ne(gateway_sessions.status, "stopped"),
+            notInArray(gateway_sessions.backend, NATIVE_CHAT_AGENTS),
+          ),
       project_id === "unassigned"
         ? isNull(gateway_sessions.project_id)
         : project_id

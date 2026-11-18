@@ -1,4 +1,5 @@
 import { zstdDecompressSync } from "node:zlib";
+import { ValidationError } from "@orc/core/errors";
 import type { HostRuntime } from "@orc/core/exec-host";
 import { opencodeTranscriptBytes } from "./opencode.js";
 import { MAX_TRANSCRIPT_BYTES } from "./transcript.js";
@@ -22,7 +23,16 @@ export async function readTranscriptFile(
   limit = MAX_TRANSCRIPT_BYTES,
 ): Promise<Uint8Array> {
   const bytes = await runtime.readFile(path, limit);
-  return path.endsWith(".zst") ? zstdDecompressSync(bytes, { maxOutputLength: limit }) : bytes;
+  if (!path.endsWith(".zst")) return bytes;
+  try {
+    return zstdDecompressSync(bytes, { maxOutputLength: limit });
+  } catch (error) {
+    throw new ValidationError(
+      (error as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE"
+        ? `File is too large to read: ${path}`
+        : `Transcript is unreadable: ${path}`,
+    );
+  }
 }
 
 /** Reads a session transcript as bytes, querying stores that keep many sessions in one database. */

@@ -4,16 +4,18 @@ import { mkdirSync, mkdtempSync, rmSync, unlinkSync, utimesSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
+import { hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { writeRegistration } from "@orc/core/live-session";
 import { getSqlite } from "@orc/db/client";
 import type { createApp } from "../server.js";
 import { runSync, tokensSettled } from "../session-watcher.js";
 import { claudeAdapter } from "../sessions/claude.js";
 import { codexAdapter } from "../sessions/codex.js";
-import { promptText } from "../sessions/common.js";
+import { droppedTranscripts, promptText } from "../sessions/common.js";
 import { cursorAdapter } from "../sessions/cursor.js";
 import { withLifecycle } from "../sessions/lifecycle.js";
 import { piAdapter } from "../sessions/pi.js";
+import { readTranscriptFile } from "../sessions/transcript-source.js";
 import type { SessionAdapter } from "../sessions/types.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -70,7 +72,13 @@ test("a rotated Codex rollout stays listed and opens; threads with no rollout or
   const rollout = (id: string) => join(home, `rollout-${id}.jsonl`);
   const threads = [
     ["rotated", "\u001b[1m# daily-health\u001b[0m", "", "/tmp/repo"],
-    ["cleared", "<command-name>/clear</command-name>", "", "/tmp/agentops"],
+    [
+      "cleared",
+      "<command-name>/clear</command-name>",
+      "<command-name>/clear</command-name>\n  <command-message>clear</command-message>\n  <command-args></command-args>",
+      "/tmp/agentops",
+    ],
+    ["user-named", "<draft> release notes", "write the notes", "/tmp/repo"],
     [
       "review",
       null,
@@ -116,7 +124,7 @@ test("a rotated Codex rollout stays listed and opens; threads with no rollout or
   };
   writeFileSync(`${rollout("rotated")}.zst`, zstdCompressSync(Buffer.from(jsonl([userTurn]))));
   utimesSync(`${rollout("rotated")}.zst`, OLD, OLD);
-  for (const id of ["cleared", "review", "opened", "guardian"]) {
+  for (const id of ["cleared", "user-named", "review", "opened", "guardian"]) {
     writeFileSync(rollout(id), jsonl([userTurn]));
     utimesSync(rollout(id), OLD, OLD);
   }
@@ -128,6 +136,7 @@ test("a rotated Codex rollout stays listed and opens; threads with no rollout or
   expect(Object.fromEntries(rows.map((row) => [row.session_id, row.name]))).toEqual({
     rotated: "# daily-health",
     cleared: "agentops",
+    "user-named": "<draft> release notes",
     review: "/review PR 15",
     opened: "fix the build",
   });
@@ -317,4 +326,159 @@ test("a registered session keeps the transcript path its agent moved it to", asy
   };
   const [record] = await withLifecycle(native, registry).list(new Map());
   expect(record?.transcriptPath).toBe("/sessions/rollout-moved.jsonl.zst");
+});
+
+test("a registered Pi session leaves the list when its session file is deleted", async () => {
+  const sessions = join(root, "pi-registered");
+  const registry = join(root, "pi-registry");
+  mkdirSync(sessions);
+  const id = "bbbbbbbb-0000-4000-8000-00000000b002";
+  const file = join(sessions, `2026-11-01_${id}.jsonl`);
+  const timestamp = "2026-11-01T00:00:00.000Z";
+  writeFileSync(
+    file,
+    jsonl([
+      { type: "session", version: 3, id, timestamp, cwd: "/tmp/repo" },
+      {
+        id: "u",
+        parentId: null,
+        timestamp,
+        type: "message",
+        message: { role: "user", content: [{ type: "text", text: "tag the release" }] },
+      },
+    ]),
+  );
+  writeRegistration(
+    {
+      backend: "pi",
+      externalId: id,
+      pid: DEAD_PID,
+      title: "tag the release",
+      transcriptPath: file,
+      status: "stopped",
+      createdAt: OLD * 1000,
+      updatedAt: OLD * 1000,
+    },
+    registry,
+  );
+  const adapter = withLifecycle(piAdapter(sessions), registry);
+  await runSync([adapter], { force: true });
+  expect((await listed("pi")).map((row) => row.name)).toContain("tag the release");
+  unlinkSync(file);
+  await runSync([adapter], { force: true });
+  expect((await listed("pi")).map((row) => row.name)).not.toContain("tag the release");
+});
+
+test("a task keeps its linked sessions after their transcripts are gone", async () => {
+  getSqlite()
+    .query(
+      "INSERT INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, title, status, summary, created_at) VALUES ('gone-linked', '__live-sessions__', 'claude', 'direct', 'cccccccc-0000-4000-8000-0000000000d1', 'Gone but linked', 'stopped', 'old work', 1790000000)",
+    )
+    .run();
+  const task = await (
+    await req(app, "POST", "/tasks", {
+      title: "linked goal",
+      body: "session: cccccccc-0000-4000-8000-0000000000d1",
+    })
+  ).json();
+  const ids = async (query: string) =>
+    (
+      (await (await req(app, "GET", `/sessions/live?active=false${query}`)).json())
+        .sessions as Row[]
+    ).map((row) => row.id);
+  expect(await ids(`&task_id=${task.id}`)).toEqual(["gone-linked"]);
+  expect(await ids("&agent=claude&limit=1000")).not.toContain("gone-linked");
+});
+
+test("a truncated listing never hides a session", async () => {
+  let stats = 0;
+  const known = new Map([
+    [
+      "s",
+      {
+        lastActivityMs: 0,
+        tokensUsed: null,
+        session: {
+          backend: "pi",
+          externalId: "s",
+          title: "s",
+          status: "stopped" as const,
+          createdAt: new Date(0),
+          lastActivityAt: new Date(0),
+          transcriptPath: join(root, "absent.jsonl"),
+        },
+      },
+    ],
+  ]);
+  const runtime = {
+    ...hostRuntime(LOCAL_HOST),
+    stat: async () => {
+      stats += 1;
+      return null;
+    },
+  };
+  expect(await droppedTranscripts(known, new Set(), false, runtime)).toEqual([]);
+  expect(stats).toBe(0);
+  expect((await droppedTranscripts(known, new Set(), true, runtime))[0]?.transcriptPath).toBeNull();
+});
+
+test("a Codex rollout missing for one sync keeps its path; a corrupt or oversized one says why", async () => {
+  const home = join(root, "codex-race");
+  mkdirSync(home);
+  const db = new Database(join(home, "state_5.sqlite"));
+  db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, name TEXT, cwd TEXT,
+    preview TEXT, first_user_message TEXT, tokens_used INTEGER, rollout_path TEXT,
+    created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER,
+    archived INTEGER)`);
+  const rollout = join(home, "rollout-race.jsonl");
+  const insert = db.prepare("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+  insert.run(
+    "race",
+    "",
+    "Race",
+    "/tmp/repo",
+    "",
+    "go",
+    10,
+    rollout,
+    OLD * 1000,
+    OLD,
+    OLD * 1000,
+    OLD,
+    0,
+  );
+  insert.finalize();
+  db.close();
+  const adapter = codexAdapter(join(home, "state_5.sqlite"), { writer: () => false });
+  const known = new Map([
+    [
+      "race",
+      {
+        lastActivityMs: OLD * 1000,
+        tokensUsed: 10,
+        session: {
+          backend: "codex",
+          externalId: "race",
+          title: "Race",
+          status: "stopped" as const,
+          createdAt: new Date(OLD * 1000),
+          lastActivityAt: new Date(OLD * 1000),
+          transcriptPath: rollout,
+        },
+      },
+    ],
+  ]);
+  expect((await adapter.list(known))[0]?.transcriptPath).toBe(rollout);
+  expect((await adapter.list(known))[0]?.transcriptPath).toBeNull();
+
+  const corrupt = join(home, "corrupt.jsonl.zst");
+  writeFileSync(corrupt, "not zstd");
+  await expect(readTranscriptFile(hostRuntime(LOCAL_HOST), corrupt)).rejects.toThrow(
+    "Transcript is unreadable",
+  );
+  const big = join(home, "big.jsonl.zst");
+  writeFileSync(big, zstdCompressSync(Buffer.alloc(4096, "a")));
+  await expect(readTranscriptFile(hostRuntime(LOCAL_HOST), big, 1024)).rejects.toThrow(
+    "File is too large to read",
+  );
 });

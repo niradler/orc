@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { type HostRuntime, hostRuntime, LIST_FILES_LIMIT, LOCAL_HOST } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { activityAdvanced, droppedTranscripts, oneLine } from "./common.js";
@@ -100,7 +100,12 @@ export function geminiAdapter(
       }
       const listed = new Set(records.map((record) => record.externalId));
       const present = new Set(files.map((file) => file.path));
-      for (const record of await droppedTranscripts(known, present, runtime))
+      for (const record of await droppedTranscripts(
+        known,
+        present,
+        files.length < LIST_FILES_LIMIT,
+        runtime,
+      ))
         if (!listed.has(record.externalId)) records.push(record);
       return records;
     },

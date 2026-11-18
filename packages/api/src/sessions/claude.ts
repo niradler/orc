@@ -2,7 +2,7 @@ import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { pathLabel } from "@orc/core/display-path";
-import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { type HostRuntime, hostRuntime, LIST_FILES_LIMIT, LOCAL_HOST } from "@orc/core/exec-host";
 import { CLAUDE_TOKENS_VERSION, USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import {
@@ -276,8 +276,13 @@ export function claudeAdapter(
       const subagents: { path: string; parentId: string; mtimeMs: number; birthtimeMs: number }[] =
         [];
       const subagentMeta = new Map<string, number>();
+      const present = new Set<string>();
+      let complete = true;
       for (const projectsDir of projectsDirs) {
-        for (const file of await runtime.listFiles(projectsDir)) {
+        const files = await runtime.listFiles(projectsDir);
+        complete &&= files.length < LIST_FILES_LIMIT;
+        for (const file of files) {
+          present.add(file.path);
           if (basename(dirname(file.path)) === "subagents") {
             if (file.path.endsWith(".meta.json")) subagentMeta.set(file.path, file.mtimeMs);
             else if (basename(file.path).startsWith("agent-") && file.path.endsWith(".jsonl"))
@@ -424,11 +429,7 @@ export function claudeAdapter(
           records.set(id, { ...before.session, title: "New session" });
         }
       }
-      const present = new Set([
-        ...[...transcripts.values()].map((transcript) => transcript.path),
-        ...subagents.map((subagent) => subagent.path),
-      ]);
-      for (const record of await droppedTranscripts(known, present, runtime))
+      for (const record of await droppedTranscripts(known, present, complete, runtime))
         records.set(record.externalId, {
           ...(records.get(record.externalId) ?? record),
           transcriptPath: null,

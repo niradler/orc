@@ -49,7 +49,10 @@ export function withLifecycle(
           ...live,
           status: keepNativeStatus ? previous.status : live.status,
           title: previous?.title ?? live.title,
-          transcriptPath: previous?.transcriptPath ?? live.transcriptPath ?? null,
+          transcriptPath:
+            previous?.transcriptPath !== undefined
+              ? previous.transcriptPath
+              : (live.transcriptPath ?? null),
           lastActivityAt: new Date(
             Math.max(previous?.lastActivityAt.getTime() ?? 0, live.lastActivityAt.getTime()),
           ),

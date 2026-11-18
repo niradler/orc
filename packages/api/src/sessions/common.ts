@@ -73,9 +73,11 @@ export function promptText(text: string | null | undefined): string {
 export async function droppedTranscripts(
   known: Map<string, KnownSession>,
   present: Set<string>,
+  complete: boolean,
   runtime: HostRuntime,
 ): Promise<SessionRecord[]> {
   const dropped: SessionRecord[] = [];
+  if (!complete) return dropped;
   for (const { session } of known.values())
     if (
       session?.transcriptPath &&
