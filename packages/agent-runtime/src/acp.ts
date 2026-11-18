@@ -571,6 +571,7 @@ export class AcpSession implements AgentSession {
           }
           if (
             this.reasons.length &&
+            this.capabilities.steering === true &&
             ((params.update.sessionUpdate === "tool_call" &&
               !this.rejected.has(params.update.toolCallId)) ||
               params.update.sessionUpdate === "agent_message_chunk")
