@@ -529,7 +529,8 @@ channels. Dictation is available once `speech.enabled` is true and the selected
 provider has an `api_key` (or, for openai and groq, a `base_url`);
 `GET /api/speech/status` reports it with `max_bytes`,
 the largest clip the provider takes (25 MB for openai and groq, 7.4 MB for qwen,
-whose 10 MB cap applies after base64). `POST /api/speech/transcribe` (multipart
+whose 10 MB cap applies after base64), and with `voice_mode`, whether voice mode
+can transcribe. `POST /api/speech/transcribe` (multipart
 field `audio`) returns `{ "text": "..." }` and rejects a larger clip with 413.
 Dictation stops on its own before the limit: after five minutes, or about 3 min
 50 s on qwen. Each provider also accepts `base_url` and `model`, for example

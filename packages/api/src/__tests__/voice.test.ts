@@ -407,6 +407,79 @@ for (const kind of ["approval", "question"] as const)
     }
   });
 
+for (const [label, chunks, expected] of [
+  ["a reply that repeats the spoken line is not posted again", ["Ma", "rs."], "Mars."],
+  ["a repeat in other case and punctuation is dropped", ["MARS"], "Mars."],
+  ["a short reworded answer after speaking is dropped", ["It's ", "Mars"], "Mars."],
+  ["an invisible reply is dropped", ["​"], "Mars."],
+  [
+    "code after the spoken line is kept without repeating the line",
+    ["Mars.\n\n```sh\nbun", " test\n```"],
+    "Mars.\n\n```sh\nbun test\n```",
+  ],
+  [
+    "a multi-line written reply is kept whole",
+    ["Results:\n- 12 passed", "\n- 0 failed"],
+    "Mars.\n\nResults:\n- 12 passed\n- 0 failed",
+  ],
+] as const)
+  test(label, async () => {
+    const id = await chat("Reply with exactly: ok");
+    const backend = (
+      (await (await app.request(`/api/chat/threads/${id}`, { headers: AUTH })).json()) as {
+        backend: string;
+      }
+    ).backend;
+    const original = createBackend(backend);
+    const session: AgentSession = {
+      id: "voice-dedupe",
+      capabilities: original.capabilities,
+      getRuntimeSessionId: () => "voice-native",
+      send: async () => {},
+      respondPermission: () => {},
+      respondQuestion: () => {},
+      interrupt: async () => {},
+      alive: () => true,
+      close: async () => {},
+      async *events(): AsyncIterable<AgentEvent> {
+        await app.request(`/api/chat/threads/${id}/speak`, {
+          method: "POST",
+          headers: AUTH,
+          body: JSON.stringify({ text: "Mars." }),
+        });
+        for (const chunk of chunks) yield { type: "text", data: chunk };
+        yield { type: "result", data: { runtimeSessionId: "voice-native" } };
+      },
+    };
+    registerBackend(backend, () => ({
+      ...original,
+      preflight: async () => ({ ok: true }),
+      startSession: async () => session,
+      resumeSession: async () => session,
+    }));
+    delete process.env.ORC_E2E_CHAT_MOCK;
+    try {
+      const res = await app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: JSON.stringify({ threadId: id, messages: [{ role: "user", content: "a planet" }] }),
+      });
+      const streamed = (await res.text())
+        .split("\n")
+        .filter((line) => line.startsWith("data: "))
+        .map((line) => JSON.parse(line.slice(6)))
+        .filter((event) => event.type === "text")
+        .map((event) => event.text)
+        .join("");
+      const content = (await thread(id)).messages.at(-1)?.content;
+      expect(content).toBe(expected);
+      expect(streamed).toBe(expected);
+    } finally {
+      process.env.ORC_E2E_CHAT_MOCK = "1";
+      registerBackend(backend, () => original);
+    }
+  });
+
 for (const failing of ["stt", "tts"] as const)
   test(`a ${failing.toUpperCase()} failure mid-turn reports an error and keeps listening`, async () => {
     const id = await chat("Reply with exactly: ok");

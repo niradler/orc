@@ -21477,7 +21477,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Whether composer dictation can transcribe audio */
+        /** Whether composer dictation and voice mode can transcribe audio */
         get: {
             parameters: {
                 query?: never;
@@ -24988,6 +24988,7 @@ export interface components {
         SpeechStatus: {
             available: boolean;
             max_bytes: number;
+            voice_mode: boolean;
         };
         SpeechTranscript: {
             text: string;
