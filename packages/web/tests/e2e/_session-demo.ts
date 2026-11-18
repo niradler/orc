@@ -156,7 +156,7 @@ export async function mockDemo(
         sourceId: sourceSessionId,
         backend: session?.agent === "codex" ? "codex" : "claude-code",
         projectId: session?.project_id ?? undefined,
-        updatedAt: Date.now(),
+        updatedAt: session ? Date.parse(session.last_activity_at) : Date.now(),
         messages: [],
       },
     });
