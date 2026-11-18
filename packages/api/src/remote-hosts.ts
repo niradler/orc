@@ -58,19 +58,6 @@ export function parseRemoteTarget(value: string | null | undefined) {
   return match?.[1] ? { id: match[1], host: match[2] ?? null } : null;
 }
 
-async function remoteLiveSession(host: RemoteHost, threadId: string): Promise<string | null> {
-  const deadline = Date.now() + 8_000;
-  while (Date.now() < deadline) {
-    const state = await remoteJson<{ live: { id: string } | null }>(
-      host,
-      `/chat/threads/${encodeURIComponent(threadId)}/session`,
-    ).catch(() => null);
-    if (state?.live?.id) return state.live.id;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  return null;
-}
-
 export async function startRemoteChat(
   target: { id: string; host: string | null },
   body: Record<string, unknown>,
@@ -124,17 +111,13 @@ export async function startRemoteChat(
           runId?: string;
         };
         if (event.type === "thread" && event.thread?.id) {
-          controller.abort();
-          const live = await remoteLiveSession(host, event.thread.id);
           return {
             host_id: host.id,
             host_label: host.label,
             url: host.url,
             thread_id: event.thread.id,
             run_id: event.runId ?? "",
-            open_url: live
-              ? `${host.url}/chat?sessionLive=${encodeURIComponent(live)}`
-              : `${host.url}/chat`,
+            open_url: `${host.url}/chat?chatThread=${encodeURIComponent(event.thread.id)}`,
           };
         }
       }

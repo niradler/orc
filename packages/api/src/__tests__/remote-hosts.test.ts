@@ -162,7 +162,7 @@ describe("remote ORC hosts", () => {
       open_url: string;
     };
     expect(event).toMatchObject({ type: "remote", host_label: "Devbox" });
-    expect(event.open_url.startsWith(`${destUrl}/chat`)).toBe(true);
+    expect(event.open_url).toBe(`${destUrl}/chat?chatThread=${event.thread_id}`);
 
     const deadline = Date.now() + 20_000;
     let reply = "";
@@ -176,7 +176,7 @@ describe("remote ORC hosts", () => {
     expect(reply).toContain("REMOTE-OK");
     const local = await req(app, "GET", `/chat/threads/${event.thread_id}`);
     expect(local.status).toBe(404);
-  }, 40_000);
+  }, 30_000);
 
   test("an unknown remote host is refused before anything starts", async () => {
     const response = await req(app, "POST", "/chat/stream", {
