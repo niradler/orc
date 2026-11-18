@@ -463,11 +463,7 @@ function ConnectionEditor({
     queryKey: ["channel-pairing", pair?.id],
     queryFn: () => api.channels.pairing(pair?.id ?? ""),
     enabled: !!pair,
-    refetchInterval: pairStateInterval,
   });
-  function pairStateInterval(query: { state: { data?: { confirmed?: boolean } } }) {
-    return query.state.data?.confirmed ? false : 2000;
-  }
   const [probe, setProbe] = useState({
     sender: "",
     chat: "",
@@ -1236,7 +1232,6 @@ export function ChannelSettings({ active }: { active: boolean }) {
     queryKey: ["channels"],
     queryFn: api.channels.list,
     enabled: active,
-    refetchInterval: active ? 15000 : false,
   });
   const providers = useQuery({
     queryKey: ["channel-providers"],

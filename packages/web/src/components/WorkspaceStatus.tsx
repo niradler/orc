@@ -7,10 +7,6 @@ export function useWorkspaceByPath(path: string | null | undefined) {
     queryKey: ["workspaces", "path", path],
     queryFn: () => api.workspaces.byPath(path as string),
     enabled: !!path,
-    refetchInterval: (query) =>
-      query.state.data?.setup_status === "running" || query.state.data?.setup_status === "pending"
-        ? 2000
-        : false,
   });
 }
 

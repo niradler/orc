@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { changes } from "@orc/core/changes";
 import {
   type ChannelConnection,
   ChannelConnectionSchema,
@@ -93,6 +94,7 @@ export class ChannelService {
   private readonly owner = randomUUID();
   private readonly live = new Map<string, Live>();
   private readonly errors = new Map<string, string>();
+  private status = "";
   private readonly conflicts = new Set<string>();
   private readonly transportFailures = new Map<
     string,
@@ -340,6 +342,13 @@ export class ChannelService {
     } finally {
       this.reconciling = undefined;
     }
+    this.publishStatus();
+  }
+  private publishStatus() {
+    const status = JSON.stringify(this.list().map((c) => [c.id, c.status, c.error, c.identity]));
+    if (status === this.status) return;
+    this.status = status;
+    changes.publish("channels");
   }
   private async refresh() {
     if (this.stopped) return;
@@ -452,6 +461,7 @@ export class ChannelService {
                   "Another Telegram poller owns this bot. Stop that listener, then save the connection to retry.",
                 );
               }
+              this.publishStatus();
             },
           );
           const previousFailure = this.connectionFailures.get(c.id);

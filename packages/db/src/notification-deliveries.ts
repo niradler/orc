@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
+import { changes } from "@orc/core/changes";
 import type { ChannelConnection, ChannelTarget } from "@orc/core/channels";
 import { loadConfig } from "@orc/core/config";
 import {
@@ -112,6 +113,7 @@ export class NotificationDeliveryStore {
         .query<{ since: number }, []>("SELECT since FROM notification_forwarding_policy WHERE id=1")
         .get()?.since ?? this.now();
     let budget = 200;
+    let added = 0;
     for (const destination of this.db
       .query<Destination, []>("SELECT * FROM notification_destinations")
       .all()) {
@@ -139,7 +141,7 @@ export class NotificationDeliveryStore {
         const event = this.event(row.id);
         if (!event) continue;
         const matches = notificationMatches(event, target.notifications, target.project_ids);
-        this.db
+        added += this.db
           .query(`INSERT OR IGNORE INTO notification_deliveries
           (notification_id,connection_id,target_id,destination,status,next_at,created_at,expires_at)
           VALUES(?,?,?,?,?,?,?,?)`)
@@ -152,10 +154,11 @@ export class NotificationDeliveryStore {
             this.now(),
             this.now(),
             event.expires_at,
-          );
+          ).changes;
         budget--;
       }
     }
+    if (added) changes.publish("channels");
   }
   event(id: string): OrcNotification | null {
     const row = this.db
@@ -195,7 +198,7 @@ export class NotificationDeliveryStore {
   }
   claim(owner: string): DeliveryClaim | null {
     const now = this.now();
-    return this.db
+    const claimed = this.db
       .transaction(() => {
         const row = this.db
           .query<ClaimRow, [number, number]>(`SELECT * FROM notification_deliveries
@@ -221,6 +224,8 @@ export class NotificationDeliveryStore {
         return { ...claim, idempotency_key: key };
       })
       .immediate();
+    if (claimed) changes.publish("channels");
+    return claimed;
   }
   finish(
     claim: DeliveryClaim,
@@ -228,7 +233,7 @@ export class NotificationDeliveryStore {
     error: string | null,
     receiptId: string | null = null,
   ): void {
-    this.db
+    const finished = this.db
       .query(`UPDATE notification_deliveries SET status=?,error=?,receipt_id=?,next_at=?,lease_until=0
       WHERE notification_id=? AND connection_id=? AND target_id=? AND owner=? AND lease_until=? AND status='sending'`)
       .run(
@@ -241,7 +246,8 @@ export class NotificationDeliveryStore {
         claim.target_id,
         claim.owner,
         claim.lease_until,
-      );
+      ).changes;
+    if (finished) changes.publish("channels");
   }
   private cutoff(): number {
     return this.now() - (loadConfig().preferences.notification_retention_days ?? 30) * 86400000;

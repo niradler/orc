@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { createHash, randomBytes } from "node:crypto";
+import { changes } from "@orc/core/changes";
 import {
   type ChannelConnection,
   ChannelConnectionSchema,
@@ -310,13 +311,14 @@ export class ChannelStore {
     token: string,
     candidate: NonNullable<ChannelPairing["candidate"]>,
   ): boolean {
-    return (
+    const offered =
       this.db
         .query(
           "UPDATE channel_pairings SET candidate=? WHERE connection=? AND token_hash=? AND expires_at>? AND candidate IS NULL AND confirmed=0",
         )
-        .run(JSON.stringify(candidate), connection, hash(token), this.now()).changes > 0
-    );
+        .run(JSON.stringify(candidate), connection, hash(token), this.now()).changes > 0;
+    if (offered) changes.publish("channels");
+    return offered;
   }
   pairing(id: string): ChannelPairing {
     const row = this.db

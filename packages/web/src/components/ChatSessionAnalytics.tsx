@@ -43,7 +43,6 @@ export function ChatSessionAnalytics({
     queryFn: () => (threadId ? api.chat.analytics(threadId) : api.sessions.analytics(id as string)),
     enabled: !!id,
     staleTime: 15_000,
-    refetchInterval: streaming ? 15_000 : false,
     retry: 1,
   });
 

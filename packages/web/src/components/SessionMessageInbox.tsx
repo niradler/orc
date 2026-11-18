@@ -35,14 +35,12 @@ const STATE_STYLE: Record<SessionMessage["state"], string> = {
 
 export function SessionMessageInbox({
   session,
-  live,
   compose = true,
 }: {
   session: Pick<LiveSession, "id" | "agent" | "status">;
-  live: boolean;
   compose?: boolean;
 }) {
-  const { data: messages = [], error } = useSessionMessages(session.id, live);
+  const { data: messages = [], error } = useSessionMessages(session.id);
   const send = useSendSessionMessage(session.id);
   const cancel = useCancelSessionMessage(session.id);
   const move = useMoveSessionMessage(session.id);

@@ -227,7 +227,6 @@ export function ChannelNotificationSettings({ active }: { active: boolean }) {
     queryKey: ["channel-notification-deliveries"],
     queryFn: api.channels.notificationDeliveries,
     enabled: active && expanded,
-    refetchInterval: active && expanded ? 15000 : false,
   });
   const [draft, setDraft] = useState<NotificationForwardingPolicy | null>(null);
   const [pending, setPending] = useState(false);

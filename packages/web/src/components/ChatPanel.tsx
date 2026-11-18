@@ -1518,9 +1518,7 @@ export function ChatPanel({
                       {queueToAgent.error.message}
                     </p>
                   )}
-                  {agentInbox && (
-                    <SessionMessageInbox session={agentInbox} live={false} compose={false} />
-                  )}
+                  {agentInbox && <SessionMessageInbox session={agentInbox} compose={false} />}
                 </div>
               )}
               {streaming && (

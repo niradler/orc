@@ -20,6 +20,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { changes } from "@orc/core/changes";
 import type { KbDoclingState } from "@orc/core/kb";
 import script from "./docling_parse.py" with { type: "text" };
 
@@ -150,6 +151,7 @@ export async function installDocling(root: string, state: KbDoclingState): Promi
   const log = (s: string) => {
     state.log.push(s);
     if (state.log.length > 200) state.log.splice(0, state.log.length - 200);
+    changes.publish("knowledge");
   };
   const step = (s: string) => {
     state.step = s;

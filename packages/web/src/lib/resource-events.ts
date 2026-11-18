@@ -47,7 +47,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   "session-messages": ["sessions"],
   // Usage is indexed in the background; the page refreshes when the ledger changes
   // and on every event-stream reconnect instead of on a timer.
-  usage: ["usage-report", "session-cache"],
+  usage: ["usage-report", "session-cache", "chat-analytics"],
   jobs: [
     "jobs",
     "job",
@@ -55,6 +55,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "job-runs",
     "job-run-logs",
     "kb-digest",
+    "kb-digest-runs",
     "project-summary",
     "palette-search",
   ],
@@ -98,6 +99,12 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   github: ["github", "git"],
   audit: ["knowledge-audit", "skill-history"],
   workspaces: ["workspaces", "terminals", "project-summary"],
+  channels: [
+    "channels",
+    "channel-pairing",
+    "channel-notification-deliveries",
+    "channel-notification-policy",
+  ],
 };
 
 // A running session publishes `sessions` changes about every 100 ms; one trailing refresh

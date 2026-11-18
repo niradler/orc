@@ -91,6 +91,7 @@ export function createApp() {
     settings: ["settings"],
     ssh: ["ssh", "backends", "terminals", "sessions", "git"],
     git: ["git", "files"],
+    channels: ["channels"],
   };
   app.use("/api/*", async (c, next) => {
     await next();
