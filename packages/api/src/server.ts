@@ -33,6 +33,7 @@ import { notificationsRouter } from "./routes/notifications.js";
 import { primitivesRouter } from "./routes/primitives.js";
 import { projectsRouter } from "./routes/projects.js";
 import { pushRouter } from "./routes/push.js";
+import { remoteHostsRouter } from "./routes/remote-hosts.js";
 import { rulesRouter } from "./routes/rules.js";
 import { scratchpadsRouter } from "./routes/scratchpads.js";
 import { searchRouter } from "./routes/search.js";
@@ -133,6 +134,7 @@ export function createApp() {
   app.route("/api", backendsRouter);
   app.route("/api", eventsRouter);
   app.route("/api", sshRouter);
+  app.route("/api", remoteHostsRouter);
   app.route("/api", chatRouter);
   app.route("/api", desktopPreviewRouter);
   app.route("/api", pushRouter);

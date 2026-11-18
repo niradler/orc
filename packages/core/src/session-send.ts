@@ -73,6 +73,14 @@ export const SessionSendInputSchema = z
   })
   .strict();
 
+export const SessionSendToRemoteHostSchema = z
+  .object({
+    remote_host: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
+    project: z.string().trim().min(1).max(200),
+    note: z.string().trim().max(4000).default(""),
+  })
+  .strict();
+
 export const SessionSendSchema = z.object({
   id: z.string(),
   live_session_id: z.string(),
@@ -103,7 +111,9 @@ export const SessionSendPreviewSchema = z.object({
   title: z.string().nullable(),
 });
 
-export type SessionSendInput = z.input<typeof SessionSendInputSchema>;
+export type SessionSendInput =
+  | z.input<typeof SessionSendInputSchema>
+  | z.input<typeof SessionSendToRemoteHostSchema>;
 export type SessionSendRequest = z.output<typeof SessionSendInputSchema>;
 export type SessionSend = z.infer<typeof SessionSendSchema>;
 export type SessionSendPreview = z.infer<typeof SessionSendPreviewSchema>;

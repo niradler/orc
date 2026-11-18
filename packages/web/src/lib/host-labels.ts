@@ -24,3 +24,6 @@ export function orcServerAddress(): string | null {
 export function defaultServerAddress(): string | null {
   return addressOf(DEFAULT_API_URL);
 }
+
+export const isRemoteHost = (host: string | null | undefined): boolean =>
+  !!host?.startsWith("orc:");

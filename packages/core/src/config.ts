@@ -109,6 +109,24 @@ export const TtsConfigSchema = z.object({
 
 const defaultDbPath = () => join(orcHome(), "orc.db");
 
+export const REMOTE_HOST_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+export const RemoteHostSchema = z.object({
+  id: z.string().regex(REMOTE_HOST_ID),
+  label: z.string().trim().min(1).max(200),
+  url: z
+    .string()
+    .url()
+    .max(2048)
+    .refine((value) => /^https?:\/\//.test(value), "remote host url must be http(s)"),
+  token: z.string().max(8192).default(""),
+  headers: z
+    .array(z.object({ name: z.string().min(1).max(256), value: z.string().max(8192) }))
+    .max(32)
+    .default([]),
+});
+export type RemoteHost = z.infer<typeof RemoteHostSchema>;
+
 export const OrcConfigSchema = z.object({
   providers: StoredProvidersSchema.optional(),
   preferences: z
@@ -181,6 +199,8 @@ export const OrcConfigSchema = z.object({
       connect_timeout_secs: z.number().int().min(1).max(120).default(10),
     })
     .default({ connect_timeout_secs: 10 }),
+
+  remote_hosts: z.array(RemoteHostSchema).default([]),
 
   mcp: z
     .object({

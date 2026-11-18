@@ -430,6 +430,10 @@ function useChatController() {
           streamText: "",
           activity: appendChatActivity(tab.activity, event),
         }));
+      else if (event.type === "remote")
+        update(key, () => ({
+          streamText: `Started on **${event.host_label}**. It keeps running there, even when this machine is off. [Open it on ${event.host_label}](${event.open_url})`,
+        }));
       else if (event.type === "error") update(key, () => ({ error: event.message }));
       else if (event.type === "session")
         update(key, (tab) => ({

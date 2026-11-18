@@ -1,16 +1,11 @@
-import {
-  SEND_BLOCKED_HEADERS,
-  type SessionSend,
-  type SessionSendPreview,
-} from "@orc/core/session-send";
+import type { SessionSend, SessionSendPreview } from "@orc/core/session-send";
 import { Check, Send } from "lucide-react";
 import { useEffect, useState } from "react";
-import { api, type LiveSession, type Project } from "@/api/client";
+import { api, type LiveSession, type RemoteHost } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { type ApiHost, hostHeaders, readApiHosts, readApiUrl, sameApiUrl } from "@/lib/api-hosts";
 
 /** Repository identity loose enough to preselect the matching destination project. */
 function repoKey(value: string | null | undefined): string {
@@ -33,10 +28,12 @@ export function SendToHost({
   open: boolean;
   onClose: () => void;
 }) {
-  const [hosts, setHosts] = useState<ApiHost[]>([]);
+  const [hosts, setHosts] = useState<RemoteHost[]>([]);
   const [preview, setPreview] = useState<SessionSendPreview | null>(null);
-  const [host, setHost] = useState<ApiHost | null>(null);
-  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [host, setHost] = useState<RemoteHost | null>(null);
+  const [projects, setProjects] = useState<
+    { name: string; git_remote_url: string | null; scope: string | null }[] | null
+  >(null);
   const [project, setProject] = useState("");
   const [note, setNote] = useState("");
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -46,7 +43,6 @@ export function SendToHost({
 
   useEffect(() => {
     if (!open) return;
-    setHosts(readApiHosts().filter((item) => !sameApiUrl(item.url, readApiUrl())));
     setPreview(null);
     setHost(null);
     setProjects(null);
@@ -55,6 +51,14 @@ export function SendToHost({
     setResult(null);
     setError(null);
     let current = true;
+    api.remoteHosts
+      .list()
+      .then((value) => {
+        if (current) setHosts(value.hosts);
+      })
+      .catch((cause: unknown) => {
+        if (current) setError(cause instanceof Error ? cause.message : String(cause));
+      });
     api.sessions
       .sendPreview(session.id)
       .then((value) => {
@@ -81,39 +85,22 @@ export function SendToHost({
     };
   }, [open, session.id, session.send?.status]);
 
-  async function pickHost(next: ApiHost): Promise<void> {
+  async function pickHost(next: RemoteHost): Promise<void> {
     setHost(next);
     setProjects(null);
     setProject("");
     setError(null);
     setLoadingProjects(true);
     try {
-      const response = await fetch(`${next.url}/api/projects?limit=100`, {
-        credentials: "include",
-        cache: "no-store",
-        headers: hostHeaders(next),
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { error?: unknown } | null;
-        throw new Error(
-          typeof body?.error === "string"
-            ? body.error
-            : `The host answered HTTP ${response.status}`,
-        );
-      }
-      const body = (await response.json()) as { projects: Project[] };
+      const body = await api.remoteHosts.projects(next.id);
       setProjects(body.projects);
       const match = preview?.repository
         ? body.projects.find((item) => repoKey(item.git_remote_url) === repoKey(preview.repository))
         : undefined;
       setProject((match ?? body.projects[0])?.name ?? "");
     } catch (cause) {
-      const detail = cause instanceof Error ? cause.message : String(cause);
       setError(
-        /failed to fetch|networkerror|load failed/i.test(detail)
-          ? `Could not reach ${next.label}. Check the URL, the network, and that this dashboard's origin is allowed under the host's Security settings.`
-          : `Could not list projects on ${next.label}: ${detail}`,
+        `Could not list projects on ${next.label}: ${cause instanceof Error ? cause.message : String(cause)}`,
       );
     } finally {
       setLoadingProjects(false);
@@ -126,15 +113,7 @@ export function SendToHost({
     setError(null);
     try {
       const sent = await api.sessions.sendTo(session.id, {
-        host_label: host.label,
-        url: host.url,
-        token: host.token,
-        headers: host.headers.filter(
-          (header) =>
-            header.name.trim() &&
-            header.value &&
-            !SEND_BLOCKED_HEADERS.has(header.name.trim().toLowerCase()),
-        ),
+        remote_host: host.id,
         project,
         note: note.trim(),
       });
@@ -237,15 +216,14 @@ export function SendToHost({
               <div className="flex items-center gap-1">
                 <span className="text-sm">Host</span>
                 <HelpPopover label="Send to host" testId="send-to-host-help">
-                  Saved ORC servers from Settings → Hosts, except the one you are connected to. The
-                  destination needs a project whose folder is a checkout of the same repository, and
-                  both machines must reach its Git remote. The host's token is used for this send
-                  only and is not stored here.
+                  Remote ORC hosts from Settings → Hosts. The destination needs a project whose
+                  folder is a checkout of the same repository, and both machines must reach its Git
+                  remote.
                 </HelpPopover>
               </div>
               {hosts.length === 0 ? (
                 <p data-testid="send-to-no-hosts" className="text-xs text-outline">
-                  No saved hosts. Add a server under Settings → Hosts first.
+                  No remote ORC hosts. Add one under Settings → Hosts first.
                 </p>
               ) : (
                 <div className="max-h-40 space-y-1 overflow-y-auto" data-testid="send-to-host-list">
@@ -287,7 +265,7 @@ export function SendToHost({
                       onChange={(event) => setProject(event.target.value)}
                     >
                       {projects.map((item) => (
-                        <option key={item.id} value={item.name}>
+                        <option key={item.name} value={item.name}>
                           {item.name}
                         </option>
                       ))}

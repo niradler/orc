@@ -13,6 +13,7 @@ import {
   rankCommands,
 } from "@/lib/chat-commands";
 import { folderHistory } from "@/lib/folder-history";
+import { isRemoteHost } from "@/lib/host-labels";
 import { cn } from "@/lib/utils";
 
 export function useChatPromptMenu(
@@ -23,8 +24,11 @@ export function useChatPromptMenu(
 ) {
   const { config, thread, workspace } = useChat();
   const { data: ssh } = useSsh();
-  const host = workspace?.host === undefined ? (ssh?.host ?? null) : workspace.host;
-  const cwd = thread ? undefined : (workspace?.cwd ?? folderHistory(host).last ?? undefined);
+  const picked = workspace?.host === undefined ? (ssh?.host ?? null) : workspace.host;
+  const remote = isRemoteHost(picked);
+  const host = remote ? null : picked;
+  const cwd =
+    thread || remote ? undefined : (workspace?.cwd ?? folderHistory(host).last ?? undefined);
   const [caret, setCaret] = useState(0);
   const position = Math.min(caret, draft.length);
   const command = activeCommand(draft, position);

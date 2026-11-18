@@ -271,8 +271,8 @@ The worktree is `<repo>/.orc/worktrees/<handoff-id>` on branch `orc/handoff/<han
 ### Send a session from the dashboard
 
 Without involving the agent, open the session's actions menu on the laptop dashboard and
-choose **Send to host…**. The picker lists the ORC servers saved under
-[Settings → Servers](./desktop-and-web.md#settings); pick the server, then a project on it
+choose **Send to host…**. The picker lists the
+remote ORC hosts saved under [Settings → Hosts](./desktop-and-web.md#settings); pick the host, then a project on it
 whose folder is a checkout of the same repository, and send. The laptop ORC snapshots the
 work (secret-looking files stay local), pushes it to the shared Git remote, uploads the
 conversation and prepares it on the server. The session shows **Ready to resume** there

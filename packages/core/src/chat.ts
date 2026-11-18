@@ -492,7 +492,9 @@ export const ChatWorkspaceSchema = z
     host: z
       .string()
       .max(255)
-      .regex(/^[A-Za-z0-9_.@][A-Za-z0-9_.@-]*$/)
+      .regex(
+        /^(?:orc:[a-z0-9][a-z0-9-]{0,63}(?:\/[A-Za-z0-9_.@][A-Za-z0-9_.@-]*)?|[A-Za-z0-9_.@][A-Za-z0-9_.@-]*)$/,
+      )
       .nullable()
       .optional(),
     cwd: z.string().trim().max(4096).optional(),
@@ -697,6 +699,15 @@ export const ChatEventSchema = z.discriminatedUnion("type", [
   // Slim: thread metadata plus the turn's user message only; the full transcript
   // is read from GET /chat/threads/{id}.
   z.object({ type: z.literal("thread"), thread: ChatThreadSchema, runId: z.string().uuid() }),
+  z.object({
+    type: z.literal("remote"),
+    host_id: z.string(),
+    host_label: z.string(),
+    url: z.string(),
+    thread_id: z.string(),
+    run_id: z.string(),
+    open_url: z.string(),
+  }),
   z.object({ type: z.literal("session"), runtimeId: z.string().nullable() }),
   z.object({
     type: z.literal("error"),

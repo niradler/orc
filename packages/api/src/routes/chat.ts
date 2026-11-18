@@ -116,6 +116,7 @@ import {
   retireChatFinishedNotifications,
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
+import { parseRemoteTarget, startRemoteChat } from "../remote-hosts.js";
 import { LIVE_CHAT_ID, liveRunFields, settleStaleRun } from "../session-watcher.js";
 import { loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
@@ -2113,6 +2114,16 @@ async function streamChat(
   body: z.infer<typeof requestSchema>,
   uploads: UploadFile[] = [],
 ) {
+  const remote = body.threadId ? null : parseRemoteTarget(body.workspace?.host);
+  if (remote) {
+    if (uploads.length)
+      throw new ValidationError("Attachments are not supported on remote ORC hosts yet");
+    const started = await startRemoteChat(remote, body);
+    return unbufferedSSE(c, async (s) => {
+      await s.writeSSE({ data: JSON.stringify({ type: "remote", ...started }) });
+      await s.writeSSE({ data: JSON.stringify({ type: "done" }) });
+    });
+  }
   const messageId = !body.threadId ? body.clientMessageId : undefined;
   if (messageId && (startingMessages.has(messageId) || store().byMessage(messageId)))
     throw new OrcError(

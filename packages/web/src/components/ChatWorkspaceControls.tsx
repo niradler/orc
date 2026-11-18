@@ -1,5 +1,5 @@
 import type { ChatThread } from "@orc/core/chat";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
@@ -10,6 +10,7 @@ import {
   FolderOpen,
   GitBranch,
   GitBranchPlus,
+  Globe,
   LoaderCircle,
   Server,
 } from "lucide-react";
@@ -35,7 +36,7 @@ import {
   pathName,
 } from "@/lib/composer-chips";
 import { folderHistory, rememberFolder, useFolderHistory } from "@/lib/folder-history";
-import { orcServerAddress, THIS_SERVER } from "@/lib/host-labels";
+import { isRemoteHost, orcServerAddress, THIS_SERVER } from "@/lib/host-labels";
 import { cn } from "@/lib/utils";
 
 export function ChatWorkspaceControls() {
@@ -60,12 +61,36 @@ export function ChatWorkspaceControls() {
   const [pathDraft, setPathDraft] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
   const host = workspace?.host === undefined ? (ssh?.host ?? null) : workspace.host;
+  const remote = isRemoteHost(host);
+  const remoteHosts = useQuery({
+    queryKey: ["remote-hosts"],
+    queryFn: () => api.remoteHosts.list(),
+    enabled: !thread,
+    staleTime: 60_000,
+    retry: false,
+  });
+  const remoteTargets = useQueries({
+    queries: (remoteHosts.data?.hosts ?? []).map((item) => ({
+      queryKey: ["remote-host-targets", item.id],
+      queryFn: () => api.remoteHosts.targets(item.id),
+      staleTime: 60_000,
+      retry: false,
+    })),
+  });
+  const remoteChoices = (remoteHosts.data?.hosts ?? []).flatMap((item, index) => [
+    { value: `orc:${item.id}`, label: item.label, detail: "Remote ORC" },
+    ...(remoteTargets[index]?.data?.hosts ?? []).map((alias) => ({
+      value: `orc:${item.id}/${alias}`,
+      label: `${item.label} › ${alias}`,
+      detail: "SSH host of the remote ORC",
+    })),
+  ]);
   const history = useFolderHistory(host);
   const cwd = workspace?.cwd ?? history.last;
   const defaultFolder = useQuery({
     queryKey: ["chat-default-folder", host],
     queryFn: () => api.terminals.browse(undefined, host),
-    enabled: !!ssh && !cwd && !thread,
+    enabled: !!ssh && !cwd && !thread && !remote,
     staleTime: 60_000,
     retry: false,
   });
@@ -74,14 +99,14 @@ export function ChatWorkspaceControls() {
   const git = useQuery({
     queryKey: ["chat-workspace-git", host, gitPath],
     queryFn: () => api.git.worktrees(gitPath, host),
-    enabled: !!ssh && !!gitPath && !thread,
+    enabled: !!ssh && !!gitPath && !thread && !remote,
     staleTime: 30_000,
     retry: false,
   });
   const branches = useQuery({
     queryKey: ["chat-workspace-branches", host, gitPath],
     queryFn: () => api.git.branches(gitPath, host),
-    enabled: !!ssh && !!gitPath && !thread && branchOpen,
+    enabled: !!ssh && !!gitPath && !thread && !remote && branchOpen,
     staleTime: 30_000,
     retry: false,
   });
@@ -141,8 +166,9 @@ export function ChatWorkspaceControls() {
   const serverAddress = orcServerAddress();
   const listing = git.data;
   const folderName = cwd ? folderChipLabel(cwd, listing) : pathName(displayPath) || "Home";
-  const folderLabel = host ? `${host} · ${folderName}` : folderName;
-  const location = `${host ?? THIS_SERVER}: ${displayPath}`;
+  const hostLabel = remoteChoices.find((choice) => choice.value === host)?.label ?? host;
+  const folderLabel = host ? `${hostLabel} · ${folderName}` : folderName;
+  const location = `${hostLabel ?? THIS_SERVER}: ${displayPath}`;
   const branch = branchName(currentWorktree(listing, gitPath));
   const showBranch = worktree || !!listing?.root || git.isError;
   const base = worktree ? (workspace?.base ?? null) : null;
@@ -312,7 +338,7 @@ export function ChatWorkspaceControls() {
                 {copied ? <Check size={14} /> : <Copy size={14} />}
               </button>
             </div>
-            {hostChoices.length > 1 && (
+            {hostChoices.length + remoteChoices.length > 1 && (
               <div role="menu" aria-label="Workspace host">
                 <p className={chipHeading}>Host</p>
                 {hostChoices.map((alias) => (
@@ -350,6 +376,32 @@ export function ChatWorkspaceControls() {
                       )}
                     </span>
                     {host === alias && <Check size={14} aria-hidden="true" />}
+                  </button>
+                ))}
+                {remoteChoices.map((choice) => (
+                  <button
+                    type="button"
+                    key={choice.value}
+                    role="menuitemradio"
+                    data-chip-option
+                    data-testid="chat-workspace-host-option"
+                    aria-checked={host === choice.value}
+                    disabled={disabled}
+                    className={chipOption}
+                    onClick={() => {
+                      setWorkspace({ host: choice.value, cwd: "", worktree: false });
+                      setPathDraft(null);
+                      setError("");
+                    }}
+                  >
+                    <Globe size={14} aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{choice.label}</span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {choice.detail}
+                      </span>
+                    </span>
+                    {host === choice.value && <Check size={14} aria-hidden="true" />}
                   </button>
                 ))}
               </div>

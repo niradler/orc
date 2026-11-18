@@ -63,6 +63,22 @@ import type { SessionCacheUsage, UsageHistory, UsageQuota, UsageReport } from "@
 import { API_ACCESS_CHANGED, type WorkspacePreferences } from "../lib/api-credentials";
 import { activeApiHeaders, readApiUrl } from "../lib/api-hosts";
 
+export type RemoteHost = {
+  id: string;
+  label: string;
+  url: string;
+  has_token: boolean;
+  header_names: string[];
+};
+export type RemoteHostDraft = {
+  id?: string;
+  label: string;
+  url: string;
+  token?: string;
+  clear_token?: boolean;
+  headers?: { name: string; value: string }[];
+};
+
 export type { PackageDiscovery } from "@orc/core/primitive-types";
 
 import type {
@@ -1809,6 +1825,28 @@ export const api = {
         ...(remote_port !== undefined ? { remote_port } : {}),
       }),
     test: (host?: string) => req<SshTest>("POST", "/ssh/test", host ? { host } : {}),
+  },
+
+  remoteHosts: {
+    list: () => req<{ hosts: RemoteHost[] }>("GET", "/remote-hosts"),
+    save: (draft: RemoteHostDraft) => req<{ hosts: RemoteHost[] }>("POST", "/remote-hosts", draft),
+    remove: (id: string) =>
+      req<{ hosts: RemoteHost[] }>("DELETE", `/remote-hosts/${encodeURIComponent(id)}`),
+    test: (id: string) =>
+      req<{ ok: boolean; version: string | null; error: string | null }>(
+        "POST",
+        `/remote-hosts/${encodeURIComponent(id)}/test`,
+      ),
+    targets: (id: string) =>
+      req<{ host: string | null; hosts: string[] }>(
+        "GET",
+        `/remote-hosts/${encodeURIComponent(id)}/hosts`,
+      ),
+    projects: (id: string) =>
+      req<{ projects: { name: string; git_remote_url: string | null; scope: string | null }[] }>(
+        "GET",
+        `/remote-hosts/${encodeURIComponent(id)}/projects`,
+      ),
   },
 
   git: {
