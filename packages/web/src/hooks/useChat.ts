@@ -116,6 +116,9 @@ export interface ChatTab {
   /** The dispatched user message id — the turn's identity, captured at send time
    *  because a reverted snapshot tail can end at an older user message. */
   turnUserId: string | undefined;
+  /** A native rebuild regenerated every message id, so the dispatched user id can
+   *  no longer prove a turn. Stays set until the next dispatch recaptures evidence. */
+  nativeRebuild: boolean;
   draft: string;
   files: File[];
   queuedFiles: Record<string, File[]>;
@@ -165,6 +168,7 @@ function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
     historyBaseline: undefined,
     turnSeq: 0,
     turnUserId: undefined,
+    nativeRebuild: false,
     draft: "",
     files: [],
     queuedFiles: {},
@@ -771,22 +775,34 @@ function useChatController() {
         const previous = streams.current.get(key);
         streams.current.delete(key);
         previous?.controller.abort();
-        update(key, (current) => ({
-          thread: fresh,
-          config: fresh.config,
-          messages: fresh.messages,
-          historyBefore: fresh.historyBefore ?? null,
-          // A rebuild is not a turn: an idle session must not claim "working".
-          // Preserve a stream/reconnect that was already live so a mid-turn
-          // refresh doesn't flicker to idle while reattach is pending; attach
-          // confirms it (onOpen) or clears it (204 -> finish).
-          streaming: current.streaming,
-          streamText: "",
-          activity: [],
-          permissions: [],
-          questions: [],
-          reconnecting: current.reconnecting,
-        }));
+        update(key, (current) => {
+          // A native rebuild regenerates every message id, so none survives the
+          // swap; a plain read keeps them. Zero overlap between two non-empty
+          // snapshots is the rebuild signature: the dispatched user id is gone,
+          // and turn evidence must not gate external completions afterwards.
+          const previousIds = new Set(current.messages.map((message) => message.id));
+          const regenerated =
+            current.messages.length > 0 &&
+            fresh.messages.length > 0 &&
+            !fresh.messages.some((message) => previousIds.has(message.id));
+          return {
+            thread: fresh,
+            config: fresh.config,
+            messages: fresh.messages,
+            historyBefore: fresh.historyBefore ?? null,
+            nativeRebuild: current.nativeRebuild || regenerated,
+            // A rebuild is not a turn: an idle session must not claim "working".
+            // Preserve a stream/reconnect that was already live so a mid-turn
+            // refresh doesn't flicker to idle while reattach is pending; attach
+            // confirms it (onOpen) or clears it (204 -> finish).
+            streaming: current.streaming,
+            streamText: "",
+            activity: [],
+            permissions: [],
+            questions: [],
+            reconnecting: current.reconnecting,
+          };
+        });
         void attach(key, fresh.id);
       } catch (cause) {
         update(key, () => ({ error: message(cause, "Chat could not be refreshed.") }));
@@ -1050,6 +1066,7 @@ function useChatController() {
         historyBaseline: tab.messages[tab.messages.length - 1],
         turnSeq: tab.turnSeq + 1,
         turnUserId: userMessage.id,
+        nativeRebuild: false,
         streaming: true,
         streamText: "",
         activity: [],
@@ -1555,6 +1572,7 @@ function useChatController() {
     historyBaseline: tab.historyBaseline,
     turnSeq: tab.turnSeq,
     turnUserId: tab.turnUserId,
+    nativeRebuild: tab.nativeRebuild,
     draft: tab.draft,
     files: tab.files,
     addFiles: (files: File[]) =>

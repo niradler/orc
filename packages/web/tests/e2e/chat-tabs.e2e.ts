@@ -925,6 +925,167 @@ test("an external rebuild whose reply matches older history is still announced",
   releaseGets();
 });
 
+test("a rebuild appending an identical consecutive reply is still announced", async ({ page }) => {
+  const dup = `DUP-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // Hold thread GETs so the local reply keeps its client id; the rebuild below
+  // regenerates every id and appends a second assistant message with the same
+  // text — native transcripts preserve consecutive assistant messages.
+  let allowGets = false;
+  let releaseGets: () => void;
+  const getsGate = new Promise<void>((resolve) => {
+    releaseGets = resolve;
+  });
+  let native: unknown = null;
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    if (!allowGets) {
+      await getsGate;
+      await route.abort().catch(() => {});
+      return;
+    }
+    const response = await route.fetch();
+    const thread = await response.json();
+    if (!native) {
+      native = {
+        ...thread,
+        messages: [
+          ...thread.messages.map((m: { id: string }) => ({ ...m, id: crypto.randomUUID() })),
+          { id: crypto.randomUUID(), role: "assistant", content: dup, timestamp: Date.now() },
+        ],
+      };
+    }
+    await route.fulfill({ response, json: native });
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${dup}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(dup);
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(dup);
+
+  // Leave and return so the live region is empty: only a new announcement can
+  // put the reply back into it.
+  await panel.getByTestId("chat-clear-button").click();
+  await showSessionSection(page, "recents");
+  const tabs = panel.getByTestId("chat-session-list").getByTestId("chat-tab");
+  await tabs.filter({ hasText: dup }).getByTestId("chat-session-select").click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(dup);
+
+  // The appended reply is a genuine new message even though its text matches
+  // the previous assistant message: the transcript grew, so it must announce.
+  allowGets = true;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(dup);
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(dup);
+  releaseGets();
+});
+
+test("an external completion after a native rebuild is announced even when it matches older history", async ({
+  page,
+}) => {
+  const same = `STALE-${Date.now()}`;
+  const other = `LOCALC-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // Hold thread GETs so the local turns keep client ids. Afterwards the GET
+  // serves a native rebuild that regenerates every id; once the test arms the
+  // external turn, the next read ends at its unanswered user message and the
+  // read after that (the 204 reload) carries the finished reply — the text of
+  // the older local turn.
+  let allowGets = false;
+  let armed = false;
+  let getCallCount = 0;
+  let releaseGets: () => void;
+  const getsGate = new Promise<void>((resolve) => {
+    releaseGets = resolve;
+  });
+  let base: {
+    messages: { id: string; role: string; content: string }[];
+    [key: string]: unknown;
+  } | null = null;
+  const externalUser = {
+    id: crypto.randomUUID(),
+    role: "user",
+    content: "external prompt",
+    timestamp: Date.now(),
+  };
+  const externalReply = {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content: same,
+    timestamp: Date.now(),
+  };
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    if (!allowGets) {
+      await getsGate;
+      await route.abort().catch(() => {});
+      return;
+    }
+    getCallCount++;
+    const response = await route.fetch();
+    const thread = await response.json();
+    if (!base) {
+      base = {
+        ...thread,
+        messages: thread.messages.map((m: { id: string }) => ({ ...m, id: crypto.randomUUID() })),
+      };
+    }
+    let messages = base.messages;
+    if (armed) {
+      // The first read after arming is the refresh that detaches mid-turn; the
+      // next is the 204 reload discovering the finished external turn.
+      messages = [...base.messages, externalUser];
+      armed = false;
+    } else if (getCallCount > 2) {
+      messages = [...base.messages, externalUser, externalReply];
+    }
+    await route.fulfill({ response, json: { ...base, messages } });
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+
+  // Turn A's reply is the text the external turn repeats; turn B makes it the
+  // dispatch-time baseline and leaves a send id the rebuild removes.
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${same}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(same);
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${other}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(other);
+
+  // The rebuild regenerates every id — the dispatched user id included — but
+  // loads the same transcript, so it must not announce.
+  allowGets = true;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(other);
+  // Wait for the rebuild's syncThread read so arming cannot race it.
+  await expect.poll(() => getCallCount).toBeGreaterThanOrEqual(2);
+
+  // The external turn finishes while this tab is detached: the next refresh
+  // loads a snapshot ending at its unanswered user message, and the 204 reload
+  // discovers the reply. It matches the stale baseline's text and the send id
+  // is gone, but it is a genuine completion and must be announced.
+  armed = true;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(same, {
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(same);
+  releaseGets();
+});
+
 test("opening a finished thread does not announce its historical reply", async ({ page }) => {
   const reply = `HISTORY-${Date.now()}`;
   await page.goto("/tasks?chat=full");

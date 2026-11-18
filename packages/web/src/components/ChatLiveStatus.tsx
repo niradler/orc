@@ -139,6 +139,7 @@ export function ChatLiveAnnouncer({
   baseline,
   turnSeq,
   turnUserId,
+  nativeRebuild,
 }: {
   tabKey: string;
   streaming: boolean;
@@ -151,6 +152,7 @@ export function ChatLiveAnnouncer({
   baseline: ChatMessage | undefined;
   turnSeq: number;
   turnUserId: string | undefined;
+  nativeRebuild: boolean;
 }) {
   const [message, setMessage] = useState("");
   const spoken = useRef(0);
@@ -160,7 +162,7 @@ export function ChatLiveAnnouncer({
   const wasStreaming = useRef(streaming);
   const wasRefreshing = useRef(refreshing);
   const wasSettled = useRef(settled);
-  const prevLast = useRef(last);
+  const prevMessages = useRef(messages);
   const lastTurnSeq = useRef(new Map<string, number>());
   const pendingCompletion = useRef(new Map<string, string>());
   const announced = useRef(new Map<string, string>());
@@ -204,8 +206,9 @@ export function ChatLiveAnnouncer({
     // A completion must load a new reply: a no-op or failed refresh returns the
     // same message, and syncThread swapping the client id for the persisted one
     // is not a new reply either.
-    const lastChanged = prevLast.current?.id !== last?.id;
-    const previousLast = prevLast.current;
+    const previousMessages = prevMessages.current;
+    const previousLast = previousMessages[previousMessages.length - 1];
+    const lastChanged = previousLast?.id !== last?.id;
     // The history baseline and the turn's user id are captured at every dispatch
     // (background queue drains included), so they name the reply that was on screen
     // before THIS turn and the message this tab sent even when the tab finished
@@ -230,12 +233,16 @@ export function ChatLiveAnnouncer({
     // id can — the server persists the user message under the client id, so its
     // presence in the snapshot ties the arrival to this send. A stalled send
     // never reached the server, so a revert/twin lacks it, and the id survives
-    // any tail window (bounded or shrinking snapshots included).
+    // any tail window (bounded or shrinking snapshots included). A native
+    // rebuild regenerates every id — the dispatched user id included — so after
+    // one, evidence cannot gate external completions; the baseline id still
+    // anchors, and a new dispatch recaptures fresh evidence.
     const isNewTurn = (reply: ChatMessage) =>
       reply.id !== baseline?.id &&
       (reply.content !== baseline?.content ||
         (turnUserId !== undefined &&
-          messages.some((m) => m.role === "user" && m.id === turnUserId)));
+          messages.some((m) => m.role === "user" && m.id === turnUserId)) ||
+        nativeRebuild);
     if (
       streaming &&
       lastChanged &&
@@ -248,7 +255,7 @@ export function ChatLiveAnnouncer({
     wasStreaming.current = streaming;
     wasRefreshing.current = refreshing;
     wasSettled.current = settled;
-    prevLast.current = last;
+    prevMessages.current = messages;
     if (tabChanged || streaming || (!streamFinished && !rebuildFinished && !settledFinished))
       return;
     const pending = pendingCompletion.current.get(tabKey);
@@ -258,18 +265,28 @@ export function ChatLiveAnnouncer({
     // Only a newly loaded reply announces: a no-op or failed refresh returns the
     // same message, and an empty turn assembles nothing. Per-tab dedupe on top.
     if (!discovered || announced.current.get(tabKey) === last.id) return;
-    // An in-place id change with identical content is the same message re-id'd —
-    // syncThread's client→persisted swap arriving through a refresh instead of
-    // its silent idle commit — not a new reply, whether or not it announced.
-    if (lastChanged && previousLast?.role === "assistant" && previousLast.content === last.content)
-      return;
+    // An id swap that leaves the loaded window's role and content sequence
+    // unchanged is the same messages re-id'd — syncThread's client→persisted
+    // swap arriving through a refresh, or a native rebuild of an unchanged
+    // transcript (every id regenerates even when nothing changed). A genuine
+    // new reply grows the window or changes its tail, so consecutive identical
+    // replies stay distinct: the older one keeps its place ahead of the new tail.
+    const reidentified =
+      messages.length > 0 &&
+      previousMessages.length >= messages.length &&
+      messages.every((message, index) => {
+        const previous = previousMessages[previousMessages.length - messages.length + index];
+        return previous.role === message.role && previous.content === message.content;
+      });
+    if (lastChanged && reidentified) return;
     // A completion edge can load history too: the 204 reload and finish() batch
     // into one commit, so a restored twin arrives with a changed id exactly as
     // streaming falls. Require the same turn evidence as the mid-stream path;
     // a live assembly always carries the dispatched user id in its snapshot.
     // A rebuild is exempt: it loads whatever changed on disk — an external turn,
     // not a local dispatch — and native imports regenerate every message id, so
-    // dispatch evidence cannot apply; the in-place rule still absorbs history.
+    // dispatch evidence cannot apply; the re-id rule still absorbs unchanged
+    // history.
     if (!rebuildFinished && !isNewTurn(last)) return;
     announced.current.set(tabKey, last.id);
     // A discovered reply was never streamed here; read it from the start. The
@@ -291,7 +308,18 @@ export function ChatLiveAnnouncer({
           )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
-  }, [tabKey, streaming, refreshing, settled, last, messages, baseline, turnSeq, turnUserId]);
+  }, [
+    tabKey,
+    streaming,
+    refreshing,
+    settled,
+    last,
+    messages,
+    baseline,
+    turnSeq,
+    turnUserId,
+    nativeRebuild,
+  ]);
 
   return (
     <div role="status" aria-live="polite" data-testid="chat-live-announcer" className="sr-only">

@@ -267,6 +267,7 @@ export function ChatPanel({
     historyBaseline,
     turnSeq,
     turnUserId,
+    nativeRebuild,
     streaming,
     reconnecting,
     refreshing,
@@ -1398,6 +1399,7 @@ export function ChatPanel({
               baseline={historyBaseline}
               turnSeq={turnSeq}
               turnUserId={turnUserId}
+              nativeRebuild={nativeRebuild}
             />
             {error && (
               <div
