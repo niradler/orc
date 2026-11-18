@@ -269,6 +269,35 @@ test("should report an open OpenCode question as waiting, and nothing it cannot 
   tool("ses_permission", "read", "running");
   session("ses_abandoned", now - 2 * 86_400_000);
   tool("ses_abandoned", "question", "running");
+  ask.run(`CREATE TABLE session_v2 (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, title TEXT,
+    time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, tokens_input INTEGER, tokens_output INTEGER, tokens_reasoning INTEGER)`);
+  ask.run(
+    "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT NOT NULL, seq INTEGER NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)",
+  );
+  const v2 = (id: string, name: string, status: string, data?: string) => {
+    ask.run("INSERT INTO session_v2 VALUES (?, NULL, '/work/ask', ?, ?, ?, 0, 0, 0)", [
+      id,
+      id,
+      now - 121_000,
+      now - 120_000,
+    ]);
+    ask.run("INSERT INTO session_message VALUES (?, ?, 'assistant', 1, ?, ?)", [
+      `msg_${id}`,
+      id,
+      now - 120_000,
+      data ??
+        JSON.stringify({
+          content: [
+            { type: "text", text: "Let me ask." },
+            { type: "tool", id: "call_q", name, state: { status, input: { questions: [] } } },
+          ],
+        }),
+    ]);
+  };
+  v2("ses_v2_asking", "question", "running");
+  v2("ses_v2_answered", "question", "completed");
+  v2("ses_v2_reading", "read", "running");
+  v2("ses_v2_garbled", "question", "running", "not json");
   ask.close();
   const records = await opencodeAdapter(askPath, runtime).list(new Map());
   expect(
@@ -281,6 +310,10 @@ test("should report an open OpenCode question as waiting, and nothing it cannot 
     ses_answered: ["stopped", false, null],
     ses_permission: ["stopped", false, null],
     ses_abandoned: ["stopped", false, null],
+    ses_v2_asking: ["running", true, { reason: "question", tool: null }],
+    ses_v2_answered: ["stopped", false, null],
+    ses_v2_reading: ["stopped", false, null],
+    ses_v2_garbled: ["stopped", false, null],
   });
 });
 

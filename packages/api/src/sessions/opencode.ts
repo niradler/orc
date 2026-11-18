@@ -137,14 +137,20 @@ export function opencodeAdapter(
             grew = true;
           }
       }
+      const since = Date.now() - 86_400_000;
       const asking = new Set(
-        (
-          await queryTable<{ session_id: string }>(
+        [
+          ...(await queryTable<{ session_id: string }>(
             runtime,
             path,
-            `SELECT DISTINCT session_id FROM part WHERE session_id IN (SELECT id FROM session WHERE time_updated > ${Date.now() - 86_400_000}) AND json_extract(data, '$.type') = 'tool' AND json_extract(data, '$.tool') = 'question' AND json_extract(data, '$.state.status') IN ('pending', 'running')`,
-          )
-        ).map((row) => row.session_id),
+            `SELECT DISTINCT session_id FROM part WHERE session_id IN (SELECT id FROM session WHERE time_updated > ${since}) AND json_extract(data, '$.type') = 'tool' AND json_extract(data, '$.tool') = 'question' AND json_extract(data, '$.state.status') IN ('pending', 'running')`,
+          )),
+          ...(await queryTable<{ session_id: string }>(
+            runtime,
+            path,
+            `SELECT DISTINCT m.session_id FROM session_message m, json_each(CASE WHEN json_valid(m.data) THEN m.data ELSE '{}' END, '$.content') c WHERE m.session_id IN (SELECT id FROM session_v2 WHERE time_updated > ${since}) AND json_extract(c.value, '$.type') = 'tool' AND coalesce(json_extract(c.value, '$.name'), json_extract(c.value, '$.tool')) = 'question' AND json_extract(c.value, '$.state.status') IN ('pending', 'running')`,
+          )),
+        ].map((row) => row.session_id),
       );
       const seen = new Set<string>();
       const records: SessionRecord[] = [];
