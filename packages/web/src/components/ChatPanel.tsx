@@ -264,6 +264,7 @@ export function ChatPanel({
 }: ChatPanelProps) {
   const {
     messages,
+    historyBaseline,
     streaming,
     reconnecting,
     refreshing,
@@ -1392,6 +1393,7 @@ export function ChatPanel({
               text={streamText}
               last={messages[messages.length - 1]}
               messages={messages}
+              baseline={historyBaseline}
             />
             {error && (
               <div

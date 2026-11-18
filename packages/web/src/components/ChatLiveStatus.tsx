@@ -136,6 +136,7 @@ export function ChatLiveAnnouncer({
   text,
   last,
   messages,
+  baseline,
 }: {
   tabKey: string;
   streaming: boolean;
@@ -145,6 +146,7 @@ export function ChatLiveAnnouncer({
   text: string;
   last: ChatMessage | undefined;
   messages: ChatMessage[];
+  baseline: ChatMessage | undefined;
 }) {
   const [message, setMessage] = useState("");
   const spoken = useRef(0);
@@ -155,7 +157,6 @@ export function ChatLiveAnnouncer({
   const wasRefreshing = useRef(refreshing);
   const wasSettled = useRef(settled);
   const prevLast = useRef(last);
-  const idleLast = useRef(new Map<string, ChatMessage | undefined>());
   const turnUser = useRef(new Map<string, ChatMessage>());
   const pendingCompletion = useRef(new Map<string, string>());
   const announced = useRef(new Map<string, string>());
@@ -200,15 +201,14 @@ export function ChatLiveAnnouncer({
     // same message, and syncThread swapping the client id for the persisted one
     // is not a new reply either.
     const lastChanged = prevLast.current?.id !== last?.id;
-    // This tab's history baseline: the last message seen while idle, seeded on
-    // first sight. A mid-turn refresh can REVERT the snapshot to the reply that
-    // was on screen before the turn (the new message never reached the server);
-    // that is history, not a completion — even when syncThread has not yet
-    // replaced the client id, so the persisted twin arrives under a new id.
-    if (!idleLast.current.has(tabKey) || !streaming) idleLast.current.set(tabKey, last);
-    const baseline = idleLast.current.get(tabKey);
+    // The history baseline is captured at every dispatch (background queue drains
+    // included), so it names the reply that was on screen before THIS turn even
+    // when the tab finished turns while another one was selected. A mid-turn
+    // refresh can REVERT the snapshot to that reply (the new message never reached
+    // the server); that is history, not a completion — even when syncThread has
+    // not yet replaced the client id, so the persisted twin arrives under a new id.
     // The user message that started this tab's turn, remembered from the send.
-    if (streaming && lastChanged && last?.role === "user") turnUser.current.set(tabKey, last);
+    if (streaming && last?.role === "user") turnUser.current.set(tabKey, last);
     if (!streaming) turnUser.current.delete(tabKey);
     // A mid-turn refresh can load the finished reply while streaming is still
     // claimed; the 204 that follows appends nothing, so hold the reply's identity
@@ -265,7 +265,7 @@ export function ChatLiveAnnouncer({
           )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
-  }, [tabKey, streaming, refreshing, settled, last, messages]);
+  }, [tabKey, streaming, refreshing, settled, last, messages, baseline]);
 
   return (
     <div role="status" aria-live="polite" data-testid="chat-live-announcer" className="sr-only">

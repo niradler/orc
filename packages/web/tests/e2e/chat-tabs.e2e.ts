@@ -560,6 +560,73 @@ test("a stalled send repeating identical history is not announced as a completio
   releaseGets();
 });
 
+test("a background queue dispatch whose send stalls does not announce the prior reply", async ({
+  page,
+}) => {
+  const first = `BG-${Date.now()}`;
+  const second = `BGQUEUED-${Date.now()}`;
+  // Isolate from session-changed rebuilds.
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+
+  let postCount = 0;
+  let releaseFirst: () => void;
+  const secondQueued = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  let dispatchStarted: () => void;
+  const backgroundDispatch = new Promise<void>((resolve) => {
+    dispatchStarted = resolve;
+  });
+  let releasePost: () => void;
+  const postGate = new Promise<void>((resolve) => {
+    releasePost = resolve;
+  });
+  await page.route(/\/api\/chat\/stream$/, async (route) => {
+    postCount += 1;
+    if (postCount === 1) {
+      const response = await route.fetch(); // turn 1 finishes server-side
+      await secondQueued; // keep the client streaming until turn 2 is queued
+      await route.fulfill({ response }).catch(() => {});
+      return;
+    }
+    // The background dispatch never reaches the server.
+    dispatchStarted();
+    await postGate;
+    await route.abort().catch(() => {});
+  });
+
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${first}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  // Queue turn 2 while turn 1 is still streaming, then leave for a blank tab so
+  // turn 1 finishes and the queue dispatches turn 2 in the BACKGROUND.
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${second}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await panel.getByTestId("chat-clear-button").click();
+  releaseFirst();
+  await backgroundDispatch;
+
+  // Return to the first tab while its background send is stalled, and refresh:
+  // the snapshot reverts to turn 1's completed reply (turn 2 never reached the
+  // server). That reply is the baseline captured at turn 2's dispatch — history,
+  // not a completion — even though the announcer never saw the background turns.
+  await showSessionSection(page, "recents");
+  const tabs = panel.getByTestId("chat-session-list").getByTestId("chat-tab");
+  await tabs.filter({ hasText: first }).getByTestId("chat-session-select").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(first);
+  await page.waitForTimeout(1000);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).not.toContain(first);
+  releasePost();
+});
+
 test("opening a finished thread does not announce its historical reply", async ({ page }) => {
   const reply = `HISTORY-${Date.now()}`;
   await page.goto("/tasks?chat=full");

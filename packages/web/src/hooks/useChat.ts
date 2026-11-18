@@ -107,6 +107,9 @@ export interface ChatTab {
   config: ChatConfig;
   providerDrafts?: ProviderDrafts;
   messages: ChatMessage[];
+  /** The last message before the current turn's send — the history a mid-turn
+   *  refresh must not re-announce. Captured at every dispatch, background too. */
+  historyBaseline: ChatMessage | undefined;
   draft: string;
   files: File[];
   queuedFiles: Record<string, File[]>;
@@ -153,6 +156,7 @@ function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
     thread: null,
     config,
     messages: [],
+    historyBaseline: undefined,
     draft: "",
     files: [],
     queuedFiles: {},
@@ -1035,6 +1039,7 @@ function useChatController() {
       update(key, (tab) => ({
         queued: tab.queued.filter((entry) => entry.id !== userMessage.id),
         messages: [...tab.messages, { ...userMessage, timestamp: Date.now() }],
+        historyBaseline: tab.messages[tab.messages.length - 1],
         streaming: true,
         streamText: "",
         activity: [],
@@ -1537,6 +1542,7 @@ function useChatController() {
     selectProvider,
     showThread,
     messages: tab.messages,
+    historyBaseline: tab.historyBaseline,
     draft: tab.draft,
     files: tab.files,
     addFiles: (files: File[]) =>
