@@ -531,7 +531,9 @@ confirm native acceptance before returning; OpenCode
 over direct ACP has no steer acknowledgment, so a later refusal is reported as a
 status message and steering is turned off for that turn. It
 requires a live steering-capable session (Codex, Claude, Pi and OpenCode over direct
-ACP); stale and unsupported runs return `409`. A `409` with the code
+ACP); stale and unsupported runs return `409`, and so does a run with an
+unanswered approval or question, so a new message never reaches the agent in place of
+the answer. The web chat queues it until the turn ends. A `409` with the code
 `STEER_UNCONFIRMED` means the text may already be in the conversation, so the
 client must not send it again as a new turn; a plain `CONFLICT` means nothing was
 delivered and the message can be queued instead.

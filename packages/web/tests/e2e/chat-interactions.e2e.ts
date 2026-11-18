@@ -173,6 +173,9 @@ for (const width of [390, 1440]) {
       "echo harmless",
     );
     await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeVisible();
+    await expect(page.getByTestId("chat-send-outcome").filter({ visible: true })).toHaveText(
+      "command permission pending · sends queue",
+    );
     // A running turn owns the session: resuming it in a terminal waits for idle.
     await openChatActions(page);
     await expect(
