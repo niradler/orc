@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { resetConfig } from "@orc/core/config";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadConfig, resetConfig } from "@orc/core/config";
 
 type QueryArgs = {
   prompt: string;
   options: {
     permissionMode?: string;
     settingSources?: string[];
+    strictMcpConfig?: boolean;
+    hooks?: Record<string, unknown>;
+    systemPrompt?: { append?: string };
     maxTurns?: number;
     maxBudgetUsd?: number;
     effort?: string;
@@ -246,8 +251,17 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
     }
   });
 
-  test("should load local Claude settings for open chats and none for allowlisted ones", async () => {
+  test("should load user, project and local Claude settings in every chat and keep allowlisted chats to ORC's MCP servers", async () => {
+    const guard = {
+      context: "",
+      builtinActions: false,
+      evaluate: () => ({ decision: "abstain" as const, reasons: [], context: [], jobs: [] }),
+    };
     const open = await createBackend("claude").startSession({ cwd: process.cwd() });
+    const guarded = await createBackend("claude").startSession({
+      cwd: process.cwd(),
+      ruleGuard: guard,
+    });
     const restricted = await createBackend("claude").startSession({
       cwd: process.cwd(),
       autoApprove: true,
@@ -255,15 +269,75 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
     });
     try {
       await open.send("go");
+      await guarded.send("go");
       await restricted.send("go");
       await Bun.sleep(20);
-      expect(queries.map((entry) => entry.options.settingSources)).toEqual([
-        ["user", "project", "local"],
-        [],
+      expect(
+        queries.map((entry) => [entry.options.settingSources, entry.options.strictMcpConfig]),
+      ).toEqual([
+        [["user", "project", "local"], undefined],
+        [["user", "project", "local"], undefined],
+        [["user", "project", "local"], true],
       ]);
     } finally {
       await open.close();
+      await guarded.close();
       await restricted.close();
+    }
+  });
+
+  test("should skip the SDK rules hook for events whose ORC hook the loaded Claude settings already run against the same database", async () => {
+    const root = mkdtempSync(join(tmpdir(), "orc-claude-settings-"));
+    const project = join(root, "project");
+    const configDir = join(root, "claude");
+    mkdirSync(join(project, ".claude"), { recursive: true });
+    mkdirSync(configDir, { recursive: true });
+    const handler = (db: string, event: string) => ({
+      hooks: [
+        {
+          type: "command",
+          command: `"/usr/bin/orc" --db "${db}" rules hook claude ${event}`,
+        },
+      ],
+    });
+    writeFileSync(
+      join(project, ".claude", "settings.local.json"),
+      JSON.stringify({ hooks: { PreToolUse: [handler(loadConfig().db.path, "PreToolUse")] } }),
+    );
+    writeFileSync(
+      join(configDir, "settings.json"),
+      JSON.stringify({
+        hooks: {
+          SessionStart: [handler(loadConfig().db.path, "SessionStart")],
+          PostToolUse: [handler(join(root, "other.db"), "PostToolUse")],
+        },
+      }),
+    );
+    const session = await createBackend("claude").startSession({
+      cwd: project,
+      env: { CLAUDE_CONFIG_DIR: configDir },
+      ruleGuard: {
+        context: "",
+        builtinActions: false,
+        evaluate: () => ({
+          decision: "abstain",
+          reasons: [],
+          context: ["startup rule context"],
+          jobs: [],
+        }),
+      },
+    });
+    try {
+      await session.send("go");
+      await Bun.sleep(20);
+      const hooks = Object.keys(queries[0]?.options.hooks ?? {});
+      expect(hooks).not.toContain("PreToolUse");
+      expect(hooks).toContain("PostToolUse");
+      expect(hooks).toContain("UserPromptSubmit");
+      expect(queries[0]?.options.systemPrompt?.append).not.toContain("startup rule context");
+    } finally {
+      await session.close();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

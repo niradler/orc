@@ -188,7 +188,13 @@ SDK lifecycle hooks, including synchronous `PreToolUse` before automatic-approva
 Managed SessionStart is evaluated explicitly before each startup/resume query and its
 context is appended to the agent prompt. SDK startup callbacks are not relied on: some
 SDK launches register them after that native lifecycle event has already occurred.
-SDK settings are isolated for guarded sessions and ORC supplies its own MCP connection.
+Every Claude chat loads user, project and local settings like the CLI, so CLAUDE.md, project
+skills and `.claude/settings.local.json` allow rules apply. A rule's deny or human approval
+still wins over a settings allow rule. When the loaded settings already run
+`orc rules hook claude <event>` against the same ORC database (`orc rules install-hook`),
+ORC skips its SDK copy for that event so the rule is not evaluated twice. Agent profiles
+with a tool allowlist see only their listed tools and ORC's MCP server; settings cannot add
+MCP servers to them.
 The hook rechecks active policy on every event, so human policy changes/reverts apply to
 guarded sessions. Enable the host setting before starting sessions; already running
 unguarded sessions must be restarted.
