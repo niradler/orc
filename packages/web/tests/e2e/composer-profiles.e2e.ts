@@ -38,7 +38,7 @@ test.afterEach(async ({ request }) => {
 });
 
 for (const width of [1440, 390]) {
-  test(`favorites pin to the top, the gear opens provider settings and a profile restores all four choices at ${width}px`, async ({
+  test(`favorites pin to the top, the gear opens provider settings and a profile is edited in place and restores all four choices at ${width}px`, async ({
     page,
     request,
   }) => {
@@ -96,13 +96,35 @@ for (const width of [1440, 390]) {
         },
       ]);
 
+    const profiles = async () =>
+      (await (await request.get("/api/settings", { headers: AUTH_HEADERS })).json())
+        .composer_profiles;
+    const [{ id }] = await profiles();
+    await page.getByTestId(`chat-profile-edit-${id}`).click();
+    await page.getByTestId("chat-profile-name").fill("Deep review");
+    await page.getByTestId("chat-profile-save").click();
+    await expect
+      .poll(profiles)
+      .toEqual([expect.objectContaining({ id, name: "Deep review", effort: "max" })]);
+    await showPickerTab(page, "effort");
+    await page.getByTestId("chat-effort-option-low").click();
+    await openChatAgentModel(page);
+    await page.getByTestId(`chat-profile-edit-${id}`).click();
+    await page.getByTestId("chat-profile-replace").check();
+    await page.getByTestId("chat-profile-save").click();
+    await expect
+      .poll(profiles)
+      .toEqual([
+        expect.objectContaining({ id, name: "Deep review", model: "opus", effort: "low" }),
+      ]);
+
     await page.keyboard.press("Escape");
     await chooseChatAgent(page, "codex");
     await openChatAgentModel(page);
-    await page.getByRole("button", { name: "Deep plan", exact: true }).click();
+    await page.getByRole("button", { name: "Deep review", exact: true }).click();
     await expect(
       page.getByTestId("chat-agent-model-button").filter({ visible: true }),
-    ).toHaveAccessibleName("Agent and model: Claude Code, Opus, Max effort");
+    ).toHaveAccessibleName("Agent and model: Claude Code, Opus, Low effort");
     await expect(page.getByTestId("chat-permission-chip")).toHaveAttribute("data-mode", "plan");
 
     await openChatAgentModel(page);
@@ -164,11 +186,18 @@ test("Codex lists its own approval presets by name", async ({ page, request }) =
   expect((await response.json()).capabilities.permissionLabels).toMatchObject({
     default: { label: "Read only" },
     acceptEdits: { label: "Auto" },
+    auto: { label: "Auto-review" },
     bypassPermissions: { label: "Full access" },
   });
   await page.goto("/settings?settingsSection=agents&agentsTab=chat");
   const select = page.getByTestId("chat-permission-mode");
-  await expect(select.locator("option")).toHaveText(["Read only", "Plan", "Auto", "Full access"]);
+  await expect(select.locator("option")).toHaveText([
+    "Read only",
+    "Plan",
+    "Auto",
+    "Auto-review",
+    "Full access",
+  ]);
 });
 
 test("a terminal launches with the chosen model, effort and mode, and a profile in one click", async ({

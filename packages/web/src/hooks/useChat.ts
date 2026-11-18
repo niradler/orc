@@ -225,28 +225,22 @@ function waitingConflict(cause: unknown): boolean {
 const STEER_UNCONFIRMED = "STEER_UNCONFIRMED";
 
 /** The turn is live and the backend accepted steering, whatever the send preference. */
-function canSteer(tab: { streaming: boolean; runId: string; thread: ChatThread | null }): boolean {
-  return tab.streaming && !!tab.runId && tab.thread?.capabilities?.steering === true;
+function canSteer(tab: ChatTab): boolean {
+  return (
+    tab.streaming &&
+    !!tab.runId &&
+    tab.thread?.capabilities?.steering === true &&
+    !tab.permissions.length &&
+    !tab.questions.length
+  );
 }
 
 /**
  * One predicate for the composer label and the send path: the turn is live, the
  * conversation steers, nothing is attached, and the backend accepted steering.
  */
-function steersLive(tab: {
-  config: ChatConfig;
-  streaming: boolean;
-  runId: string;
-  files: File[];
-  thread: ChatThread | null;
-}): boolean {
-  return (
-    tab.config.sendWhileRunning === "steer" &&
-    tab.streaming &&
-    !!tab.runId &&
-    tab.files.length === 0 &&
-    tab.thread?.capabilities?.steering === true
-  );
+function steersLive(tab: ChatTab): boolean {
+  return tab.config.sendWhileRunning === "steer" && tab.files.length === 0 && canSteer(tab);
 }
 
 function useChatController() {

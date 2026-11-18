@@ -1646,11 +1646,6 @@ describe("native chat runtime", () => {
       .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
     const path = `/chat/runs/${opened.runId}/permission-mode`;
     expect((await request(path, { mode: "yolo" })).status).toBe(400);
-    const rejected = await request(path, { mode: "auto" });
-    expect(rejected.status).toBe(400);
-    expect(((await rejected.json()) as { error: string }).error).toContain(
-      'the "auto" permission mode',
-    );
     const changed = await request(path, { mode: "bypassPermissions" });
     expect(changed.status).toBe(200);
     expect(((await changed.json()) as ChatThread).config.permissionMode).toBe("bypassPermissions");
@@ -1669,6 +1664,7 @@ describe("native chat runtime", () => {
   test("a send in a mode the agent does not offer is rejected by name", async () => {
     const before = calls.length;
     const response = await request("/chat/stream", {
+      agent: "opencode",
       permissionMode: "auto",
       messages: [{ role: "user", content: "decide for me" }],
     });
@@ -2101,15 +2097,13 @@ describe("native chat runtime", () => {
         .filter((line) => line.startsWith("data:"))
         .map((line) => JSON.parse(line.slice(5)))
         .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
-      const steeringId = crypto.randomUUID();
       const previousSteers = nativeSteers.length;
       const steered = await request(`/chat/runs/${opened.runId}/steer`, {
         input: "focus on tests",
-        requestId: steeringId,
+        requestId: crypto.randomUUID(),
       });
-      expect(steered.status).toBe(200);
-      expect(nativeSteers.length).toBe(previousSteers + 1);
-      expect(nativeSteers.at(-1)).toBe("focus on tests");
+      expect(steered.status).toBe(409);
+      expect(nativeSteers.length).toBe(previousSteers);
       const previousInterrupted = interrupted;
       expect((await request(`/chat/runs/${opened.runId}/cancel`, {})).status).toBe(200);
       while (!(await reader.read()).done) {
@@ -2340,7 +2334,7 @@ test("capability discovery requires auth and preserves provider/session isolatio
 });
 
 test("steering enters the active native session and persists the message without starting another turn", async () => {
-  waitPermission = true;
+  hangTurn = "tool";
   const response = await request("/chat/stream", {
     agent: "codex",
     messages: [{ role: "user", content: "working" }],
@@ -2349,7 +2343,7 @@ test("steering enters the active native session and persists the message without
   const reader = response.body.getReader();
   let text = "";
   const decoder = new TextDecoder();
-  while (!text.includes("permission_request")) {
+  while (!text.includes("tool_use")) {
     const part = await reader.read();
     if (part.done) throw new Error("stream ended");
     text += decoder.decode(part.value);
@@ -2485,10 +2479,7 @@ test("steering enters the active native session and persists the message without
     expect(saved.messages.some((m: { content: string }) => m.content === "focus on tests")).toBe(
       true,
     );
-    await request(`/chat/runs/${started.runId}/permission`, {
-      requestId: "permission-1",
-      decision: "approved",
-    });
+    await request(`/chat/runs/${started.runId}/cancel`, {});
     while (!(await reader.read()).done) {}
     expect(
       (
@@ -2499,12 +2490,60 @@ test("steering enters the active native session and persists the message without
       ).status,
     ).toBe(409);
   } finally {
-    waitPermission = false;
+    hangTurn = undefined;
     steeringFailure = false;
     steeringDelay = 0;
     await request(`/chat/runs/${started.runId}/cancel`, {});
     await reader.cancel();
     await Bun.sleep(10);
+  }
+});
+
+test("a pending permission or question keeps steering out of the running turn", async () => {
+  for (const pending of ["permission", "question"] as const) {
+    if (pending === "permission") waitPermission = true;
+    else waitQuestion = true;
+    const response = await request("/chat/stream", {
+      agent: "codex",
+      messages: [{ role: "user", content: "working" }],
+    });
+    if (!response.body) throw new Error("Missing response stream");
+    const reader = response.body.getReader();
+    let text = "";
+    const decoder = new TextDecoder();
+    while (!text.includes(`${pending}_request`)) {
+      const part = await reader.read();
+      if (part.done) throw new Error("stream ended");
+      text += decoder.decode(part.value);
+    }
+    const started = text
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => JSON.parse(line.slice(5)))
+      .find((event) => event.type === "thread");
+    const steers = nativeSteers.length;
+    try {
+      const refused = await request(`/chat/runs/${started.runId}/steer`, {
+        input: "change course",
+        requestId: crypto.randomUUID(),
+      });
+      expect(refused.status).toBe(409);
+      expect(await refused.json()).toMatchObject({
+        code: "CONFLICT",
+        error: "Answer the pending prompt first. Queue a message instead.",
+      });
+      expect(nativeSteers.length).toBe(steers);
+      const saved = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${started.thread.id}`)).json(),
+      );
+      expect(saved.messages.some((m) => m.content === "change course")).toBe(false);
+    } finally {
+      waitPermission = false;
+      waitQuestion = false;
+      await request(`/chat/runs/${started.runId}/cancel`, {});
+      await reader.cancel();
+      await Bun.sleep(10);
+    }
   }
 });
 

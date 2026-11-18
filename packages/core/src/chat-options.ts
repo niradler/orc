@@ -15,22 +15,34 @@ export function unsupportedPermissionMode(mode: string): string {
 }
 
 export const CODEX_PERMISSION_PRESETS = {
-  default: { approvalPolicy: "on-request", sandbox: "read-only" },
-  plan: { approvalPolicy: "never", sandbox: "read-only" },
-  acceptEdits: { approvalPolicy: "on-request", sandbox: "workspace-write" },
-  bypassPermissions: { approvalPolicy: "never", sandbox: "danger-full-access" },
-} as const;
-
-export function codexPermissionPreset(mode: ChatPermissionMode) {
-  return mode === "auto" ? CODEX_PERMISSION_PRESETS.acceptEdits : CODEX_PERMISSION_PRESETS[mode];
-}
+  default: { approvalPolicy: "on-request", sandbox: "read-only", approvalsReviewer: "user" },
+  plan: { approvalPolicy: "never", sandbox: "read-only", approvalsReviewer: "user" },
+  acceptEdits: {
+    approvalPolicy: "on-request",
+    sandbox: "workspace-write",
+    approvalsReviewer: "user",
+  },
+  auto: {
+    approvalPolicy: "on-request",
+    sandbox: "workspace-write",
+    approvalsReviewer: "auto_review",
+  },
+  bypassPermissions: {
+    approvalPolicy: "never",
+    sandbox: "danger-full-access",
+    approvalsReviewer: "user",
+  },
+} as const satisfies Record<
+  ChatPermissionMode,
+  { approvalPolicy: string; sandbox: string; approvalsReviewer: string }
+>;
 
 export const TERMINAL_LAUNCH_SUPPORT: Record<
   string,
   { effort: boolean; modes: readonly ChatPermissionMode[] }
 > = {
   claude: { effort: true, modes: ["default", "plan", "acceptEdits", "auto", "bypassPermissions"] },
-  codex: { effort: true, modes: ["default", "acceptEdits", "bypassPermissions"] },
+  codex: { effort: true, modes: ["default", "acceptEdits", "auto", "bypassPermissions"] },
   opencode: { effort: false, modes: ["default", "plan"] },
   cursor: { effort: false, modes: ["default", "plan", "bypassPermissions"] },
 };
@@ -56,8 +68,9 @@ export function terminalLaunchArgs(agent: string, options: TerminalLaunchOptions
   } else if (agent === "codex") {
     if (effort) args.push("-c", `model_reasoning_effort="${effort}"`);
     if (mode) {
-      const preset = codexPermissionPreset(mode);
+      const preset = CODEX_PERMISSION_PRESETS[mode];
       args.push("--sandbox", preset.sandbox, "--ask-for-approval", preset.approvalPolicy);
+      if (mode === "auto") args.push("-c", `approvals_reviewer="${preset.approvalsReviewer}"`);
     }
   } else if (agent === "opencode") {
     if (mode === "plan") args.push("--agent", "plan");
