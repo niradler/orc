@@ -8,8 +8,64 @@ export const ChatPermissionModeSchema = z.enum([
   "bypassPermissions",
 ]);
 
+export type ChatPermissionMode = z.infer<typeof ChatPermissionModeSchema>;
+
 export function unsupportedPermissionMode(mode: string): string {
   return `This agent does not support the "${mode}" permission mode.`;
+}
+
+export const CODEX_PERMISSION_PRESETS = {
+  default: { approvalPolicy: "on-request", sandbox: "read-only" },
+  plan: { approvalPolicy: "never", sandbox: "read-only" },
+  acceptEdits: { approvalPolicy: "on-request", sandbox: "workspace-write" },
+  bypassPermissions: { approvalPolicy: "never", sandbox: "danger-full-access" },
+} as const;
+
+export function codexPermissionPreset(mode: ChatPermissionMode) {
+  return mode === "auto" ? CODEX_PERMISSION_PRESETS.acceptEdits : CODEX_PERMISSION_PRESETS[mode];
+}
+
+export const TERMINAL_LAUNCH_SUPPORT: Record<
+  string,
+  { effort: boolean; modes: readonly ChatPermissionMode[] }
+> = {
+  claude: { effort: true, modes: ["default", "plan", "acceptEdits", "auto", "bypassPermissions"] },
+  codex: { effort: true, modes: ["default", "acceptEdits", "bypassPermissions"] },
+  opencode: { effort: false, modes: ["default", "plan"] },
+  cursor: { effort: false, modes: ["default", "plan", "bypassPermissions"] },
+};
+
+export type TerminalLaunchOptions = {
+  model?: string | undefined;
+  effort?: string | undefined;
+  permissionMode?: ChatPermissionMode | undefined;
+};
+
+export function terminalLaunchArgs(agent: string, options: TerminalLaunchOptions): string[] {
+  const { model, effort, permissionMode: mode } = options;
+  if (!model && !effort && !mode) return [];
+  const support = TERMINAL_LAUNCH_SUPPORT[agent];
+  if (!support) throw new Error(`${agent} terminals take no model, effort or mode`);
+  if (effort && !support.effort) throw new Error(`${agent} terminals have no effort flag`);
+  if (mode && !support.modes.includes(mode)) throw new Error(unsupportedPermissionMode(mode));
+  if (effort && !/^[a-z]{1,16}$/.test(effort)) throw new Error("Invalid effort");
+  const args = model ? ["--model", model] : [];
+  if (agent === "claude") {
+    if (effort) args.push("--effort", effort);
+    if (mode && mode !== "default") args.push("--permission-mode", mode);
+  } else if (agent === "codex") {
+    if (effort) args.push("-c", `model_reasoning_effort="${effort}"`);
+    if (mode) {
+      const preset = codexPermissionPreset(mode);
+      args.push("--sandbox", preset.sandbox, "--ask-for-approval", preset.approvalPolicy);
+    }
+  } else if (agent === "opencode") {
+    if (mode === "plan") args.push("--agent", "plan");
+  } else if (agent === "cursor") {
+    if (mode === "plan") args.push("--mode", "plan");
+    if (mode === "bypassPermissions") args.push("--force");
+  }
+  return args;
 }
 const argument = z
   .string()

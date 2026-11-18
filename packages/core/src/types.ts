@@ -64,6 +64,12 @@ export const AgentCapabilitiesSchema = z.object({
   rollback: z.boolean(),
   subagents: z.boolean().optional(),
   permissionModes: z.array(ChatPermissionModeSchema).optional(),
+  permissionLabels: z
+    .partialRecord(
+      ChatPermissionModeSchema,
+      z.object({ label: z.string().max(60), description: z.string().max(200) }),
+    )
+    .optional(),
   /** Live effort levels the adapter exposes for the session's current model
    *  (OpenCode's ACP thought_level config option). Absent when the agent has none. */
   effortChoices: z

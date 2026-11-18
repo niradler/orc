@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
-import { ChatSettingsSchema } from "@orc/core/chat";
+import { ChatSettingsSchema, ComposerProfilesSchema, FavoriteModelsSchema } from "@orc/core/chat";
 import { AGENT_ID_PATTERN, ProviderPathsSchema } from "@orc/core/coding-agents";
 import { loadConfig, OrcConfigSchema, updateGlobalConfig } from "@orc/core/config";
+import { ConflictError } from "@orc/core/errors";
 import { McpServerSettingsSchema } from "@orc/core/mcp-prompts";
 import {
   applyProviderPreferencePatch,
@@ -196,10 +198,27 @@ const PreferencesSchema = z
     notification_retention_days: z.number().int().min(1).max(3650).optional(),
     audit_retention_days: z.number().int().min(1).max(3650).optional(),
     chat: ChatSettingsSchema.optional(),
+    favorite_models: FavoriteModelsSchema.optional(),
+    composer_profiles: ComposerProfilesSchema.optional(),
+    composer_revision: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional()
+      .openapi({
+        description:
+          "Revision of favorite_models and composer_profiles from the last read; required when saving either. A stale revision returns 409.",
+      }),
     agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
     provider_paths: ProviderPathsSchema.optional(),
   })
   .strict();
+function composerRevision(preferences: Record<string, unknown> | undefined): string {
+  return createHash("sha256")
+    .update(
+      JSON.stringify([preferences?.favorite_models ?? [], preferences?.composer_profiles ?? []]),
+    )
+    .digest("hex");
+}
 const response = {
   200: {
     description: "Persistent workspace preferences; credentials are never returned",
@@ -220,6 +239,7 @@ app.openapi(
       PreferencesSchema.parse({
         ...loadConfig().preferences,
         ...(loadConfig().providers ? { chat: providerChatDefaults() } : {}),
+        composer_revision: composerRevision(loadConfig().preferences),
       }),
     ),
 );
@@ -234,10 +254,15 @@ app.openapi(
     responses: response,
   }),
   (c) => {
-    const preferences = c.req.valid("json");
+    const { composer_revision: revision, ...preferences } = c.req.valid("json");
     const previous = loadConfig().preferences;
     const config = updateGlobalConfig((raw) => {
       const existing = PreferencesSchema.parse(raw.preferences ?? {});
+      if (
+        (preferences.favorite_models || preferences.composer_profiles) &&
+        revision !== composerRevision(existing)
+      )
+        throw new ConflictError("Favorites or profiles changed elsewhere. Reload and try again.");
       raw.preferences = { ...existing, ...preferences };
       applyProviderPreferencePatch(raw, preferences);
     });
@@ -268,7 +293,12 @@ app.openapi(
     );
     if (diff.changed.length)
       recordAudit(c, { action: "settings.preferences_changed", subject_ids: [], snapshot: diff });
-    return c.json(PreferencesSchema.parse(config.preferences));
+    return c.json(
+      PreferencesSchema.parse({
+        ...config.preferences,
+        composer_revision: composerRevision(config.preferences),
+      }),
+    );
   },
 );
 

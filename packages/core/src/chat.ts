@@ -105,6 +105,37 @@ export const ChatSettingsSchema = z
   })
   .strict();
 export type ChatSettings = z.infer<typeof ChatSettingsSchema>;
+const ChatAgentIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i);
+export const FavoriteModelSchema = z
+  .object({ agent: ChatAgentIdSchema, id: ChatModelSchema.refine((value) => value.length > 0) })
+  .strict();
+export type FavoriteModel = z.infer<typeof FavoriteModelSchema>;
+export const ComposerProfileSchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/i),
+    name: z.string().trim().min(1).max(60),
+    agent: ChatAgentIdSchema,
+    providerId: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
+      .optional(),
+    model: ChatModelSchema.default(""),
+    effort: z
+      .string()
+      .regex(/^$|^[a-z][a-z0-9_-]{0,31}$/i)
+      .default(""),
+    permissionMode: ChatPermissionModeSchema.optional(),
+  })
+  .strict();
+export type ComposerProfile = z.infer<typeof ComposerProfileSchema>;
+export const FavoriteModelsSchema = z.array(FavoriteModelSchema).max(100);
+export const ComposerProfilesSchema = z
+  .array(ComposerProfileSchema)
+  .max(50)
+  .refine(
+    (profiles) => new Set(profiles.map((profile) => profile.id)).size === profiles.length,
+    "Profile ids must be unique",
+  );
 export const ChatModelsSchema = z.object({
   models: z.array(
     z.object({

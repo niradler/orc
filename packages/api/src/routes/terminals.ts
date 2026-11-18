@@ -1,5 +1,6 @@
 import { basename, dirname } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
+import { ChatModelSchema, ChatPermissionModeSchema } from "@orc/core/chat";
 import { agentForSessionBackend } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
@@ -137,6 +138,15 @@ const createTerminalRoute = createRoute({
                 "Run the project's dev script in a shell and publish the first printed URL as a preview",
             }),
             setup: AgentSetupSchema.optional(),
+            model: ChatModelSchema.optional(),
+            effort: z
+              .string()
+              .regex(/^[a-z]{1,16}$/)
+              .optional(),
+            permissionMode: ChatPermissionModeSchema.optional().openapi({
+              description:
+                "Fresh agent terminals only. Mapped to the CLI's own flags; a mode the CLI lacks is rejected.",
+            }),
           }),
         },
       },
@@ -356,6 +366,12 @@ app.openapi(createTerminalRoute, async (c) => {
     checkRules(scope);
   };
 
+  const options = { model: body.model, effort: body.effort, permissionMode: body.permissionMode };
+  if (
+    (options.model || options.effort || options.permissionMode) &&
+    (body.live_session_id || body.setup || body.dev)
+  )
+    throw new ValidationError("Model, effort and mode apply to new agent terminals only");
   if (body.fork && !body.live_session_id)
     throw new ValidationError("A fork needs the live session it starts from");
 
@@ -492,6 +508,8 @@ app.openapi(createTerminalRoute, async (c) => {
   const launch = configureProviderLaunch(
     await buildLaunch({ kind, cwd: body.cwd }, deps),
     body.dev ? undefined : body.providerId,
+    false,
+    options,
   );
   if (launch.kind !== "shell") checkRules(launch.cwd);
   if (body.worktree && launch.kind === "shell") {

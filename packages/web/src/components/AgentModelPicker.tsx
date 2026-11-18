@@ -1,7 +1,7 @@
 import { ChatModelSchema } from "@orc/core/chat";
 import { agentLabel } from "@orc/core/coding-agents";
-import { Check, ChevronDown } from "lucide-react";
-import { type KeyboardEvent, useRef, useState } from "react";
+import { Check, ChevronDown, Settings, Star } from "lucide-react";
+import { type KeyboardEvent, type ReactNode, useRef, useState } from "react";
 import { AgentIcon } from "@/components/AgentIcon";
 import {
   chipHeading,
@@ -18,6 +18,9 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { AgentEffortChoice } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
+
+const rowAction =
+  "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus max-sm:size-11 pointer-coarse:size-11";
 
 export function AgentModelPicker({
   agent,
@@ -45,6 +48,10 @@ export function AgentModelPicker({
   onProvider,
   agentName,
   accessibleSummary,
+  favorites,
+  onFavorite,
+  onProviderSettings,
+  footer,
 }: {
   agent: string;
   selectedModel: string;
@@ -71,6 +78,10 @@ export function AgentModelPicker({
   onProvider?: (id: string) => boolean;
   agentName?: string | undefined;
   accessibleSummary?: string;
+  favorites?: ReadonlySet<string>;
+  onFavorite?: (model: string) => void;
+  onProviderSettings?: (id: string) => void;
+  footer?: (close: () => void) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const [custom, setCustom] = useState(false);
@@ -88,11 +99,13 @@ export function AgentModelPicker({
   const effortChoices = efforts ?? [];
   const shown = tab === "effort" && !effortChoices.length ? "model" : tab;
   const effortLabel = effortChoices.find((choice) => choice.value === (effort ?? ""))?.label;
-  const modelRows = [["", "Agent default"] as const, ...choices].filter(([id, label]) =>
-    `${id} ${label} ${descriptions?.get(id) ?? ""}`
-      .toLowerCase()
-      .includes(query.trim().toLowerCase()),
-  );
+  const modelRows = [["", "Agent default"] as const, ...choices]
+    .filter(([id, label]) =>
+      `${id} ${label} ${descriptions?.get(id) ?? ""}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase()),
+    )
+    .sort(([a], [b]) => Number(!!favorites?.has(b)) - Number(!!favorites?.has(a)));
   function reset(): void {
     setCustom(false);
     setError("");
@@ -249,34 +262,54 @@ export function AgentModelPicker({
               ? providers
               : agents.map((id) => ({ id, name: agentLabel(id), agent: id }))
             ).map((entry) => (
-              <button
-                type="button"
-                key={entry.id}
-                role="menuitemradio"
-                data-chip-option
-                aria-checked={entry.id === (providerId ?? agent)}
-                data-testid={
-                  entry.id === entry.agent
-                    ? `${testIdPrefix}-agent-option-${entry.id}`
-                    : `${testIdPrefix}-provider-option-${entry.id}`
-                }
-                disabled={
-                  !ready ||
-                  (streaming && entry.agent === agent && entry.id !== (providerId ?? agent))
-                }
-                onClick={() => {
-                  if (providers?.length && onProvider) {
-                    reset();
-                    if (onProvider(entry.id)) setOpen(false);
-                    else showModels();
-                  } else chooseAgent(entry.agent);
-                }}
-                className={chipOption}
-              >
-                <AgentIcon agent={entry.agent} decorative size={14} />
-                <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                {entry.id === (providerId ?? agent) && <Check size={14} aria-hidden="true" />}
-              </button>
+              <div key={entry.id} className="group flex min-w-0 items-center">
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  data-chip-option
+                  aria-checked={entry.id === (providerId ?? agent)}
+                  data-testid={
+                    entry.id === entry.agent
+                      ? `${testIdPrefix}-agent-option-${entry.id}`
+                      : `${testIdPrefix}-provider-option-${entry.id}`
+                  }
+                  disabled={
+                    !ready ||
+                    (streaming && entry.agent === agent && entry.id !== (providerId ?? agent))
+                  }
+                  onClick={() => {
+                    if (providers?.length && onProvider) {
+                      reset();
+                      if (onProvider(entry.id)) setOpen(false);
+                      else showModels();
+                    } else chooseAgent(entry.agent);
+                  }}
+                  className={chipOption}
+                >
+                  <AgentIcon agent={entry.agent} decorative size={14} />
+                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
+                  {entry.id === (providerId ?? agent) && <Check size={14} aria-hidden="true" />}
+                </button>
+                {onProviderSettings && (
+                  <button
+                    type="button"
+                    data-testid={`${testIdPrefix}-provider-settings-${entry.id}`}
+                    aria-label={`${entry.name} settings`}
+                    title={`${entry.name} settings`}
+                    onClick={() => {
+                      setOpen(false);
+                      onProviderSettings(entry.id);
+                    }}
+                    className={cn(
+                      rowAction,
+                      entry.id !== (providerId ?? agent) &&
+                        "hidden group-focus-within:inline-flex group-hover:inline-flex max-sm:inline-flex pointer-coarse:inline-flex",
+                    )}
+                  >
+                    <Settings size={14} aria-hidden="true" />
+                  </button>
+                )}
+              </div>
             ))}
           </div>
           <div
@@ -317,31 +350,49 @@ export function AgentModelPicker({
                 <p className="px-2 py-1 text-xs text-muted-foreground">No models match</p>
               )}
               {modelRows.map(([id, label]) => (
-                <button
-                  type="button"
-                  key={id || "default"}
-                  role="menuitemradio"
-                  data-chip-option
-                  aria-checked={selectedModel === id}
-                  data-testid={
-                    id
-                      ? `${testIdPrefix}-model-option-${id}`
-                      : `${testIdPrefix}-model-option-default`
-                  }
-                  disabled={modelsDisabled}
-                  onClick={() => chooseModel(id)}
-                  className={chipOption}
-                >
-                  <span className="flex min-w-0 flex-1 flex-col py-1">
-                    <span className="truncate">{label}</span>
-                    {descriptions?.get(id) && (
-                      <span className="line-clamp-2 text-xs text-muted-foreground">
-                        {descriptions.get(id)}
-                      </span>
-                    )}
-                  </span>
-                  {selectedModel === id && <Check size={14} aria-hidden="true" />}
-                </button>
+                <div key={id || "default"} className="flex min-w-0 items-center">
+                  <button
+                    type="button"
+                    role="menuitemradio"
+                    data-chip-option
+                    aria-checked={selectedModel === id}
+                    data-testid={
+                      id
+                        ? `${testIdPrefix}-model-option-${id}`
+                        : `${testIdPrefix}-model-option-default`
+                    }
+                    disabled={modelsDisabled}
+                    onClick={() => chooseModel(id)}
+                    className={chipOption}
+                  >
+                    <span className="flex min-w-0 flex-1 flex-col py-1">
+                      <span className="truncate">{label}</span>
+                      {descriptions?.get(id) && (
+                        <span className="line-clamp-2 text-xs text-muted-foreground">
+                          {descriptions.get(id)}
+                        </span>
+                      )}
+                    </span>
+                    {selectedModel === id && <Check size={14} aria-hidden="true" />}
+                  </button>
+                  {id && onFavorite && (
+                    <button
+                      type="button"
+                      data-testid={`${testIdPrefix}-model-favorite-${id}`}
+                      aria-pressed={!!favorites?.has(id)}
+                      aria-label={`Favorite ${label}`}
+                      title={favorites?.has(id) ? "Unpin" : "Pin to top"}
+                      onClick={() => onFavorite(id)}
+                      className={cn(rowAction, favorites?.has(id) && "text-warning")}
+                    >
+                      <Star
+                        size={14}
+                        aria-hidden="true"
+                        fill={favorites?.has(id) ? "currentColor" : "none"}
+                      />
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
             {custom ? (
@@ -448,6 +499,7 @@ export function AgentModelPicker({
             </div>
           )}
         </div>
+        {footer?.(() => setOpen(false))}
         {note && (
           <div className="mt-1.5 flex items-center gap-1 border-t border-border px-2 pt-1.5 text-xs text-muted-foreground">
             Selection guidance

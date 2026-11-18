@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { ChannelConnectionSchema } from "./channels.js";
-import { ChatSettingsSchema } from "./chat.js";
+import { ChatSettingsSchema, ComposerProfilesSchema, FavoriteModelsSchema } from "./chat.js";
 import { AGENT_ID_PATTERN, ProviderPathsSchema } from "./coding-agents.js";
 import { orcHome, userHome } from "./home.js";
 import { McpSettingsSchema } from "./mcp-settings.js";
@@ -100,6 +100,8 @@ export const OrcConfigSchema = z.object({
       notification_retention_days: z.number().int().min(1).max(3650).optional(),
       audit_retention_days: z.number().int().min(1).max(3650).optional(),
       chat: ChatSettingsSchema.optional(),
+      favorite_models: FavoriteModelsSchema.optional(),
+      composer_profiles: ComposerProfilesSchema.optional(),
       agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
       provider_paths: ProviderPathsSchema.optional(),
     })

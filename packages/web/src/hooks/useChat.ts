@@ -853,11 +853,24 @@ function useChatController() {
     [activate, mutate, update, projectForCwd],
   );
   const startAgentConversation = useCallback(
-    (agent: string, providerId?: string, model = "", options?: ChatAgentOptions) => {
+    (
+      agent: string,
+      providerId?: string,
+      model = "",
+      options?: ChatAgentOptions,
+      permissionMode?: ChatConfig["permissionMode"],
+    ) => {
       const agentOptions = providerId ? {} : { ...defaults.current.agentOptions };
       if (options) agentOptions[agent] = options;
       const next = blankTab(
-        { ...defaults.current, agent, providerId, model, agentOptions },
+        {
+          ...defaults.current,
+          agent,
+          providerId,
+          model,
+          agentOptions,
+          ...(permissionMode ? { permissionMode } : {}),
+        },
         creationProject.current,
       );
       mutate((current) => [...current, next]);

@@ -235,7 +235,7 @@ test("should approve MCP tool calls without asking when permissions are bypassed
 
 for (const [mode, sandbox, approval] of [
   ["default", "read-only", "on-request"],
-  ["acceptEdits", "workspace-write", "never"],
+  ["acceptEdits", "workspace-write", "on-request"],
   ["bypassPermissions", "danger-full-access", "never"],
 ] as const) {
   test(`should round-trip approvals and questions with ${mode} and resume the same conversation`, async () => {
@@ -604,7 +604,7 @@ for await (const line of createInterface({input:process.stdin})) {
     expect(sent).toEqual([
       [{ mode: "plan", settings }, null, null],
       [null, null, null],
-      [{ mode: "default", settings }, "never", "workspaceWrite"],
+      [{ mode: "default", settings }, "on-request", "workspaceWrite"],
     ]);
   } finally {
     await session.close();

@@ -30,6 +30,18 @@ export const PERMISSION_DESCRIPTIONS: Record<PermissionMode, string> = {
   bypassPermissions: "Never asks",
 };
 
+export function permissionText(
+  mode: PermissionMode,
+  capabilities: AgentCapabilities | undefined,
+): { label: string; description: string } {
+  return (
+    capabilities?.permissionLabels?.[mode] ?? {
+      label: PERMISSION_LABELS[mode],
+      description: PERMISSION_DESCRIPTIONS[mode],
+    }
+  );
+}
+
 export function permissionModes(capabilities: AgentCapabilities | undefined): PermissionMode[] {
   return (
     capabilities?.permissionModes ??
