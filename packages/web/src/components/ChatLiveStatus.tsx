@@ -137,6 +137,8 @@ export function ChatLiveAnnouncer({
   last,
   messages,
   baseline,
+  turnSeq,
+  turnUserId,
 }: {
   tabKey: string;
   streaming: boolean;
@@ -147,6 +149,8 @@ export function ChatLiveAnnouncer({
   last: ChatMessage | undefined;
   messages: ChatMessage[];
   baseline: ChatMessage | undefined;
+  turnSeq: number;
+  turnUserId: string | undefined;
 }) {
   const [message, setMessage] = useState("");
   const spoken = useRef(0);
@@ -157,7 +161,7 @@ export function ChatLiveAnnouncer({
   const wasRefreshing = useRef(refreshing);
   const wasSettled = useRef(settled);
   const prevLast = useRef(last);
-  const turnUser = useRef(new Map<string, ChatMessage>());
+  const lastTurnSeq = useRef(new Map<string, number>());
   const pendingCompletion = useRef(new Map<string, string>());
   const announced = useRef(new Map<string, string>());
 
@@ -201,15 +205,22 @@ export function ChatLiveAnnouncer({
     // same message, and syncThread swapping the client id for the persisted one
     // is not a new reply either.
     const lastChanged = prevLast.current?.id !== last?.id;
-    // The history baseline is captured at every dispatch (background queue drains
-    // included), so it names the reply that was on screen before THIS turn even
-    // when the tab finished turns while another one was selected. A mid-turn
-    // refresh can REVERT the snapshot to that reply (the new message never reached
-    // the server); that is history, not a completion — even when syncThread has
-    // not yet replaced the client id, so the persisted twin arrives under a new id.
-    // The user message that started this tab's turn, remembered from the send.
-    if (streaming && last?.role === "user") turnUser.current.set(tabKey, last);
-    if (!streaming) turnUser.current.delete(tabKey);
+    // The history baseline and the turn's user id are captured at every dispatch
+    // (background queue drains included), so they name the reply that was on screen
+    // before THIS turn and the message this tab sent even when the tab finished
+    // turns while another one was selected. A mid-turn refresh can REVERT the
+    // snapshot to that reply (the new message never reached the server); that is
+    // history, not a completion — even when syncThread has not yet replaced the
+    // client id, so the persisted twin arrives under a new id. Snapshots cannot
+    // establish the turn's identity: a window can end at an older user message,
+    // and a reverted tail must not overwrite the send's id.
+    if (lastTurnSeq.current.get(tabKey) !== turnSeq) {
+      lastTurnSeq.current.set(tabKey, turnSeq);
+      // A new dispatch invalidates any pending completion from the prior turn:
+      // the queue can advance in the background while this tab is unobserved,
+      // and the prior reply is now the new turn's history.
+      pendingCompletion.current.delete(tabKey);
+    }
     // A mid-turn refresh can load the finished reply while streaming is still
     // claimed; the 204 that follows appends nothing, so hold the reply's identity
     // until a completion edge can announce it — unless it is the pre-turn history.
@@ -219,18 +230,19 @@ export function ChatLiveAnnouncer({
     // presence in the snapshot ties the arrival to this send. A stalled send
     // never reached the server, so a revert/twin lacks it, and the id survives
     // any tail window (bounded or shrinking snapshots included).
+    const isNewTurn = (reply: ChatMessage) =>
+      reply.id !== baseline?.id &&
+      (reply.content !== baseline?.content ||
+        (turnUserId !== undefined &&
+          messages.some((m) => m.role === "user" && m.id === turnUserId)));
     if (
       streaming &&
       lastChanged &&
       last?.role === "assistant" &&
-      last.id !== baseline?.id &&
-      announced.current.get(tabKey) !== last.id
+      announced.current.get(tabKey) !== last.id &&
+      isNewTurn(last)
     ) {
-      const turn = turnUser.current.get(tabKey);
-      const progressed =
-        last.content !== baseline?.content ||
-        (turn !== undefined && messages.some((m) => m.role === "user" && m.id === turn.id));
-      if (progressed) pendingCompletion.current.set(tabKey, last.id);
+      pendingCompletion.current.set(tabKey, last.id);
     }
     wasStreaming.current = streaming;
     wasRefreshing.current = refreshing;
@@ -245,6 +257,11 @@ export function ChatLiveAnnouncer({
     // Only a newly loaded reply announces: a no-op or failed refresh returns the
     // same message, and an empty turn assembles nothing. Per-tab dedupe on top.
     if (!discovered || announced.current.get(tabKey) === last.id) return;
+    // A completion edge can load history too: the 204 reload and finish() batch
+    // into one commit, so a restored twin arrives with a changed id exactly as
+    // streaming falls. Require the same turn evidence as the mid-stream path;
+    // a live assembly always carries the dispatched user id in its snapshot.
+    if (!isNewTurn(last)) return;
     announced.current.set(tabKey, last.id);
     // A discovered reply was never streamed here; read it from the start. The
     // streaming edge keeps its offset so it only reads the unspoken remainder.
@@ -265,7 +282,7 @@ export function ChatLiveAnnouncer({
           )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
-  }, [tabKey, streaming, refreshing, settled, last, messages, baseline]);
+  }, [tabKey, streaming, refreshing, settled, last, messages, baseline, turnSeq, turnUserId]);
 
   return (
     <div role="status" aria-live="polite" data-testid="chat-live-announcer" className="sr-only">

@@ -627,6 +627,182 @@ test("a background queue dispatch whose send stalls does not announce the prior 
   releasePost();
 });
 
+test("a pending completion from a prior turn is not announced after a background dispatch", async ({
+  page,
+}) => {
+  const setup = `PRIORSETUP-${Date.now()}`;
+  const first = `PRIOR-${Date.now()}`;
+  const second = `PRIORQUEUED-${Date.now()}`;
+  // Isolate from session-changed rebuilds.
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+
+  let postCount = 0;
+  let holding = false;
+  let serverDone: () => void;
+  const streamHeld = new Promise<void>((resolve) => {
+    serverDone = resolve;
+  });
+  let snapshotLoaded: () => void;
+  const refreshed = new Promise<void>((resolve) => {
+    snapshotLoaded = resolve;
+  });
+  let dispatchStarted: () => void;
+  const backgroundDispatch = new Promise<void>((resolve) => {
+    dispatchStarted = resolve;
+  });
+  let releasePost: () => void;
+  const postGate = new Promise<void>((resolve) => {
+    releasePost = resolve;
+  });
+  await page.route(/\/api\/chat\/stream$/, async (route) => {
+    postCount += 1;
+    if (postCount === 1) {
+      await route.continue(); // the setup turn gives the tab its thread
+      return;
+    }
+    if (postCount === 2) {
+      const response = await route.fetch(); // turn 1 finishes server-side
+      holding = true;
+      serverDone();
+      await refreshed; // the mid-turn refresh aborts this reader
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      // Fulfilling late is a no-op once the refresh aborted the reader.
+      await route.fulfill({ response }).catch(() => {});
+      return;
+    }
+    // The background dispatch never reaches the server.
+    dispatchStarted();
+    await postGate;
+    await route.abort().catch(() => {});
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    await route.continue();
+    if (holding) snapshotLoaded();
+  });
+  // Hold the FIRST /live (the mid-turn refresh's follow) so the reply loads as a
+  // pending completion while streaming stays claimed; later ones answer 204.
+  let liveCount = 0;
+  let releaseLive: () => void;
+  const liveGate = new Promise<void>((resolve) => {
+    releaseLive = resolve;
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/live$/, async (route) => {
+    liveCount += 1;
+    if (liveCount === 1) await liveGate;
+    await route.continue();
+  });
+
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${setup}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${first}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${second}.`);
+  await panel.getByTestId("chat-send-button").click(); // queued behind turn 1
+  await streamHeld; // the refresh must see the finished snapshot
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  // The refresh loads turn 1's finished reply while /live is held: a pending
+  // completion is primed, but no completion edge has fired yet. Streaming stays
+  // claimed, so the empty working bubble renders after the loaded reply — match
+  // the reply by its exact text (the prompt also contains the marker).
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await expect(
+    panel.getByTestId("chat-message-content").filter({ hasText: new RegExp(`^\\s*${first}\\s*$`) }),
+  ).toHaveCount(1);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).not.toContain(first);
+
+  // Leave BEFORE the delayed 204. In the background turn 1 settles and the queue
+  // dispatches turn 2, whose send stalls. The prior turn's pending entry must not
+  // survive that dispatch: turn 1's reply is now turn 2's history.
+  await panel.getByTestId("chat-clear-button").click();
+  releaseLive();
+  await backgroundDispatch;
+
+  await showSessionSection(page, "recents");
+  const tabs = panel.getByTestId("chat-session-list").getByTestId("chat-tab");
+  await tabs.filter({ hasText: setup }).getByTestId("chat-session-select").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  // The snapshot reverts to turn 1's reply (turn 2 never reached the server).
+  // /live answers 204; the stale pending entry must not read out history.
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(first);
+  await page.waitForTimeout(1000);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).not.toContain(first);
+  releasePost();
+});
+
+test("a refresh to an older user tail does not corrupt the turn's identity", async ({ page }) => {
+  const reply = `TAIL-${Date.now()}`;
+  const second = `UNSENT-TAIL-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // Hold every thread GET until the stalled send so syncThread cannot replace
+  // the client ids, and stub the session query against auto-rebuilds.
+  let getPhase = 0;
+  let releaseGets: () => void;
+  const getsGate = new Promise<void>((resolve) => {
+    releaseGets = resolve;
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    if (getPhase === 0) {
+      await getsGate;
+      await route.abort().catch(() => {});
+      return;
+    }
+    const response = await route.fetch();
+    const thread = await response.json();
+    if (getPhase === 1) {
+      // A window ending at the older USER message; the 204 reload then gets the
+      // full persisted history, whose reply is the baseline's persisted-id twin.
+      thread.messages = thread.messages.slice(0, 1);
+      getPhase = 2;
+    }
+    await route.fulfill({ response, json: thread });
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+
+  // The next send never reaches the server.
+  let releasePost: () => void;
+  const postGate = new Promise<void>((resolve) => {
+    releasePost = resolve;
+  });
+  await page.route(/\/api\/chat\/stream$/, async (route) => {
+    await postGate;
+    await route.abort().catch(() => {});
+  });
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${second}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  getPhase = 1;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  // The refresh window ends at the older user message; /live answers 204 and its
+  // reload restores the persisted twin while streaming is still claimed. The
+  // older user id is present, but it is NOT this turn's send — the twin's content
+  // matches the baseline, so no progress happened. The history must stay silent.
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await page.waitForTimeout(1000);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).not.toContain(reply);
+  releasePost();
+  releaseGets();
+});
+
 test("opening a finished thread does not announce its historical reply", async ({ page }) => {
   const reply = `HISTORY-${Date.now()}`;
   await page.goto("/tasks?chat=full");

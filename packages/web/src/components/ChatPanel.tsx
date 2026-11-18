@@ -265,6 +265,8 @@ export function ChatPanel({
   const {
     messages,
     historyBaseline,
+    turnSeq,
+    turnUserId,
     streaming,
     reconnecting,
     refreshing,
@@ -1394,6 +1396,8 @@ export function ChatPanel({
               last={messages[messages.length - 1]}
               messages={messages}
               baseline={historyBaseline}
+              turnSeq={turnSeq}
+              turnUserId={turnUserId}
             />
             {error && (
               <div

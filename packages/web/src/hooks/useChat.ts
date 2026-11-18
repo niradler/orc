@@ -110,6 +110,12 @@ export interface ChatTab {
   /** The last message before the current turn's send — the history a mid-turn
    *  refresh must not re-announce. Captured at every dispatch, background too. */
   historyBaseline: ChatMessage | undefined;
+  /** Incremented at every dispatch; a pending completion from a prior turn must
+   *  not survive the queue advancing in the background. */
+  turnSeq: number;
+  /** The dispatched user message id — the turn's identity, captured at send time
+   *  because a reverted snapshot tail can end at an older user message. */
+  turnUserId: string | undefined;
   draft: string;
   files: File[];
   queuedFiles: Record<string, File[]>;
@@ -157,6 +163,8 @@ function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
     config,
     messages: [],
     historyBaseline: undefined,
+    turnSeq: 0,
+    turnUserId: undefined,
     draft: "",
     files: [],
     queuedFiles: {},
@@ -1040,6 +1048,8 @@ function useChatController() {
         queued: tab.queued.filter((entry) => entry.id !== userMessage.id),
         messages: [...tab.messages, { ...userMessage, timestamp: Date.now() }],
         historyBaseline: tab.messages[tab.messages.length - 1],
+        turnSeq: tab.turnSeq + 1,
+        turnUserId: userMessage.id,
         streaming: true,
         streamText: "",
         activity: [],
@@ -1543,6 +1553,8 @@ function useChatController() {
     showThread,
     messages: tab.messages,
     historyBaseline: tab.historyBaseline,
+    turnSeq: tab.turnSeq,
+    turnUserId: tab.turnUserId,
     draft: tab.draft,
     files: tab.files,
     addFiles: (files: File[]) =>
