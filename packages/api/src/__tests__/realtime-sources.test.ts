@@ -105,7 +105,7 @@ test("should name only the session whose transcript changed when its metadata do
   try {
     await Bun.sleep(300);
     unsubscribe = changes.subscribe((event) => {
-      if (event.resources.includes("sessions")) events.push(event);
+      if (event.resources.some((resource) => resource.startsWith("session"))) events.push(event);
     });
     writeFileSync(join(root, "unrelated.json"), "{}");
     await Bun.sleep(400);
@@ -113,7 +113,11 @@ test("should name only the session whose transcript changed when its metadata do
     writeFileSync(transcript, '{"message":"new output"}\n');
     await Bun.sleep(400);
     expect(events.length).toBeGreaterThan(0);
-    expect(events.every((event) => event.sessions?.includes("native-unchanged"))).toBe(true);
+    expect(events).toContainEqual({
+      resources: ["session-activity"],
+      sessions: expect.arrayContaining(["native-unchanged"]),
+    });
+    expect(events.every((event) => event.resources[0] === "session-activity")).toBe(true);
   } finally {
     unsubscribe();
     stop();

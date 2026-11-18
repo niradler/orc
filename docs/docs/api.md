@@ -463,6 +463,14 @@ hidden rows unless asked with `include_hidden=true`.
 | `GET` | `/audit` | Central lifecycle and knowledge audit log |
 | `GET` `POST` | `/integrations/connections` | spec-cli connections |
 
+`/events` sends `ready`, then `change` events with `{ "resources": [...] }`. When
+only some sessions changed, the event also lists them in `sessions` (gateway,
+native and chat thread ids): `session-activity` means their transcripts moved,
+`sessions` means their status, title, model or project changed, and `usage` means
+their usage was indexed. A change without ids means any record of that resource
+may have changed. `desktop-preview` means a preview request is waiting for a
+desktop.
+
 
 ### Notifications and audit
 

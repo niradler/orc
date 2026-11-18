@@ -214,9 +214,7 @@ export async function settleStaleRun<S extends string>(row: {
   });
 }
 
-function touchedSessions(paths: string[]): string[] {
-  const ids = [...touched];
-  touched.clear();
+function relatedSessions(ids: string[], paths: string[]): string[] {
   if (!ids.length && !paths.length) return [];
   const sqlite = getSqlite();
   const chats = new ChatStore(sqlite);
@@ -500,7 +498,13 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
       // writes above land, so the next pass sees the updated usage versions.
       const backlog = readyUsage.length > USAGE_QUEUE_LIMIT;
       void indexPending.then(() => {
-        changes.publish("usage");
+        changes.publishSessions(
+          "usage",
+          relatedSessions(
+            readyUsage.map((job) => job.id),
+            [],
+          ),
+        );
         if (backlog) requestUsageFollowUp?.();
       });
     }
@@ -714,8 +718,18 @@ export function startSessionWatcher(
       void liveState()
         .then(async (before) => {
           await runSync(currentAdapters, { force: true });
-          if (notify || before !== (await liveState())) changes.publish("sessions");
-          else changes.publishSessions(touchedSessions(paths));
+          const after = await liveState();
+          const active = [...touched];
+          touched.clear();
+          if (notify) {
+            changes.publish("sessions");
+            return;
+          }
+          const moved = [...new Set([...before.keys(), ...after.keys()])].filter(
+            (id) => before.get(id) !== after.get(id),
+          );
+          changes.publishSessions("sessions", relatedSessions(moved, []));
+          changes.publishSessions("session-activity", relatedSessions(active, paths));
         })
         .catch((error) => logger.error("Session change sync failed", error))
         .finally(() => {
@@ -726,24 +740,23 @@ export function startSessionWatcher(
     debounce.unref();
   };
   const liveState = async () =>
-    (
-      await getDb()
-        .select({
-          id: gateway_sessions.id,
-          status: gateway_sessions.status,
-          pid: gateway_sessions.pid,
-          title: gateway_sessions.title,
-          project: gateway_sessions.project_id,
-          model: gateway_sessions.model,
-        })
-        .from(gateway_sessions)
-        .where(
-          and(eq(gateway_sessions.chat_id, LIVE_CHAT_ID), ne(gateway_sessions.status, "stopped")),
-        )
-    )
-      .map((row) => JSON.stringify(row))
-      .sort()
-      .join("|");
+    new Map(
+      (
+        await getDb()
+          .select({
+            id: gateway_sessions.id,
+            status: gateway_sessions.status,
+            pid: gateway_sessions.pid,
+            title: gateway_sessions.title,
+            project: gateway_sessions.project_id,
+            model: gateway_sessions.model,
+          })
+          .from(gateway_sessions)
+          .where(
+            and(eq(gateway_sessions.chat_id, LIVE_CHAT_ID), ne(gateway_sessions.status, "stopped")),
+          )
+      ).map((row) => [row.id, JSON.stringify(row)]),
+    );
   synchronized = async () => {
     if (stopped || opts.adapters) return;
     const rows = await getDb().query.gateway_sessions.findMany({

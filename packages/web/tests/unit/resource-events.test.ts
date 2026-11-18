@@ -199,19 +199,37 @@ describe("resource events", () => {
     const unsubscribe = observers.map((observer) => observer.subscribe(() => {}));
     try {
       await Promise.all(observers.map((observer) => observer.refetch()));
-      await invalidateResources(client, ["sessions"], ["busy", "busy-native"]);
+      await invalidateResources(client, ["session-activity"], ["busy", "busy-native"]);
       expect(reads).toEqual({ list: 1, viewed: 1, thread: 1, other: 1, tasks: 1 });
-      await invalidateResources(client, ["sessions"], ["viewed", "viewed-chat"]);
+      await invalidateResources(client, ["session-activity"], ["viewed", "viewed-chat"]);
       expect(reads).toEqual({ list: 1, viewed: 2, thread: 2, other: 1, tasks: 1 });
+      await invalidateResources(client, ["sessions"], ["other"]);
+      expect(reads).toEqual({ list: 2, viewed: 2, thread: 2, other: 2, tasks: 1 });
       await Promise.all([
-        invalidateResources(client, ["sessions"], ["viewed"]),
+        invalidateResources(client, ["session-activity"], ["viewed"]),
         invalidateResources(client, ["sessions"]),
       ]);
-      expect(reads).toEqual({ list: 2, viewed: 3, thread: 3, other: 2, tasks: 1 });
+      expect(reads).toEqual({ list: 3, viewed: 3, thread: 3, other: 3, tasks: 1 });
     } finally {
       for (const stop of unsubscribe) stop();
       client.clear();
     }
+  });
+
+  test("should refresh the usage report but only the open session's cache when another session's usage lands", async () => {
+    const client = new QueryClient();
+    client.setQueryData(["usage-report", "30"], {});
+    client.setQueryData(["session-cache", "viewed", false], {});
+    client.setQueryData(["session-cache", "busy", true], {});
+    await flushResourceChanges(client);
+    await Promise.all([
+      invalidateResources(client, ["usage"], ["busy"]),
+      flushResourceChanges(client),
+    ]);
+    expect(client.getQueryState(["usage-report", "30"])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["session-cache", "busy", true])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["session-cache", "viewed", false])?.isInvalidated).toBe(false);
+    client.clear();
   });
 
   test("should tell subscribers a desktop preview request is waiting without refreshing queries", async () => {

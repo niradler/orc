@@ -398,7 +398,7 @@ export function ChatPanel({
     }
   };
   const home = useSessionHome();
-  const lineage = useSessionLineage(thread?.sourceId ?? null);
+  const lineage = useSessionLineage(thread?.sourceId ? thread.id : null);
   const parentSession = thread?.sourceId ? (lineage.data?.parent ?? null) : null;
   const openSession = useOpenLiveSession();
   const [parentOpening, setParentOpening] = useState(false);

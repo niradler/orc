@@ -106,7 +106,17 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "channel-notification-policy",
   ],
   "desktop-preview": [],
+  "session-activity": ["sessions", "session", "chat-threads"],
 };
+
+const SESSION_DETAILS = new Set([
+  "live-one",
+  "lineage",
+  "children",
+  "subagents",
+  "messages",
+  "transcript",
+]);
 
 const changeListeners = new Set<(resources: ChangeResource[]) => void>();
 export function subscribeResourceChanges(
@@ -124,6 +134,8 @@ const COALESCE_MS = 350;
 
 interface PendingRefresh {
   roots: Set<string>;
+  sessionRoots: Set<string>;
+  listRoots: Set<string>;
   sessions: Set<string>;
   promise: Promise<void>;
   resolve: () => void;
@@ -136,13 +148,20 @@ const pendingRefreshes = new WeakMap<QueryClient, PendingRefresh>();
 function flushPending(client: QueryClient, pending: PendingRefresh): void {
   clearTimeout(pending.timer);
   pendingRefreshes.delete(client);
-  refreshQueries(
-    client,
-    (key) =>
-      pending.roots.has(String(key[0])) ||
-      (QUERY_ROOTS.sessions.includes(String(key[0])) &&
-        key.some((part) => typeof part === "string" && pending.sessions.has(part))),
-  ).then(pending.resolve, pending.reject);
+  refreshQueries(client, (key) => {
+    const root = String(key[0]);
+    if (pending.roots.has(root)) return true;
+    if (!pending.sessionRoots.has(root)) return false;
+    const detail =
+      root === "session" ||
+      root === "session-cache" ||
+      root === "chat-analytics" ||
+      (root === "chat-threads" && key[1] === "session") ||
+      (root === "sessions" && SESSION_DETAILS.has(String(key[1])));
+    return detail
+      ? key.some((part) => typeof part === "string" && pending.sessions.has(part))
+      : pending.listRoots.has(root);
+  }).then(pending.resolve, pending.reject);
 }
 
 export function invalidateResources(
@@ -151,10 +170,8 @@ export function invalidateResources(
   sessions?: string[],
 ): Promise<void> {
   for (const listener of changeListeners) listener(resources);
-  const roots = resources
-    .filter((resource) => !sessions || resource !== "sessions")
-    .flatMap((resource) => QUERY_ROOTS[resource]);
-  if (roots.length === 0 && !sessions?.length) return Promise.resolve();
+  const roots = resources.flatMap((resource) => QUERY_ROOTS[resource]);
+  if (roots.length === 0) return Promise.resolve();
   let pending = pendingRefreshes.get(client);
   if (!pending) {
     let resolve!: () => void;
@@ -165,6 +182,8 @@ export function invalidateResources(
     });
     const created: PendingRefresh = {
       roots: new Set(),
+      sessionRoots: new Set(),
+      listRoots: new Set(),
       sessions: new Set(),
       promise,
       resolve,
@@ -174,8 +193,15 @@ export function invalidateResources(
     pendingRefreshes.set(client, created);
     pending = created;
   }
-  for (const root of roots) pending.roots.add(root);
-  for (const id of sessions ?? []) pending.sessions.add(id);
+  if (!sessions) for (const root of roots) pending.roots.add(root);
+  else {
+    for (const id of sessions) pending.sessions.add(id);
+    for (const resource of resources)
+      for (const root of QUERY_ROOTS[resource]) {
+        pending.sessionRoots.add(root);
+        if (resource !== "session-activity") pending.listRoots.add(root);
+      }
+  }
   return pending.promise;
 }
 

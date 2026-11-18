@@ -74,6 +74,32 @@ describe("database change notifications", () => {
       sqlite.close();
     }
   });
+  test("should name the agent session whose row changed and ignore activity-only writes", async () => {
+    const sqlite = new Database(":memory:");
+    sqlite.exec(
+      "CREATE TABLE gateway_sessions(id TEXT PRIMARY KEY, runtime_session_id TEXT, status TEXT, last_activity_at INTEGER, tokens_used INTEGER, updated_at INTEGER)",
+    );
+    sqlite.exec("INSERT INTO gateway_sessions VALUES ('row-1', 'native-1', 'idle', 1, 1, 1)");
+    installChangeTracking(sqlite, ":memory:");
+    const events: ResourceChange[] = [];
+    const unsubscribe = changes.subscribe((event) => events.push(event));
+    try {
+      sqlite
+        .query(
+          "UPDATE gateway_sessions SET last_activity_at = 2, tokens_used = 2, updated_at = 2 WHERE id = 'row-1'",
+        )
+        .run();
+      await Bun.sleep(50);
+      expect(events).toEqual([]);
+      sqlite.query("UPDATE gateway_sessions SET status = 'running' WHERE id = 'row-1'").run();
+      await Bun.sleep(50);
+      expect(events).toEqual([{ resources: ["sessions"], sessions: ["row-1", "native-1"] }]);
+    } finally {
+      unsubscribe();
+      stopChangeTracking(sqlite);
+      sqlite.close();
+    }
+  });
   test("should notify knowledge base writes but not the usage recorded by reads", async () => {
     const sqlite = new Database(":memory:");
     installKnowledgeBases(sqlite);

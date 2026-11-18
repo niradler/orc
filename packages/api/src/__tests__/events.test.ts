@@ -136,14 +136,18 @@ describe("shared resource event stream", () => {
     };
     try {
       await reader.read();
-      changes.publishSessions(["scoped-session", "scoped-session"]);
-      expect(await frames((text) => text.includes("scoped-session"))).toContain(
-        '"sessions":["scoped-session"]',
+      changes.publishSessions("session-activity", ["scoped-session", "scoped-session"]);
+      changes.publishSessions("sessions", ["stopped-session"]);
+      const scoped = await frames((text) => text.includes("stopped-session"));
+      expect(scoped).toContain(
+        '{"resources":["session-activity","sessions"],"sessions":["scoped-session","stopped-session"]}',
       );
-      changes.publishSessions(["merged-session"]);
+      changes.publishSessions("sessions", ["merged-session"]);
       changes.publish("sessions");
       changes.publish("terminals");
-      const text = await frames((value) => value.includes('"terminals"'));
+      await Bun.sleep(50);
+      changes.publish("health");
+      const text = await frames((value) => value.includes('"health"'));
       expect(text).toContain('"sessions"');
       expect(text).not.toContain("merged-session");
     } finally {

@@ -30,6 +30,7 @@ export const CHANGE_RESOURCES = [
   "workspaces",
   "channels",
   "desktop-preview",
+  "session-activity",
 ] as const;
 
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];
@@ -51,10 +52,10 @@ export class ChangeHub {
     for (const listener of this.listeners) listener(change);
   }
 
-  publishSessions(ids: string[]): void {
+  publishSessions(resource: ChangeResource, ids: string[]): void {
     const sessions = [...new Set(ids)];
     if (!sessions.length) return;
-    for (const listener of this.listeners) listener({ resources: ["sessions"], sessions });
+    for (const listener of this.listeners) listener({ resources: [resource], sessions });
   }
 }
 
