@@ -761,10 +761,10 @@ ends, or as a steer when it keeps working; several denials send every reason. Ag
 When a Claude plan is ready, its `ExitPlanMode` request opens a plan card with
 the plan rendered as Markdown. **Approve, accept edits** switches the
 conversation to Allow edits and lets Claude start, **Approve** switches to Ask in
-chat, and **Revise** sends your feedback so Claude reworks the plan. After a
+chat, and **Keep planning** sends your feedback so Claude reworks the plan. After a
 Codex or OpenCode plan-mode turn, the same card appears above the composer:
 approving switches the mode (Codex Auto or Read only, OpenCode's build agent)
-and sends "Implement the plan."; **Revise** sends your feedback while staying in
+and sends "Implement the plan."; **Keep planning** sends your feedback while staying in
 Plan.
 
 **Session settings** in the chat header organizes the conversation into tabs.

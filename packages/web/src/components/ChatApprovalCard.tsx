@@ -86,7 +86,7 @@ export function ChatPlanReview({
       {revising ? (
         <FeedbackForm
           label="What should change?"
-          submit="Revise"
+          submit="Send"
           busy={busy || approving}
           onSubmit={onRevise}
           onCancel={() => setRevising(false)}
@@ -115,12 +115,12 @@ export function ChatPlanReview({
           </button>
           <button
             type="button"
-            data-testid="chat-plan-revise"
+            data-testid="chat-plan-keep-planning"
             disabled={busy || approving}
             className={button}
             onClick={() => setRevising(true)}
           >
-            Revise
+            Keep planning
           </button>
         </div>
       )}
