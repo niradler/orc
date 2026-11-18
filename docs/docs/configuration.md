@@ -526,7 +526,8 @@ Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_
 
 Speech powers composer dictation in the web and desktop app and voice messages in
 channels. Dictation is available once `speech.enabled` is true and the selected
-provider has an `api_key`; `GET /api/speech/status` reports it with `max_bytes`,
+provider has an `api_key`; `GET /api/speech/status` reports it with `max_bytes`
+and whether voice mode can transcribe (`voice_mode`),
 the largest clip the provider takes (25 MB for openai and groq, 7.4 MB for qwen,
 whose 10 MB cap applies after base64). `POST /api/speech/transcribe` (multipart
 field `audio`) returns `{ "text": "..." }` and rejects a larger clip with 413.

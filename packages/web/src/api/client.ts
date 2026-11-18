@@ -554,7 +554,18 @@ export function terminalSocketUrl(
   apiUrl: string = getApiUrl(),
   location: Pick<Location, "protocol" | "host"> = window.location,
 ): string {
-  const path = `/terminals/${encodeURIComponent(id)}/ws?ticket=${encodeURIComponent(ticket)}`;
+  return apiSocketUrl(
+    `/terminals/${encodeURIComponent(id)}/ws?ticket=${encodeURIComponent(ticket)}`,
+    apiUrl,
+    location,
+  );
+}
+
+export function apiSocketUrl(
+  path: string,
+  apiUrl: string = getApiUrl(),
+  location: Pick<Location, "protocol" | "host"> = window.location,
+): string {
   const base = apiUrl.replace(/\/+$/, "");
   if (/^https?:\/\//i.test(base)) return `${base.replace(/^http/i, "ws")}${path}`;
   const scheme = location.protocol === "https:" ? "wss:" : "ws:";
@@ -1884,7 +1895,13 @@ export const api = {
   },
 
   speech: {
-    status: () => req<{ available: boolean; max_bytes: number }>("GET", "/speech/status"),
+    status: () =>
+      req<{ available: boolean; max_bytes: number; voice_mode: boolean }>("GET", "/speech/status"),
+    voiceTicket: (threadId: string) =>
+      req<{ ticket: string; expires_in: number }>(
+        "POST",
+        `/chat/threads/${encodeURIComponent(threadId)}/voice/ticket`,
+      ),
     transcribe: async (audio: Blob, signal?: AbortSignal) => {
       const form = new FormData();
       form.set("audio", audio, "dictation.wav");

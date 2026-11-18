@@ -87,13 +87,17 @@ app.openapi(
     method: "get",
     path: "/speech/status",
     tags: ["Speech"],
-    summary: "Whether composer dictation can transcribe audio",
+    summary: "Whether composer dictation and voice mode can transcribe audio",
     responses: {
       200: {
         content: {
           "application/json": {
             schema: z
-              .object({ available: z.boolean(), max_bytes: z.number().int() })
+              .object({
+                available: z.boolean(),
+                max_bytes: z.number().int(),
+                voice_mode: z.boolean(),
+              })
               .openapi("SpeechStatus"),
           },
         },
@@ -103,7 +107,11 @@ app.openapi(
   }),
   (c) => {
     const stt = speechToText(loadConfig(), "dictation");
-    return c.json({ available: stt !== null, max_bytes: stt?.maxBytes ?? 0 });
+    return c.json({
+      available: stt !== null,
+      max_bytes: stt?.maxBytes ?? 0,
+      voice_mode: speechToText(loadConfig(), "voice_mode") !== null,
+    });
   },
 );
 

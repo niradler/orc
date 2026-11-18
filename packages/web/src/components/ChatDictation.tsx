@@ -17,11 +17,11 @@ import { cn } from "@/lib/utils";
 type Phase = "idle" | "starting" | "recording" | "transcribing" | "error";
 export type Dictation = ReturnType<typeof useDictation>;
 
-const touchTarget =
+export const touchTarget =
   "inline-flex min-h-8 min-w-8 items-center justify-center rounded-md max-sm:min-h-11 max-sm:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11";
-const keepFocus = (event: { preventDefault: () => void }) => event.preventDefault();
-const DICTATION_RATE = 16_000;
-const captureWorklet = `const createDecimator = ${createDecimator.toString()};
+export const keepFocus = (event: { preventDefault: () => void }) => event.preventDefault();
+export const DICTATION_RATE = 16_000;
+export const captureWorklet = `const createDecimator = ${createDecimator.toString()};
 registerProcessor("pcm-capture", class extends AudioWorkletProcessor {
   constructor() { super(); this.decimate = createDecimator(sampleRate, ${DICTATION_RATE}); }
   process([input]) {
@@ -299,7 +299,15 @@ export function ChatDictationButton({
   );
 }
 
-function DictationLevel({ analyser }: { analyser: AnalyserNode | null }) {
+export function DictationLevel({
+  analyser,
+  testId = "chat-dictation-level",
+  bar = "bg-error",
+}: {
+  analyser: AnalyserNode | null;
+  testId?: string;
+  bar?: string;
+}) {
   const [level, setLevel] = useState(0);
   useEffect(() => {
     if (!analyser) return;
@@ -320,7 +328,7 @@ function DictationLevel({ analyser }: { analyser: AnalyserNode | null }) {
   }, [analyser]);
   return (
     <span
-      data-testid="chat-dictation-level"
+      data-testid={testId}
       data-level={level.toFixed(2)}
       aria-hidden
       className="flex h-4 items-center gap-0.5"
@@ -329,7 +337,7 @@ function DictationLevel({ analyser }: { analyser: AnalyserNode | null }) {
         <span
           // biome-ignore lint/suspicious/noArrayIndexKey: fixed bar positions
           key={index}
-          className="w-1 rounded-full bg-error transition-[height] duration-75"
+          className={cn("w-1 rounded-full transition-[height] duration-75", bar)}
           style={{ height: `${4 + Math.round(12 * Math.min(1, level * weight * 2.5))}px` }}
         />
       ))}
