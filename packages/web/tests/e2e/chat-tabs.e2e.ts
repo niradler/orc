@@ -206,6 +206,19 @@ test("a reply that finishes while reattach is pending is still announced", async
   await expect(page.getByTestId("chat-live-announcer")).toContainText(reply);
 });
 
+test("a live completion announces the finished reply", async ({ page }) => {
+  const reply = `LIVE-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  // The streaming falling edge must still read the finished reply: finish()
+  // appends a new message id in the same commit, so the new-reply gate passes.
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(reply);
+});
+
 test("opening a finished thread does not announce its historical reply", async ({ page }) => {
   const reply = `HISTORY-${Date.now()}`;
   await page.goto("/tasks?chat=full");
@@ -261,5 +274,72 @@ test("switching between idle tabs does not announce their replies", async ({ pag
   await tabs.filter({ hasText: second }).getByTestId("chat-session-select").click();
   await expect(panel.getByTestId("chat-message-content").last()).toContainText(second);
   await page.waitForTimeout(800);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
+});
+
+test("an unchanged refresh does not announce the reply already on screen", async ({ page }) => {
+  const reply = `NOOP-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+
+  // Reopen the finished thread with a fresh announcer, then refresh without
+  // changing the transcript: neither the idle attach nor the no-op refresh may
+  // read out the historical reply. A failed refresh must stay silent too.
+  await page.reload();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await page.waitForTimeout(1200);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  await page.waitForTimeout(1500);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, (route) =>
+    route.fulfill({ status: 500, json: { error: "fixture failure" } }),
+  );
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  await page.waitForTimeout(1500);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
+});
+
+test("an unchanged refresh after a local completion does not re-announce", async ({ page }) => {
+  const reply = `SYNC-${Date.now()}`;
+  const other = `OTHER-${Date.now()}`;
+  // Isolate the refresh from session-changed rebuilds.
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  // Let syncThread replace the client-generated message id with the persisted one.
+  await page.waitForTimeout(1000);
+
+  // A second conversation, then back to the first: the live region clears
+  // without announcing; the reply on screen was already announced once, live.
+  await panel.getByTestId("chat-clear-button").click();
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${other}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(other);
+  await showSessionSection(page, "recents");
+  const tabs = panel.getByTestId("chat-session-list").getByTestId("chat-tab");
+  await expect(tabs).toHaveCount(2);
+  await tabs.filter({ hasText: reply }).getByTestId("chat-session-select").click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await page.waitForTimeout(800);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
+
+  // The persisted id differs from the announced client id, but the reply is the
+  // same: an unchanged refresh must not read it out a second time.
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  await page.waitForTimeout(1500);
   expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
 });

@@ -152,6 +152,7 @@ export function ChatLiveAnnouncer({
   const wasStreaming = useRef(streaming);
   const wasRefreshing = useRef(refreshing);
   const wasSettled = useRef(settled);
+  const prevLast = useRef(last);
   const announced = useRef(new Map<string, string>());
 
   useEffect(() => {
@@ -190,15 +191,24 @@ export function ChatLiveAnnouncer({
     // 204 reload: streaming was never claimed and the refresh already fell, so
     // announce on the follow's settlement instead.
     const settledFinished = !tabChanged && wasSettled.current !== settled && !streaming;
+    // A completion must load a new reply: a no-op or failed refresh returns the
+    // same message, and syncThread swapping the client id for the persisted one
+    // is not a new reply either.
+    const lastChanged = prevLast.current?.id !== last?.id;
     wasStreaming.current = streaming;
     wasRefreshing.current = refreshing;
     wasSettled.current = settled;
+    prevLast.current = last;
     if (tabChanged || streaming || (!streamFinished && !rebuildFinished && !settledFinished))
       return;
     if (last?.role !== "assistant") return;
-    // A refresh that returns the same reply must not read it out again, per tab.
-    if (!streamFinished && announced.current.get(tabKey) === last.id) return;
+    // Only a newly loaded reply announces: a no-op or failed refresh returns the
+    // same message, and an empty turn assembles nothing. Per-tab dedupe on top.
+    if (!lastChanged || announced.current.get(tabKey) === last.id) return;
     announced.current.set(tabKey, last.id);
+    // A discovered reply was never streamed here; read it from the start. The
+    // streaming edge keeps its offset so it only reads the unspoken remainder.
+    if (!streamFinished) spoken.current = 0;
     const rest = last.content.slice(spoken.current).trim();
     const summary =
       last.activity?.length || last.providerActivity?.length || last.turn?.outcome
