@@ -1,7 +1,8 @@
-import { Eye, EyeOff, Pencil } from "lucide-react";
+import { Eye, EyeOff, Pencil, Send } from "lucide-react";
 import { useState } from "react";
 import type { LiveSession } from "@/api/client";
 import { RenameSession } from "@/components/RenameSession";
+import { SendToHost } from "@/components/SendToHost";
 import { SessionTaskLink } from "@/components/SessionTaskLink";
 import { SessionScratchpads } from "@/components/scratchpad/SessionScratchpads";
 import { useUpdateLiveSession } from "@/hooks/useSessions";
@@ -11,6 +12,7 @@ const ACTION =
 
 export function SessionActions({ session }: { session: LiveSession }) {
   const [renaming, setRenaming] = useState(false);
+  const [sending, setSending] = useState(false);
   const update = useUpdateLiveSession();
   return (
     <>
@@ -40,6 +42,16 @@ export function SessionActions({ session }: { session: LiveSession }) {
         {session.hidden ? <Eye size={13} aria-hidden /> : <EyeOff size={13} aria-hidden />}
         {session.hidden ? "Show in list" : "Hide from list"}
       </button>
+      <button
+        type="button"
+        data-testid="session-send-to-host"
+        title="Move this session to another ORC installation and continue it there"
+        onClick={() => setSending(true)}
+        className={ACTION}
+      >
+        <Send size={13} aria-hidden />
+        Send to host…
+      </button>
       {session.hidden && (
         <span data-testid="detail-session-hidden" className="text-outline">
           Hidden from list
@@ -47,6 +59,7 @@ export function SessionActions({ session }: { session: LiveSession }) {
       )}
       <SessionScratchpads session={session} />
       <RenameSession session={session} open={renaming} onClose={() => setRenaming(false)} />
+      <SendToHost session={session} open={sending} onClose={() => setSending(false)} />
     </>
   );
 }

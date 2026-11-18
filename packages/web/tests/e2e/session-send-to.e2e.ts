@@ -310,6 +310,39 @@ test("Send to host moves the session and the destination continues it", async ({
   }
 });
 
+for (const [name, viewport] of [
+  ["desktop", { width: 1440, height: 900 }],
+  ["phone", { width: 390, height: 844 }],
+] as const)
+  test(`${name}: Send to host from the chat inspector overview`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize(viewport);
+    const fixture = await setup(request);
+    const hostId = await saveHost(request, fixture);
+    try {
+      await gotoView(page, "activity");
+      await page.goto(`/chat?sessionLive=${encodeURIComponent(fixture.liveId)}&inspector=overview`);
+      const overview = page.getByTestId("session-inspector-session");
+      await expect(overview).toBeVisible();
+      await page.screenshot({ path: testInfo.outputPath(`inspector-overview-${name}.png`) });
+      await overview.getByTestId("session-send-to-host").click();
+      await expect(page.getByTestId("send-to-host-dialog")).toBeVisible();
+      await page.getByTestId(`send-to-host-${hostId}`).click();
+      await expect(page.getByTestId("send-to-project-select")).toHaveValue(fixture.destProject);
+      await page.screenshot({ path: testInfo.outputPath(`inspector-send-to-${name}.png`) });
+      await page.getByTestId("send-to-submit").click();
+      await expect(page.getByTestId("send-to-result")).toContainText("Sent to Send box", {
+        timeout: 60_000,
+      });
+    } finally {
+      await apiDelete(request, `/remote-hosts/${hostId}`).catch(() => {});
+      await teardown(fixture);
+    }
+  });
+
 test.describe("phone", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
 
