@@ -268,6 +268,7 @@ export function ChatPanel({
     turnSeq,
     turnUserId,
     nativeRebuild,
+    loadedUnchanged,
     streaming,
     reconnecting,
     refreshing,
@@ -1400,6 +1401,7 @@ export function ChatPanel({
               turnSeq={turnSeq}
               turnUserId={turnUserId}
               nativeRebuild={nativeRebuild}
+              loadedUnchanged={loadedUnchanged}
             />
             {error && (
               <div

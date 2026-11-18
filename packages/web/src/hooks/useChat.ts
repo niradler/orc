@@ -119,6 +119,12 @@ export interface ChatTab {
   /** A native rebuild regenerated every message id, so the dispatched user id can
    *  no longer prove a turn. Stays set until the next dispatch recaptures evidence. */
   nativeRebuild: boolean;
+  /** Fingerprint of the last server-loaded window, so a later load can prove it
+   *  returned the same transcript even when every id regenerated. */
+  loadedTranscriptKey: string | undefined;
+  /** Set by refresh: the loaded window is provably the same transcript as the
+   *  last server load (or, before any load, the same shape as the shown tail). */
+  loadedUnchanged: boolean;
   draft: string;
   files: File[];
   queuedFiles: Record<string, File[]>;
@@ -157,6 +163,27 @@ function mergeLoadedHistory(loaded: ChatMessage[], fresh: ChatMessage[]): ChatMe
   return first > 0 ? [...loaded.slice(0, first), ...fresh] : fresh;
 }
 
+/** Identity of a loaded transcript window: role, content and timestamp survive
+ *  id regeneration but shift when the window slides, so equal keys prove the
+ *  same messages were loaded again — even when every id is new. */
+function transcriptKey(messages: ChatMessage[]): string {
+  return messages
+    .map((message) => `${message.role}\u0000${message.content}\u0000${message.timestamp}`)
+    .join("\u0001");
+}
+/** Before the first server load there is no stored key; the loaded window can
+ *  only be compared by shape against the tail the tab already shows. */
+function sameTranscriptShape(loaded: ChatMessage[], fresh: ChatMessage[]): boolean {
+  return (
+    fresh.length > 0 &&
+    loaded.length >= fresh.length &&
+    fresh.every((message, index) => {
+      const previous = loaded[loaded.length - fresh.length + index];
+      return previous.role === message.role && previous.content === message.content;
+    })
+  );
+}
+
 function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
   return {
     key: crypto.randomUUID(),
@@ -169,6 +196,8 @@ function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
     turnSeq: 0,
     turnUserId: undefined,
     nativeRebuild: false,
+    loadedTranscriptKey: undefined,
+    loadedUnchanged: false,
     draft: "",
     files: [],
     queuedFiles: {},
@@ -526,6 +555,7 @@ function useChatController() {
               thread: fresh,
               messages: mergeLoadedHistory(tab.messages, fresh.messages),
               historyBefore: fresh.historyBefore ?? null,
+              loadedTranscriptKey: transcriptKey(fresh.messages),
             },
       );
     },
@@ -576,6 +606,7 @@ function useChatController() {
                     thread: fresh,
                     messages: mergeLoadedHistory(loaded, fresh.messages),
                     historyBefore: fresh.historyBefore ?? null,
+                    loadedTranscriptKey: transcriptKey(fresh.messages),
                     streamText: "",
                     activity: [],
                     error: null,
@@ -675,6 +706,7 @@ function useChatController() {
                 messages: adopted.messages,
                 config: adopted.config,
                 historyBefore: adopted.historyBefore ?? null,
+                loadedTranscriptKey: transcriptKey(adopted.messages),
                 error: null,
               }));
               onOpen?.();
@@ -785,12 +817,21 @@ function useChatController() {
             current.messages.length > 0 &&
             fresh.messages.length > 0 &&
             !fresh.messages.some((message) => previousIds.has(message.id));
+          const freshKey = transcriptKey(fresh.messages);
           return {
             thread: fresh,
             config: fresh.config,
             messages: fresh.messages,
             historyBefore: fresh.historyBefore ?? null,
             nativeRebuild: current.nativeRebuild || regenerated,
+            loadedTranscriptKey: freshKey,
+            // A slide of repeated identical pairs keeps the content shape but
+            // shifts timestamps, so the stored key — not the shape — proves an
+            // unchanged load once any server load has happened.
+            loadedUnchanged:
+              current.loadedTranscriptKey !== undefined
+                ? current.loadedTranscriptKey === freshKey
+                : sameTranscriptShape(current.messages, fresh.messages),
             // A rebuild is not a turn: an idle session must not claim "working".
             // Preserve a stream/reconnect that was already live so a mid-turn
             // refresh doesn't flicker to idle while reattach is pending; attach
@@ -833,6 +874,7 @@ function useChatController() {
         messages: next.messages,
         config: next.config,
         historyBefore: next.historyBefore ?? null,
+        loadedTranscriptKey: transcriptKey(next.messages),
         loadingHistory: false,
         error: null,
       };
@@ -1573,6 +1615,7 @@ function useChatController() {
     turnSeq: tab.turnSeq,
     turnUserId: tab.turnUserId,
     nativeRebuild: tab.nativeRebuild,
+    loadedUnchanged: tab.loadedUnchanged,
     draft: tab.draft,
     files: tab.files,
     addFiles: (files: File[]) =>
