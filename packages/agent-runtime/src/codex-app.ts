@@ -228,6 +228,16 @@ export class CodexAppSession implements AgentSession {
                 : {}),
             },
             ...(typeof params.cwd === "string" ? { cwd: params.cwd } : {}),
+            ...(typeof params.command === "string"
+              ? {
+                  grant: JSON.stringify([
+                    params.kind ?? "command",
+                    params.command,
+                    params.cwd ?? "",
+                    params.networkApprovalContext ?? null,
+                  ]),
+                }
+              : {}),
             tool,
             command: [
               params.command,
@@ -850,45 +860,45 @@ export class CodexAppSession implements AgentSession {
         this.respondPermission(requestId, "approved");
   }
 
-  respondPermission(requestId: string, result: PermissionResult): void {
+  respondPermission(requestId: string, result: PermissionResult, feedback?: string): void {
     if (this.closing || this.interrupting || this.closed)
       throw new Error("This approval is no longer pending.");
     const request = this.pending.get(requestId);
     if (request?.kind !== "permission") throw new Error("This approval is no longer pending.");
-    if (request.mcpApproval) {
-      this.write({
-        id: request.wireId,
-        result:
-          result === "denied"
-            ? { action: "decline", content: null }
-            : {
-                action: "accept",
-                content: {},
-                ...(result === "session" && request.mcpApproval.sessionPersist
-                  ? { _meta: { persist: "session" } }
-                  : {}),
-              },
-      });
-      this.resolved(requestId);
-      return;
-    }
     this.write({
       id: request.wireId,
-      result: request.permissions
-        ? {
-            permissions: result === "denied" ? {} : request.permissions,
-            scope: result === "session" ? "session" : "turn",
-          }
-        : {
-            decision:
-              result === "denied"
-                ? "decline"
-                : result === "session"
-                  ? "acceptForSession"
-                  : "accept",
-          },
+      result: request.mcpApproval
+        ? result === "denied"
+          ? { action: "decline", content: null }
+          : {
+              action: "accept",
+              content: {},
+              ...(result === "session" && request.mcpApproval.sessionPersist
+                ? { _meta: { persist: "session" } }
+                : {}),
+            }
+        : request.permissions
+          ? {
+              permissions: result === "denied" ? {} : request.permissions,
+              scope: result === "session" ? "session" : "turn",
+            }
+          : {
+              decision:
+                result === "denied"
+                  ? "decline"
+                  : result === "session"
+                    ? "acceptForSession"
+                    : "accept",
+            },
     });
     this.resolved(requestId);
+    if (result === "denied" && feedback?.trim())
+      void this.steer(feedback.trim()).catch(() =>
+        this.push({
+          type: "system_status",
+          data: "Codex ended the turn before your reason arrived. Send it as a message.",
+        }),
+      );
   }
 
   async respondQuestion(requestId: string, answers: Record<string, string[]>): Promise<void> {

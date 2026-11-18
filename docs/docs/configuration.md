@@ -515,9 +515,9 @@ Channels are configured under **Settings → Connections → Channels**.
 
 | Env                                                          | Purpose                             |
 | ------------------------------------------------------------ | ----------------------------------- |
-| `ORC_SPEECH_PROVIDER`                                        | `openai`, `groq`, `qwen` or `vocal` |
+| `ORC_SPEECH_PROVIDER`                                        | `openai`, `groq` or `qwen`          |
 | `ORC_SPEECH_LANGUAGE`                                        | Transcription language              |
-| `ORC_TTS_PROVIDER`                                           | `openai`, `qwen` or `vocal`         |
+| `ORC_TTS_PROVIDER`                                           | `openai` or `qwen`                  |
 | `ORC_TTS_VOICE`                                              | Voice (provider default)            |
 | `ORC_TTS_MODE`                                               | `voice_only` or `always`            |
 | `ORC_OPENAI_API_KEY`, `ORC_GROQ_API_KEY`, `ORC_QWEN_API_KEY` | Speech provider keys                |
@@ -526,10 +526,11 @@ Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_
 
 Speech powers composer dictation in the web and desktop app and voice messages in
 channels. Dictation is available once `speech.enabled` is true and the selected
-provider has an `api_key`; `GET /api/speech/status` reports it with `max_bytes`
-and whether voice mode can transcribe (`voice_mode`),
+provider has an `api_key` (or, for openai and groq, a `base_url`);
+`GET /api/speech/status` reports it with `max_bytes`,
 the largest clip the provider takes (25 MB for openai and groq, 7.4 MB for qwen,
-whose 10 MB cap applies after base64). `POST /api/speech/transcribe` (multipart
+whose 10 MB cap applies after base64), and with `voice_mode`, whether voice mode
+can transcribe. `POST /api/speech/transcribe` (multipart
 field `audio`) returns `{ "text": "..." }` and rejects a larger clip with 413.
 Dictation stops on its own before the limit: after five minutes, or about 3 min
 50 s on qwen. Each provider also accepts `base_url` and `model`, for example
@@ -544,11 +545,12 @@ OGG/Opus; openai, groq and qwen all accept WAV, OGG, WebM, MP3 and MP4/M4A.
 OpenAI voice replies are requested as OGG/Opus and arrive as Telegram voice
 notes. Qwen returns WAV, which Telegram receives as a file.
 
-`vocal` is a local [Vocal](https://github.com/niradler/vocal) server
-(`uvx --from "vocal-ai[kokoro]" vocal serve`). It needs no key; `base_url`
-defaults to `http://localhost:8000/v1`, STT to `Systran/faster-whisper-tiny` and
-TTS to `hexgrad/Kokoro-82M` (WAV). Set `tts.voice` to a Vocal voice such as
-`af_heart`.
+A local OpenAI-compatible server works through the `openai` provider: set
+`base_url` and leave `api_key` unset, and no key is sent. For example, a local
+[Vocal](https://github.com/niradler/vocal) server
+(`uvx --from "vocal-ai[kokoro]" vocal serve`) is
+`"openai": { "base_url": "http://localhost:8000/v1", "model": "Systran/faster-whisper-tiny" }`
+under `speech`, and `"model": "hexgrad/Kokoro-82M"` with `tts.voice` `af_heart` under `tts`.
 
 Dictation and voice mode can each pick their own provider and model, and voice
 mode its own TTS. Unset fields fall back to the shared `speech` / `tts` values:
@@ -561,7 +563,7 @@ mode its own TTS. Unset fields fall back to the shared `speech` / `tts` values:
     "openai": { "api_key": "sk-..." },
     "dictation": { "model": "gpt-4o-mini-transcribe" },
     "voice_mode": {
-      "provider": "vocal",
+      "model": "gpt-4o-transcribe",
       "silence_ms": 800,
       "threshold_db": -45
     }
@@ -569,7 +571,7 @@ mode its own TTS. Unset fields fall back to the shared `speech` / `tts` values:
   "tts": {
     "enabled": true,
     "provider": "openai",
-    "voice_mode": { "provider": "vocal", "voice": "af_heart" }
+    "voice_mode": { "voice": "nova" }
   }
 }
 ```

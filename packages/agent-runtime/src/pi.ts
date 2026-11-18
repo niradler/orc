@@ -124,6 +124,7 @@ export class PiSession implements AgentSession {
       method: "select" | "confirm" | "input" | "editor";
       permission: boolean;
       tool?: string;
+      grant?: string;
       timer?: ReturnType<typeof setTimeout>;
     }
   >();
@@ -481,7 +482,9 @@ export class PiSession implements AgentSession {
     this.dialogs.set(request.id, {
       method: request.method,
       permission,
-      ...(toolName ? { tool: toolName } : {}),
+      ...(toolName && tool
+        ? { tool: toolName, grant: `${toolName}\0${JSON.stringify(tool.input)}` }
+        : {}),
     });
     this.rpc?.waitingForHuman(true);
     if (request.timeout) {
@@ -493,7 +496,10 @@ export class PiSession implements AgentSession {
       if (dialog) dialog.timer = timer;
     }
     if (tool && toolName) {
-      if (permissionModeAllows(this.mode, toolName) || this.allowedTools.has(toolName)) {
+      if (
+        permissionModeAllows(this.mode, toolName) ||
+        this.allowedTools.has(`${toolName}\0${JSON.stringify(tool.input)}`)
+      ) {
         this.respondPermission(request.id, "approved");
         return;
       }
@@ -549,7 +555,7 @@ export class PiSession implements AgentSession {
   respondPermission(id: string, result: PermissionResult): void {
     const dialog = this.dialogs.get(id);
     if (!dialog?.permission) return;
-    if (result === "session" && dialog.tool) this.allowedTools.add(dialog.tool);
+    if (result === "session" && dialog.grant) this.allowedTools.add(dialog.grant);
     this.resolveDialog(id, { confirmed: result !== "denied" });
   }
   respondQuestion(id: string, answers: Record<string, string[]>): void {

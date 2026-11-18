@@ -682,7 +682,13 @@ export const ChatEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("permission_request"),
-    data: z.object({ requestId: z.string(), tool: z.string(), command: z.string() }),
+    data: z.object({
+      requestId: z.string(),
+      tool: z.string(),
+      command: z.string(),
+      input: z.record(z.string(), z.unknown()).optional(),
+      allowSession: z.boolean().optional(),
+    }),
   }),
   z.object({ type: z.literal("question_request"), data: ChatQuestionSchema }),
   z.object({ type: z.literal("request_resolved"), requestId: z.string() }),

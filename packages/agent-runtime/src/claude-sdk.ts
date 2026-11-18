@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import {
   HOOK_EVENTS,
   type Options,
+  type PermissionUpdate,
   type Query,
   query,
   type SDKControlInterruptResponse,
@@ -66,6 +67,7 @@ const ORC_SYSTEM_CONTEXT = `You are an agent orchestrated by ORC. ${ORC_TASK_GUI
 const SDK_ENV_PASSTHROUGH = /^CLAUDE_(CODE_ENTRYPOINT|AGENT_SDK_VERSION)$/;
 const AUTH_CACHE_TTL_MS = 60_000;
 const authCache = new Map<string, { at: number; loggedIn: boolean | null }>();
+const sessionGrants = new Map<string, PermissionUpdate[]>();
 
 let steerContinuationGraceMs = 120_000;
 /** Test hook: shorten the wait for a steer continuation that never arrives. */
@@ -280,7 +282,7 @@ class ClaudeSDKSession implements AgentSession {
   private resolveNext: (() => void) | null = null;
   private readonly permissionResolvers = new Map<
     string,
-    { tool: string; resolve: (result: PermissionResult) => void }
+    { tool: string; resolve: (result: PermissionResult, feedback?: string) => void }
   >();
   private liveMode: LivePermissionMode | undefined;
   private readonly questionResolvers = new Map<
@@ -548,6 +550,23 @@ class ClaudeSDKSession implements AgentSession {
                   ),
                 }
               : {}),
+          ...(this.opts.toolAllowlist === undefined
+            ? {
+                allowedTools: (sessionGrants.get(this.runtimeSessionId ?? "") ?? []).flatMap(
+                  (update) =>
+                    update.type === "addRules" && update.behavior === "allow"
+                      ? update.rules.map((rule) =>
+                          rule.ruleContent
+                            ? `${rule.toolName}(${rule.ruleContent})`
+                            : rule.toolName,
+                        )
+                      : [],
+                ),
+                additionalDirectories: (
+                  sessionGrants.get(this.runtimeSessionId ?? "") ?? []
+                ).flatMap((update) => (update.type === "addDirectories" ? update.directories : [])),
+              }
+            : {}),
           systemPrompt: {
             type: "preset",
             preset: "claude_code",
@@ -641,10 +660,18 @@ class ClaudeSDKSession implements AgentSession {
             logger.info("canUseTool called", { toolName, requestId });
             push({
               type: "permission_request",
-              data: { requestId, tool: toolName, command, input, cwd: this.opts.cwd },
+              data: {
+                requestId,
+                tool: toolName,
+                command,
+                input,
+                cwd: this.opts.cwd,
+                allowSession: toolName !== "ExitPlanMode" && !options?.suppressAlwaysAllowRule,
+              },
             });
             let cancel = () => {};
             let result: PermissionResult;
+            let feedback: string | undefined;
             updateSubagent(options?.agentID, { status: "waiting" });
             try {
               result = await new Promise<PermissionResult>((resolve) => {
@@ -653,7 +680,13 @@ class ClaudeSDKSession implements AgentSession {
                     push({ type: "request_resolved", data: { requestId } });
                   resolve("denied");
                 };
-                this.permissionResolvers.set(requestId, { tool: toolName, resolve });
+                this.permissionResolvers.set(requestId, {
+                  tool: toolName,
+                  resolve: (value, text) => {
+                    feedback = text;
+                    resolve(value);
+                  },
+                });
                 signal.addEventListener("abort", cancel, { once: true });
                 if (signal.aborted) cancel();
               });
@@ -662,10 +695,52 @@ class ClaudeSDKSession implements AgentSession {
               if (subagents.get(options?.agentID ?? "")?.status === "waiting")
                 updateSubagent(options?.agentID, { status: "running" });
             }
+            const granted = (options?.suggestions ?? [])
+              .filter((update) => update.type !== "setMode")
+              .map((update) => ({ ...update, destination: "session" as const }));
+            if (
+              result === "session" &&
+              granted.length &&
+              this.runtimeSessionId &&
+              toolName !== "ExitPlanMode" &&
+              !options?.suppressAlwaysAllowRule
+            ) {
+              const saved = sessionGrants.get(this.runtimeSessionId) ?? [];
+              sessionGrants.set(this.runtimeSessionId, [
+                ...saved,
+                ...granted.filter(
+                  (update) =>
+                    !saved.some((entry) => JSON.stringify(entry) === JSON.stringify(update)),
+                ),
+              ]);
+              return { behavior: "allow", updatedInput: input, updatedPermissions: granted };
+            }
+            if (
+              toolName === "ExitPlanMode" &&
+              result !== "denied" &&
+              this.liveMode &&
+              this.liveMode !== "plan"
+            )
+              return {
+                behavior: "allow",
+                updatedInput: input,
+                updatedPermissions: [
+                  {
+                    type: "setMode",
+                    mode: this.liveMode === "bypassPermissions" ? "acceptEdits" : this.liveMode,
+                    destination: "session",
+                  },
+                ],
+              };
             if (result === "approved" || result === "session") {
               return { behavior: "allow", updatedInput: input };
             }
-            return { behavior: "deny", message: "Permission denied" };
+            return {
+              behavior: "deny",
+              message: feedback
+                ? `The user denied this and said: ${feedback}`
+                : "Permission denied",
+            };
           },
           ...(this.forkPending && !this.runtimeSessionId && this.opts.forkSourceRuntimeId
             ? { resume: this.opts.forkSourceRuntimeId, forkSession: true }
@@ -995,11 +1070,11 @@ class ClaudeSDKSession implements AgentSession {
     }
   }
 
-  respondPermission(requestId: string, result: PermissionResult): void {
+  respondPermission(requestId: string, result: PermissionResult, feedback?: string): void {
     const pending = this.permissionResolvers.get(requestId);
     if (!pending) throw new Error("This approval is no longer pending");
     this.permissionResolvers.delete(requestId);
-    pending.resolve(result);
+    pending.resolve(result, feedback?.trim() || undefined);
     this.push({ type: "request_resolved", data: { requestId } });
   }
 

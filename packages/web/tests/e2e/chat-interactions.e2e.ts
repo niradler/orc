@@ -226,6 +226,156 @@ for (const width of [390, 1440]) {
     );
   });
 
+  test(`chat approvals allow for the session, deny with a reason and review a plan at ${width}px`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    const config = ChatSettingsSchema.parse({ agent: "claude", permissionMode: "plan" });
+    await request.patch("/api/settings", {
+      headers: { Authorization: `Bearer ${API_SECRET}` },
+      data: { chat: config },
+    });
+    const thread: ChatThread = {
+      id: "10000000-0000-4000-8000-000000000021",
+      title: "Approval cards",
+      config,
+      backend: "claude",
+      runtimeId: "native-approvals",
+      sourceId: "source-approvals",
+      cwd: "/fixture",
+      host: null,
+      messages: [],
+      updatedAt: Date.now(),
+      capabilities: {
+        version: 1,
+        source: "adapter",
+        resume: true,
+        modelSelection: true,
+        images: true,
+        toolOutput: true,
+        approvals: true,
+        questions: true,
+        livePermissions: true,
+        interrupt: true,
+        steering: true,
+        mcp: true,
+        fork: true,
+        rollback: false,
+        approvalFeedback: true,
+        permissionModes: ["default", "plan", "acceptEdits", "bypassPermissions"],
+      },
+    };
+    await page.addInitScript(
+      ({ thread }) => {
+        const original = window.fetch.bind(window);
+        const encoder = new TextEncoder();
+        let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
+        const emit = (event: unknown) =>
+          stream?.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        const state = { calls: [] as unknown[] };
+        Object.assign(window, { chatApprovalTest: state });
+        const requests = [
+          { requestId: "approval-2", tool: "Bash", command: '{"command":"npm install"}' },
+          {
+            requestId: "plan-1",
+            tool: "ExitPlanMode",
+            command: "{}",
+            input: { plan: "## Add a health check\n\n- Edit `server.ts`\n- Add a test" },
+            allowSession: false,
+          },
+        ];
+        window.fetch = async (input, init) => {
+          const url = new URL(
+            typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+            location.href,
+          );
+          if (url.pathname === "/api/chat/stream") {
+            return new Response(
+              new ReadableStream({
+                start(controller) {
+                  stream = controller;
+                  emit({
+                    type: "thread",
+                    thread: { ...thread, runtimeId: null },
+                    runId: "10000000-0000-4000-8000-000000000022",
+                  });
+                  emit({ type: "capabilities", capabilities: thread.capabilities });
+                  emit({
+                    type: "permission_request",
+                    data: {
+                      requestId: "approval-1",
+                      tool: "Bash",
+                      command: '{"command":"npm test"}',
+                      allowSession: true,
+                    },
+                  });
+                },
+              }),
+              { headers: { "Content-Type": "text/event-stream" } },
+            );
+          }
+          if (url.pathname.endsWith("/permission-mode")) {
+            const body = JSON.parse(String(init?.body));
+            state.calls.push({ mode: body.mode });
+            thread.config.permissionMode = body.mode;
+            return Response.json(thread);
+          }
+          if (url.pathname.endsWith("/permission")) {
+            const body = JSON.parse(String(init?.body));
+            state.calls.push(body);
+            emit({ type: "request_resolved", requestId: body.requestId });
+            const next = requests.shift();
+            if (next) emit({ type: "permission_request", data: next });
+            else {
+              emit({ type: "text", text: "Plan approved" });
+              emit({ type: "session", runtimeId: thread.runtimeId });
+              emit({ type: "done" });
+              stream?.close();
+            }
+            return Response.json({ ok: true });
+          }
+          if (url.pathname === `/api/chat/threads/${thread.id}`) return Response.json(thread);
+          return original(input, init);
+        };
+      },
+      { thread },
+    );
+    await page.route("**/api/chat/models?**", (route) =>
+      route.fulfill({ json: { models: [], warning: null } }),
+    );
+    await page.route("**/api/chat/threads", (route) => route.fulfill({ json: thread }));
+    await page.setViewportSize({ width, height: 900 });
+    await gotoView(page, "activity");
+    await page.goto("/?chat=open");
+    await page.getByTestId("chat-input").filter({ visible: true }).fill("Plan a health check");
+    await page.getByTestId("chat-send-button").filter({ visible: true }).click();
+    const visible = (id: string) => page.getByTestId(id).filter({ visible: true });
+    await expect(visible("chat-permission")).toContainText("npm test");
+    await visible("chat-permission-allow-session").click();
+    await expect(visible("chat-permission")).toContainText("npm install");
+    await visible("chat-permission-deny-reason").click();
+    await visible("chat-approval-feedback").fill("use bun install");
+    await page.screenshot({ path: testInfo.outputPath(`chat-deny-reason-${width}.png`) });
+    await visible("chat-approval-feedback-send").click();
+    await expect(visible("chat-plan-review")).toContainText("Add a health check");
+    await expect(visible("chat-plan-review").locator("h2")).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`chat-plan-review-${width}.png`) });
+    await visible("chat-plan-approve-edits").click();
+    await expect(visible("chat-messages").getByText("Plan approved")).toBeVisible();
+    const state = await page.evaluate(
+      () => (window as unknown as { chatApprovalTest: { calls: unknown[] } }).chatApprovalTest,
+    );
+    expect(state.calls).toEqual([
+      { requestId: "approval-1", decision: "session" },
+      { requestId: "approval-2", decision: "denied", feedback: "use bun install" },
+      { mode: "acceptEdits" },
+      { requestId: "plan-1", decision: "approved" },
+    ]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  });
+
   test(`chat question can be dismissed without picking an option at ${width}px`, async ({
     page,
     request,

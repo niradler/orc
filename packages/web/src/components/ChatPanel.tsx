@@ -32,6 +32,7 @@ import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText, AgentTextStreamProvider } from "@/components/AgentMessageText";
 import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
+import { ChatPermissionPrompt, ChatPlanReview } from "@/components/ChatApprovalCard";
 import { ChatAttachments } from "@/components/ChatAttachments";
 import { ChatBackgroundWork } from "@/components/ChatBackgroundWork";
 import {
@@ -1350,54 +1351,42 @@ export function ChatPanel({
                 className="shrink-0 max-h-[45vh] overflow-auto"
                 data-testid="chat-pending-requests"
               >
-                {permission && (
-                  <div
-                    data-testid="chat-permission"
-                    className="shrink-0 max-h-52 overflow-auto border-t border-outline-variant px-4 py-3 text-sm"
-                  >
-                    <p className="font-medium">Allow {permission.tool}?</p>
-                    <pre className="my-2 max-h-20 overflow-auto whitespace-pre-wrap wrap-break-word text-xs">
-                      {permission.command}
-                    </pre>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        data-testid="chat-permission-deny"
-                        disabled={responding}
-                        className="min-h-8 rounded-md border border-control-border px-3 max-md:min-h-11 pointer-coarse:min-h-11"
-                        onClick={() => void respondPermission("denied")}
-                      >
-                        Deny
-                      </button>
-                      <button
-                        type="button"
-                        data-testid="chat-permission-allow"
-                        disabled={responding}
-                        className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground max-md:min-h-11 pointer-coarse:min-h-11"
-                        onClick={() => void respondPermission("approved")}
-                      >
-                        Allow once
-                      </button>
-                      {["claude", "codex", "pi"].includes(config.agent) && (
-                        <button
-                          type="button"
-                          data-testid="chat-permission-allow-all"
-                          disabled={responding}
-                          title="Switch this session to full access / bypass permissions"
-                          className="min-h-8 rounded-md border border-control-border px-3 max-md:min-h-11 pointer-coarse:min-h-11"
-                          onClick={() =>
-                            void changePermissions({
-                              ...config,
-                              permissionMode: "bypassPermissions",
-                            })
+                {permission &&
+                  (permission.tool === "ExitPlanMode" ? (
+                    <ChatPlanReview
+                      key={permission.requestId}
+                      {...(typeof permission.input?.plan === "string"
+                        ? { plan: permission.input.plan }
+                        : {})}
+                      busy={responding}
+                      acceptEdits
+                      onApprove={(mode) =>
+                        changePermissions({ ...config, permissionMode: mode }).then(() =>
+                          respondPermission("approved"),
+                        )
+                      }
+                      onRevise={(feedback) => void respondPermission("denied", feedback)}
+                    />
+                  ) : (
+                    <ChatPermissionPrompt
+                      key={permission.requestId}
+                      tool={permission.tool}
+                      command={permission.command}
+                      busy={responding}
+                      allowSession={permission.allowSession !== false}
+                      feedback={thread?.capabilities?.approvalFeedback === true}
+                      onRespond={(decision, feedback) => void respondPermission(decision, feedback)}
+                      {...(["claude", "codex", "pi"].includes(config.agent)
+                        ? {
+                            onAllowAll: () =>
+                              void changePermissions({
+                                ...config,
+                                permissionMode: "bypassPermissions",
+                              }),
                           }
-                        >
-                          Allow all
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
+                        : {})}
+                    />
+                  ))}
                 {question && (
                   <ChatQuestionForm
                     key={question.requestId}
@@ -1408,6 +1397,29 @@ export function ChatPanel({
                 )}
               </div>
             )}
+            {!streaming &&
+              !permission &&
+              !question &&
+              queued.length === 0 &&
+              config.agent !== "claude" &&
+              config.permissionMode === "plan" &&
+              thread?.capabilities?.permissionModes?.includes("plan") &&
+              messages[messages.length - 1]?.role === "assistant" &&
+              (messages[messages.length - 1]?.turn ?? turn)?.outcome === "completed" &&
+              messages[messages.length - 1]?.content && (
+                <ChatPlanReview
+                  key={messages[messages.length - 1]?.id}
+                  busy={responding}
+                  acceptEdits={thread.capabilities.permissionModes.includes("acceptEdits")}
+                  onApprove={(mode) =>
+                    Promise.all([
+                      changePermissions({ ...config, permissionMode: mode }),
+                      send("Implement the plan."),
+                    ])
+                  }
+                  onRevise={(feedback) => void send(feedback)}
+                />
+              )}
             {!focusChat && queued.length + answers.length > 0 && (
               <details
                 key={activeKey}

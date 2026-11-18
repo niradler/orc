@@ -8,7 +8,7 @@ import {
 } from "./audio.js";
 
 type ProviderSettings = OrcConfig["speech"]["openai"];
-type Defaults = { baseUrl: string; model: string; keyless?: boolean };
+type Defaults = { baseUrl: string; model: string };
 
 export function whisperSpeechToText(
   settings: ProviderSettings,
@@ -16,7 +16,7 @@ export function whisperSpeechToText(
   defaults: Defaults,
 ): SpeechToText | null {
   const apiKey = settings.api_key;
-  if (!apiKey && !defaults.keyless) return null;
+  if (!apiKey && !settings.base_url) return null;
   const baseUrl = (settings.base_url ?? defaults.baseUrl).replace(/\/$/, "");
   return {
     maxBytes: 25 * 1024 * 1024,
@@ -50,7 +50,7 @@ function speechEndpoint(
   defaults: Defaults & { format: "opus" | "wav" },
 ): TextToSpeech | null {
   const apiKey = settings.api_key;
-  if (!apiKey && !defaults.keyless) return null;
+  if (!apiKey && !settings.base_url) return null;
   const baseUrl = (settings.base_url ?? defaults.baseUrl).replace(/\/$/, "");
   return {
     async synthesize(text, signal) {
@@ -89,20 +89,3 @@ export const openaiTextToSpeech = (config: OrcConfig) =>
     config.tts.voice || "alloy",
     { baseUrl: "https://api.openai.com/v1", model: "tts-1", format: "opus" },
   );
-
-const VOCAL_URL = "http://localhost:8000/v1";
-
-export const vocalSpeechToText = (config: OrcConfig) =>
-  whisperSpeechToText(config.speech.vocal, config.speech.language, {
-    baseUrl: VOCAL_URL,
-    model: "Systran/faster-whisper-tiny",
-    keyless: true,
-  });
-
-export const vocalTextToSpeech = (config: OrcConfig) =>
-  speechEndpoint(config.tts.vocal, config.tts.voice || undefined, {
-    baseUrl: VOCAL_URL,
-    model: "hexgrad/Kokoro-82M",
-    format: "wav",
-    keyless: true,
-  });
