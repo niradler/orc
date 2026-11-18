@@ -244,6 +244,7 @@ test("composer chips are fully keyboard operable", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(branch).toHaveAttribute("data-worktree", "true");
   await expect(branch).toHaveText("New worktree from feature/chips");
+  await expect(branch).toBeFocused();
 
   await branch.press("Enter");
   await expect(page.getByTestId("chat-workspace-worktree")).toBeFocused();
