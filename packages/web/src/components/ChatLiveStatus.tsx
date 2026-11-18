@@ -213,11 +213,12 @@ export function ChatLiveAnnouncer({
     // A mid-turn refresh can load the finished reply while streaming is still
     // claimed; the 204 that follows appends nothing, so hold the reply's identity
     // until a completion edge can announce it — unless it is the pre-turn history.
-    // A reply whose content matches the baseline is a genuine completion only when
-    // the snapshot shows the turn's progress: the turn's own user message persisted
-    // right before it, with the baseline reply still ahead of that. Snapshot SIZE
-    // cannot prove progress — rebuilds return a bounded window and a refresh may
-    // drop loaded older pages — but the turn's user message survives any tail window.
+    // Content cannot prove a new turn: identical prompts and replies repeat, and
+    // a revert/twin can mirror the turn's shape exactly. The send's own message
+    // id can — the server persists the user message under the client id, so its
+    // presence in the snapshot ties the arrival to this send. A stalled send
+    // never reached the server, so a revert/twin lacks it, and the id survives
+    // any tail window (bounded or shrinking snapshots included).
     if (
       streaming &&
       lastChanged &&
@@ -226,15 +227,9 @@ export function ChatLiveAnnouncer({
       announced.current.get(tabKey) !== last.id
     ) {
       const turn = turnUser.current.get(tabKey);
-      const prev = messages[messages.length - 2];
       const progressed =
         last.content !== baseline?.content ||
-        (turn !== undefined &&
-          prev?.role === "user" &&
-          prev.content === turn.content &&
-          messages
-            .slice(0, -2)
-            .some((m) => m.role === "assistant" && m.content === baseline?.content));
+        (turn !== undefined && messages.some((m) => m.role === "user" && m.id === turn.id));
       if (progressed) pendingCompletion.current.set(tabKey, last.id);
     }
     wasStreaming.current = streaming;

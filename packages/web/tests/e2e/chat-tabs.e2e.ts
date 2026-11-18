@@ -499,6 +499,67 @@ test("a persisted-id twin of an unsynced reply is not re-announced as a completi
   releaseGets();
 });
 
+test("a stalled send repeating identical history is not announced as a completion", async ({
+  page,
+}) => {
+  const same = `ECHO-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // Hold every thread GET so the tab keeps client ids, and stub the session
+  // query so no auto-rebuild competes for the snapshot.
+  let allowGets = false;
+  let releaseGets: () => void;
+  const getsGate = new Promise<void>((resolve) => {
+    releaseGets = resolve;
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    if (!allowGets) {
+      await getsGate;
+      await route.abort().catch(() => {});
+      return;
+    }
+    await route.continue();
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+
+  // Two completed turns with the SAME prompt and reply: the history's shape
+  // now mirrors a genuine next turn exactly (user, reply, user, reply).
+  for (let i = 0; i < 2; i += 1) {
+    await panel.getByTestId("chat-input").fill(`Reply with exactly: ${same}.`);
+    await panel.getByTestId("chat-send-button").click();
+    await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+    await expect(panel.getByTestId("chat-message-content").last()).toContainText(same);
+  }
+
+  // The third identical send never reaches the server.
+  let releasePost: () => void;
+  const postGate = new Promise<void>((resolve) => {
+    releasePost = resolve;
+  });
+  await page.route(/\/api\/chat\/stream$/, async (route) => {
+    await postGate;
+    await route.abort().catch(() => {});
+  });
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${same}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  allowGets = true;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  // The snapshot returns the two-turn history under persisted reply ids; its
+  // tail (user, reply) matches the stalled send's content shape, but the send's
+  // own message id is absent — no new turn happened. /live answers 204 and
+  // finish() appends nothing; the history must stay silent.
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(same);
+  await page.waitForTimeout(1000);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).not.toContain(same);
+  releasePost();
+  releaseGets();
+});
+
 test("opening a finished thread does not announce its historical reply", async ({ page }) => {
   const reply = `HISTORY-${Date.now()}`;
   await page.goto("/tasks?chat=full");
