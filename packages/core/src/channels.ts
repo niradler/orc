@@ -150,7 +150,7 @@ function validTimeWindow(input: unknown): input is ChannelTimeWindow {
   const w = input as Record<string, unknown>;
   if (Object.keys(w).some((k) => !["days", "from", "to", "tz"].includes(k))) return false;
   if (typeof w.from !== "string" || typeof w.to !== "string") return false;
-  if (!clock.test(w.from) || !clock.test(w.to)) return false;
+  if (!clock.test(w.from) || !clock.test(w.to) || w.from === w.to) return false;
   if (
     w.days !== undefined &&
     !(
@@ -306,7 +306,13 @@ export const ChannelConnectionSchema = z
         message: commands.error.message,
         path: ["config", "commands"],
       });
-    for (const [index, target] of v.targets.entries())
+    for (const [index, target] of v.targets.entries()) {
+      if (target.attention && target.user_ids.includes(CHANNEL_ANY))
+        ctx.addIssue({
+          code: "custom",
+          message: "Approvals and questions need named senders, not any sender",
+          path: ["targets", index],
+        });
       if (
         target.chat_id === CHANNEL_ANY &&
         (target.attention || target.notifications?.enabled || target.thread_id)
@@ -317,6 +323,7 @@ export const ChannelConnectionSchema = z
             "A destination for any chat receives replies only; notifications and threads need a fixed chat",
           path: ["targets", index],
         });
+    }
     for (const field of ["targets", "routes"] as const) {
       if (new Set(v[field].map((x) => x.id)).size !== v[field].length)
         ctx.addIssue({ code: "custom", message: `Duplicate ${field} IDs`, path: [field] });

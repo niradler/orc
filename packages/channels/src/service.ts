@@ -65,8 +65,6 @@ function destinationChat(target: ChannelTarget, chat: string | undefined): strin
     throw new ForbiddenError("Chat is outside the configured destination");
   return target.chat_id;
 }
-const routeProject = (route: ChannelRoute) =>
-  route.action.type === "agent" ? route.action.project_id : undefined;
 
 export class ChannelService {
   async downloadAttachments(message: ChannelInbound, target: ChannelTarget): Promise<UploadFile[]> {
@@ -505,12 +503,23 @@ export class ChannelService {
       warnings: nativeContent ? [] : rendered.warnings,
     };
   }
-  async send(raw: unknown): Promise<ChannelReceipt & { warnings: string[] }> {
+  private routeProject(route: ChannelRoute): string | undefined {
+    if (route.action.type === "agent") return route.action.project_id;
+    if (route.action.type !== "job") return undefined;
+    return (
+      this.store.db
+        .query<{ project_id: string | null }, [string]>("SELECT project_id FROM jobs WHERE id=?")
+        .get(route.action.job_id)?.project_id ?? undefined
+    );
+  }
+  async send(raw: unknown, reply = false): Promise<ChannelReceipt & { warnings: string[] }> {
     if (this.stopped) throw new ConflictError("Channel runtime is stopping");
     const input = ChannelSendSchema.parse(raw);
     const c = this.connection(input.connection);
     const target = this.authorizedTarget(c, input.target, input.project_id);
     if (!c.enabled || !target.outbound) throw new ForbiddenError("Outbound messaging is disabled");
+    if (target.chat_id === CHANNEL_ANY && !reply)
+      throw new ForbiddenError("A destination for any chat only carries replies to its senders");
     const chat = destinationChat(target, input.chat_id);
     const { payloads, warnings } = this.payloads(c, target, chat, input);
     const { receipt, fresh } = this.store.reserve(
@@ -688,13 +697,17 @@ export class ChannelService {
       if (message.kind === "message") await this.unmatched?.(message, target);
       return;
     }
-    const project = routeProject(route);
+    const project = this.routeProject(route);
     if (
       route.action.type === "ignore" ||
       (project && target.project_ids.length && !target.project_ids.includes(project))
     )
       return;
-    const key = JSON.stringify([c.id, message.chat, message.thread, message.sender]);
+    const shared = message.thread ?? message.root;
+    const key =
+      route.action.type === "agent" && route.action.session === "thread" && shared
+        ? JSON.stringify([c.id, message.chat, shared])
+        : JSON.stringify([c.id, message.chat, message.thread, message.sender]);
     const quotaKey = JSON.stringify([c.id, message.chat, message.sender]);
     let quota = this.quotas.get(quotaKey);
     if (!quota || quota.until <= Date.now()) {
@@ -727,7 +740,7 @@ export class ChannelService {
             targetAccepts(t, message.chat, message.thread, message.sender),
         );
         const selected = current.routes.find((r) => r.id === route.id);
-        const selectedProject = selected && routeProject(selected);
+        const selectedProject = selected && this.routeProject(selected);
         if (
           this.stopped ||
           epoch !== (this.turnEpoch.get(conversation) ?? 0) ||

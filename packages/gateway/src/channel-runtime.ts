@@ -72,14 +72,17 @@ function channelAdapter(
     platform: service.connection(connection).provider,
     async send(chatId: string, text: string, opts?: SendOpts) {
       bindDestination(chatId);
-      const receipt = await service.send({
-        connection,
-        target: target.id,
-        chat_id: chatId,
-        project_id: opts?.projectId,
-        message: { text, format: opts?.parseMode === "markdown" ? "markdown" : "plain" },
-        ...(opts?.threadId ? { thread_id: opts.threadId } : {}),
-      });
+      const receipt = await service.send(
+        {
+          connection,
+          target: target.id,
+          chat_id: chatId,
+          project_id: opts?.projectId,
+          message: { text, format: opts?.parseMode === "markdown" ? "markdown" : "plain" },
+          ...(opts?.threadId ? { thread_id: opts.threadId } : {}),
+        },
+        true,
+      );
       if (receipt.status !== "accepted")
         throw new ConflictError(receipt.error ?? "Channel delivery not confirmed");
       return receipt.id;
@@ -114,15 +117,18 @@ function channelAdapter(
         }),
       );
       const format = opts?.parseMode === "markdown" ? "markdown" : "plain";
-      const receipt = await service.send({
-        connection,
-        target: target.id,
-        chat_id: chatId,
-        project_id: opts?.projectId,
-        message: { text, format },
-        overrides: channelProvider(provider).controls(text, format, mapped),
-        ...(opts?.threadId ? { thread_id: opts.threadId } : {}),
-      });
+      const receipt = await service.send(
+        {
+          connection,
+          target: target.id,
+          chat_id: chatId,
+          project_id: opts?.projectId,
+          message: { text, format },
+          overrides: channelProvider(provider).controls(text, format, mapped),
+          ...(opts?.threadId ? { thread_id: opts.threadId } : {}),
+        },
+        true,
+      );
       if (receipt.status !== "accepted")
         throw new ConflictError(receipt.error ?? "Channel delivery not confirmed");
       return receipt.id;
@@ -171,14 +177,17 @@ export async function startChannelRuntime(
         projectId,
         threadId: message.thread,
       });
-    const result = await service.send({
-      connection: message.connection,
-      target: target.id,
-      chat_id: message.chat,
-      message: { text, format },
-      ...(projectId ? { project_id: projectId } : {}),
-      ...(message.thread ? { thread_id: message.thread } : {}),
-    });
+    const result = await service.send(
+      {
+        connection: message.connection,
+        target: target.id,
+        chat_id: message.chat,
+        message: { text, format },
+        ...(projectId ? { project_id: projectId } : {}),
+        ...(message.thread ? { thread_id: message.thread } : {}),
+      },
+      true,
+    );
     if (result.status !== "accepted")
       throw new ConflictError(result.error ?? "Channel delivery not confirmed");
   };
@@ -188,9 +197,15 @@ export async function startChannelRuntime(
     target: ChannelTarget,
   ) => {
     const job = getSqlite()
-      .query<{ name: string }, [string]>("SELECT name FROM jobs WHERE id=?")
+      .query<{ name: string; enabled: number }, [string]>(
+        "SELECT name,enabled FROM jobs WHERE id=?",
+      )
       .get(route.action.job_id);
     if (!job) throw new ValidationError("The job for this route no longer exists");
+    if (!job.enabled) {
+      await reply(message, target, `${job.name} is disabled.`, "plain");
+      return;
+    }
     const runId = await executeJob({
       jobId: route.action.job_id,
       triggerBy: `channel:${message.connection}`,
@@ -352,9 +367,7 @@ export async function startChannelRuntime(
               recipient.id === target.id &&
               recipient.inbound &&
               recipient.outbound &&
-              recipient.chat_id === message.chat &&
-              (!recipient.thread_id || recipient.thread_id === message.thread) &&
-              recipient.user_ids.includes(message.sender) &&
+              targetAccepts(recipient, message.chat, message.thread, message.sender) &&
               (!recipient.project_ids.length || recipient.project_ids.includes(projectId)),
           );
         if (authorized)
@@ -507,15 +520,18 @@ export async function startChannelRuntime(
               ],
             ]
           : [];
-        const progress = await service.send({
-          connection: message.connection,
-          target: target.id,
-          chat_id: message.chat,
-          project_id: projectId,
-          message: { text: "Working…", format: "plain" },
-          overrides: adapter.controls("Working…", "plain", progressControls),
-          ...(message.thread ? { thread_id: message.thread } : {}),
-        });
+        const progress = await service.send(
+          {
+            connection: message.connection,
+            target: target.id,
+            chat_id: message.chat,
+            project_id: projectId,
+            message: { text: "Working…", format: "plain" },
+            overrides: adapter.controls("Working…", "plain", progressControls),
+            ...(message.thread ? { thread_id: message.thread } : {}),
+          },
+          true,
+        );
         if (progress.status !== "accepted")
           throw new ConflictError("Progress delivery not confirmed");
         progressId = progress.id;
@@ -739,6 +755,7 @@ export async function startChannelRuntime(
   // Attention receipts are bound to connection + target as well as chat/thread.
   service.control = async (message, target) => {
     if (message.event === "reaction") return false;
+    const named = target.user_ids.includes(message.sender);
     let text = message.text;
     if (message.kind === "action" && text.startsWith("orc_action:")) {
       const value = service.store.consumeAction(
@@ -762,7 +779,6 @@ export async function startChannelRuntime(
     }
     const command = channelCommand(text);
     if (command?.name === "help" || command?.name === "start") {
-      const named = target.user_ids.includes(message.sender);
       await reply(
         message,
         target,
@@ -789,7 +805,7 @@ export async function startChannelRuntime(
           "This turn is no longer running.",
           "plain",
           undefined,
-          channelControls(),
+          named ? channelControls() : undefined,
         );
         return true;
       }
@@ -807,19 +823,21 @@ export async function startChannelRuntime(
           : "No agent turn is running. Tap New session for a new conversation.",
         "plain",
         undefined,
-        channelControls(),
+        named ? channelControls() : undefined,
       );
       return true;
     }
     if (message.kind === "action" && text !== message.text) {
-      const answer = human.reply(
-        {
-          ...incoming(service, message),
-          text,
-          connectionId: `${message.connection}:${target.id}`,
-        },
-        target,
-      );
+      const answer =
+        named &&
+        human.reply(
+          {
+            ...incoming(service, message),
+            text,
+            connectionId: `${message.connection}:${target.id}`,
+          },
+          target,
+        );
       if (answer) await reply(message, target, answer, "plain");
       else {
         message.text = text;
@@ -832,6 +850,7 @@ export async function startChannelRuntime(
       text,
       connectionId: `${message.connection}:${target.id}`,
     };
+    if (!named) return false;
     const answer =
       human.reply(inbound, target) ??
       (target.attention && !message.event && !message.attachments?.length
