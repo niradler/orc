@@ -9,12 +9,6 @@ declare global {
   }
 }
 
-// Regression: an idle OpenCode chat whose native transcript mark is stale (for
-// example a pre-migration `size:mtime` mark) makes the session endpoint report
-// `changed: true`. The panel then rebuilds the transcript. That rebuild is
-// maintenance, not a turn — it must not pop the "working" panel/spinner or a
-// "working" header badge on an idle session. Reproduced against a live daemon
-// returning changed:true with running:false and live.status "stopped".
 test("rebuilding an idle session's transcript does not pop the working panel", async ({ page }) => {
   const now = Date.now();
   const threadId = "91000000-0000-4000-8000-000000000001";
@@ -48,7 +42,6 @@ test("rebuilding an idle session's transcript does not pop the working panel", a
   await page.addInitScript((secret) => {
     localStorage.setItem(`orc_api_secret:${new URL("/api", location.href).href}`, secret);
     localStorage.setItem("orc_selected_project", "all");
-    // Record any transient "working" pop, even one too brief to assert on directly.
     window.__sawWorking = false;
     const flag = () => {
       window.__sawWorking = true;
@@ -102,8 +95,6 @@ test("rebuilding an idle session's transcript does not pop the working panel", a
     }),
   );
   await page.route(`**/api/chat/threads/${threadId}`, (route) => route.fulfill({ json: thread }));
-  // The exact shape a live daemon returns for a stale-mark idle session. Once the
-  // rebuild heals the mark, changed settles to false (as it does on the server).
   let healed = false;
   await page.route(`**/api/chat/threads/${threadId}/session`, (route) =>
     route.fulfill({
@@ -126,7 +117,6 @@ test("rebuilding an idle session's transcript does not pop the working panel", a
       },
     }),
   );
-  // Hold the rebuild open so a false "working" claim is observable.
   let refreshed = 0;
   await page.route(`**/api/chat/threads/${threadId}/refresh`, async (route) => {
     refreshed++;
@@ -134,7 +124,6 @@ test("rebuilding an idle session's transcript does not pop the working panel", a
     await new Promise((resolve) => setTimeout(resolve, 500));
     await route.fulfill({ json: thread });
   });
-  // Delay the idle attach so any optimistic streaming claim has time to render.
   await page.route("**/api/chat/threads/*/live", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 2500));
     await route.fulfill({ status: 204, body: "" });
@@ -157,15 +146,10 @@ test("rebuilding an idle session's transcript does not pop the working panel", a
   await row.getByTestId("chat-resume-thread").click();
   await waitHistoryClosed(page);
 
-  // The changed flag must drive a rebuild, and the idle session must never show
-  // the working spinner or a "working" badge — not even transiently.
   await expect.poll(() => refreshed, { timeout: 15_000 }).toBeGreaterThan(0);
-  // Land inside the attach window: a false optimistic streaming claim would have
-  // the working spinner mounted here.
   await page.waitForTimeout(1200);
   await expect(page.getByTestId("chat-working-spinner")).toHaveCount(0);
   expect(await page.evaluate(() => window.__sawWorking ?? false)).toBe(false);
-  // Still idle once the rebuild settles.
   await expect(page.getByTestId("chat-header-state").first()).toHaveAttribute(
     "data-state",
     "idle",

@@ -18,9 +18,6 @@ describe("chat header state", () => {
   });
 
   test("re-importing an idle session's transcript does not pop the working panel", () => {
-    // A stale/legacy transcript mark reports `changed`, so the panel rebuilds
-    // (refreshing) even though no turn is running. That maintenance must read
-    // as idle, not working.
     expect(chatSessionState({ ...base, refreshing: true, runClaim: false })).toBe("idle");
   });
 

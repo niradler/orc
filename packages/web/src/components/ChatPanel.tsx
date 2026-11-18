@@ -341,9 +341,6 @@ export function ChatPanel({
   const turnElsewhere = runElsewhere || (agentRunning && !refreshing);
   // The usage API only knows sessions it discovered from an agent or terminal.
   const contextUsage = useChatContextUsage(thread?.sourceId, streaming);
-  // A run claimed by the session endpoint, independent of the transient
-  // streaming/refreshing flags, so a rebuild keeps "working" only while a turn
-  // is actually live.
   const runClaim =
     !!session.data?.running ||
     (session.data?.live?.status === "running" && session.data.live.agent !== "codex");

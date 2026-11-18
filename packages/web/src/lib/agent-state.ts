@@ -91,12 +91,6 @@ export function liveSessionState(
   return session.waiting_for_human ? "needs-you" : (LIVE_STATES[session.status] ?? "unknown");
 }
 
-/**
- * The chat header's state. A transcript rebuild (`refreshing`) is maintenance,
- * not a turn: it only reads as "working" while a run is actually claimed
- * (`runClaim`). Re-importing an idle session — for example when a stale
- * transcript mark reports `changed` — must not pop the working panel.
- */
 export function chatSessionState(input: {
   needsYou: boolean;
   failed: boolean;
