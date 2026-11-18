@@ -35,6 +35,7 @@ function fixture(opts: Partial<SessionOpts> = {}) {
       if(args==='identity')ctx.ui.notify('native-id:'+ctx.sessionManager.getSessionId());
       if(args==='mcp')ctx.ui.notify('mcp-tools:'+pi.getAllTools().filter(tool=>tool.name.startsWith('mcp__orc_')).map(tool=>tool.name).join(','));
       if(args==='dialog') {const answer=await ctx.ui.input('Your answer');ctx.ui.notify('answer:'+answer);}
+      if(args==='permission-other') {const allowed=await ctx.ui.confirm('ORC tool approval',JSON.stringify({tool:'write',input:{path:'other.txt',content:'other'}}));ctx.ui.notify('approved:'+allowed);}
       if(args==='permission') {const tool={toolName:'write',input:{path:'proof.txt',content:'proof'}};const allowed=await ctx.ui.confirm('ORC tool approval',JSON.stringify({tool:tool.toolName,input:tool.input}));ctx.ui.notify('approved:'+allowed);}
       if(args==='slow'){ctx.ui.notify('slow-started');await new Promise(resolve=>setTimeout(resolve,200));ctx.ui.notify('slow-ended');}
       if(args==='slowlong'){ctx.ui.notify('slow-started');await new Promise(resolve=>setTimeout(resolve,3500));ctx.ui.notify('slow-ended');}
@@ -103,6 +104,28 @@ test("real Pi handles a denied approval and supports subsequent turns", async ()
   await session.send("/probe dialog");
   const second = await collect(session);
   expect(second.some((e) => e.type === "system_status" && e.data === "answer:from ORC")).toBe(true);
+}, 15000);
+
+test("real Pi allow-for-session covers only the same tool input", async () => {
+  const { session } = fixture();
+  await session.initialize();
+  const turn = async (prompt: string) => {
+    await session.send(prompt);
+    const events: AgentEvent[] = [];
+    for await (const event of session.events()) {
+      events.push(event);
+      if (event.type === "permission_request")
+        session.respondPermission(event.data.requestId, "session");
+    }
+    return events;
+  };
+  expect((await turn("/probe permission")).some((e) => e.type === "permission_request")).toBe(true);
+  const repeat = await turn("/probe permission");
+  expect(repeat.some((e) => e.type === "permission_request")).toBe(false);
+  expect(repeat.some((e) => e.type === "system_status" && e.data === "approved:true")).toBe(true);
+  expect((await turn("/probe permission-other")).some((e) => e.type === "permission_request")).toBe(
+    true,
+  );
 }, 15000);
 
 test("real Pi streams a model turn, gates writes, reports usage and resumes the native session", async () => {

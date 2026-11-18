@@ -499,9 +499,20 @@ reads enforce their configured retention periods; see [Notifications](./notifica
 resume, model selection, image input, tool output, approvals, questions, live
 permissions, native interruption, steering, MCP, fork and rollback. `subagents` is
 `true` for agents whose chats stream a live subagent tree (Claude, Codex, OpenCode)
-and absent for the rest. `source` is `adapter`, `negotiated` or `unknown`;
+and absent for the rest. `approvalFeedback` is `true` when a denial can carry a
+reason to the agent (Claude, Codex, direct ACP agents such as OpenCode).
+`source` is `adapter`, `negotiated` or `unknown`;
 unsupported and unknown operations are false.
 Chat SSE emits `capabilities` events and persists negotiated values with the thread.
+
+`POST /chat/runs/{id}/permission` answers a pending `permission_request` with
+`{ "requestId": "...", "decision": "approved" | "session" | "denied", "feedback"?: "..." }`.
+`session` also answers the same request automatically for the rest of the
+conversation. A request with `allowSession: false` (the agent asked not to remember it,
+an ACP agent offered no `allow_always`, or an ORC rule requires a human answer) rejects
+`session` with `400` and is never answered automatically. `feedback` (up to 4000
+characters) is the reason sent with a denial; sending it with another decision returns
+`400`. A request that is no longer pending returns `409`.
 
 `POST /chat/runs/{id}/cancel` stops the running turn and returns `{ ok: true }`; a run
 that already finished returns `409`. On interrupt-capable backends (Pi, Codex,

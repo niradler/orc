@@ -104,7 +104,8 @@ export async function openAgentSession(
         : {}),
       getRuntimeSessionId: () => session.getRuntimeSessionId?.(),
       send: (prompt, images) => session.send(`${context}\n\n${prompt}`, images),
-      respondPermission: (requestId, result) => session.respondPermission(requestId, result),
+      respondPermission: (requestId, result, feedback) =>
+        session.respondPermission(requestId, result, feedback),
       ...(session.respondQuestion
         ? {
             respondQuestion: (id: string, answers: Record<string, string[]>) =>
