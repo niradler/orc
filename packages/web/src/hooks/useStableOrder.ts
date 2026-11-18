@@ -39,7 +39,15 @@ export function useStableOrder<T>({
   }, []);
   const props = { ref, ...listProps(setHover, setFocus) };
   if (!rows) return { items, pending: 0, apply, listProps: props };
-  const { order, pending } = stableOrder(rows, live, (key) => lookup(key) !== undefined);
+  const kept = new Set<string>();
+  const current = rows.flatMap((row) => {
+    const item = lookup(row.id);
+    const key = item === undefined ? undefined : id(item);
+    if (key === undefined || kept.has(key)) return [];
+    kept.add(key);
+    return [{ id: key, version: row.version }];
+  });
+  const { order, pending } = stableOrder(current, live, (key) => lookup(key) !== undefined);
   return {
     items: order.flatMap((key) => {
       const item = lookup(key);

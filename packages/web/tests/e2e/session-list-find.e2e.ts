@@ -168,6 +168,66 @@ for (const width of [1440, 390])
       expect(await ids(rows, "data-state")).toEqual(["done"]);
     });
 
+    for (const filter of ["all", "done"] as const)
+      test(`keeps an opened Done row in place under the ${filter} filter`, async ({
+        page,
+        request,
+      }) => {
+        await setup(page, request);
+        let release = () => {};
+        const opened = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        await page.route("**/api/chat/threads", async (route) => {
+          if (route.request().method() === "POST") await opened;
+          await route.fallback();
+        });
+        await page.goto(sessionUrl);
+        if (filter === "done") await page.getByTestId("session-filter-done").click();
+        const rows = page.getByTestId("chat-session-list").locator("[data-history-id]");
+        const row = rows.filter({ hasText: "Write release notes" });
+        await expect(row).toHaveAttribute("data-state", "done");
+        const before = await ids(rows, "data-history-id");
+        const index = before.indexOf("native:demo-live-3");
+        const top = (await row.boundingBox())?.y;
+        await row.hover();
+        await row.getByTestId("chat-resume-live").click();
+        await expect(rows.nth(index)).toHaveAttribute("data-history-id", "native:demo-live-3");
+        expect((await row.boundingBox())?.y).toBe(top);
+        release();
+        await expect(page).toHaveURL(/chatThread=70000000-0000-4000-8000-000000000004/);
+        if (width < 600) await page.goBack();
+        await expect(rows.nth(index)).toHaveAttribute(
+          "data-history-id",
+          "chat:70000000-0000-4000-8000-000000000004",
+        );
+        expect(await ids(rows, "data-history-id")).toEqual(
+          before.map((id) =>
+            id === "native:demo-live-3" ? "chat:70000000-0000-4000-8000-000000000004" : id,
+          ),
+        );
+        expect((await row.boundingBox())?.y).toBe(top);
+      });
+
+    test("keeps a Done row in place when it fails to open", async ({ page, request }) => {
+      await setup(page, request);
+      await page.route("**/api/chat/threads", (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({ status: 400, json: { error: "Session folder is unavailable." } })
+          : route.fallback(),
+      );
+      await page.goto(sessionUrl);
+      const rows = page.getByTestId("chat-session-list").locator("[data-history-id]");
+      const row = rows.filter({ hasText: "Write release notes" });
+      await expect(row).toHaveAttribute("data-state", "done");
+      const before = await ids(rows, "data-history-id");
+      await row.hover();
+      await row.getByTestId("chat-resume-live").click();
+      await expect(page.getByText("Session folder is unavailable.")).toBeVisible();
+      await expect(row).toHaveAttribute("data-state", "idle");
+      expect(await ids(rows, "data-history-id")).toEqual(before);
+    });
+
     test("opens the project and marks the session the chat page is showing", async ({
       page,
       request,
