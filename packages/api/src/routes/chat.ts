@@ -1835,8 +1835,12 @@ app.openapi(
     const grant = run?.permissions.get(requestId);
     if (!run?.session || grant === undefined)
       throw new ConflictError("This permission request is no longer pending.");
+    if (decision === "session" && !grant)
+      throw new ValidationError("This request cannot be allowed for the session.");
+    if (feedback !== undefined && decision !== "denied")
+      throw new ValidationError("A reason can only be sent with a denial.");
     run.session.respondPermission(requestId, decision, feedback);
-    if (decision === "session" && grant)
+    if (decision === "session")
       sessionGrants.set(run.threadId, (sessionGrants.get(run.threadId) ?? new Set()).add(grant));
     run.permissions.delete(requestId);
     resolveChatNotification(run.thread.id, `${c.req.valid("param").id}:${requestId}`);
@@ -2710,7 +2714,7 @@ async function beginTurn(
           } else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
             const grant = `${event.data.tool}\0${event.data.grant ?? event.data.command}`;
-            if (sessionGrants.get(thread.id)?.has(grant)) {
+            if (event.data.allowSession !== false && sessionGrants.get(thread.id)?.has(grant)) {
               run.session?.respondPermission(event.data.requestId, "session");
               continue;
             }

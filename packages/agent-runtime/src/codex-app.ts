@@ -229,7 +229,14 @@ export class CodexAppSession implements AgentSession {
             },
             ...(typeof params.cwd === "string" ? { cwd: params.cwd } : {}),
             ...(typeof params.command === "string"
-              ? { grant: `${params.command}\0${params.cwd ?? ""}` }
+              ? {
+                  grant: JSON.stringify([
+                    params.kind ?? "command",
+                    params.command,
+                    params.cwd ?? "",
+                    params.networkApprovalContext ?? null,
+                  ]),
+                }
               : {}),
             tool,
             command: [

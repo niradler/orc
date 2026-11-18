@@ -63,10 +63,15 @@ export function ChatPlanReview({
   plan?: string;
   busy: boolean;
   acceptEdits: boolean;
-  onApprove: (mode: "acceptEdits" | "default") => void;
+  onApprove: (mode: "acceptEdits" | "default") => Promise<unknown>;
   onRevise: (feedback: string) => void;
 }) {
   const [revising, setRevising] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const approve = (mode: "acceptEdits" | "default") => {
+    setApproving(true);
+    void onApprove(mode).finally(() => setApproving(false));
+  };
   return (
     <div
       data-testid="chat-plan-review"
@@ -82,7 +87,7 @@ export function ChatPlanReview({
         <FeedbackForm
           label="What should change?"
           submit="Revise"
-          busy={busy}
+          busy={busy || approving}
           onSubmit={onRevise}
           onCancel={() => setRevising(false)}
         />
@@ -92,9 +97,9 @@ export function ChatPlanReview({
             <button
               type="button"
               data-testid="chat-plan-approve-edits"
-              disabled={busy}
+              disabled={busy || approving}
               className={primary}
-              onClick={() => onApprove("acceptEdits")}
+              onClick={() => approve("acceptEdits")}
             >
               Approve, accept edits
             </button>
@@ -102,16 +107,16 @@ export function ChatPlanReview({
           <button
             type="button"
             data-testid="chat-plan-approve"
-            disabled={busy}
+            disabled={busy || approving}
             className={acceptEdits ? button : primary}
-            onClick={() => onApprove("default")}
+            onClick={() => approve("default")}
           >
             Approve
           </button>
           <button
             type="button"
             data-testid="chat-plan-revise"
-            disabled={busy}
+            disabled={busy || approving}
             className={button}
             onClick={() => setRevising(true)}
           >

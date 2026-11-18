@@ -1354,7 +1354,7 @@ export function ChatPanel({
                       busy={responding}
                       acceptEdits
                       onApprove={(mode) =>
-                        void changePermissions({ ...config, permissionMode: mode }).then(() =>
+                        changePermissions({ ...config, permissionMode: mode }).then(() =>
                           respondPermission("approved"),
                         )
                       }
@@ -1398,15 +1398,18 @@ export function ChatPanel({
               config.permissionMode === "plan" &&
               thread?.capabilities?.permissionModes?.includes("plan") &&
               messages[messages.length - 1]?.role === "assistant" &&
+              (messages[messages.length - 1]?.turn ?? turn)?.outcome === "completed" &&
               messages[messages.length - 1]?.content && (
                 <ChatPlanReview
                   key={messages[messages.length - 1]?.id}
                   busy={responding}
                   acceptEdits={thread.capabilities.permissionModes.includes("acceptEdits")}
-                  onApprove={(mode) => {
-                    void changePermissions({ ...config, permissionMode: mode });
-                    void send("Implement the plan.");
-                  }}
+                  onApprove={(mode) =>
+                    Promise.all([
+                      changePermissions({ ...config, permissionMode: mode }),
+                      send("Implement the plan."),
+                    ])
+                  }
                   onRevise={(feedback) => void send(feedback)}
                 />
               )}

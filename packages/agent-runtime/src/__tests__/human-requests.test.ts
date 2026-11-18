@@ -138,7 +138,11 @@ test("automatically exposes a native approval and resolves it from chat", async 
   })();
   const request = await waitForRequest(session.id);
   expect(request.input.origin.backend).toBe("claude-cli");
-  expect(events.some((event) => event.type === "permission_request")).toBe(true);
+  expect(
+    events.some(
+      (event) => event.type === "permission_request" && event.data.allowSession === undefined,
+    ),
+  ).toBe(true);
   session.respondPermission("automatic-approval", "session");
   expect(() =>
     new HumanRequestStore(getSqlite()).respond(request.id, 1, {
@@ -349,7 +353,11 @@ test("a rule-triggered approval can also be answered from chat", async () => {
   })();
   const request = await waitForRequest(session.id);
   expect(request.input.rule_bindings?.length).toBe(1);
-  expect(events.some((event) => event.type === "permission_request")).toBe(true);
+  expect(
+    events.some(
+      (event) => event.type === "permission_request" && event.data.allowSession === false,
+    ),
+  ).toBe(true);
   expect(
     events.some((event) => event.type === "system_status" && event.data.includes("Review command")),
   ).toBe(true);

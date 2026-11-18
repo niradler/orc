@@ -207,7 +207,8 @@ export class AcpSession implements AgentSession {
   private done = true;
   private busy = false;
   private cancelling = false;
-  private followUp: string | undefined;
+  private readonly reasons: string[] = [];
+  private readonly rejected = new Set<string>();
   private replaying = false;
   private failure: string | undefined;
   private stderr = stderrTail(null);
@@ -359,6 +360,8 @@ export class AcpSession implements AgentSession {
           command: child?.title ? `${child.title}: ${title}` : title,
           input: { toolCall: params.toolCall },
           cwd: this.effectiveCwd,
+          allowSession: params.options.some((option) => option.kind === "allow_always"),
+          grant: JSON.stringify(params.toolCall.rawInput ?? title),
         },
       });
     });
@@ -566,6 +569,18 @@ export class AcpSession implements AgentSession {
               this.contextWindow = params.update.size;
             return;
           }
+          if (
+            this.reasons.length &&
+            ((params.update.sessionUpdate === "tool_call" &&
+              !this.rejected.has(params.update.toolCallId)) ||
+              params.update.sessionUpdate === "agent_message_chunk")
+          )
+            void this.steer(this.reasons.splice(0).join("\n\n")).catch(() =>
+              this.push({
+                type: "system_status",
+                data: "The agent kept working before your reason arrived. Send it as a message.",
+              }),
+            );
           const child = childSessionMeta(params.update);
           if (child) {
             this.childUpdate(child, params);
@@ -812,7 +827,8 @@ export class AcpSession implements AgentSession {
       throw new Error("This ACP agent does not accept images.");
     this.busy = true;
     this.cancelling = false;
-    this.followUp = undefined;
+    this.reasons.length = 0;
+    this.rejected.clear();
     this.done = false;
     this.queue.length = 0;
     this.outputBytes = 0;
@@ -837,10 +853,9 @@ export class AcpSession implements AgentSession {
       agent
         .request<PromptResponse, PromptRequest>("session/prompt", { sessionId, prompt: content })
         .then((result) => {
-          const followUp = this.followUp;
-          this.followUp = undefined;
-          return followUp && result.stopReason === "end_turn" && !this.closed && !this.failure
-            ? turn([{ type: "text", text: followUp }])
+          const reasons = this.reasons.splice(0).join("\n\n");
+          return reasons && result.stopReason === "end_turn" && !this.closed && !this.failure
+            ? turn([{ type: "text", text: reasons }])
             : result;
         });
     void turn([
@@ -998,7 +1013,10 @@ export class AcpSession implements AgentSession {
         ? { outcome: "selected", optionId: option.optionId }
         : { outcome: "cancelled" },
     });
-    if (result === "denied" && feedback?.trim()) this.followUp = feedback.trim();
+    if (result === "denied" && feedback?.trim()) {
+      this.reasons.push(feedback.trim());
+      this.rejected.add(pending.params.toolCall.toolCallId);
+    }
   }
   waitingForHuman(): boolean {
     return this.pending.size > 0 || this.questions.size > 0;
@@ -1012,7 +1030,7 @@ export class AcpSession implements AgentSession {
   async interrupt(): Promise<void> {
     if (!this.busy || !this.connection || !this.runtimeId) return;
     this.cancelling = true;
-    this.followUp = undefined;
+    this.reasons.length = 0;
     this.cancelPending();
     await this.connection.agent.notify("session/cancel", { sessionId: this.runtimeId });
   }

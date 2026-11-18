@@ -506,9 +506,11 @@ Chat SSE emits `capabilities` events and persists negotiated values with the thr
 `POST /chat/runs/{id}/permission` answers a pending `permission_request` with
 `{ "requestId": "...", "decision": "approved" | "session" | "denied", "feedback"?: "..." }`.
 `session` also answers the same request automatically for the rest of the
-conversation; `allowSession: false` on the request means the agent asked not to
-remember it. `feedback` (up to 4000 characters) is the reason sent with a denial.
-A request that is no longer pending returns `409`.
+conversation. A request with `allowSession: false` (the agent asked not to remember it,
+an ACP agent offered no `allow_always`, or an ORC rule requires a human answer) rejects
+`session` with `400` and is never answered automatically. `feedback` (up to 4000
+characters) is the reason sent with a denial; sending it with another decision returns
+`400`. A request that is no longer pending returns `409`.
 
 `POST /chat/runs/{id}/cancel` stops the running turn and returns `{ ok: true }`; a run
 that already finished returns `409`. On interrupt-capable backends (Pi, Codex,

@@ -68,6 +68,7 @@ let interruptible = false;
 let interruptCapability = true;
 let decision: string | undefined;
 let decisionFeedback: string | undefined;
+let requestAllowSession: boolean | undefined;
 let liveMode: string | undefined;
 const AUTH = { Authorization: "Bearer test-secret", "Content-Type": "application/json" };
 function session(call: (typeof calls)[number]): AgentSession {
@@ -161,7 +162,12 @@ function session(call: (typeof calls)[number]): AgentSession {
       if (waitPermission) {
         yield {
           type: "permission_request",
-          data: { requestId: "permission-1", tool: "context", command: "Read context" },
+          data: {
+            requestId: "permission-1",
+            tool: "context",
+            command: "Read context",
+            ...(requestAllowSession === undefined ? {} : { allowSession: requestAllowSession }),
+          },
         };
         await permission;
       }
@@ -1826,6 +1832,15 @@ describe("native chat runtime", () => {
         (
           await request(`/chat/runs/${opened.runId}/permission`, {
             requestId: "permission-1",
+            decision: "approved",
+            feedback: "ignored",
+          })
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await request(`/chat/runs/${opened.runId}/permission`, {
+            requestId: "permission-1",
             decision: "session",
           })
         ).status,
@@ -1865,8 +1880,43 @@ describe("native chat runtime", () => {
       while (!(await other.reader.read()).done) {}
       expect<string | undefined>(decision).toBe("denied");
       expect(decisionFeedback).toBe("use bun");
+
+      requestAllowSession = false;
+      decision = undefined;
+      const guarded = await read(
+        await request("/chat/stream", {
+          threadId: opened.thread.id,
+          messages: [{ role: "user", content: "rule-bound" }],
+        }),
+      );
+      expect(guarded.text).toContain('"permission_request"');
+      const guardedRun = (
+        guarded.text
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => JSON.parse(line.slice(5)))
+          .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>
+      ).runId;
+      expect(
+        (
+          await request(`/chat/runs/${guardedRun}/permission`, {
+            requestId: "permission-1",
+            decision: "session",
+          })
+        ).status,
+      ).toBe(400);
+      expect(
+        (
+          await request(`/chat/runs/${guardedRun}/permission`, {
+            requestId: "permission-1",
+            decision: "approved",
+          })
+        ).status,
+      ).toBe(200);
+      while (!(await guarded.reader.read()).done) {}
     } finally {
       waitPermission = false;
+      requestAllowSession = undefined;
     }
   });
 

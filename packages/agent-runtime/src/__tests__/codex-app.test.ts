@@ -157,7 +157,7 @@ for await (const line of createInterface({input:process.stdin})) {
  else if(m.method==='turn/start') {
   emit({id:m.id,result:{turn:{id:'t1'}}});
   emit({method:'turn/started',params:{threadId:'deny',turn:{id:'t1'}}});
-  emit({id:'cmd',method:'item/commandExecution/requestApproval',params:{threadId:'deny',turnId:'t1',command:'npm test'}});
+  emit({id:'cmd',method:'item/commandExecution/requestApproval',params:{threadId:'deny',turnId:'t1',command:'npm test',kind:'network',networkApprovalContext:{host:'registry.npmjs.org',protocol:'https'}}});
  } else if(m.id==='cmd') decision=m.result;
  else if(m.method==='turn/steer') {
   emit({id:m.id,result:{}});
@@ -181,7 +181,12 @@ for await (const line of createInterface({input:process.stdin})) {
       }
       if (event.type === "text") text += event.data;
     }
-    expect(grant).toBe("npm test\0");
+    expect(JSON.parse(grant ?? "")).toEqual([
+      "network",
+      "npm test",
+      "",
+      { host: "registry.npmjs.org", protocol: "https" },
+    ]);
     expect(JSON.parse(text)).toEqual({
       decision: { decision: "decline" },
       steer: [{ type: "text", text: "use bun test" }],

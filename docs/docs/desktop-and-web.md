@@ -748,12 +748,14 @@ An approval prompt offers **Allow once**, **Allow for session**, **Deny** and
 **Deny with reason**. **Allow for session** answers the same request again
 without asking for the rest of the conversation: Claude receives its own
 suggested rules for the session (so `Bash(npm test:*)` covers later variants),
-Codex receives `acceptForSession`, and OpenCode its `allow_always` option; ORC
-also remembers the exact request so later messages in the conversation do not
-ask again. Claude hides the action when it marks a request as unsafe to
-remember. **Deny with reason** sends your text to the agent: Claude receives it
-as the denial message, Codex as a steer on the running turn, and OpenCode as the
-next prompt once the denied turn ends. Agents without
+Codex receives `acceptForSession`, OpenCode its `allow_always` option and Pi
+remembers that tool with that exact input; ORC also remembers the exact request so
+later messages in the conversation do not ask again. The action is hidden when
+Claude marks a request as unsafe to remember, when an ACP agent offers no
+`allow_always`, and when an ORC rule requires a human answer. **Deny with reason**
+sends your text to the agent: Claude receives it as the denial message, Codex as a
+steer on the running turn, and OpenCode as the next prompt once the denied turn
+ends, or as a steer when it keeps working; several denials send every reason. Agents without
 `approvalFeedback` in their capabilities offer plain **Deny** only.
 
 When a Claude plan is ready, its `ExitPlanMode` request opens a plan card with

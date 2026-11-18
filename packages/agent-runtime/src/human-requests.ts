@@ -299,7 +299,11 @@ export function withHumanRequests(
               wait.requests.length ===
               (event.type === "question_request" ? event.data.questions.length : 1)
             )
-              emit(event);
+              emit(
+                wait.ruleBound && event.type === "permission_request"
+                  ? { ...event, data: { ...event.data, allowSession: false } }
+                  : event,
+              );
             continue;
           }
         }

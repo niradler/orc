@@ -54,7 +54,8 @@ try {
 test("Claude allow-for-session returns the suggestions as session rules and keeps them for later turns", () => {
   const { decisions, options, requests } = run(
     [
-      `await ask(options, "Bash", {command:"npm test"}, {suggestions:[{type:"addRules",rules:[{toolName:"Bash",ruleContent:"npm test:*"}],behavior:"allow",destination:"localSettings"},{type:"addDirectories",directories:["/tmp/extra"],destination:"localSettings"}]});`,
+      `await ask(options, "Bash", {command:"npm test"}, {suggestions:[{type:"addRules",rules:[{toolName:"Bash",ruleContent:"npm test:*"}],behavior:"allow",destination:"localSettings"},{type:"addDirectories",directories:["/tmp/extra"],destination:"localSettings"},{type:"setMode",mode:"bypassPermissions",destination:"localSettings"}]});`,
+      `await ask(options, "Bash", {command:"npm test"}, {suggestions:[{type:"addRules",rules:[{toolName:"Bash",ruleContent:"npm test:*"}],behavior:"allow",destination:"localSettings"}]});`,
       "",
     ],
     `if (event.type === "permission_request") session.respondPermission(event.data.requestId, "session");`,
@@ -74,10 +75,21 @@ test("Claude allow-for-session returns the suggestions as session rules and keep
     ],
   });
   expect(options[0]).toEqual({ allowedTools: [], additionalDirectories: [] });
-  expect(options[1]).toEqual({
+  expect(options[2]).toEqual({
     allowedTools: ["Bash(npm test:*)"],
     additionalDirectories: ["/tmp/extra"],
   });
+});
+
+test("Claude never turns a session answer into rules when the agent forbids remembering it", () => {
+  const { decisions } = run(
+    [
+      `await ask(options, "Bash", {command:"rm -rf build"}, {suppressAlwaysAllowRule:true, suggestions:[{type:"addRules",rules:[{toolName:"Bash",ruleContent:"rm:*"}],behavior:"allow",destination:"localSettings"}]});`,
+      "",
+    ],
+    `if (event.type === "permission_request") session.respondPermission(event.data.requestId, "session");`,
+  );
+  expect(decisions[0]).toEqual({ behavior: "allow", updatedInput: { command: "rm -rf build" } });
 });
 
 test("Claude denies with the user's reason and hides the session grant when the agent forbids it", () => {

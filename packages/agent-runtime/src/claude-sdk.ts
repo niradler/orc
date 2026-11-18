@@ -695,14 +695,23 @@ class ClaudeSDKSession implements AgentSession {
               if (subagents.get(options?.agentID ?? "")?.status === "waiting")
                 updateSubagent(options?.agentID, { status: "running" });
             }
-            if (result === "session" && options?.suggestions?.length && this.runtimeSessionId) {
-              const granted = options.suggestions.map((update) => ({
-                ...update,
-                destination: "session" as const,
-              }));
+            const granted = (options?.suggestions ?? [])
+              .filter((update) => update.type !== "setMode")
+              .map((update) => ({ ...update, destination: "session" as const }));
+            if (
+              result === "session" &&
+              granted.length &&
+              this.runtimeSessionId &&
+              toolName !== "ExitPlanMode" &&
+              !options?.suppressAlwaysAllowRule
+            ) {
+              const saved = sessionGrants.get(this.runtimeSessionId) ?? [];
               sessionGrants.set(this.runtimeSessionId, [
-                ...(sessionGrants.get(this.runtimeSessionId) ?? []),
-                ...granted,
+                ...saved,
+                ...granted.filter(
+                  (update) =>
+                    !saved.some((entry) => JSON.stringify(entry) === JSON.stringify(update)),
+                ),
               ]);
               return { behavior: "allow", updatedInput: input, updatedPermissions: granted };
             }
