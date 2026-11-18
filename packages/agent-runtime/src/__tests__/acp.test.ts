@@ -33,14 +33,14 @@ import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
 const update=(sessionId,update)=>emit({method:'session/update',params:{sessionId,update}});
-let promptId; const promptIds=[]; let session='native-acp'; const mode=${JSON.stringify(mode)};
+let promptId; const promptIds=[]; let session='native-acp'; let answered=0; const mode=${JSON.stringify(mode)};
 const moved=join(process.cwd(),'moved');
 const ask=id=>emit({id,method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'late',title:'Late action',kind:'execute'},options:[{optionId:'allow',name:'Allow',kind:'allow_once'},{optionId:'deny',name:'Deny',kind:'reject_once'}]}});
 for await (const line of createInterface({input:process.stdin})) {
  const m=JSON.parse(line);appendFileSync('wire.ndjson',line+'\\n');
  if(m.id==='client-access') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.error)}});emit({id:promptId,result:{stopReason:'end_turn'}});continue;}
  if(m.id==='late-cancel') {emit({id:promptId,result:{stopReason:'cancelled'}});continue;}
- if(m.method==='initialize') emit({id:m.id,result:{protocolVersion:mode==='bad-version'?99:1,...(mode==='steer-extension'||mode==='steer-decline'?{_meta:{steering:{supported:true}}}:{}),agentCapabilities:{loadSession:mode!=='no-resume',...(mode==='moved-session'?{sessionCapabilities:{list:{}}}:{}),promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
+ if(m.method==='initialize') emit({id:m.id,result:{protocolVersion:mode==='bad-version'?99:1,...(mode==='steer-extension'||mode==='steer-decline'||mode==='deny-continue'?{_meta:{steering:{supported:true}}}:{}),agentCapabilities:{loadSession:mode!=='no-resume',...(mode==='moved-session'?{sessionCapabilities:{list:{}}}:{}),promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
  else if(m.method==='session/new') {emit({id:m.id,result:{sessionId:session,...(mode==='model-effort'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'big-model',name:'Big model'}]},{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'default',options:[{value:'none',name:'None'},{value:'high',name:'High'}]}]}:{}),...(mode==='model'?{configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:'default',options:[{value:'test-model',name:'Test model'}]}]}:{}),...(['effort','effort-switch','child-updates','child-permission'].includes(mode)?{configOptions:[{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'default',options:[{value:'none',name:'None'},{value:'high',name:'High'},{value:'default',name:'Default'}]}]}:{})}});if(mode==='idle-permission')setTimeout(()=>ask('late-idle'),20);}
  else if(m.method==='session/set_config_option') emit({id:m.id,result:{configOptions:mode==='model-effort'&&m.params.configId==='model'?[{id:'model',name:'Model',category:'model',type:'select',currentValue:m.params.value,options:[{value:'big-model',name:'Big model'}]},{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'low',options:[{value:'low',name:'Low'},{value:'max',name:'Max'}]}]:[]}});
  else if(m.method==='session/list') emit({id:m.id,result:{sessions:[{sessionId:session,cwd:moved,title:'Moved'}]}});
@@ -49,6 +49,9 @@ for await (const line of createInterface({input:process.stdin})) {
   promptId=m.id;promptIds.push(m.id);
   if(mode==='exit') { process.exit(2); }
   else if(mode==='oversize') process.stdout.write('x'.repeat(2100000));
+  else if(mode==='deny-twice'&&promptIds.length===1) {ask('p1');ask('p2');}
+  else if(mode==='deny-continue'&&promptIds.length===1) ask('c1');
+  else if((mode==='deny-reason'||mode==='deny-twice')&&promptIds.length>1) {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'FOLLOW-UP '+m.params.prompt[0].text}});emit({id:m.id,result:{stopReason:'end_turn'}});}
   else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold'||mode==='steer-extension'||mode==='steer-decline'||mode==='steer-legacy') {}
   else if(mode==='client-fs'||mode==='client-terminal') {emit({id:'client-access',method:mode==='client-fs'?'fs/write_text_file':'terminal/create',params:mode==='client-fs'?{sessionId:session,path:process.cwd()+'/forbidden.txt',content:'must not write'}:{sessionId:session,command:'node',args:['-e',"require('fs').writeFileSync('forbidden.txt','must not run')"],env:[]}});}
   else if(mode==='result-exit') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'last frame'}});emit({id:promptId,result:{stopReason:'end_turn'}});process.exit(0);}
@@ -95,6 +98,9 @@ for await (const line of createInterface({input:process.stdin})) {
    emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',...(mode==='speak'?{title:'orc_speak'}:mode==='speak-named'?{name:'orc_speak',title:'Talk to the user'}:mode==='speak-spoofed'?{name:'bash',title:'orc_speak'}:{title:'Read file'}),kind:'read'},options:mode==='session-grant'?[{optionId:'native-once',name:'Yes',kind:'allow_once'},{optionId:'native-always',name:'Always allow',kind:'allow_always'},{optionId:'native-deny',name:'No',kind:'reject_once'}]:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
   }
  } else if(m.id==='child-permission') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'CHILD DONE'}});emit({id:promptId,result:{stopReason:'end_turn'}});
+ } else if(m.id==='p1'||m.id==='p2') {if(++answered===2)emit({id:promptId,result:{stopReason:'end_turn'}});
+ } else if(m.id==='c1') {update(session,{sessionUpdate:'tool_call_update',toolCallId:'late',status:'failed'});update(session,{sessionUpdate:'tool_call',toolCallId:'next-1',title:'Next step',kind:'read',status:'pending'});
+ } else if(mode==='deny-continue'&&m.method==='_session/steering') {emit({id:m.id,result:{outcome:'injected'}});update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'STEERED '+m.params.prompt[0].text}});emit({id:promptId,result:{stopReason:'end_turn'}});
  } else if(m.id==='permission') {
   update(session,{sessionUpdate:'tool_call_update',toolCallId:'read-1',status:'completed',rawOutput:'file contents'});
   update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(m.result)}});
@@ -285,6 +291,91 @@ test("ACP steers through _session/steering when advertised and keeps a single pr
     prompt: [{ type: "text", text: "steer" }],
     _meta: { steering: { idleBehavior: "promptRequired" } },
   });
+});
+
+test("ACP rejects an approval and sends the reason as the next prompt of the same turn", async () => {
+  const { session, cwd } = fixture({}, "deny-reason");
+  await session.initialize();
+  await session.send("Inspect a file");
+  const events: AgentEvent[] = [];
+  for await (const event of session.events()) {
+    events.push(event);
+    if (event.type === "permission_request")
+      session.respondPermission(event.data.requestId, "denied", " use bun, not npm ");
+  }
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.find((m) => m.id === "permission").result).toEqual({
+    outcome: { outcome: "selected", optionId: "native-deny" },
+  });
+  expect(wire.filter((m) => m.method === "session/prompt")[1].params.prompt).toEqual([
+    { type: "text", text: "use bun, not npm" },
+  ]);
+  expect(events.filter((e) => e.type === "result")).toHaveLength(1);
+  expect(events.some((e) => e.type === "text" && e.data === "FOLLOW-UP use bun, not npm")).toBe(
+    true,
+  );
+});
+
+test("ACP joins every denial reason into one follow-up prompt", async () => {
+  const { session, cwd } = fixture({}, "deny-twice");
+  await session.initialize();
+  await session.send("Two actions");
+  const events: AgentEvent[] = [];
+  let index = 0;
+  for await (const event of session.events()) {
+    events.push(event);
+    if (event.type === "permission_request")
+      session.respondPermission(event.data.requestId, "denied", `reason ${++index}`);
+  }
+  const prompts = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((m) => m.method === "session/prompt");
+  expect(prompts).toHaveLength(2);
+  expect(prompts[1].params.prompt).toEqual([{ type: "text", text: "reason 1\n\nreason 2" }]);
+  expect(events.filter((e) => e.type === "result")).toHaveLength(1);
+});
+
+test("ACP steers the reason instead of a follow-up when the agent keeps working after a denial", async () => {
+  const { session, cwd } = fixture({}, "deny-continue", OPENCODE_CAPABILITIES);
+  await session.initialize();
+  await session.send("Keep going");
+  const events: AgentEvent[] = [];
+  for await (const event of session.events()) {
+    events.push(event);
+    if (event.type === "permission_request")
+      session.respondPermission(event.data.requestId, "denied", "use bun");
+  }
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.filter((m) => m.method === "session/prompt")).toHaveLength(1);
+  expect(wire.find((m) => m.method === "_session/steering").params.prompt).toEqual([
+    { type: "text", text: "use bun" },
+  ]);
+  expect(events.some((e) => e.type === "text" && e.data === "STEERED use bun")).toBe(true);
+});
+
+test("ACP offers a session grant only with allow_always and keys it on the tool input", async () => {
+  for (const [mode, allowSession] of [
+    ["session-grant", true],
+    ["normal", false],
+  ] as const) {
+    const { session } = fixture({}, mode);
+    await session.initialize();
+    await session.send("Read");
+    const events = await run(session, "approved");
+    const request = events.find((e) => e.type === "permission_request");
+    expect(request?.type === "permission_request" && request.data).toMatchObject({
+      allowSession,
+      grant: JSON.stringify("Read file"),
+    });
+  }
 });
 
 test("ACP surfaces a promptRequired steer decline as not consumed and keeps the capability", async () => {

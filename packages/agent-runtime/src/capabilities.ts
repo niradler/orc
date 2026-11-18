@@ -38,13 +38,15 @@ export const CLAUDE_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapabil
   // Both the Claude SDK (forkSession) and the CLI (--fork-session) fork natively.
   fork: true,
   subagents: true,
+  approvalFeedback: true,
 });
 export const CODEX_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapabilities>({
   ...CLAUDE_CAPABILITIES,
-  permissionModes: ["default", "plan", "acceptEdits", "bypassPermissions"],
+  permissionModes: ["default", "plan", "acceptEdits", "auto", "bypassPermissions"],
   permissionLabels: {
     default: { label: "Read only", description: "Asks before edits and commands" },
     acceptEdits: { label: "Auto", description: "Workspace only, asks outside" },
+    auto: { label: "Auto-review", description: "Workspace only, reviewer decides" },
     bypassPermissions: { label: "Full access", description: "No sandbox, never asks" },
   },
   interrupt: true,
@@ -59,6 +61,7 @@ export const ACP_CAPABILITIES: AgentCapabilities = Object.freeze({
   toolOutput: true,
   approvals: true,
   interrupt: true,
+  approvalFeedback: true,
 });
 /** What `opencode acp` advertises; re-negotiated from the live handshake on every session. */
 export const OPENCODE_CAPABILITIES: AgentCapabilities = Object.freeze<AgentCapabilities>({

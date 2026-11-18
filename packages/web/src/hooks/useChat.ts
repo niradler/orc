@@ -91,6 +91,8 @@ interface PendingPermission {
   requestId: string;
   tool: string;
   command: string;
+  input?: Record<string, unknown>;
+  allowSession?: boolean;
 }
 
 /** One open conversation. Each tab streams on its own, so turns keep running in the background. */
@@ -1398,14 +1400,14 @@ function useChatController() {
   }, [find, queueFor, responding, steerInput, update]);
 
   const respondPermission = useCallback(
-    async (decision: "approved" | "denied") => {
+    async (decision: "approved" | "session" | "denied", feedback?: string) => {
       const key = activeRef.current;
       const current = find(key);
       const pending = current?.permissions[0];
       if (!current || !pending || responding) return;
       setResponding(true);
       try {
-        await api.chat.permission(current.runId, pending.requestId, decision);
+        await api.chat.permission(current.runId, pending.requestId, decision, feedback);
         update(key, (tab) => ({
           permissions: tab.permissions.filter((request) => request.requestId !== pending.requestId),
         }));

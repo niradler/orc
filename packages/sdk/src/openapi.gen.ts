@@ -530,6 +530,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                approvalFeedback?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 permissionLabels?: {
                                     default?: {
@@ -724,6 +725,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                approvalFeedback?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 permissionLabels?: {
                                     default?: {
@@ -1116,6 +1118,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                approvalFeedback?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 permissionLabels?: {
                                     default?: {
@@ -1446,6 +1449,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                approvalFeedback?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 permissionLabels?: {
                                     default?: {
@@ -1779,6 +1783,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                approvalFeedback?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 permissionLabels?: {
                                     default?: {
@@ -2313,6 +2318,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                approvalFeedback?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 permissionLabels?: {
                                     default?: {
@@ -2712,6 +2718,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                approvalFeedback?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 permissionLabels?: {
                                     default?: {
@@ -3192,6 +3199,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                approvalFeedback?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 permissionLabels?: {
                                     default?: {
@@ -3403,7 +3411,8 @@ export interface paths {
                     "application/json": {
                         requestId: string;
                         /** @enum {string} */
-                        decision: "approved" | "denied";
+                        decision: "approved" | "session" | "denied";
+                        feedback?: string;
                     };
                 };
             };
@@ -3579,6 +3588,7 @@ export interface paths {
                                 fork: boolean;
                                 rollback: boolean;
                                 subagents?: boolean;
+                                approvalFeedback?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                                 permissionLabels?: {
                                     default?: {
@@ -23335,6 +23345,7 @@ export interface components {
                 fork: boolean;
                 rollback: boolean;
                 subagents?: boolean;
+                approvalFeedback?: boolean;
                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
                 permissionLabels?: {
                     default?: {

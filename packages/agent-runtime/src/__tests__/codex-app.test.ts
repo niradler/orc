@@ -141,6 +141,61 @@ for await (const line of createInterface({input:process.stdin})) {
   }
 });
 
+test("declines a command and steers the running turn with the user's reason", async () => {
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-deny-reason-"));
+  const script = join(cwd, "native.ts");
+  writeFileSync(
+    script,
+    `
+import { createInterface } from 'node:readline';
+const emit = value => console.log(JSON.stringify(value));
+let decision;
+for await (const line of createInterface({input:process.stdin})) {
+ const m=JSON.parse(line);
+ if(m.method==='initialize') emit({id:m.id,result:{}});
+ else if(m.method==='thread/start') emit({id:m.id,result:{thread:{id:'deny'}}});
+ else if(m.method==='turn/start') {
+  emit({id:m.id,result:{turn:{id:'t1'}}});
+  emit({method:'turn/started',params:{threadId:'deny',turn:{id:'t1'}}});
+  emit({id:'cmd',method:'item/commandExecution/requestApproval',params:{threadId:'deny',turnId:'t1',command:'npm test',kind:'network',networkApprovalContext:{host:'registry.npmjs.org',protocol:'https'}}});
+ } else if(m.id==='cmd') decision=m.result;
+ else if(m.method==='turn/steer') {
+  emit({id:m.id,result:{}});
+  emit({method:'item/agentMessage/delta',params:{threadId:'deny',turnId:'t1',delta:JSON.stringify({decision,steer:m.params.input})}});
+  emit({method:'turn/completed',params:{threadId:'deny',turn:{id:'t1',status:'completed'}}});
+ }
+}`,
+  );
+  const session = new CodexAppSession({ cwd, orcMcp: false }, { kind: "local" }, async () => [
+    process.execPath,
+    script,
+  ]);
+  try {
+    await session.send("Run the tests");
+    let text = "";
+    let grant: string | undefined;
+    for await (const event of session.events()) {
+      if (event.type === "permission_request") {
+        grant = event.data.grant;
+        session.respondPermission(event.data.requestId, "denied", "use bun test");
+      }
+      if (event.type === "text") text += event.data;
+    }
+    expect(JSON.parse(grant ?? "")).toEqual([
+      "network",
+      "npm test",
+      "",
+      { host: "registry.npmjs.org", protocol: "https" },
+    ]);
+    expect(JSON.parse(text)).toEqual({
+      decision: { decision: "decline" },
+      steer: [{ type: "text", text: "use bun test" }],
+    });
+  } finally {
+    await session.close();
+  }
+});
+
 // Shape captured from codex-cli 0.160: tool approval arrives as an empty MCP form.
 function mcpApprovalFixture(
   permissionMode: SessionOpts["permissionMode"],
@@ -277,10 +332,11 @@ test("should approve MCP tool calls without asking when permissions are bypassed
   ]);
 });
 
-for (const [mode, sandbox, approval] of [
-  ["default", "read-only", "on-request"],
-  ["acceptEdits", "workspace-write", "on-request"],
-  ["bypassPermissions", "danger-full-access", "never"],
+for (const [mode, sandbox, approval, reviewer] of [
+  ["default", "read-only", "on-request", "user"],
+  ["acceptEdits", "workspace-write", "on-request", "user"],
+  ["auto", "workspace-write", "on-request", "auto_review"],
+  ["bypassPermissions", "danger-full-access", "never", "user"],
 ] as const) {
   test(`should round-trip approvals and questions with ${mode} and resume the same conversation`, async () => {
     const session = fixture({
@@ -320,7 +376,7 @@ for (const [mode, sandbox, approval] of [
         expect(result.args.slice(0, 3)).toEqual(["app-server", "--listen", "stdio://"]);
         expect(result.args).toContain('approvals_reviewer="user"');
         expect(result.args).toContain("features.default_mode_request_user_input=true");
-        expect(result.thread.approvalsReviewer).toBe("user");
+        expect(result.thread.approvalsReviewer).toBe(reviewer);
         expect(result.args).toContain('model_reasoning_effort="low"');
         expect(events.filter((event) => event.type === "request_resolved")).toHaveLength(2);
         expect(session.getRuntimeSessionId()).toBe("native-fixture");
@@ -625,7 +681,7 @@ for await (const line of createInterface({input:process.stdin})) {
  else if(m.method==='thread/start') emit({id:m.id,result:{thread:{id:'plan'},model:'gpt-fixture'}});
  else if(m.method==='turn/start') {
   emit({id:m.id,result:{}});
-  emit({method:'item/completed',params:{threadId:'plan',item:{type:'plan',id:'p',text:JSON.stringify([m.params.collaborationMode ?? null, m.params.approvalPolicy ?? null, m.params.sandboxPolicy?.type ?? null])}}});
+  emit({method:'item/completed',params:{threadId:'plan',item:{type:'plan',id:'p',text:JSON.stringify([m.params.collaborationMode ?? null, m.params.approvalPolicy ?? null, m.params.sandboxPolicy?.type ?? null, m.params.approvalsReviewer ?? null])}}});
   emit({method:'turn/completed',params:{threadId:'plan',turn:{status:'completed'}}});
  }
 }`,
@@ -638,17 +694,19 @@ for await (const line of createInterface({input:process.stdin})) {
   const settings = { model: "gpt-fixture", reasoning_effort: null, developer_instructions: null };
   try {
     const sent: unknown[] = [];
-    for (const prompt of ["Plan", "Again", "Build"]) {
+    for (const prompt of ["Plan", "Again", "Build", "Review"]) {
       if (prompt === "Build") session.setPermissionMode("acceptEdits");
+      if (prompt === "Review") session.setPermissionMode("auto");
       let text = "";
       await session.send(prompt);
       for await (const event of session.events()) if (event.type === "text") text += event.data;
       sent.push(JSON.parse(text));
     }
     expect(sent).toEqual([
-      [{ mode: "plan", settings }, null, null],
-      [null, null, null],
-      [{ mode: "default", settings }, "on-request", "workspaceWrite"],
+      [{ mode: "plan", settings }, null, null, null],
+      [null, null, null, null],
+      [{ mode: "default", settings }, "on-request", "workspaceWrite", "user"],
+      [null, "on-request", "workspaceWrite", "auto_review"],
     ]);
   } finally {
     await session.close();

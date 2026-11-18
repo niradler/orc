@@ -51,13 +51,13 @@ function configure(speechEnabled = true) {
     JSON.stringify({
       speech: {
         enabled: speechEnabled,
-        provider: "vocal",
-        vocal: { base_url: `http://127.0.0.1:${provider.port}/v1` },
+        provider: "openai",
+        openai: { base_url: `http://127.0.0.1:${provider.port}/v1` },
       },
       tts: {
         enabled: true,
-        provider: "vocal",
-        vocal: { base_url: `http://127.0.0.1:${provider.port}/v1` },
+        provider: "openai",
+        openai: { base_url: `http://127.0.0.1:${provider.port}/v1` },
       },
     }),
   );
@@ -270,8 +270,8 @@ test("speak streams one audio clip per sentence to the open voice socket", async
   expect(await res.json()).toEqual({ posted: false, spoken: true });
   await until(async () => voice.audio.length === 2);
   expect(voice.messages.filter((m) => m.type === "speak")).toEqual([
-    { type: "speak", text: "Running the tests now.", format: "wav" },
-    { type: "speak", text: "Back soon!", format: "wav" },
+    { type: "speak", text: "Running the tests now.", format: "ogg" },
+    { type: "speak", text: "Back soon!", format: "ogg" },
   ]);
   expect(voice.audio).toEqual(["audio:Running the tests now.", "audio:Back soon!"]);
   voice.ws.close();
@@ -390,7 +390,7 @@ for (const kind of ["approval", "question"] as const)
       await voice.next("transcript");
       await until(async () => voice.messages.some((m) => m.type === "speak"));
       expect(voice.messages.filter((m) => m.type === "speak")).toEqual([
-        { type: "speak", text: "It needs you on screen.", format: "wav" },
+        { type: "speak", text: "It needs you on screen.", format: "ogg" },
       ]);
       const still = (await (await app.request("/api/chat/waiting", { headers: AUTH })).json()) as {
         waiting: { kind: string }[];

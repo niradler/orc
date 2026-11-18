@@ -636,7 +636,8 @@ saved in workspace preferences (`favorite_models`).
 **Profiles** at the bottom of the picker save the current agent, provider, model,
 effort and permission mode under a name (**Save current**). Clicking a profile
 restores all of them; in a started chat, a profile for another agent or provider
-opens a new chat. Profiles are saved in workspace preferences
+opens a new chat. The pencil beside a profile renames it in place; tick **Use current**
+to also replace its agent, provider, model, effort and mode with the composer's current ones. Profiles are saved in workspace preferences
 (`composer_profiles`) and also appear in the **New terminal** launcher.
 
 ## Chat turn progress
@@ -740,11 +741,36 @@ Claude also offers **Auto** (Claude's classifier approves safe actions). Codex
 offers its own approval presets, named by `permissionLabels` in the capabilities:
 **Read only** (`on-request` approvals, `read-only` sandbox), **Auto**
 (`on-request`, `workspace-write`: works in the workspace and asks before going
-outside it) and **Full access** (`never`, `danger-full-access`). Pi offers Ask in
+outside it), **Auto-review** (`on-request`, `workspace-write`, approvals reviewer
+`auto_review`: Codex's reviewer agent approves or denies each request to leave the
+workspace instead of asking you) and **Full access** (`never`, `danger-full-access`). Pi offers Ask in
 chat, Allow edits and Full access; OpenCode offers Ask in chat and Plan, applied
 from the next message. Pi and ACPX agents show that Plan
 isn't available. Leaving Plan during a Claude response applies to the running
 turn.
+
+An approval prompt offers **Allow once**, **Allow for session**, **Deny** and
+**Deny with reason**. **Allow for session** answers the same request again
+without asking for the rest of the conversation: Claude receives its own
+suggested rules for the session (so `Bash(npm test:*)` covers later variants),
+Codex receives `acceptForSession`, OpenCode its `allow_always` option and Pi
+remembers that tool with that exact input; ORC also remembers the exact request so
+later messages in the conversation do not ask again. The action is hidden when
+Claude marks a request as unsafe to remember, when an ACP agent offers no
+`allow_always`, and when an ORC rule requires a human answer. **Deny with reason**
+sends your text to the agent: Claude receives it as the denial message, Codex as a
+steer on the running turn, and OpenCode as the next prompt once the denied turn
+ends, or as a steer when it keeps working; several denials send every reason. Agents without
+`approvalFeedback` in their capabilities offer plain **Deny** only.
+
+When a Claude plan is ready, its `ExitPlanMode` request opens a plan card with
+the plan rendered as Markdown. **Approve, accept edits** switches the
+conversation to Allow edits and lets Claude start, **Approve** switches to Ask in
+chat, and **Keep planning** sends your feedback so Claude reworks the plan. After a
+Codex or OpenCode plan-mode turn, the same card appears above the composer:
+approving switches the mode (Codex Auto or Read only, OpenCode's build agent)
+and sends "Implement the plan."; **Keep planning** sends your feedback while staying in
+Plan.
 
 **Session settings** in the chat header organizes the conversation into tabs.
 **Overview** shows the agent, model, execution host and folder, backend, last

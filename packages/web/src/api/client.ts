@@ -904,10 +904,16 @@ export const api = {
     resume: (sourceSessionId: string) =>
       req<ChatThread>("POST", "/chat/threads", { sourceSessionId }),
     fromSetup: (setup: AgentSetup) => req<ChatThread>("POST", "/chat/threads", { setup }),
-    permission: (runId: string, requestId: string, decision: "approved" | "denied") =>
+    permission: (
+      runId: string,
+      requestId: string,
+      decision: "approved" | "session" | "denied",
+      feedback?: string,
+    ) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/permission`, {
         requestId,
         decision,
+        ...(feedback ? { feedback } : {}),
       }),
     answer: (runId: string, requestId: string, answers: Record<string, string[]>) =>
       req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/answer`, {

@@ -6,25 +6,18 @@ import type {
   TextToSpeechFactory,
 } from "./speech/audio.js";
 import { groqSpeechToText } from "./speech/groq.js";
-import {
-  openaiSpeechToText,
-  openaiTextToSpeech,
-  vocalSpeechToText,
-  vocalTextToSpeech,
-} from "./speech/openai.js";
+import { openaiSpeechToText, openaiTextToSpeech } from "./speech/openai.js";
 import { qwenSpeechToText, qwenTextToSpeech } from "./speech/qwen.js";
 
 const speechToTextProviders: Record<OrcConfig["speech"]["provider"], SpeechToTextFactory> = {
   openai: openaiSpeechToText,
   groq: groqSpeechToText,
   qwen: qwenSpeechToText,
-  vocal: vocalSpeechToText,
 };
 
 const textToSpeechProviders: Record<OrcConfig["tts"]["provider"], TextToSpeechFactory> = {
   openai: openaiTextToSpeech,
   qwen: qwenTextToSpeech,
-  vocal: vocalTextToSpeech,
 };
 
 export type SpeechSite = "dictation" | "voice_mode";

@@ -69,8 +69,8 @@ export const SpeechProviderConfigSchema = z.object({
   model: z.string().optional(),
 });
 
-const SpeechProviderSchema = z.enum(["openai", "groq", "qwen", "vocal"]);
-const TtsProviderSchema = z.enum(["openai", "qwen", "vocal"]);
+const SpeechProviderSchema = z.enum(["openai", "groq", "qwen"]);
+const TtsProviderSchema = z.enum(["openai", "qwen"]);
 const SpeechSiteSchema = z.object({
   provider: SpeechProviderSchema.optional(),
   model: z.string().optional(),
@@ -83,7 +83,6 @@ export const SpeechConfigSchema = z.object({
   openai: SpeechProviderConfigSchema.default({}),
   groq: SpeechProviderConfigSchema.default({}),
   qwen: SpeechProviderConfigSchema.default({}),
-  vocal: SpeechProviderConfigSchema.default({}),
   dictation: SpeechSiteSchema.default({}),
   voice_mode: SpeechSiteSchema.extend({
     silence_ms: z.number().int().min(200).max(5000).default(800),
@@ -99,7 +98,6 @@ export const TtsConfigSchema = z.object({
   max_text_len: z.number().int().min(0).default(0),
   openai: SpeechProviderConfigSchema.default({}),
   qwen: SpeechProviderConfigSchema.default({}),
-  vocal: SpeechProviderConfigSchema.default({}),
   voice_mode: z
     .object({
       provider: TtsProviderSchema.optional(),
@@ -370,7 +368,6 @@ export const OrcConfigSchema = z.object({
     openai: {},
     groq: {},
     qwen: {},
-    vocal: {},
     dictation: {},
     voice_mode: { silence_ms: 800, threshold_db: -45 },
   }),
@@ -382,7 +379,6 @@ export const OrcConfigSchema = z.object({
     max_text_len: 0,
     openai: {},
     qwen: {},
-    vocal: {},
     voice_mode: {},
   }),
 
