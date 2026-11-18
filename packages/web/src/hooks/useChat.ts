@@ -753,7 +753,9 @@ function useChatController() {
           config: fresh.config,
           messages: fresh.messages,
           historyBefore: fresh.historyBefore ?? null,
-          streaming: true,
+          // A rebuild is not a turn: don't claim "working" until attach opens a
+          // live stream. Re-importing an idle session must not pop the panel.
+          streaming: false,
           streamText: "",
           activity: [],
           permissions: [],

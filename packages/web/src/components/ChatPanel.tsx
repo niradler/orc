@@ -99,7 +99,12 @@ import {
   useSessionSubagents,
 } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
-import { type AgentState, liveSessionState, pendingLabel } from "@/lib/agent-state";
+import {
+  type AgentState,
+  chatSessionState,
+  liveSessionState,
+  pendingLabel,
+} from "@/lib/agent-state";
 import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
@@ -336,16 +341,22 @@ export function ChatPanel({
   const turnElsewhere = runElsewhere || (agentRunning && !refreshing);
   // The usage API only knows sessions it discovered from an agent or terminal.
   const contextUsage = useChatContextUsage(thread?.sourceId, streaming);
-  const sessionState: AgentState | null =
-    permission || question
-      ? "needs-you"
-      : error
-        ? "failed"
-        : streaming || reconnecting || refreshing || turnElsewhere
-          ? "working"
-          : thread
-            ? "idle"
-            : null;
+  // A run claimed by the session endpoint, independent of the transient
+  // streaming/refreshing flags, so a rebuild keeps "working" only while a turn
+  // is actually live.
+  const runClaim =
+    !!session.data?.running ||
+    (session.data?.live?.status === "running" && session.data.live.agent !== "codex");
+  const sessionState: AgentState | null = chatSessionState({
+    needsYou: !!permission || !!question,
+    failed: !!error,
+    streaming,
+    reconnecting,
+    refreshing,
+    turnElsewhere,
+    runClaim,
+    hasThread: !!thread,
+  });
   const forkDisabledReason =
     streaming || refreshing || reconnecting || turnElsewhere
       ? "Wait for the current response to finish before forking."

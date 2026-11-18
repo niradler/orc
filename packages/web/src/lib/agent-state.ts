@@ -91,6 +91,34 @@ export function liveSessionState(
   return session.waiting_for_human ? "needs-you" : (LIVE_STATES[session.status] ?? "unknown");
 }
 
+/**
+ * The chat header's state. A transcript rebuild (`refreshing`) is maintenance,
+ * not a turn: it only reads as "working" while a run is actually claimed
+ * (`runClaim`). Re-importing an idle session — for example when a stale
+ * transcript mark reports `changed` — must not pop the working panel.
+ */
+export function chatSessionState(input: {
+  needsYou: boolean;
+  failed: boolean;
+  streaming: boolean;
+  reconnecting: boolean;
+  refreshing: boolean;
+  turnElsewhere: boolean;
+  runClaim: boolean;
+  hasThread: boolean;
+}): AgentState | null {
+  if (input.needsYou) return "needs-you";
+  if (input.failed) return "failed";
+  if (
+    input.streaming ||
+    input.reconnecting ||
+    input.turnElsewhere ||
+    (input.refreshing && input.runClaim)
+  )
+    return "working";
+  return input.hasThread ? "idle" : null;
+}
+
 type Waiting = NonNullable<LiveSession["waiting_for"]>;
 
 const shortTool = (tool: string) => tool.split("__").pop() || tool;
