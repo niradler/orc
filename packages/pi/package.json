@@ -67,6 +67,7 @@
     "@earendil-works/pi-ai": "1.5.2",
     "@earendil-works/pi-coding-agent": "1.5.2",
     "@earendil-works/pi-tui": "1.5.2",
+    "@orc/core": "workspace:*",
     "bun-types": "^1.4.4",
     "typebox": "^1.4.6",
     "typescript": "^7.0.2"
