@@ -180,7 +180,7 @@ describe("resource events", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
     });
-    const reads = { list: 0, viewed: 0, thread: 0, other: 0, tasks: 0 };
+    const reads = { list: 0, active: 0, viewed: 0, thread: 0, other: 0, tasks: 0 };
     const query = (key: unknown[], hit: keyof typeof reads) =>
       new QueryObserver(client, {
         queryKey: key,
@@ -190,7 +190,8 @@ describe("resource events", () => {
         },
       });
     const observers = [
-      query(["sessions", "live", true], "list"),
+      query(["sessions", "live", false, undefined, false], "list"),
+      query(["sessions", "live", true], "active"),
       query(["sessions", "lineage", "viewed"], "viewed"),
       query(["chat-threads", "session", "viewed-chat"], "thread"),
       query(["sessions", "children", "other"], "other"),
@@ -200,15 +201,15 @@ describe("resource events", () => {
     try {
       await Promise.all(observers.map((observer) => observer.refetch()));
       await invalidateResources(client, ["session-activity"], ["busy", "busy-native"]);
-      expect(reads).toEqual({ list: 1, viewed: 1, thread: 1, other: 1, tasks: 1 });
+      expect(reads).toEqual({ list: 1, active: 1, viewed: 1, thread: 1, other: 1, tasks: 1 });
       await invalidateResources(client, ["session-activity"], ["viewed", "viewed-chat"]);
-      expect(reads).toEqual({ list: 1, viewed: 2, thread: 2, other: 1, tasks: 1 });
+      expect(reads).toEqual({ list: 1, active: 1, viewed: 2, thread: 2, other: 1, tasks: 1 });
       await invalidateResources(client, ["session-activity"]);
-      expect(reads).toEqual({ list: 2, viewed: 2, thread: 2, other: 1, tasks: 1 });
+      expect(reads).toEqual({ list: 2, active: 1, viewed: 2, thread: 2, other: 1, tasks: 1 });
       await invalidateResources(client, ["sessions"]);
-      expect(reads).toEqual({ list: 3, viewed: 2, thread: 3, other: 2, tasks: 1 });
+      expect(reads).toEqual({ list: 3, active: 2, viewed: 2, thread: 3, other: 2, tasks: 1 });
       await invalidateResources(client, ["session-messages"]);
-      expect(reads).toEqual({ list: 3, viewed: 2, thread: 3, other: 2, tasks: 1 });
+      expect(reads).toEqual({ list: 3, active: 2, viewed: 2, thread: 3, other: 2, tasks: 1 });
     } finally {
       for (const stop of unsubscribe) stop();
       client.clear();

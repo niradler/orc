@@ -146,7 +146,13 @@ function matches(resource: ChangeResource, sessions: string[] | undefined, key: 
     (root === "sessions" && SESSION_DETAILS.has(String(key[1])));
   if (sessions && own)
     return key.some((part) => typeof part === "string" && sessions.includes(part));
-  if (resource === "session-activity") return !own && !sessions;
+  if (resource === "session-activity")
+    return (
+      !own &&
+      !sessions &&
+      root !== "chat-threads" &&
+      !(root === "sessions" && key[1] === "live" && (key[2] === true || key[2] === "summary"))
+    );
   if (resource === "session-messages") return key[1] === "messages";
   return !(root === "sessions" && QUIET_DETAILS.has(String(key[1])));
 }
