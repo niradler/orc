@@ -5,7 +5,14 @@ import { pathLabel } from "@orc/core/display-path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { CLAUDE_TOKENS_VERSION, USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
-import { activityAdvanced, isAlive, oneLine, statusFromMtime } from "./common.js";
+import {
+  activityAdvanced,
+  droppedTranscripts,
+  isAlive,
+  oneLine,
+  promptText,
+  statusFromMtime,
+} from "./common.js";
 import type { SessionAdapter, SessionRecord, SessionWaiting } from "./types.js";
 import { lifetimeUsage, type ParsedUsage, parseClaudeUsage } from "./usage-parsers.js";
 
@@ -115,14 +122,17 @@ function firstPromptFromText(content: string): string | null {
   for (const line of content.slice(0, 200_000).split("\n")) {
     if (!line.includes('"type":"user"')) continue;
     try {
-      const body = JSON.parse(line)?.message?.content;
+      const entry = JSON.parse(line);
+      if (entry?.isMeta) continue;
+      const body = entry?.message?.content;
       const text =
         typeof body === "string"
           ? body
           : Array.isArray(body)
             ? body.find((block: { type?: string }) => block.type === "text")?.text
             : null;
-      if (text && !text.trimStart().startsWith("<")) return oneLine(text, 400);
+      const prompt = promptText(text);
+      if (prompt) return oneLine(prompt, 400);
     } catch {}
   }
   return null;
@@ -210,7 +220,7 @@ export function isClaudeProcessName(title: string, cwd: string | null | undefine
 }
 
 function storedTitle(title: string | undefined, cwd: string | null | undefined): string | null {
-  return title && !isClaudeProcessName(title, cwd) ? title : null;
+  return title && title !== "New session" && !isClaudeProcessName(title, cwd) ? title : null;
 }
 
 const SubagentMeta = z.object({
@@ -383,7 +393,9 @@ export function claudeAdapter(
         if (
           !records.has(id) &&
           before.session &&
-          (before.tokensVersion !== CLAUDE_TOKENS_VERSION ||
+          (!before.session.transcriptPath ||
+            before.session.title === "New session" ||
+            before.tokensVersion !== CLAUDE_TOKENS_VERSION ||
             before.usageVersion !== USAGE_EVENT_VERSION) &&
           transcripts.has(id)
         ) {
@@ -412,6 +424,15 @@ export function claudeAdapter(
           records.set(id, { ...before.session, title: "New session" });
         }
       }
+      const present = new Set([
+        ...[...transcripts.values()].map((transcript) => transcript.path),
+        ...subagents.map((subagent) => subagent.path),
+      ]);
+      for (const record of await droppedTranscripts(known, present, runtime))
+        records.set(record.externalId, {
+          ...(records.get(record.externalId) ?? record),
+          transcriptPath: null,
+        });
       for (const record of records.values()) {
         const transcript = transcripts.get(record.externalId);
         if (!transcript) continue;
@@ -424,7 +445,8 @@ export function claudeAdapter(
         let parsed: ParsedUsage | null = null;
         if (
           changed ||
-          (record.waitingFor && cached?.mtime !== mtime) ||
+          ((record.waitingFor || before?.session?.title === "New session") &&
+            cached?.mtime !== mtime) ||
           before?.tokensUsed == null ||
           before?.tokensVersion !== CLAUDE_TOKENS_VERSION
         ) {

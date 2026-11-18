@@ -3,7 +3,7 @@ import { loadConfig } from "@orc/core/config";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
-import { activityAdvanced, oneLine } from "./common.js";
+import { activityAdvanced, droppedTranscripts, oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { parsePiUsage } from "./usage-parsers.js";
 
@@ -161,6 +161,9 @@ export function piAdapter(
         }
         records.push(record);
       }
+      const listed = new Set(records.map((record) => record.externalId));
+      for (const record of await droppedTranscripts(known, seen, runtime))
+        if (!listed.has(record.externalId)) records.push(record);
       return records;
     },
   };

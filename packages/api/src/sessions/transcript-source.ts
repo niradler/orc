@@ -1,3 +1,4 @@
+import { zstdDecompressSync } from "node:zlib";
 import type { HostRuntime } from "@orc/core/exec-host";
 import { opencodeTranscriptBytes } from "./opencode.js";
 import { MAX_TRANSCRIPT_BYTES } from "./transcript.js";
@@ -15,6 +16,15 @@ const databaseSources: Record<string, TranscriptSource> = {
   },
 };
 
+export async function readTranscriptFile(
+  runtime: Pick<HostRuntime, "readFile">,
+  path: string,
+  limit = MAX_TRANSCRIPT_BYTES,
+): Promise<Uint8Array> {
+  const bytes = await runtime.readFile(path, limit);
+  return path.endsWith(".zst") ? zstdDecompressSync(bytes, { maxOutputLength: limit }) : bytes;
+}
+
 /** Reads a session transcript as bytes, querying stores that keep many sessions in one database. */
 export function loadTranscriptBytes(
   runtime: HostRuntime,
@@ -23,7 +33,7 @@ export function loadTranscriptBytes(
   externalId: string | null,
 ): Promise<Uint8Array> {
   const source = databaseSources[backend];
-  return source ? source(runtime, path, externalId) : runtime.readFile(path, MAX_TRANSCRIPT_BYTES);
+  return source ? source(runtime, path, externalId) : readTranscriptFile(runtime, path);
 }
 
 export function transcriptCacheKey(

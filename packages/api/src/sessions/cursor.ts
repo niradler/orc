@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { pathLabel } from "@orc/core/display-path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
@@ -195,7 +196,12 @@ export function cursorAdapter(
             backend: "cursor",
             externalId: row.id,
             ...(parent ? { parentId: parent } : {}),
-            title: oneLine(name, 120),
+            title: oneLine(
+              name === "Generate a name for the chat"
+                ? preview || pathLabel(folder) || "Cursor session"
+                : name,
+              120,
+            ),
             ...(folder ? { cwd: folder } : {}),
             summary: text ? oneLine(text, 400) : null,
             status: statusFromMtime(last),

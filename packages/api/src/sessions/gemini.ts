@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
-import { activityAdvanced, oneLine } from "./common.js";
+import { activityAdvanced, droppedTranscripts, oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { parseGeminiUsage } from "./usage-parsers.js";
 
@@ -54,7 +54,8 @@ export function geminiAdapter(
     async list(known) {
       const sessions = root ?? join(await runtime.home(), ".gemini", "tmp");
       const records: SessionRecord[] = [];
-      for (const file of await runtime.listFiles(sessions)) {
+      const files = await runtime.listFiles(sessions);
+      for (const file of files) {
         if (!file.path.endsWith(".json") || !file.path.split(/[\\/]/).pop()?.startsWith("session-"))
           continue;
         if (file.size > 50 * 1024 * 1024) continue;
@@ -97,6 +98,10 @@ export function geminiAdapter(
         }
         records.push(record);
       }
+      const listed = new Set(records.map((record) => record.externalId));
+      const present = new Set(files.map((file) => file.path));
+      for (const record of await droppedTranscripts(known, present, runtime))
+        if (!listed.has(record.externalId)) records.push(record);
       return records;
     },
   };

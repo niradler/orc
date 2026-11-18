@@ -1,20 +1,13 @@
 import { homedir } from "node:os";
 import { dirname, join, posix } from "node:path";
-import { stripVTControlCharacters } from "node:util";
 import { zstdDecompressSync } from "node:zlib";
 import { displayPath, pathLabel } from "@orc/core/display-path";
 import { type HostFileInfo, type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { readCodexQuestionPending } from "./codex-attention.js";
-import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
+import { activityAdvanced, oneLine, promptText, statusFromMtime } from "./common.js";
 import { hasWriter, remoteWriters } from "./ownership.js";
-
-function promptText(text: string | null | undefined): string {
-  const plain = stripVTControlCharacters(text ?? "");
-  return plain.trimStart().startsWith("<") ? "" : plain;
-}
-
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { lifetimeUsage, parseCodexUsage } from "./usage-parsers.js";
 
@@ -181,7 +174,7 @@ export function codexAdapter(
               externalId: r.id,
               ...(codexParent(r.source) ? { parentId: codexParent(r.source) } : {}),
               title: oneLine(
-                r.name ||
+                promptText(r.name) ||
                   (displayPath(r.title) !== displayPath(r.cwd) ? promptText(r.title) : "") ||
                   promptText(r.first_user_message) ||
                   pathLabel(r.cwd) ||
@@ -198,7 +191,10 @@ export function codexAdapter(
                 : {}),
               createdAt: new Date(r.created_at_ms ?? r.created_at * 1000),
               lastActivityAt,
-              transcriptPath: r.rollout_path,
+              transcriptPath:
+                r.source?.startsWith('{"subagent"') && !codexParent(r.source)
+                  ? null
+                  : (rollout?.path ?? null),
               tokensUsed: r.tokens_used > 0 ? r.tokens_used : null,
             };
             const expected = r.tokens_used > 0 ? r.tokens_used : null;
