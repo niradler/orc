@@ -7,7 +7,7 @@ import {
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
-import { CLAUDE_CAPABILITIES } from "./capabilities.js";
+import { ACPX_CAPABILITIES } from "./capabilities.js";
 import { sessionExecHost } from "./execution-host.js";
 import { endStdin, readProcessOutput, writeToStdin } from "./io.js";
 import { ORC_TOOLS_RULE, type OrcMcpConfigFile, writeOrcMcpConfigFile } from "./orc-mcp.js";
@@ -432,7 +432,7 @@ export class ClaudeSession implements AgentSession {
 function createClaudeBackend(): AgentBackend {
   return {
     name: "claude-cli",
-    capabilities: { ...CLAUDE_CAPABILITIES, subagents: false },
+    capabilities: { ...ACPX_CAPABILITIES, toolOutput: false, fork: true },
     profileCapabilities: { model: true, toolAllowlist: true },
 
     async describe(): Promise<BackendDescription> {

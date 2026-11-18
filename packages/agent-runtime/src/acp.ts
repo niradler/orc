@@ -33,17 +33,18 @@ import { createAcpxParser } from "./acpx.js";
 import { ACP_CAPABILITIES, OPENCODE_CAPABILITIES } from "./capabilities.js";
 import { acpElicitationForm } from "./elicitation.js";
 import { sessionExecHost } from "./execution-host.js";
-import { endStdin, writeToStdin } from "./io.js";
+import { endStdin, stderrTail, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
 import { planEvent, planFromToolInput } from "./plan.js";
 import { registerBackend } from "./registry.js";
-import type {
-  AgentBackend,
-  AgentEvent,
-  AgentSession,
-  ImageAttachment,
-  PermissionResult,
-  SessionOpts,
+import {
+  type AgentBackend,
+  type AgentEvent,
+  type AgentSession,
+  type ImageAttachment,
+  isSpeakTool,
+  type PermissionResult,
+  type SessionOpts,
 } from "./types.js";
 
 export type AcpEffortChoice = { value: string; label: string };
@@ -208,6 +209,7 @@ export class AcpSession implements AgentSession {
   private cancelling = false;
   private replaying = false;
   private failure: string | undefined;
+  private stderr = stderrTail(null);
   private outputBytes = 0;
   private readonly queue: AgentEvent[] = [];
   private wake: (() => void) | undefined;
@@ -254,8 +256,8 @@ export class AcpSession implements AgentSession {
 
   private fail(message: string): void {
     if (this.failure || this.closed) return;
-    this.failure = message;
-    if (!this.done) this.queue.push({ type: "error", data: message });
+    this.failure = this.stderr.append(message);
+    if (!this.done) this.queue.push({ type: "error", data: this.failure });
     this.done = true;
     this.cancelPending();
     this.wake?.();
@@ -329,7 +331,10 @@ export class AcpSession implements AgentSession {
       return Promise.resolve({ outcome: { outcome: "cancelled" } });
     // Never turn an ordinary ORC approval into the agent's persistent policy.
     const once = params.options.find((option) => option.kind === "allow_once");
-    if (this.opts.autoApprove && once)
+    if (
+      (this.opts.autoApprove || isSpeakTool(params.toolCall.name ?? params.toolCall.title ?? "")) &&
+      once
+    )
       return Promise.resolve({ outcome: { outcome: "selected", optionId: once.optionId } });
     const id = ulid();
     return new Promise<RequestPermissionResponse>((resolve) => {
@@ -523,11 +528,12 @@ export class AcpSession implements AgentSession {
         cwd: this.opts.cwd,
         stdin: "pipe",
         stdout: "pipe",
-        stderr: "ignore",
+        stderr: "pipe",
         env: { ...process.env, ...this.opts.env },
         passEnv: Object.keys(this.opts.env ?? {}),
       });
       const child = this.child;
+      this.stderr = stderrTail(child.proc.stderr);
       if (!child.proc.stdout || typeof child.proc.stdout === "number")
         throw new Error("ACP agent has no protocol output.");
       const output = new WritableStream<Uint8Array>({
@@ -590,11 +596,13 @@ export class AcpSession implements AgentSession {
             });
         })
         .connect(ndJsonStream(output, boundedOutput(child.proc.stdout)));
-      void this.connection.closed.then(() => {
+      void this.connection.closed.then(async () => {
+        await this.stderr.settled();
         if (!this.closed)
           this.fail("ACP connection closed. Resume this conversation after checking the agent.");
       });
-      void child.proc.exited.then(() => {
+      void child.proc.exited.then(async () => {
+        await this.stderr.settled();
         if (!this.closed)
           this.fail("ACP agent exited. Resume this conversation after checking the agent.");
       });
@@ -790,7 +798,8 @@ export class AcpSession implements AgentSession {
       }
     } catch (error) {
       await this.close();
-      throw error;
+      await this.stderr.settled();
+      throw error instanceof Error ? new Error(this.stderr.append(error.message)) : error;
     }
   }
 
@@ -817,8 +826,8 @@ export class AcpSession implements AgentSession {
         data: `This session moved to ${this.effectiveCwd}; continuing there.`,
       });
     }
-    const text = AGENT_COMMAND_PATTERN.test(prompt)
-      ? prompt
+    const text = AGENT_COMMAND_PATTERN.test(prompt.trim())
+      ? prompt.trim()
       : [this.opts.systemPromptAppend, prompt].filter(Boolean).join("\n\n");
     void this.connection.agent
       .request<PromptResponse, PromptRequest>("session/prompt", {

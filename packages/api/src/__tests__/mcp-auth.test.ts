@@ -143,6 +143,17 @@ describe("MCP HTTP endpoint mode", () => {
     expect(names).not.toContain("tool_search");
   });
 
+  test("a conversation-bound connection also lists speak, an unbound one never does", async () => {
+    expect(await listNames("?mode=meta&session=thread-1")).toEqual([
+      "tool_search",
+      "tool_describe",
+      "tool_invoke",
+      "speak",
+    ]);
+    expect(await listNames("?mode=full&session=thread-1")).toContain("speak");
+    expect(await listNames("?mode=full")).not.toContain("speak");
+  });
+
   test("an unknown mode is rejected with 400 naming the valid values", async () => {
     const res = await rpc("?mode=bogus", { jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(res.status).toBe(400);

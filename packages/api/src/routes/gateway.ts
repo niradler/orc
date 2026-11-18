@@ -1,4 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { loadConfig } from "@orc/core/config";
 import { OrcError, ValidationError } from "@orc/core/errors";
 import {
   getGatewayManager,
@@ -8,6 +9,7 @@ import {
 } from "@orc/gateway";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
+import { mintVoiceTicket, speak } from "../voice.js";
 
 const app = createRouter();
 
@@ -100,7 +102,7 @@ app.openapi(
     },
   }),
   (c) => {
-    const stt = speechToText();
+    const stt = speechToText(loadConfig(), "dictation");
     return c.json({ available: stt !== null, max_bytes: stt?.maxBytes ?? 0 });
   },
 );
@@ -142,7 +144,7 @@ app.openapi(
     },
   }),
   async (c) => {
-    const stt = speechToText();
+    const stt = speechToText(loadConfig(), "dictation");
     if (!stt)
       throw new OrcError("Speech is not configured on this server.", "SPEECH_UNAVAILABLE", 409);
     const { audio } = c.req.valid("form");
@@ -174,6 +176,62 @@ app.openapi(
       );
     }
   },
+);
+
+const threadParams = z.object({ id: z.string().min(1).max(200) });
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/threads/{id}/voice/ticket",
+    tags: ["Speech"],
+    summary: "Mint a single-use ticket for the conversation's voice-mode WebSocket",
+    request: { params: threadParams },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({ ticket: z.string(), expires_in: z.number() }).openapi("VoiceTicket"),
+          },
+        },
+        description: "Ticket for /api/chat/threads/{id}/voice?ticket=",
+      },
+    },
+  }),
+  (c) => {
+    if (!speechToText(loadConfig(), "voice_mode"))
+      throw new OrcError("Speech is not configured on this server.", "SPEECH_UNAVAILABLE", 409);
+    return c.json(mintVoiceTicket(c.req.valid("param").id), 200);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/chat/threads/{id}/speak",
+    tags: ["Speech"],
+    summary: "Post a spoken line to the conversation and play it in its voice mode",
+    request: {
+      params: threadParams,
+      body: {
+        required: true,
+        content: {
+          "application/json": { schema: z.object({ text: z.string().trim().min(1).max(4000) }) },
+        },
+      },
+    },
+    responses: {
+      200: {
+        content: {
+          "application/json": {
+            schema: z.object({ posted: z.boolean(), spoken: z.boolean() }).openapi("SpeakResult"),
+          },
+        },
+        description: "Whether the line reached the transcript and the voice-mode speaker",
+      },
+    },
+  }),
+  async (c) => c.json(await speak(c.req.valid("param").id, c.req.valid("json").text), 200),
 );
 
 export { app as gatewayRouter };

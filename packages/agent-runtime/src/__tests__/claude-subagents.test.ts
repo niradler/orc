@@ -134,3 +134,42 @@ test("a Claude subagent waiting on a permission prompt is marked waiting, then r
     .map((event) => event.data.status);
   expect(statuses).toEqual(["running", "waiting", "running", "completed"]);
 });
+
+test("Claude error results show the CLI's own text, a mapped terminal reason, or retry progress", () => {
+  const failed = (extra: string) =>
+    run(`
+      yield {type:"system",subtype:"api_retry",attempt:1,max_retries:10,retry_delay_ms:1500,error_status:529,error:"server_error"};
+      yield {type:"assistant",error:"model_not_found",message:{model:"<synthetic>",content:[{type:"text",text:"There's an issue with the selected model (claude-nonexistent-9)."}]}};
+      yield {type:"result",subtype:"success",session_id:"sub-fixture",is_error:true,usage:{output_tokens:0},duration_ms:1,${extra}};
+  `);
+  const errorOf = (events: ReturnType<typeof run>) =>
+    events.find((event) => event.type === "error")?.data as unknown;
+  const model = failed(
+    `result:"There's an issue with the selected model (claude-nonexistent-9).",terminal_reason:"api_error"`,
+  );
+  expect(model.map((event) => event.data as unknown)).toContain(
+    "Claude API 529 error; retrying in 2s (attempt 1 of 10).",
+  );
+  expect(errorOf(model)).toBe("There's an issue with the selected model (claude-nonexistent-9).");
+  expect(model.filter((event) => event.type === "text")).toEqual([]);
+  expect(errorOf(failed(`result:"",terminal_reason:"prompt_too_long"`))).toBe(
+    "The conversation no longer fits the context window. Run /compact or start a new chat.",
+  );
+  expect(errorOf(failed(`result:""`))).toBe("Claude stopped with an error (no details).");
+});
+
+test("Claude command output that never reached the model is shown as the reply", () => {
+  const texts = (frames: string) =>
+    run(frames)
+      .filter((event) => event.type === "text")
+      .map((event) => event.data as unknown);
+  const result = (text: string, tokens: number) =>
+    `yield {type:"result",subtype:"success",session_id:"sub-fixture",is_error:false,result:${JSON.stringify(text)},usage:{output_tokens:${tokens}},duration_ms:1};`;
+  expect(texts(result("Current session: 36% used", 0))).toEqual(["Current session: 36% used"]);
+  expect(
+    texts(
+      `yield {type:"assistant",message:{content:[{type:"text",text:"Current session: 36% used"}]}}; ${result("Current session: 36% used", 0)}`,
+    ),
+  ).toEqual(["Current session: 36% used"]);
+  expect(texts(result("model answer", 12))).toEqual([]);
+});
