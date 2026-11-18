@@ -209,28 +209,38 @@ turns and job actions that run in that project's folders.
   `.orc/worktrees`, `.claude/worktrees` or `.codex/worktrees`, before the first
   agent or terminal starts there. ORC runs it with the project's shell on the
   terminal's host, from the worktree folder. A failed or timed-out script is
-  recorded with its output and the agent still starts. The script does not rerun
-  for an existing worktree, and a project's main checkout is never prepared for
-  you. **Setup timeout** is 900 seconds by default (30–3600).
+  recorded with its output and the agent still starts. A setup cut off by an ORC
+  restart is reported as failed once its timeout has passed. The script does not
+  rerun for an existing worktree, and a project's main checkout is never prepared
+  for you. **Setup timeout** is 900 seconds by default (30–3600).
 - **Dev script** starts with **Start dev server** in the terminal launcher. It
   opens as a shell terminal in the current folder; the first printed `http(s)`
   URL becomes the workspace preview link. Loopback hosts such as `0.0.0.0` and
   `::` are shown as `localhost`, and later URLs in the same terminal are ignored.
 - **Port range** gives each workspace a stable block instead of a single port.
   The first workspace of a project starts at 3100 with 10 ports unless
-  **Port range start** or **Ports per workspace** is changed (1-100). Later workspaces
+  **Port range start** or **Ports per workspace** is changed (1-100); changing
+  either turns ports on even without scripts. Later workspaces
   take the next free block, and blocks never overlap on the same API host, even
   across projects. Ports already bound on a local host are skipped; SSH hosts
-  cannot be probed, so only ORC's own allocations are avoided there.
+  cannot be probed, so only ORC's own allocations are avoided there. A block is
+  released when ORC removes the worktree. A local block whose folder was deleted
+  while its repository is still present is reclaimed by the project's next
+  workspace, or by any project once no block is free. If no block can be found,
+  the terminal or chat still starts without ports and says why.
 - **Environment** holds extra variables for every launch in the project. Mark
   sensitive values **Secret** to encrypt them with ORC's machine key; secrets are
   write-only and read back as empty placeholders. An untouched placeholder keeps
   the saved value. `ORC_` names are reserved for ORC.
 
-Workspaces export `PORT`, `ORC_PORT`, `ORC_PORT_END`, `ORC_PORT_COUNT` and
+Once a project has a setup script, a dev script, a **Port range start** or a
+changed **Ports per workspace**, workspaces export `PORT`, `ORC_PORT`,
+`ORC_PORT_END`, `ORC_PORT_COUNT` and
 `ORC_PORT_1`…`ORC_PORT_<count>`, plus `ORC_PROJECT_ID` and `ORC_WORKSPACE`
-(`ORC_WORKTREE` only inside a managed worktree). Project environment values are
-added last.
+(`ORC_WORKTREE` only inside a managed worktree). Without any of them, only the
+project environment values are added. Any folder inside a managed worktree shares
+that worktree's ports and setup, and `ORC_WORKSPACE` is the worktree folder.
+Project environment values are added last.
 
 Setup status, ports and the preview link appear in a session's inspector and on a
 task's Git links, and are readable through `GET /api/workspaces`. The preview

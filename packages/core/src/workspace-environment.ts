@@ -1,4 +1,6 @@
+import { existsSync, statSync } from "node:fs";
 import { createServer, isIP } from "node:net";
+import { dirname } from "node:path";
 import { type ExecHost, hostExec } from "./exec-host.js";
 import { type JobOutputRedactor, resolveJobEnvironment } from "./job-environment.js";
 import { jobShellArgv } from "./job-settings.js";
@@ -11,6 +13,7 @@ import {
   type WorkspaceEnvironmentStore,
   type WorkspaceRecord,
   workspacePortEnv,
+  worktreeRoot,
 } from "./workspace-settings.js";
 
 export * from "./workspace-settings.js";
@@ -108,6 +111,25 @@ export async function ensureWorkspaceEnvironment(
 
   const base = input.workspace.port_base ?? DEFAULT_WORKSPACE_PORT_BASE;
   const count = input.workspace.port_count;
+  const reclaim = (everyProject: boolean) => {
+    if (input.host.kind !== "local") return;
+    for (const row of input.store.list())
+      if (
+        !row.host &&
+        (everyProject || row.project_id === input.projectId) &&
+        folderGone(row.worktree_path)
+      )
+        input.store.remove(row.worktree_path);
+  };
+  const allocate = () =>
+    findFreePortBlock({
+      start: base,
+      count,
+      used: input.store.usedPorts(),
+      ...(input.host.kind === "ssh" ? { isFree: () => true } : {}),
+      ...(input.isPortFree ? { isFree: input.isPortFree } : {}),
+    });
+  reclaim(false);
 
   let record: WorkspaceRecord | null = null;
   let portBase = base;
@@ -115,12 +137,9 @@ export async function ensureWorkspaceEnvironment(
   // A concurrent prepare can take the block between the probe and the insert, so
   // re-read the used ports and try the next block instead of failing the launch.
   for (let attempt = 0; attempt < 3 && !record; attempt++) {
-    portBase = await findFreePortBlock({
-      start: base,
-      count,
-      used: input.store.usedPorts(),
-      ...(input.host.kind === "ssh" ? { isFree: () => true } : {}),
-      ...(input.isPortFree ? { isFree: input.isPortFree } : {}),
+    portBase = await allocate().catch(() => {
+      reclaim(true);
+      return allocate();
     });
     try {
       record = input.store.create({
@@ -185,6 +204,16 @@ export async function ensureWorkspaceEnvironment(
   if (!result.ok)
     input.log?.(`Workspace setup failed in ${input.path}: ${result.output.slice(-500)}`);
   return input.store.byPath(record.worktree_path) ?? record;
+}
+
+function folderGone(path: string): boolean {
+  try {
+    return (
+      !statSync(path, { throwIfNoEntry: false }) && existsSync(worktreeRoot(path) ?? dirname(path))
+    );
+  } catch {
+    return false;
+  }
 }
 
 export async function runWorkspaceSetup(

@@ -1,5 +1,7 @@
 import { type ExecHost, hostExec } from "@orc/core/exec-host";
 import type { JobSettings } from "@orc/core/job-settings";
+import { getSqlite } from "@orc/db/client";
+import { deleteWorkspaceEnvironment } from "@orc/db/workspaces";
 
 export type JobWorkspace = {
   cwd: string;
@@ -39,6 +41,7 @@ export async function prepareJobWorkspace(
       if (dirty || commits !== "0")
         return `Worktree retained (contains files or commits absent from the base): ${cwd}`;
       await git(root, ["worktree", "remove", cwd]);
+      deleteWorkspaceEnvironment(getSqlite(), cwd);
       return `Clean worktree removed: ${cwd}`;
     },
   };
