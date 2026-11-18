@@ -1,6 +1,6 @@
 import { type ChatAgentCommand, ChatModelSchema } from "@orc/core/chat";
 import { supportsModelDiscovery } from "@orc/core/coding-agents";
-import { type ExecHost, hostBinary, hostSpawn } from "@orc/core/exec-host";
+import { type ExecHost, hostBinary, hostExec, hostSpawn } from "@orc/core/exec-host";
 import {
   providerExecutable,
   providerForAgent,
@@ -206,16 +206,79 @@ export async function discoverAgentCommands(
   cwd: string,
   providerId?: string,
 ): Promise<ChatAgentCommand[]> {
-  if (agent !== "claude" && agent !== "codex") return [];
+  if (agent !== "claude" && agent !== "codex" && agent !== "opencode") return [];
   const profile = providerForAgent(agent, providerId, true);
+  const command = await agentCommand(agent, host, profile);
+  const environment = resolveProviderEnvironment(profile).env;
+  if (agent === "opencode") return readOpenCodeCommands(host, command, cwd, environment);
   return readAgentCatalog(
     "commands",
     agent,
     host,
-    [...(await agentCommand(agent, host, profile)), ...agentProtocolArgs(agent)],
+    [...command, ...agentProtocolArgs(agent)],
     cwd,
-    resolveProviderEnvironment(profile).env,
+    environment,
   );
+}
+
+export async function readOpenCodeCommands(
+  host: ExecHost,
+  command: string[],
+  cwd: string,
+  environment: Record<string, string> = {},
+): Promise<ChatAgentCommand[]> {
+  const password = crypto.randomUUID();
+  const env = { ...environment, OPENCODE_SERVER_PASSWORD: password };
+  const child = await hostSpawn(
+    host,
+    [...command, "serve", "--port", "0", "--hostname", "127.0.0.1"],
+    {
+      cwd,
+      stdin: "ignore",
+      stderr: "ignore",
+      env: providerProcessEnvironment(env),
+      passEnv: Object.keys(env),
+    },
+  );
+  const stdout = child.proc.stdout;
+  if (!stdout || typeof stdout === "number") {
+    child.kill();
+    throw new Error("The agent commands discovery stream is unavailable.");
+  }
+  const reader = stdout.getReader();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const read = async () => {
+      const decoder = new TextDecoder();
+      let text = "";
+      while (true) {
+        const chunk = await reader.read();
+        if (chunk.done) throw new Error("The agent closed before returning its commands.");
+        text += decoder.decode(chunk.value, { stream: true });
+        if (text.length > 64 * 1024) throw new Error("The agent did not start its server.");
+        const url = /listening on (http:\/\/127\.0\.0\.1:\d+)/.exec(text)?.[1];
+        if (!url) continue;
+        const result = await hostExec(host, ["curl", "-sfS", "-K", "-"], {
+          input: `user = "opencode:${password}"\nurl = "${url}/command?directory=${encodeURIComponent(cwd)}"\n`,
+          timeoutMs: 10_000,
+          login: false,
+        });
+        if (result.code !== 0) throw new Error("The agent could not list its commands.");
+        return parseAgentCommands(JSON.parse(result.stdout), "opencode");
+      }
+    };
+    return await Promise.race([
+      read(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Agent commands discovery timed out.")), 15_000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    child.kill();
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
 }
 
 export function parseAgentCommands(value: unknown, agent: string): ChatAgentCommand[] {
@@ -229,6 +292,8 @@ export function parseAgentCommands(value: unknown, agent: string): ChatAgentComm
     let source: string;
     if (agent === "codex") {
       source = printable(row.pluginId, 120).split("@")[0] || printable(row.scope, 120) || agent;
+    } else if (agent === "opencode") {
+      source = printable(row.source, 120) || agent;
     } else {
       const plugin = name.includes(":") ? (name.split(":")[0] ?? "") : "";
       const lead = /^\(([^()]+)\) /.exec(description);
@@ -241,7 +306,9 @@ export function parseAgentCommands(value: unknown, agent: string): ChatAgentComm
       name,
       token: `${agent === "codex" ? "$" : "/"}${name}`,
       description,
-      argumentHint: printable(row.argumentHint, 500),
+      argumentHint:
+        printable(row.argumentHint, 500) ||
+        (Array.isArray(row.hints) ? printable(row.hints.join(" "), 500) : ""),
       aliases: Array.isArray(row.aliases)
         ? row.aliases
             .map((alias) => printable(alias, 200))

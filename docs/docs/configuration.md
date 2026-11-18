@@ -252,8 +252,10 @@ There is no ORC idle-compaction timer. Compaction summarizes model context and m
 use provider quota; it does not erase the displayed ORC transcript.
 
 The context meter beside **Send** shows how full the agent's context is. It shows a
-ring and a percentage when the agent reports its model's window (Codex, and Claude
-and Pi chats run through ORC), and raw tokens otherwise. From 80% it warns that the
+ring and a percentage when the agent reports its model's window (Codex, and Claude,
+Pi and OpenCode chats run through ORC), and raw tokens otherwise. OpenCode counts
+the same total its own sidebar shows: input, output, reasoning and cache tokens of
+the last request. From 80% it warns that the
 agent will soon compact or stop. Open it for exact tokens, cache reuse and the
 compaction count.
 

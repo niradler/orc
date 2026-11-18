@@ -20,6 +20,7 @@ import {
   type SetSessionConfigOptionResponse,
 } from "@agentclientprotocol/sdk";
 import {
+  AGENT_COMMAND_PATTERN,
   CHAT_SUBAGENT_MAX_ITEMS,
   type ChatSubagentActivity,
   type ChatSubagentPayload,
@@ -197,6 +198,7 @@ export class AcpSession implements AgentSession {
   /** The folder the session actually runs in; a resume can move it into a worktree. */
   private effectiveCwd: string;
   private movedFrom: string | undefined;
+  private contextWindow: number | undefined;
   private moveNoted = false;
   private sessionList = false;
   /** OpenCode 2.x steers through `_session/steering`; a second prompt is rejected. */
@@ -558,6 +560,11 @@ export class AcpSession implements AgentSession {
             this.push({ type: "capabilities", data: next });
             return;
           }
+          if (params.update.sessionUpdate === "usage_update") {
+            if (Number.isSafeInteger(params.update.size) && params.update.size > 0)
+              this.contextWindow = params.update.size;
+            return;
+          }
           const child = childSessionMeta(params.update);
           if (child) {
             this.childUpdate(child, params);
@@ -819,10 +826,9 @@ export class AcpSession implements AgentSession {
         data: `This session moved to ${this.effectiveCwd}; continuing there.`,
       });
     }
-    const text =
-      prompt.trim() === "/compact"
-        ? "/compact"
-        : [this.opts.systemPromptAppend, prompt].filter(Boolean).join("\n\n");
+    const text = AGENT_COMMAND_PATTERN.test(prompt.trim())
+      ? prompt.trim()
+      : [this.opts.systemPromptAppend, prompt].filter(Boolean).join("\n\n");
     void this.connection.agent
       .request<PromptResponse, PromptRequest>("session/prompt", {
         sessionId: this.runtimeId,
@@ -874,6 +880,7 @@ export class AcpSession implements AgentSession {
           data: {
             runtimeSessionId: this.runtimeId,
             usage: result.usage,
+            ...(this.contextWindow ? { contextWindow: this.contextWindow } : {}),
             ...(this.movedFrom ? { cwd: this.effectiveCwd } : {}),
           },
         });

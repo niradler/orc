@@ -141,6 +141,21 @@ export function opencodeAdapter(
             grew = true;
           }
       }
+      const since = Date.now() - 86_400_000;
+      const asking = new Set(
+        [
+          ...(await queryTable<{ session_id: string }>(
+            runtime,
+            path,
+            `SELECT DISTINCT session_id FROM part WHERE session_id IN (SELECT id FROM session WHERE time_updated > ${since}) AND json_extract(data, '$.type') = 'tool' AND json_extract(data, '$.tool') = 'question' AND json_extract(data, '$.state.status') IN ('pending', 'running')`,
+          )),
+          ...(await queryTable<{ session_id: string }>(
+            runtime,
+            path,
+            `SELECT DISTINCT m.session_id FROM session_message m, json_each(CASE WHEN json_valid(m.data) THEN m.data ELSE '{}' END, '$.content') c WHERE m.session_id IN (SELECT id FROM session_v2 WHERE time_updated > ${since}) AND json_extract(c.value, '$.type') = 'tool' AND coalesce(json_extract(c.value, '$.name'), json_extract(c.value, '$.tool')) = 'question' AND json_extract(c.value, '$.state.status') IN ('pending', 'running')`,
+          )),
+        ].map((row) => row.session_id),
+      );
       const seen = new Set<string>();
       const records: SessionRecord[] = [];
       for (const raw of [...current, ...legacy, ...children]) {
@@ -164,7 +179,13 @@ export function opencodeAdapter(
           // OpenCode persists the session row as the turn and its parts advance,
           // so recent writes are the only cross-version liveness signal: its
           // lifecycle columns (time_busy/time_idle) stay stale after a turn.
-          status: statusFromMtime(row.time_updated),
+          ...(asking.has(row.id)
+            ? {
+                status: "running",
+                pendingHuman: true,
+                waitingFor: { reason: "question", tool: null },
+              }
+            : { status: statusFromMtime(row.time_updated), pendingHuman: false }),
           createdAt: new Date(row.time_created),
           lastActivityAt: new Date(row.time_updated),
           transcriptPath: path,

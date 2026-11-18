@@ -329,7 +329,7 @@ test("should read OpenCode request usage from its database", async () => {
         role: "assistant",
         model: { providerID: "anthropic", modelID: "claude" },
         time: { created: 1_000 },
-        tokens: { input: 100, output: 10, reasoning: 0, cache: { read: 400, write: 50 } },
+        tokens: { input: 100, output: 10, reasoning: 4, cache: { read: 400, write: 50 } },
       }),
     },
     {
@@ -372,7 +372,8 @@ test("should read OpenCode request usage from its database", async () => {
   });
   expect(result.output_tokens).toBe(15);
   expect(result.requests).toBe(2);
-  expect(result.timeline?.map((point) => point.context_tokens)).toEqual([550, 20]);
+  expect(result.latest?.context_tokens).toBe(25);
+  expect(result.timeline?.map((point) => point.context_tokens)).toEqual([564, 25]);
   expect(result.compactions).toEqual([
     // The compaction message records no reason, so the trigger stays unknown.
     {
@@ -389,6 +390,31 @@ test("should read OpenCode request usage from its database", async () => {
       trigger: "manual",
     },
   ]);
+});
+
+test("OpenCode context tokens equal the total OpenCode itself shows for the last request", async () => {
+  const data = JSON.stringify({
+    role: "assistant",
+    agent: "plan",
+    tokens: { total: 19875, input: 19828, output: 3, reasoning: 44, cache: { write: 0, read: 0 } },
+    modelID: "big-pickle",
+    providerID: "opencode",
+    time: { created: 1794956905453, completed: 1794956909337 },
+    finish: "stop",
+  });
+  const result = await loadSessionCacheUsage(
+    {
+      isFile: async () => true,
+      readFile: async () => new Uint8Array(),
+      sqliteQuery: async <T extends object>() =>
+        [{ id: "m1", type: "assistant", time_created: 1794956905453, data }] as T[],
+    },
+    "opencode",
+    "opencode.db",
+    "ses_e143b3634ffeDJFpXTIMRVx5hl",
+  );
+  expect(result.latest?.context_tokens).toBe(19875);
+  expect(result.latest?.input_tokens).toBe(19828);
 });
 
 test("should keep private source errors out of cache endpoint failures", async () => {
