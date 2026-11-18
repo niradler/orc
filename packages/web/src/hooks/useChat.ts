@@ -120,6 +120,8 @@ export interface ChatTab {
   streaming: boolean;
   reconnecting: boolean;
   refreshing: boolean;
+  /** Bumped when a followed turn settles, so a reply loaded without streaming is still announced. */
+  settled: number;
   streamText: string;
   activity: ChatActivity[];
   turn?: ChatTurn | undefined;
@@ -164,6 +166,7 @@ function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
     streaming: false,
     reconnecting: false,
     refreshing: false,
+    settled: 0,
     streamText: "",
     activity: [],
     error: null,
@@ -475,6 +478,7 @@ function useChatController() {
             : tab.messages,
         streaming: false,
         reconnecting: false,
+        settled: tab.settled + 1,
         streamText: "",
         activity: [],
         turn: undefined,
@@ -748,17 +752,21 @@ function useChatController() {
         const previous = streams.current.get(key);
         streams.current.delete(key);
         previous?.controller.abort();
-        update(key, () => ({
+        update(key, (current) => ({
           thread: fresh,
           config: fresh.config,
           messages: fresh.messages,
           historyBefore: fresh.historyBefore ?? null,
-          streaming: false,
+          // A rebuild is not a turn: an idle session must not claim "working".
+          // Preserve a stream/reconnect that was already live so a mid-turn
+          // refresh doesn't flicker to idle while reattach is pending; attach
+          // confirms it (onOpen) or clears it (204 -> finish).
+          streaming: current.streaming,
           streamText: "",
           activity: [],
           permissions: [],
           questions: [],
-          reconnecting: false,
+          reconnecting: current.reconnecting,
         }));
         void attach(key, fresh.id);
       } catch (cause) {
@@ -1551,6 +1559,7 @@ function useChatController() {
     streaming: tab.streaming,
     reconnecting: tab.reconnecting,
     refreshing: tab.refreshing,
+    settled: tab.settled,
     refresh,
     streamText: tab.streamText,
     activity: tab.activity,

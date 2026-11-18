@@ -267,6 +267,7 @@ export function ChatPanel({
     streaming,
     reconnecting,
     refreshing,
+    settled,
     refresh,
     streamingAgent,
     streamText,
@@ -1384,6 +1385,8 @@ export function ChatPanel({
             )}
             <ChatLiveAnnouncer
               streaming={streaming}
+              refreshing={refreshing}
+              settled={settled}
               agent={streamingAgent}
               text={streamText}
               last={messages[messages.length - 1]}

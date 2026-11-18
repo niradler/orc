@@ -169,3 +169,38 @@ test("a reopened tab shows a reply that finished between loading it and attachin
     page.getByTestId("chat-panel").getByTestId("chat-message-content").last(),
   ).toContainText(reply);
 });
+
+test("a reply that finishes while reattach is pending is still announced", async ({ page }) => {
+  const reply = `ANNOUNCE-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await expect(page).toHaveURL(/[?&]chatThread=[0-9a-f-]{36}/);
+
+  // The reload sees the question still unanswered, and the reattach is held open
+  // until the turn has finished: /live answers 204 and the reply loads without
+  // streaming ever being claimed, so only the follow's settlement can announce it.
+  let first = true;
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    const response = await route.fetch();
+    const thread = await response.json();
+    if (first) {
+      first = false;
+      thread.messages = thread.messages.slice(0, -1);
+    }
+    await route.fulfill({ response, json: thread });
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/live$/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await page.reload();
+  // While the reattach is pending the tab reads idle and nothing is announced yet.
+  await page.waitForTimeout(700);
+  expect(await panel.getAttribute("data-streaming")).toBe("false");
+  expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(reply);
+});

@@ -124,14 +124,20 @@ export function ChatLiveStatus({
   );
 }
 
-/** Announces streamed prose by paragraph and the finished turn, never every token. */
+/** Announces streamed prose by paragraph and the finished turn, never every token.
+ *  A reply loaded without streaming (rebuild, or a turn that finished before reattach)
+ *  is announced too. */
 export function ChatLiveAnnouncer({
   streaming,
+  refreshing,
+  settled,
   agent,
   text,
   last,
 }: {
   streaming: boolean;
+  refreshing: boolean;
+  settled: number;
   agent: string;
   text: string;
   last: ChatMessage | undefined;
@@ -141,6 +147,9 @@ export function ChatLiveAnnouncer({
   const textRef = useRef(text);
   textRef.current = text;
   const wasStreaming = useRef(streaming);
+  const wasRefreshing = useRef(refreshing);
+  const wasSettled = useRef(settled);
+  const announced = useRef<string | null>(null);
 
   useEffect(() => {
     if (text.length < spoken.current) spoken.current = 0;
@@ -162,12 +171,22 @@ export function ChatLiveAnnouncer({
   }, [streaming, agent]);
 
   useEffect(() => {
-    if (streaming || !wasStreaming.current) {
-      wasStreaming.current = streaming;
-      return;
-    }
-    wasStreaming.current = false;
+    const streamFinished = wasStreaming.current && !streaming;
+    // A rebuild that loads a finished reply never streams, so it has no
+    // streaming falling edge; announce it when the refresh completes instead.
+    const rebuildFinished = wasRefreshing.current && !refreshing && !streaming;
+    // A turn that finishes while reattach is pending loads its reply through a
+    // 204 reload: streaming was never claimed and the refresh already fell, so
+    // announce on the follow's settlement instead.
+    const settledFinished = wasSettled.current !== settled && !streaming;
+    wasStreaming.current = streaming;
+    wasRefreshing.current = refreshing;
+    wasSettled.current = settled;
+    if (streaming || (!streamFinished && !rebuildFinished && !settledFinished)) return;
     if (last?.role !== "assistant") return;
+    // A refresh that returns the same reply must not read it out again.
+    if (!streamFinished && announced.current === last.id) return;
+    announced.current = last.id;
     const rest = last.content.slice(spoken.current).trim();
     const summary =
       last.activity?.length || last.providerActivity?.length || last.turn?.outcome
@@ -184,7 +203,7 @@ export function ChatLiveAnnouncer({
           )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
-  }, [streaming, last]);
+  }, [streaming, refreshing, settled, last]);
 
   return (
     <div role="status" aria-live="polite" data-testid="chat-live-announcer" className="sr-only">
