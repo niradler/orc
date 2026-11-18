@@ -411,6 +411,32 @@ test("should render a v2 OpenCode transcript with inline parts", async () => {
   ]);
 });
 
+test("should read an inline OpenCode tool result from state.content", async () => {
+  const tool = (callID: string, content: unknown[]) => ({
+    type: "tool",
+    tool: "grep",
+    callID,
+    state: { status: "completed", input: { pattern: "x" }, content },
+  });
+  const line = {
+    time: 9000,
+    message: { role: "assistant" },
+    parts: [tool("call_done", [{ type: "text", text: "2 matches" }]), tool("call_empty", [])],
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(line));
+  const page = await readTranscriptBytes(bytes, "opencode", "opencode-inline-test", {});
+  expect(page.turns[0]?.blocks).toEqual([
+    {
+      type: "tool_use",
+      id: "call_done",
+      name: "grep",
+      input: '{"pattern":"x"}',
+      result: "2 matches",
+    },
+    { type: "tool_use", id: "call_empty", name: "grep", input: '{"pattern":"x"}', result: "" },
+  ]);
+});
+
 test("should read a legacy transcript from a database without v2 tables", async () => {
   const bytes = await opencodeTranscriptBytes(runtime, legacyDbPath, "ses_legacy");
   const page = await readTranscriptBytes(bytes, "opencode", "opencode-legacy-test", {});

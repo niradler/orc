@@ -21,8 +21,8 @@ subagents (their `.meta.json` description is the title, `parentAgentId` nests a
 subagent under the one that spawned it), Codex spawned threads, Cursor subagent
 composers and OpenCode child sessions, at any depth. Each row shows the subagent's
 title and state, and a branch with a failed or waiting subagent reads **Needs you**;
-pressing a row opens the subagent's own session, whose **Started by** link leads
-back to the parent. A call is matched to its subagent by
+pressing a row opens the subagent's own chat, whose header back arrow names the
+parent and returns to it. A call is matched to its subagent by
 the id each agent records (Claude `toolUseId`, Codex `SubAgentActivity`, OpenCode
 `task` metadata); Cursor records none, so its subagents match calls in start order.
 Subagents are not listed in the session list, but a parent row still takes the most

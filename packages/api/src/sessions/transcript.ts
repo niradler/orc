@@ -147,10 +147,13 @@ async function* claudeTurns(content: string): AsyncGenerator<Draft> {
 }
 
 async function* codexTurns(content: string): AsyncGenerator<Draft> {
+  let index = 0;
+  let start = 0;
   for await (const line of jsonLines(content)) {
-    if (line.type !== "response_item") continue;
     const p = line.payload as Record<string, unknown> | undefined;
-    if (!p) continue;
+    if (index++ === 0 && line.type === "session_meta")
+      start = Number(p?.subagent_history_start_ordinal) || 0;
+    if (index <= start || line.type !== "response_item" || !p) continue;
     const time = (line.timestamp as string | undefined) ?? null;
     const kind = String(p.type ?? "");
     if (kind === "message") {
@@ -277,7 +280,13 @@ type OpenCodePart = {
   synthetic?: boolean;
   tool?: string;
   callID?: string;
-  state?: { status?: string; input?: unknown; output?: unknown; error?: unknown };
+  state?: {
+    status?: string;
+    input?: unknown;
+    output?: unknown;
+    content?: unknown;
+    error?: unknown;
+  };
 };
 
 async function* opencodeTurns(content: string): AsyncGenerator<Draft> {
@@ -292,7 +301,7 @@ async function* opencodeTurns(content: string): AsyncGenerator<Draft> {
       else if (part.type === "reasoning" && part.text)
         blocks.push({ type: "thinking", text: cut(part.text, TEXT_MAX) });
       else if (part.type === "tool") {
-        const output = part.state?.output ?? part.state?.error;
+        const output = part.state?.output ?? part.state?.content ?? part.state?.error;
         blocks.push({
           type: "tool_use",
           name: part.tool ?? "tool",

@@ -272,6 +272,41 @@ describe("transcript readers", () => {
     expect(page.turns.map((t) => t.role)).toEqual(["system", "user"]);
   });
 
+  test("codex: a spawned subagent shows only its own history, not the inherited parent turn", async () => {
+    const path = join(root, "rollout-subagent.jsonl");
+    writeFileSync(
+      path,
+      jsonl([
+        { type: "session_meta", payload: { id: "child", subagent_history_start_ordinal: 4 } },
+        { type: "session_meta", payload: { id: "parent" } },
+        {
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "spawn a helper" }],
+          },
+        },
+        {
+          type: "response_item",
+          payload: { type: "function_call", name: "spawn_agent", arguments: "{}", call_id: "c1" },
+        },
+        {
+          type: "response_item",
+          payload: { type: "custom_tool_call", name: "exec", input: "cat math.js", call_id: "c2" },
+        },
+        {
+          type: "response_item",
+          payload: { type: "custom_tool_call_output", call_id: "c2", output: "2 exports" },
+        },
+      ]),
+    );
+    const page = await readTranscript(path, "codex");
+    expect(page.turns.flatMap((t) => t.blocks)).toEqual([
+      { type: "tool_use", name: "exec", input: "cat math.js", id: "c2", result: "2 exports" },
+    ]);
+  });
+
   test("cursor: strips the query and timestamp wrappers", async () => {
     const path = join(root, "cursor.jsonl");
     writeFileSync(

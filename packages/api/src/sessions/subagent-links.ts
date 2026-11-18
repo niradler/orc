@@ -65,13 +65,14 @@ function codexLinks(bytes: Uint8Array) {
 
 function opencodeLinks(bytes: Uint8Array) {
   const links = new Map<string, string>();
-  for (const line of lines(bytes, "sessionId")) {
+  for (const line of lines(bytes, "session")) {
     const parts = record(line).parts;
     for (const part of Array.isArray(parts) ? parts : []) {
       const tool = record(part);
       const metadata = record(record(tool.state).metadata);
-      if (typeof metadata.sessionId === "string" && typeof tool.callID === "string")
-        links.set(metadata.sessionId, tool.callID);
+      const child = metadata.sessionId ?? metadata.sessionID;
+      if (typeof child === "string" && typeof tool.callID === "string")
+        links.set(child, tool.callID);
     }
   }
   return links;
