@@ -691,12 +691,37 @@ class ClaudeSDKSession implements AgentSession {
         turn.closing = true;
         clearContinuationGrace();
         if (msg.is_error && !turn.stopping) {
-          const errors = "errors" in msg ? (msg.errors as string[]) : [];
+          const reason = msg.terminal_reason ?? msg.subtype;
           push({
             type: "error",
-            data: errors.join("\n") || `Claude error: ${msg.subtype}`,
+            data:
+              ("errors" in msg ? msg.errors.join("\n") : msg.result).trim() ||
+              (
+                {
+                  prompt_too_long:
+                    "The conversation no longer fits the context window. Run /compact or start a new chat.",
+                  blocking_limit: "Usage limit reached. Wait for it to reset.",
+                  rapid_refill_breaker: "Usage limit reached. Wait for it to reset.",
+                  max_turns: "Claude reached the turn limit.",
+                  error_max_turns: "Claude reached the turn limit.",
+                  budget_exhausted: "Claude reached its spending budget.",
+                  error_max_budget_usd: "Claude reached its spending budget.",
+                  image_error: "Claude could not process an attached image.",
+                  model_error: "The model returned an error. Try again or pick another model.",
+                  api_error: "The Claude API returned an error. Try again or pick another model.",
+                } as Record<string, string>
+              )[reason] ||
+              `Claude stopped with an error (${reason === "success" ? "no details" : reason}).`,
           });
         } else {
+          if (
+            !turn.stopping &&
+            !wroteText &&
+            "result" in msg &&
+            msg.result &&
+            msg.usage.output_tokens === 0
+          )
+            push({ type: "text", data: msg.result });
           push({
             type: "result",
             data: {
@@ -802,12 +827,21 @@ class ClaudeSDKSession implements AgentSession {
           continue;
         }
 
+        if (msg.type === "system" && msg.subtype === "api_retry") {
+          push({
+            type: "system_status",
+            data: `Claude API ${msg.error_status ?? "connection"} error; retrying in ${Math.ceil(msg.retry_delay_ms / 1000)}s (attempt ${msg.attempt} of ${msg.max_retries}).`,
+          });
+          continue;
+        }
+
         if (msg.type === "system" && msg.subtype === "compact_boundary") {
           push({ type: "system_status", data: "Context compacted." });
           continue;
         }
 
         if (msg.type === "assistant") {
+          if (msg.error && msg.message.model === "<synthetic>") continue;
           for (const block of msg.message.content) {
             if (block.type === "text" && block.text) {
               if (!streamedText)

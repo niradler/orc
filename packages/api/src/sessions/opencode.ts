@@ -1,4 +1,4 @@
-import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { type HostRuntime, hostRuntime, LOCAL_HOST, probeHost } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
@@ -81,7 +81,11 @@ async function sessionRows(
 export async function opencodeDbPath(runtime: HostRuntime): Promise<string> {
   const home = await runtime.home();
   const sep = runtime.host.kind === "ssh" || !home.includes("\\") ? "/" : "\\";
-  return [home, ".local", "share", "opencode", "opencode.db"].join(sep);
+  const data =
+    (runtime.host.kind === "ssh"
+      ? (await probeHost(runtime.host)).dataHome
+      : process.env.XDG_DATA_HOME) || [home, ".local", "share"].join(sep);
+  return [data, "opencode", "opencode.db"].join(sep);
 }
 
 export function opencodeAdapter(

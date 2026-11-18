@@ -299,6 +299,7 @@ describe("parseProbe", () => {
       [
         "os=Linux",
         "home=/home/me",
+        "data_home=/data/me",
         "shell=/usr/bin/fish",
         "bin.claude=/home/me/.local/bin/claude",
         "bin.codex=",
@@ -308,6 +309,7 @@ describe("parseProbe", () => {
     expect(probe).toEqual({
       os: "Linux",
       home: "/home/me",
+      dataHome: "/data/me",
       shell: "/usr/bin/fish",
       binaries: {
         claude: "/home/me/.local/bin/claude",
