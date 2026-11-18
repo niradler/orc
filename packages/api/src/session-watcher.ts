@@ -25,6 +25,7 @@ import {
   leavesScope,
   projectIdFor,
   projectScopeFor,
+  RECENT_WRITE_MS,
 } from "./sessions/common.js";
 import { cursorAdapter, cursorStateDbPath } from "./sessions/cursor.js";
 import { cursorAgentAdapter } from "./sessions/cursor-agent.js";
@@ -36,6 +37,7 @@ import type {
   KnownSession,
   SessionAdapter,
   SessionRecord,
+  SessionStatus,
   SessionWaiting,
 } from "./sessions/types.js";
 import { maintainUsageRetention, writeSessionUsage } from "./sessions/usage-events.js";
@@ -142,6 +144,72 @@ const serialized = <T>(job: () => Promise<T>): Promise<T> => {
   chain = next.catch(() => {});
   return next;
 };
+
+const runProbes = new Map<string, number>();
+const RUN_PROBE_INTERVAL_MS = 10_000;
+const RUN_PROBE_TTL_MS = 60_000;
+
+/**
+ * A cached "running" claim can outlive its turn: a missed watch event, an ORC
+ * restart, or a host that went quiet. Before a chat trusts the claim and shows
+ * the session as working, re-check one that no recent native activity supports
+ * against the adapter the watcher syncs with, and settle the row when stale.
+ * Fresh claims and repeat reads stay on the cached row, so an active chat never
+ * pays for a native listing on every refresh.
+ */
+export async function settleStaleRun<S extends string>(row: {
+  id: string;
+  backend: string;
+  execution_host: string | null;
+  runtime_session_id: string | null;
+  status: S;
+  last_activity_at: Date | null;
+}): Promise<S | SessionStatus> {
+  const nativeId = row.runtime_session_id;
+  if (row.status !== "running" || !nativeId) {
+    runProbes.delete(row.id);
+    return row.status;
+  }
+  if (Date.now() - (row.last_activity_at?.getTime() ?? 0) < RECENT_WRITE_MS) return row.status;
+  const now = Date.now();
+  // Entries only matter inside the rate-limit window; sweep them so a long-lived
+  // daemon never accumulates one per session it has ever probed.
+  for (const [id, at] of runProbes) if (now - at > RUN_PROBE_TTL_MS) runProbes.delete(id);
+  if (now - (runProbes.get(row.id) ?? 0) < RUN_PROBE_INTERVAL_MS) return row.status;
+  runProbes.set(row.id, now);
+  return serialized(async () => {
+    const adapter = defaultAdapters(execHostFor(row.execution_host)).find(
+      (entry) => entry.backend === row.backend,
+    );
+    if (!adapter) return row.status;
+    let record: SessionRecord | undefined;
+    try {
+      record = (await adapter.list(new Map())).find((entry) => entry.externalId === nativeId);
+    } catch (error) {
+      // An unreadable native store cannot disprove the claim; keep it.
+      logger.warn("Cannot verify the session run state", { error });
+      return row.status;
+    }
+    // A listing can truncate or skip an unreadable file, so an absent record is
+    // not proof the session ended; only a positive fresh status settles the row.
+    // The watcher's own sync settles sessions the store no longer lists.
+    if (!record || record.status === row.status) return row.status;
+    const status = record.status;
+    await getDb()
+      .update(gateway_sessions)
+      .set({ status, updated_at: new Date() })
+      .where(eq(gateway_sessions.id, row.id));
+    const pending = runStates.get(pendingKey(row.backend, row.execution_host));
+    if (pending) {
+      const after = recordRunState(record, pending.get(nativeId));
+      if (after) pending.set(nativeId, after);
+      else pending.delete(nativeId);
+    }
+    if (status !== "running") runProbes.delete(row.id);
+    changes.publish("sessions");
+    return status;
+  });
+}
 
 const hostCondition = (alias: string | null) =>
   alias ? eq(gateway_sessions.execution_host, alias) : isNull(gateway_sessions.execution_host);

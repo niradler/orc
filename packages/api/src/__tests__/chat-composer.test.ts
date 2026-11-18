@@ -61,7 +61,12 @@ test("commands validate input, warn when discovery fails, and retry on the next 
     commands: [],
     warning: null,
   });
-  const executable = join(root, "claude-fixture");
+  // Windows resolves executables by PATHEXT and cannot spawn a bare shebang
+  // script, so the fixture mirrors the real Claude Code install there: a .cmd
+  // shim beside node_modules/@anthropic-ai/claude-code/cli.js, which the SDK
+  // launch resolver runs with node/bun instead of the shell shim.
+  const win = process.platform === "win32";
+  const executable = join(root, win ? "claude-fixture.cmd" : "claude-fixture");
   const config = loadConfig();
   const original = config.providers;
   config.providers = {
@@ -87,11 +92,32 @@ test("commands validate input, warn when discovery fails, and retry on the next 
       commands: [],
       warning: "Agent commands unavailable",
     });
-    writeFileSync(
-      executable,
-      `#!/usr/bin/env bun\nfor await (const chunk of Bun.stdin.stream()) { const m = JSON.parse(new TextDecoder().decode(chunk)); console.log(JSON.stringify({ type: "control_response", response: { request_id: m.request_id, subtype: "success", response: { commands: [{ name: "code-review", description: "Review the diff", argumentHint: "", aliases: ["review"] }] } } })); }\n`,
-    );
-    chmodSync(executable, 0o755);
+    // Runs under both node and bun: the Windows launch resolver picks whichever
+    // interpreter is on PATH, while the POSIX shebang chooses bun.
+    const payload = `let buffer = "";
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  let newline;
+  while ((newline = buffer.indexOf("\\n")) >= 0) {
+    const line = buffer.slice(0, newline);
+    buffer = buffer.slice(newline + 1);
+    const m = JSON.parse(line);
+    console.log(JSON.stringify({ type: "control_response", response: { request_id: m.request_id, subtype: "success", response: { commands: [{ name: "code-review", description: "Review the diff", argumentHint: "", aliases: ["review"] }] } } }));
+  }
+});
+`;
+    if (win) {
+      const cliDir = join(root, "node_modules", "@anthropic-ai", "claude-code");
+      mkdirSync(cliDir, { recursive: true });
+      writeFileSync(join(cliDir, "cli.js"), payload);
+      writeFileSync(
+        executable,
+        `@echo off\r\nbun "%~dp0node_modules\\@anthropic-ai\\claude-code\\cli.js" %*\r\n`,
+      );
+    } else {
+      writeFileSync(executable, `#!/usr/bin/env bun\n${payload}`);
+      chmodSync(executable, 0o755);
+    }
     expect(await (await commands()).json()).toEqual({
       commands: [
         {
