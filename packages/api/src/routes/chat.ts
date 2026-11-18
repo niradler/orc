@@ -121,6 +121,7 @@ import { chatHistory } from "../sessions/chat-history.js";
 import { isClaudeProcessName } from "../sessions/claude.js";
 import { projectIdFor } from "../sessions/common.js";
 import { notifySpawner, spawnChain } from "../sessions/control.js";
+import { opencodeSessionUpdated } from "../sessions/opencode.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { readTranscriptBytes, type TranscriptTurn } from "../sessions/transcript.js";
 import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
@@ -846,9 +847,16 @@ async function linkNativeSource(thread: ChatThread): Promise<ChatThread> {
 async function transcriptMark(thread: ChatThread, source?: NativeSource | null) {
   const row = source === undefined ? await nativeSource(thread) : source;
   if (!row?.transcript_path) return null;
-  const info = await hostRuntime(execHostFor(thread.host))
-    .stat(row.transcript_path)
-    .catch(() => null);
+  const runtime = hostRuntime(execHostFor(thread.host));
+  if (row.backend === "opencode") {
+    const updated = await opencodeSessionUpdated(
+      runtime,
+      row.transcript_path,
+      row.runtime_session_id ?? "",
+    ).catch(() => null);
+    return updated === null ? null : `opencode:${updated}`;
+  }
+  const info = await runtime.stat(row.transcript_path).catch(() => null);
   return info ? `${info.size}:${info.mtimeMs}` : null;
 }
 
