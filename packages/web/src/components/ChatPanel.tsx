@@ -1391,7 +1391,7 @@ export function ChatPanel({
               agent={streamingAgent}
               text={streamText}
               last={messages[messages.length - 1]}
-              count={messages.length}
+              messages={messages}
             />
             {error && (
               <div

@@ -322,6 +322,90 @@ test("a mid-turn refresh that loads a reply identical to the previous one still 
   await expect(page.getByTestId("chat-live-announcer")).toContainText(same);
 });
 
+test("a mid-turn refresh to a truncated window still announces an identical-content reply", async ({
+  page,
+}) => {
+  const first = `SETUP-${Date.now()}`;
+  const same = `WINDOW-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // Hold every thread GET so syncThread cannot replace the client ids: the
+  // truncated refresh window below then shares no id with the loaded transcript
+  // and replaces it outright (mergeLoadedHistory), shrinking the visible count.
+  let allowGets = false;
+  let truncate = false;
+  let releaseGets: () => void;
+  const getsGate = new Promise<void>((resolve) => {
+    releaseGets = resolve;
+  });
+  let holding = false;
+  let snapshotLoaded: () => void;
+  const refreshed = new Promise<void>((resolve) => {
+    snapshotLoaded = resolve;
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    if (!allowGets) {
+      await getsGate;
+      await route.abort().catch(() => {});
+      return;
+    }
+    const response = await route.fetch();
+    if (truncate) {
+      // A bounded rebuild window: only the tail survives — fewer messages than
+      // the tab had loaded, so snapshot size alone cannot prove turn progress.
+      const body = await response.json();
+      body.messages = body.messages.slice(-3);
+      await route.fulfill({ response, json: body });
+    } else {
+      await route.fulfill({ response });
+    }
+    if (holding) snapshotLoaded();
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+
+  // Two setup turns give the tab a four-message transcript ending at `same`.
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${first}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${same}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(same);
+
+  let serverDone: () => void;
+  const streamHeld = new Promise<void>((resolve) => {
+    serverDone = resolve;
+  });
+  await page.route(/\/api\/chat\/stream$/, async (route) => {
+    const response = await route.fetch(); // the run finishes server-side
+    holding = true;
+    serverDone();
+    await refreshed; // keep the client streaming until the mid-turn refresh
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // The refresh aborted this reader; fulfilling late is a no-op.
+    await route.fulfill({ response }).catch(() => {});
+  });
+
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${same}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await streamHeld;
+  allowGets = true;
+  truncate = true;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  // The refresh replaces the transcript with a three-message tail window while
+  // streaming is preserved; /live answers 204 and finish() appends nothing. The
+  // turn's persisted user message proves progress, so the identical-content
+  // reply must still be announced.
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(same);
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(same);
+  releaseGets();
+});
+
 test("a refresh that reverts to pre-turn history does not announce it", async ({ page }) => {
   const first = `BASE-${Date.now()}`;
   const second = `UNSENT-${Date.now()}`;

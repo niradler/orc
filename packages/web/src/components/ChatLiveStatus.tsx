@@ -135,7 +135,7 @@ export function ChatLiveAnnouncer({
   agent,
   text,
   last,
-  count,
+  messages,
 }: {
   tabKey: string;
   streaming: boolean;
@@ -144,7 +144,7 @@ export function ChatLiveAnnouncer({
   agent: string;
   text: string;
   last: ChatMessage | undefined;
-  count: number;
+  messages: ChatMessage[];
 }) {
   const [message, setMessage] = useState("");
   const spoken = useRef(0);
@@ -155,7 +155,8 @@ export function ChatLiveAnnouncer({
   const wasRefreshing = useRef(refreshing);
   const wasSettled = useRef(settled);
   const prevLast = useRef(last);
-  const idleLast = useRef(new Map<string, { message: ChatMessage | undefined; count: number }>());
+  const idleLast = useRef(new Map<string, ChatMessage | undefined>());
+  const turnUser = useRef(new Map<string, ChatMessage>());
   const pendingCompletion = useRef(new Map<string, string>());
   const announced = useRef(new Map<string, string>());
 
@@ -199,30 +200,43 @@ export function ChatLiveAnnouncer({
     // same message, and syncThread swapping the client id for the persisted one
     // is not a new reply either.
     const lastChanged = prevLast.current?.id !== last?.id;
-    // This tab's history baseline: the last message seen while idle (and the
-    // transcript length then), seeded on first sight. A mid-turn refresh can
-    // REVERT the snapshot to the reply that was on screen before the turn (the
-    // new message never reached the server); that is history, not a completion —
-    // even when syncThread has not yet replaced the client id, so the persisted
-    // twin arrives under a new id with identical content.
-    if (!idleLast.current.has(tabKey) || !streaming)
-      idleLast.current.set(tabKey, { message: last, count });
+    // This tab's history baseline: the last message seen while idle, seeded on
+    // first sight. A mid-turn refresh can REVERT the snapshot to the reply that
+    // was on screen before the turn (the new message never reached the server);
+    // that is history, not a completion — even when syncThread has not yet
+    // replaced the client id, so the persisted twin arrives under a new id.
+    if (!idleLast.current.has(tabKey) || !streaming) idleLast.current.set(tabKey, last);
     const baseline = idleLast.current.get(tabKey);
+    // The user message that started this tab's turn, remembered from the send.
+    if (streaming && lastChanged && last?.role === "user") turnUser.current.set(tabKey, last);
+    if (!streaming) turnUser.current.delete(tabKey);
     // A mid-turn refresh can load the finished reply while streaming is still
     // claimed; the 204 that follows appends nothing, so hold the reply's identity
     // until a completion edge can announce it — unless it is the pre-turn history.
-    // Content matching the baseline is history only while the transcript has not
-    // grown past it: a genuine reply with the same text as the previous turn still
-    // arrives after the turn's own user message persisted.
+    // A reply whose content matches the baseline is a genuine completion only when
+    // the snapshot shows the turn's progress: the turn's own user message persisted
+    // right before it, with the baseline reply still ahead of that. Snapshot SIZE
+    // cannot prove progress — rebuilds return a bounded window and a refresh may
+    // drop loaded older pages — but the turn's user message survives any tail window.
     if (
       streaming &&
       lastChanged &&
       last?.role === "assistant" &&
-      last.id !== baseline?.message?.id &&
-      (last.content !== baseline?.message?.content || count > (baseline?.count ?? 0)) &&
+      last.id !== baseline?.id &&
       announced.current.get(tabKey) !== last.id
-    )
-      pendingCompletion.current.set(tabKey, last.id);
+    ) {
+      const turn = turnUser.current.get(tabKey);
+      const prev = messages[messages.length - 2];
+      const progressed =
+        last.content !== baseline?.content ||
+        (turn !== undefined &&
+          prev?.role === "user" &&
+          prev.content === turn.content &&
+          messages
+            .slice(0, -2)
+            .some((m) => m.role === "assistant" && m.content === baseline?.content));
+      if (progressed) pendingCompletion.current.set(tabKey, last.id);
+    }
     wasStreaming.current = streaming;
     wasRefreshing.current = refreshing;
     wasSettled.current = settled;
@@ -256,7 +270,7 @@ export function ChatLiveAnnouncer({
           )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
-  }, [tabKey, streaming, refreshing, settled, last, count]);
+  }, [tabKey, streaming, refreshing, settled, last, messages]);
 
   return (
     <div role="status" aria-live="polite" data-testid="chat-live-announcer" className="sr-only">
