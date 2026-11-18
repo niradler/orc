@@ -30,7 +30,7 @@ import { cursorAdapter, cursorStateDbPath } from "./sessions/cursor.js";
 import { cursorAgentAdapter } from "./sessions/cursor-agent.js";
 import { geminiAdapter } from "./sessions/gemini.js";
 import { lifecycleRecords, withLifecycle } from "./sessions/lifecycle.js";
-import { opencodeAdapter } from "./sessions/opencode.js";
+import { opencodeAdapter, opencodeDbPath } from "./sessions/opencode.js";
 import { piAdapter, piSessionRoots } from "./sessions/pi.js";
 import type {
   KnownSession,
@@ -680,8 +680,10 @@ export function startSessionWatcher(
     if (registryDir) local.add(registryDir);
     if (!opts.adapters) {
       const host = resolveExecHost();
-      void piSessionRoots(hostRuntime(host))
-        .then((paths) => {
+      const runtime = hostRuntime(host);
+      void Promise.all([piSessionRoots(runtime), opencodeDbPath(runtime)])
+        .then(([roots, db]) => {
+          const paths = [...roots, db, `${db}-wal`, `${db}-shm`];
           if (stopped || generation !== watcherGeneration) return;
           if (host.kind === "ssh")
             fileWatchers.push(watchRemotePaths(host, paths, () => schedule(true)));
@@ -689,7 +691,7 @@ export function startSessionWatcher(
             for (const path of paths)
               fileWatchers.push(watchResourcePath(path, () => schedule(true)));
         })
-        .catch((error) => logger.warn("Cannot watch Pi session directories", { error }));
+        .catch((error) => logger.warn("Cannot watch Pi and OpenCode session files", { error }));
       const sources = [
         ".claude/sessions",
         ".claude/projects",
@@ -703,9 +705,6 @@ export function startSessionWatcher(
         ".cursor/projects",
         ".cursor/chats",
         ".gemini/tmp",
-        ".local/share/opencode/opencode.db",
-        ".local/share/opencode/opencode.db-wal",
-        ".local/share/opencode/opencode.db-shm",
       ];
       if (host.kind === "ssh")
         fileWatchers.push(

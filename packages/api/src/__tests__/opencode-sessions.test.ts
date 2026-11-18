@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
@@ -189,6 +189,20 @@ test("should list legacy-only OpenCode databases without v2 tables", async () =>
       usage: expect.any(Function),
     },
   ]);
+});
+
+test("should find the OpenCode database under XDG_DATA_HOME", async () => {
+  const saved = process.env.XDG_DATA_HOME;
+  process.env.XDG_DATA_HOME = join(dir, "xdg");
+  mkdirSync(join(dir, "xdg", "opencode"), { recursive: true });
+  copyFileSync(legacyDbPath, join(dir, "xdg", "opencode", "opencode.db"));
+  try {
+    const records = await opencodeAdapter(undefined, runtime).list(new Map());
+    expect(records.map((record) => record.externalId)).toEqual(["ses_legacy"]);
+  } finally {
+    if (saved === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = saved;
+  }
 });
 
 test("should return no sessions when OpenCode is not installed", async () => {

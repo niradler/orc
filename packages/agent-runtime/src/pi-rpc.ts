@@ -6,7 +6,7 @@ import type {
 import { type ExecHost, type HostProcess, hostSpawn } from "@orc/core/exec-host";
 import { providerProcessEnvironment } from "@orc/core/provider-service";
 import { z } from "zod";
-import { endStdin, readLines, STREAM_DRAIN_TIMEOUT_MS } from "./io.js";
+import { endStdin, readLines, STREAM_DRAIN_TIMEOUT_MS, stderrTail } from "./io.js";
 
 const responseSchema = z.object({
   type: z.literal("response"),
@@ -31,6 +31,7 @@ export class PiRpc {
   private sequence = 0;
   private humanWaiting = false;
   private failure?: Error;
+  private stderr = stderrTail(null);
   private closing = false;
   private readonly readerAbort = new AbortController();
   private readonly listeners = new Set<(record: unknown) => void>();
@@ -53,9 +54,10 @@ export class PiRpc {
       env: providerProcessEnvironment(env),
       passEnv: Object.keys(env),
       stdin: "pipe",
-      stderr: "ignore",
+      stderr: "pipe",
     });
     const client = new PiRpc(child);
+    client.stderr = stderrTail(child.proc.stderr, client.readerAbort.signal);
     if (!child.proc.stdout || typeof child.proc.stdout === "number") {
       child.kill();
       throw new Error("Pi RPC stdout is unavailable.");
@@ -66,7 +68,8 @@ export class PiRpc {
       client.readerAbort.signal,
       16 * 1024 * 1024,
     )
-      .then(() => {
+      .then(async () => {
+        await client.stderr.settled();
         if (!client.closing)
           client.fail(new Error("Pi RPC process exited or closed its protocol stream."));
       })
@@ -124,8 +127,9 @@ export class PiRpc {
       this.fail(new Error("Pi RPC protocol returned an invalid record."));
     }
   }
-  private fail(error: Error): void {
+  private fail(cause: Error): void {
     if (this.failure || this.closing) return;
+    const error = new Error(this.stderr.append(cause.message));
     this.failure = error;
     for (const request of this.pending.values()) {
       clearTimeout(request.timer);

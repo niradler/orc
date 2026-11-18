@@ -654,3 +654,19 @@ for await (const line of createInterface({input:process.stdin})) {
     await session.close();
   }
 });
+
+test("a Codex app-server that exits at startup reports its own stderr", async () => {
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-codex-stderr-"));
+  const script = join(cwd, "broken.ts");
+  writeFileSync(
+    script,
+    'console.error("Error: unknown variant `bogus`\\nin `sandbox_mode`"); process.exit(1);',
+  );
+  const session = new CodexAppSession({ cwd, orcMcp: false }, { kind: "local" }, async () => [
+    process.execPath,
+    script,
+  ]);
+  await expect(session.send("Hello")).rejects.toThrow(
+    "Codex output closed before the connection ended.\nError: unknown variant `bogus`\nin `sandbox_mode`",
+  );
+});

@@ -6,7 +6,7 @@ import { loadConfig, resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb } from "@orc/db/client";
 import { chatBackendFor, OPENCODE_CAPABILITIES } from "../capabilities.js";
 import { createBackend } from "../index.js";
-import type { AgentEvent } from "../types.js";
+import type { AgentEvent, SessionOpts } from "../types.js";
 
 const saved = {
   db: process.env.ORC_DB_PATH,
@@ -125,7 +125,10 @@ function lastAnswer(argvFile: string): { scenario: string; result: unknown } {
   return JSON.parse(lines[lines.length - 1] ?? "{}");
 }
 
-async function startPeer(cwd: string): Promise<{
+async function startPeer(
+  cwd: string,
+  opts: Partial<SessionOpts> = {},
+): Promise<{
   argvFile: string;
   session: Awaited<ReturnType<ReturnType<typeof createBackend>["startSession"]>>;
 }> {
@@ -144,6 +147,7 @@ async function startPeer(cwd: string): Promise<{
     orcMcp: false,
     providerExecutable: script,
     acpAgent: "opencode",
+    ...opts,
   });
   return { argvFile, session };
 }
@@ -222,6 +226,27 @@ test("opencode backend runs the builtin ACP command with a provider executable o
       await resumed.close();
     }
   } finally {
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
+
+test("opencode receives /compact as a bare native command, without the ORC context prefix", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-compact-"));
+  const { argvFile, session } = await startPeer(cwd, { systemPromptAppend: "ORC CONTEXT" });
+  try {
+    for (const prompt of ["hello", "/compact"]) {
+      await session.send(prompt);
+      for await (const event of session.events()) if (event.type === "result") break;
+    }
+    const prompts = readFileSync(`${argvFile}.wire`, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .filter((request) => request.method === "session/prompt")
+      .map((request) => request.params.prompt[0].text);
+    expect(prompts).toEqual(["ORC CONTEXT\n\nhello", "/compact"]);
+  } finally {
+    await session.close();
     rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });

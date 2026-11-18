@@ -240,10 +240,10 @@ per-node worktrees are not created yet.
 
 ## Manual context compaction
 
-For an existing idle Claude, Codex or Pi chat, choose **Compact context** from session
-actions (an icon in the expanded desktop header), or send `/compact`. This uses the
-same native session: Claude's SDK command, Codex's `thread/compact/start` RPC, or
-Pi's `compact` RPC.
+For an existing idle Claude, Codex, OpenCode or Pi chat, choose **Compact context** from
+session actions (an icon in the expanded desktop header), or send `/compact`. This uses the
+same native session: Claude's SDK command, Codex's `thread/compact/start` RPC, OpenCode's
+own `/compact` command, or Pi's `compact` RPC.
 Progress, failures and completion use the normal conversation stream and history.
 Running turns, attachments and integrations without native support cannot be
 compacted this way. Keep automatic compaction under the agent's own control;

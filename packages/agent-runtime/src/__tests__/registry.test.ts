@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import { AcpSession } from "../acp.js";
+import { ClaudeSession } from "../claude.js";
+import { CodexAppSession } from "../codex-app.js";
 import { createBackend, listRegisteredBackends } from "../index.js";
+import type { AgentSession } from "../types.js";
 
 describe("backend registry", () => {
   it("lists registered backends", () => {
@@ -58,5 +62,35 @@ describe("backend registry", () => {
       expect((err as Error).message).toContain("acpx");
       expect((err as Error).message).toContain("claude");
     }
+  });
+
+  it("advertises only controls whose session methods exist", () => {
+    const host = { kind: "local" } as const;
+    const sessions: Record<string, AgentSession> = {
+      "claude-cli": new ClaudeSession({ cwd: "/" }, "claude", host),
+      "codex-cli": new CodexAppSession({ cwd: "/" }, host),
+      opencode: new AcpSession({ cwd: "/" }, ["opencode", "acp"]),
+    };
+    for (const [name, session] of Object.entries(sessions)) {
+      const backend = createBackend(name as "claude-cli" | "codex-cli" | "opencode");
+      const implemented = {
+        interrupt: typeof session.interrupt === "function",
+        steering: typeof session.steer === "function",
+        livePermissions: typeof session.setPermissionMode === "function",
+        questions: typeof session.respondQuestion === "function",
+        fork: typeof backend.forkSession === "function",
+      };
+      for (const [key, has] of Object.entries(implemented))
+        if (backend.capabilities?.[key as keyof typeof implemented])
+          expect(`${name}.${key}:${has}`).toBe(`${name}.${key}:true`);
+    }
+    expect(createBackend("claude-cli").capabilities).toMatchObject({
+      interrupt: false,
+      steering: false,
+      livePermissions: false,
+      questions: false,
+      approvals: false,
+      images: false,
+    });
   });
 });
