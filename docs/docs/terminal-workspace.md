@@ -54,7 +54,7 @@ first agent starts there; a failure is reported but does not block the agent.
 | Agent       | Model     | Effort                        | Mode                                                         |
 | ----------- | --------- | ----------------------------- | ------------------------------------------------------------ |
 | Claude Code | `--model` | `--effort`                    | `--permission-mode` with plan, acceptEdits, auto or bypassPermissions |
-| Codex       | `--model` | `-c model_reasoning_effort=…` | `--sandbox` and `--ask-for-approval`: Read only, Auto, Full access |
+| Codex       | `--model` | `-c model_reasoning_effort=…` | `--sandbox` and `--ask-for-approval`: Read only, Auto, Auto-review (adds `-c approvals_reviewer="auto_review"`), Full access |
 | OpenCode    | `--model` | none                          | Plan: `--agent plan`                                         |
 | Cursor      | `--model` | none                          | Plan: `--mode plan`; Full access: `--force`                  |
 

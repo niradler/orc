@@ -4,7 +4,7 @@ import {
   ChatQuestionSchema,
   type ChatSubagentPayload,
 } from "@orc/core/chat";
-import { ChatAgentOptionsSchema, codexPermissionPreset } from "@orc/core/chat-options";
+import { ChatAgentOptionsSchema, CODEX_PERMISSION_PRESETS } from "@orc/core/chat-options";
 import { type ExecHost, ensureSshMaster, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { CODEX_CAPABILITIES } from "./capabilities.js";
@@ -698,8 +698,7 @@ export class CodexAppSession implements AgentSession {
               : {}),
           cwd: this.opts.cwd,
           model: this.opts.model,
-          ...codexPermissionPreset(mode),
-          approvalsReviewer: "user",
+          ...CODEX_PERMISSION_PRESETS[mode],
           ...(this.opts.systemPromptAppend
             ? { developerInstructions: this.opts.systemPromptAppend }
             : {}),
@@ -743,11 +742,12 @@ export class CodexAppSession implements AgentSession {
 
   private collaborationMode(): Record<string, unknown> {
     const live = this.liveMode ?? this.threadMode;
-    const preset = live && codexPermissionPreset(live);
+    const preset = live && CODEX_PERMISSION_PRESETS[live];
     const policy =
       live && preset && live !== this.threadMode
         ? {
             approvalPolicy: preset.approvalPolicy,
+            approvalsReviewer: preset.approvalsReviewer,
             sandboxPolicy:
               preset.sandbox === "danger-full-access"
                 ? { type: "dangerFullAccess" }

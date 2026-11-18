@@ -2,7 +2,7 @@ import type { ComposerProfile } from "@orc/core/chat";
 import { agentLabel } from "@orc/core/coding-agents";
 import { ulid } from "@orc/core/ids";
 import { useQuery } from "@tanstack/react-query";
-import { Plus, X } from "lucide-react";
+import { Pencil, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
@@ -110,7 +110,9 @@ export function ChatAgentModelPicker() {
   const favorites = new Set(
     preferences.favorites.filter((entry) => entry.agent === config.agent).map((entry) => entry.id),
   );
-  const [naming, setNaming] = useState<string | null>(null);
+  const [naming, setNaming] = useState<{ name: string; id?: string; replace?: boolean } | null>(
+    null,
+  );
   const modes = permissionModes(capabilities);
   function applyProfile(profile: ComposerProfile): void {
     const provider = providers.find((item) => item.id === profile.providerId);
@@ -138,23 +140,44 @@ export function ChatAgentModelPicker() {
     void chat.changePermissions(next);
     if (thread && options) void chat.applyAgentOptions(profile.agent, options).catch(() => {});
   }
-  function saveProfile(name: string): void {
-    const mode = effectivePermissionMode(config);
-    const profile: ComposerProfile = {
-      id: ulid(),
-      name,
-      agent: config.agent,
-      ...(config.providerId ? { providerId: config.providerId } : {}),
-      model: config.model,
-      effort: effortValue,
-      ...(modes.includes(mode) ? { permissionMode: mode } : {}),
-    };
-    preferences.save((current) => ({
-      composer_profiles: [
-        ...(current.composer_profiles ?? []).filter((item) => item.name !== name),
-        profile,
-      ].slice(-50),
-    }));
+  const mode = effectivePermissionMode(config);
+  const currentSettings = {
+    agent: config.agent,
+    ...(config.providerId ? { providerId: config.providerId } : {}),
+    model: config.model,
+    effort: effortValue,
+    ...(modes.includes(mode) ? { permissionMode: mode } : {}),
+  };
+  const profileSummary = (profile: Omit<ComposerProfile, "id" | "name">) =>
+    [
+      agentLabel(profile.agent),
+      profile.model || "Agent default",
+      profile.effort,
+      profile.permissionMode &&
+        permissionText(
+          profile.permissionMode,
+          profile.agent === config.agent ? capabilities : undefined,
+        ).label,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  function saveProfile(form: { name: string; id?: string; replace?: boolean }): void {
+    const name = form.name.trim();
+    preferences.save((current) => {
+      const saved = current.composer_profiles ?? [];
+      const existing = saved.find((item) => item.id === form.id);
+      const profile: ComposerProfile =
+        existing && !form.replace
+          ? { ...existing, name }
+          : { id: existing?.id ?? ulid(), name, ...currentSettings };
+      return {
+        composer_profiles: existing
+          ? saved.flatMap((item) =>
+              item.id === profile.id ? [profile] : item.name === name ? [] : [item],
+            )
+          : [...saved.filter((item) => item.name !== name), profile].slice(-50),
+      };
+    });
     setNaming(null);
   }
   const fixedModel = capabilities?.modelSelection === false;
@@ -222,15 +245,7 @@ export function ChatAgentModelPicker() {
                   type="button"
                   data-testid={`chat-profile-${profile.id}`}
                   disabled={!ready || streaming}
-                  title={[
-                    agentLabel(profile.agent),
-                    profile.model || "Agent default",
-                    profile.effort,
-                    profile.permissionMode &&
-                      permissionText(profile.permissionMode, undefined).label,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
+                  title={profileSummary(profile)}
                   onClick={() => {
                     applyProfile(profile);
                     close();
@@ -238,6 +253,16 @@ export function ChatAgentModelPicker() {
                   className={`${profileChip} min-w-0 truncate`}
                 >
                   {profile.name}
+                </button>
+                <button
+                  type="button"
+                  data-testid={`chat-profile-edit-${profile.id}`}
+                  aria-label={`Edit profile ${profile.name}`}
+                  aria-pressed={naming?.id === profile.id}
+                  onClick={() => setNaming({ name: profile.name, id: profile.id })}
+                  className={`${profileChip} border-l border-border text-muted-foreground aria-pressed:bg-surface-highest`}
+                >
+                  <Pencil size={12} aria-hidden="true" />
                 </button>
                 <button
                   type="button"
@@ -260,7 +285,7 @@ export function ChatAgentModelPicker() {
               <button
                 type="button"
                 data-testid="chat-profile-new"
-                onClick={() => setNaming("")}
+                onClick={() => setNaming({ name: "" })}
                 className={`${profileChip} gap-1 rounded-md text-muted-foreground`}
               >
                 <Plus size={12} aria-hidden="true" />
@@ -268,11 +293,11 @@ export function ChatAgentModelPicker() {
               </button>
             ) : (
               <form
-                className="flex w-full min-w-0 gap-1"
+                className="flex w-full min-w-0 flex-wrap gap-1"
                 onSubmit={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  if (naming.trim()) saveProfile(naming.trim());
+                  if (naming.name.trim()) saveProfile(naming);
                 }}
               >
                 <Input
@@ -281,24 +306,37 @@ export function ChatAgentModelPicker() {
                   placeholder="Profile name"
                   autoFocus
                   maxLength={60}
-                  value={naming}
-                  onChange={(event) => setNaming(event.target.value)}
+                  value={naming.name}
+                  onChange={(event) => setNaming({ ...naming, name: event.target.value })}
                   onKeyDown={(event) => {
                     if (event.key !== "Escape") return;
                     event.preventDefault();
                     event.stopPropagation();
                     setNaming(null);
                   }}
-                  className="min-w-0"
+                  className="min-w-0 flex-1"
                 />
                 <Button
                   type="submit"
                   data-testid="chat-profile-save"
-                  disabled={!naming.trim()}
+                  disabled={!naming.name.trim()}
                   className="min-h-8 px-2"
                 >
                   Save
                 </Button>
+                {naming.id && (
+                  <label className="flex min-h-8 w-full min-w-0 items-center gap-2 px-1 text-xs text-muted-foreground max-sm:min-h-11 pointer-coarse:min-h-11">
+                    <input
+                      type="checkbox"
+                      data-testid="chat-profile-replace"
+                      checked={!!naming.replace}
+                      onChange={(event) => setNaming({ ...naming, replace: event.target.checked })}
+                    />
+                    <span className="min-w-0 truncate">
+                      Use current: {profileSummary(currentSettings)}
+                    </span>
+                  </label>
+                )}
               </form>
             )}
           </div>
