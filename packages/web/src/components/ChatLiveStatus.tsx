@@ -153,6 +153,7 @@ export function ChatLiveAnnouncer({
   const wasRefreshing = useRef(refreshing);
   const wasSettled = useRef(settled);
   const prevLast = useRef(last);
+  const pendingCompletion = useRef<string | undefined>(undefined);
   const announced = useRef(new Map<string, string>());
 
   useEffect(() => {
@@ -182,6 +183,7 @@ export function ChatLiveAnnouncer({
     if (tabChanged) {
       spoken.current = 0;
       setMessage("");
+      pendingCompletion.current = undefined;
     }
     const streamFinished = !tabChanged && wasStreaming.current && !streaming;
     // A rebuild that loads a finished reply never streams, so it has no
@@ -195,16 +197,30 @@ export function ChatLiveAnnouncer({
     // same message, and syncThread swapping the client id for the persisted one
     // is not a new reply either.
     const lastChanged = prevLast.current?.id !== last?.id;
+    // A mid-turn refresh can load the finished reply while streaming is still
+    // claimed; the 204 that follows appends nothing, so hold the reply's identity
+    // until a completion edge can announce it.
+    if (
+      streaming &&
+      lastChanged &&
+      last?.role === "assistant" &&
+      announced.current.get(tabKey) !== last.id
+    )
+      pendingCompletion.current = last.id;
     wasStreaming.current = streaming;
     wasRefreshing.current = refreshing;
     wasSettled.current = settled;
     prevLast.current = last;
     if (tabChanged || streaming || (!streamFinished && !rebuildFinished && !settledFinished))
       return;
+    const discovered =
+      lastChanged ||
+      (pendingCompletion.current !== undefined && last?.id === pendingCompletion.current);
+    pendingCompletion.current = undefined;
     if (last?.role !== "assistant") return;
     // Only a newly loaded reply announces: a no-op or failed refresh returns the
     // same message, and an empty turn assembles nothing. Per-tab dedupe on top.
-    if (!lastChanged || announced.current.get(tabKey) === last.id) return;
+    if (!discovered || announced.current.get(tabKey) === last.id) return;
     announced.current.set(tabKey, last.id);
     // A discovered reply was never streamed here; read it from the start. The
     // streaming edge keeps its offset so it only reads the unspoken remainder.

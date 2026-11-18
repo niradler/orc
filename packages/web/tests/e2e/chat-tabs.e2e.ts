@@ -219,6 +219,58 @@ test("a live completion announces the finished reply", async ({ page }) => {
   await expect(page.getByTestId("chat-live-announcer")).toContainText(reply);
 });
 
+test("a mid-turn refresh that already loads the finished reply still announces it", async ({
+  page,
+}) => {
+  const first = `SETUP-${Date.now()}`;
+  const reply = `MIDTURN-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // A first completed turn gives the tab a thread. The second turn's stream is
+  // then held unfulfilled while its server-side run finishes, so the tab keeps
+  // streaming:true with no events — like a stalled connection.
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${first}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(first);
+
+  let holding = false;
+  let serverDone: () => void;
+  const streamHeld = new Promise<void>((resolve) => {
+    serverDone = resolve;
+  });
+  let snapshotLoaded: () => void;
+  const refreshed = new Promise<void>((resolve) => {
+    snapshotLoaded = resolve;
+  });
+  await page.route(/\/api\/chat\/stream$/, async (route) => {
+    const response = await route.fetch(); // the run finishes server-side
+    holding = true;
+    serverDone();
+    await refreshed; // keep the client streaming until the mid-turn refresh
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // The refresh aborted this reader; fulfilling late is a no-op.
+    await route.fulfill({ response }).catch(() => {});
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    await route.continue();
+    if (holding) snapshotLoaded();
+  });
+
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await streamHeld;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  // The refresh snapshot already contains the finished reply while streaming is
+  // preserved; /live then answers 204 and finish() appends nothing, so only the
+  // pending-completion memory can announce it.
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(reply);
+});
+
 test("opening a finished thread does not announce its historical reply", async ({ page }) => {
   const reply = `HISTORY-${Date.now()}`;
   await page.goto("/tasks?chat=full");
