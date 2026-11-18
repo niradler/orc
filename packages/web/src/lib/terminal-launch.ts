@@ -1,4 +1,7 @@
+import type { ComposerProfile } from "@orc/core/chat";
+import { TERMINAL_LAUNCH_SUPPORT, type TerminalLaunchOptions } from "@orc/core/chat-options";
 import type { CreateTerminalInput, TerminalKind } from "@/api/client";
+import type { PermissionMode } from "@/lib/composer-chips";
 
 export const CWD_KEY = "orc_terminal_cwd";
 export const WORKTREE_KEY = "orc_terminal_worktree";
@@ -48,5 +51,22 @@ export function launchRequest(
     kind,
     ...(folder ? { cwd: folder } : {}),
     ...(worktree && kind !== "shell" && folder ? { worktree: true } : {}),
+  };
+}
+
+export function terminalModes(agent: string): PermissionMode[] {
+  return (TERMINAL_LAUNCH_SUPPORT[agent]?.modes ?? []).filter(
+    (mode) => mode !== "default" || agent === "codex",
+  );
+}
+
+export function terminalProfileOptions(profile: ComposerProfile): TerminalLaunchOptions {
+  const support = TERMINAL_LAUNCH_SUPPORT[profile.agent];
+  if (!support) return {};
+  const mode = profile.permissionMode;
+  return {
+    ...(profile.model ? { model: profile.model } : {}),
+    ...(support.effort && profile.effort ? { effort: profile.effort } : {}),
+    ...(mode && terminalModes(profile.agent).includes(mode) ? { permissionMode: mode } : {}),
   };
 }

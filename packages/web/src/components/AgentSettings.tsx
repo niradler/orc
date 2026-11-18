@@ -16,6 +16,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Copy, Plus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { AgentIcon } from "@/components/AgentIcon";
 import { HelpPopover } from "@/components/HelpPopover";
@@ -54,7 +55,8 @@ export function AgentSettings() {
   const client = useQueryClient();
   const query = useProviders();
   const [draft, setDraft] = useState<ProviderSettings | null>(null);
-  const [editing, setEditing] = useState("");
+  const [params] = useSearchParams();
+  const [editing, setEditing] = useState(() => params.get("provider") ?? "");
   const [optionDrafts, setOptionDrafts] = useState<Record<string, string>>({});
   const [optionErrors, setOptionErrors] = useState<Record<string, string>>({});
   const [environmentKeys, setEnvironmentKeys] = useState<Record<string, string[]>>({});

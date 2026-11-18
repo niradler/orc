@@ -81,6 +81,77 @@ test("should persist only validated provider executable paths without exposing c
   resetConfig();
 });
 
+const patchSettings = (body: unknown) =>
+  app.request("/api/settings", { method: "PATCH", headers, body: JSON.stringify(body) });
+const profile = (id: string, name = id) => ({ id, name, agent: "claude", model: "opus" });
+
+test("favorites and profiles saved from two tabs never drop a change", async () => {
+  const previous = readFileSync(globalConfigPath(), "utf8");
+  const read = async () =>
+    (await (await app.request("/api/settings", { headers })).json()) as {
+      composer_revision: string;
+      composer_profiles?: { id: string }[];
+      favorite_models?: { id: string }[];
+    };
+  const opened = await read();
+  const first = await patchSettings({
+    composer_profiles: [profile("a")],
+    composer_revision: opened.composer_revision,
+  });
+  expect(first.status).toBe(200);
+  const stale = await patchSettings({
+    favorite_models: [{ agent: "claude", id: "sonnet" }],
+    composer_revision: opened.composer_revision,
+  });
+  expect(stale.status).toBe(409);
+  expect((await patchSettings({ composer_profiles: [] })).status).toBe(409);
+  resetConfig();
+  const reloaded = await read();
+  expect(reloaded.composer_profiles?.map((item) => item.id)).toEqual(["a"]);
+  expect(reloaded.favorite_models ?? []).toEqual([]);
+  const retried = await patchSettings({
+    favorite_models: [{ agent: "claude", id: "sonnet" }],
+    composer_revision: reloaded.composer_revision,
+  });
+  expect(retried.status).toBe(200);
+  resetConfig();
+  const final = await read();
+  expect(final.composer_profiles?.map((item) => item.id)).toEqual(["a"]);
+  expect(final.favorite_models?.map((item) => item.id)).toEqual(["sonnet"]);
+  expect(JSON.parse(readFileSync(globalConfigPath(), "utf8")).preferences.composer_revision).toBe(
+    undefined,
+  );
+  writeFileSync(globalConfigPath(), previous);
+  resetConfig();
+});
+
+test("invalid favorites and profiles are rejected", async () => {
+  const { composer_revision } = (await (
+    await app.request("/api/settings", { headers })
+  ).json()) as {
+    composer_revision: string;
+  };
+  const before = readFileSync(globalConfigPath(), "utf8");
+  for (const invalid of [
+    { composer_profiles: Array.from({ length: 51 }, (_, index) => profile(`p${index}`)) },
+    {
+      favorite_models: Array.from({ length: 101 }, (_, index) => ({
+        agent: "claude",
+        id: `m${index}`,
+      })),
+    },
+    { composer_profiles: [{ ...profile("a"), agent: "Not An Agent!" }] },
+    { favorite_models: [{ agent: "-bad", id: "opus" }] },
+    { composer_profiles: [profile("a", "x".repeat(61))] },
+    { composer_profiles: [profile("a"), profile("a", "other")] },
+    { composer_profiles: [{ ...profile("a"), permissionMode: "yolo" }] },
+  ]) {
+    const response = await patchSettings({ ...invalid, composer_revision });
+    expect(response.status).toBe(400);
+  }
+  expect(readFileSync(globalConfigPath(), "utf8")).toBe(before);
+});
+
 test("should require authentication for reading and writing preferences", async () => {
   for (const method of ["GET", "PATCH"]) {
     expect((await app.request("/api/settings", { method })).status).toBe(401);
@@ -238,7 +309,11 @@ test("should persist selected settings without changing or exposing credentials"
   expect(saved.status).toBe(200);
   resetConfig();
   const result = await app.request("/api/settings", { headers });
-  expect(await result.json()).toEqual({ theme: "light", terminal_font: "Test Mono" });
+  expect(await result.json()).toEqual({
+    theme: "light",
+    terminal_font: "Test Mono",
+    composer_revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+  });
   const raw = JSON.parse(readFileSync(globalConfigPath(), "utf8"));
   expect(raw.api.secret).toBe("private-server-secret");
   expect(raw.custom).toEqual({ keep: true });
@@ -265,7 +340,11 @@ test("should patch one setting while preserving the other", async () => {
     headers,
     body: JSON.stringify({ theme: "dark" }),
   });
-  expect(await result.json()).toEqual({ theme: "dark", terminal_font: "Test Mono" });
+  expect(await result.json()).toEqual({
+    theme: "dark",
+    terminal_font: "Test Mono",
+    composer_revision: expect.stringMatching(/^[a-f0-9]{64}$/),
+  });
 });
 
 test("should persist validated chat defaults without exposing server credentials", async () => {

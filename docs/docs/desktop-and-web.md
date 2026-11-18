@@ -629,6 +629,16 @@ labelled with the current choices. Picking an agent moves to Model, picking a
 model moves to Effort (or closes when the model has none), and picking an effort
 closes the picker.
 
+The star beside a model pins it to the top of that agent's list. The gear beside
+an agent opens **Settings → Agents → Providers** on that provider. Favorites are
+saved in workspace preferences (`favorite_models`).
+
+**Profiles** at the bottom of the picker save the current agent, provider, model,
+effort and permission mode under a name (**Save current**). Clicking a profile
+restores all of them; in a started chat, a profile for another agent or provider
+opens a new chat. Profiles are saved in workspace preferences
+(`composer_profiles`) and also appear in the **New terminal** launcher.
+
 ## Chat turn progress
 
 Finished turns fold tool calls and intermediate narration into one expandable line;
@@ -725,8 +735,12 @@ only its own modes from `GET /chat/capabilities` (`permissionModes`). **Plan**
 (reads and plans, never edits) uses each agent's native mode: Claude's `plan`
 permission mode, Codex's plan collaboration mode and OpenCode's plan agent.
 Claude also offers **Auto** (Claude's classifier approves safe actions). Codex
-and Pi offer Ask in chat, Allow edits and Full access; OpenCode offers Ask in
-chat and Plan, applied from the next message. Pi and ACPX agents show that Plan
+offers its own approval presets, named by `permissionLabels` in the capabilities:
+**Read only** (`on-request` approvals, `read-only` sandbox), **Auto**
+(`on-request`, `workspace-write`: works in the workspace and asks before going
+outside it) and **Full access** (`never`, `danger-full-access`). Pi offers Ask in
+chat, Allow edits and Full access; OpenCode offers Ask in chat and Plan, applied
+from the next message. Pi and ACPX agents show that Plan
 isn't available. Leaving Plan during a Claude response applies to the running
 turn.
 

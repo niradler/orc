@@ -1,4 +1,9 @@
 import {
+  TERMINAL_LAUNCH_SUPPORT,
+  type TerminalLaunchOptions,
+  terminalLaunchArgs,
+} from "@orc/core/chat-options";
+import {
   agentForSessionBackend,
   CODING_AGENTS,
   type CodingAgent,
@@ -94,18 +99,27 @@ export function configureProviderLaunch(
   launch: Launch,
   providerId?: string,
   resuming = false,
+  options: TerminalLaunchOptions = {},
 ): Launch {
   if (launch.kind === "shell") {
     if (providerId) throw new ValidationError("A shell cannot use a coding provider.");
+    if (options.model || options.effort || options.permissionMode)
+      throw new ValidationError("A shell takes no model, effort or mode.");
     return launch;
   }
   const profile = providerForAgent(launch.kind, providerId, resuming || !providerId);
-  if (!profile) return launch;
-  const { env } = resolveProviderEnvironment(profile);
-  const argv = [...launch.argv];
-  if (profile.model && (launch.kind === "claude" || launch.kind === "codex"))
-    argv.push("--model", profile.model);
-  return { ...launch, argv, env };
+  const model =
+    options.model ||
+    (profile?.model && TERMINAL_LAUNCH_SUPPORT[launch.kind] ? profile.model : undefined);
+  let args: string[];
+  try {
+    args = terminalLaunchArgs(launch.kind, { ...options, model });
+  } catch (error) {
+    throw new ValidationError(error instanceof Error ? error.message : String(error));
+  }
+  const argv = [...launch.argv, ...args];
+  if (!profile) return { ...launch, argv };
+  return { ...launch, argv, env: resolveProviderEnvironment(profile).env };
 }
 
 export function isValidSessionId(id: string): boolean {

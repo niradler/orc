@@ -531,6 +531,28 @@ export interface paths {
                                 rollback: boolean;
                                 subagents?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                                permissionLabels?: {
+                                    default?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    plan?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    acceptEdits?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    auto?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    bypassPermissions?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                };
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -703,6 +725,28 @@ export interface paths {
                                 rollback: boolean;
                                 subagents?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                                permissionLabels?: {
+                                    default?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    plan?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    acceptEdits?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    auto?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    bypassPermissions?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                };
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -1073,6 +1117,28 @@ export interface paths {
                                 rollback: boolean;
                                 subagents?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                                permissionLabels?: {
+                                    default?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    plan?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    acceptEdits?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    auto?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    bypassPermissions?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                };
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -1381,6 +1447,28 @@ export interface paths {
                                 rollback: boolean;
                                 subagents?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                                permissionLabels?: {
+                                    default?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    plan?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    acceptEdits?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    auto?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    bypassPermissions?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                };
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -1692,6 +1780,28 @@ export interface paths {
                                 rollback: boolean;
                                 subagents?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                                permissionLabels?: {
+                                    default?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    plan?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    acceptEdits?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    auto?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    bypassPermissions?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                };
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -2204,6 +2314,28 @@ export interface paths {
                                 rollback: boolean;
                                 subagents?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                                permissionLabels?: {
+                                    default?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    plan?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    acceptEdits?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    auto?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    bypassPermissions?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                };
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -2581,6 +2713,28 @@ export interface paths {
                                 rollback: boolean;
                                 subagents?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                                permissionLabels?: {
+                                    default?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    plan?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    acceptEdits?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    auto?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    bypassPermissions?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                };
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -3039,6 +3193,28 @@ export interface paths {
                                 rollback: boolean;
                                 subagents?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                                permissionLabels?: {
+                                    default?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    plan?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    acceptEdits?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    auto?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    bypassPermissions?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                };
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -3404,6 +3580,28 @@ export interface paths {
                                 rollback: boolean;
                                 subagents?: boolean;
                                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                                permissionLabels?: {
+                                    default?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    plan?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    acceptEdits?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    auto?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                    bypassPermissions?: {
+                                        label: string;
+                                        description: string;
+                                    };
+                                };
                                 effortChoices?: {
                                     value: string;
                                     label: string;
@@ -8493,6 +8691,24 @@ export interface paths {
                                  */
                                 mcp: "orc" | "native";
                             };
+                            favorite_models?: {
+                                agent: string;
+                                id: string;
+                            }[];
+                            composer_profiles?: {
+                                id: string;
+                                name: string;
+                                agent: string;
+                                providerId?: string;
+                                /** @default  */
+                                model: string;
+                                /** @default  */
+                                effort: string;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                            }[];
+                            /** @description Revision of favorite_models and composer_profiles from the last read; required when saving either. A stale revision returns 409. */
+                            composer_revision?: string;
                             agents?: string[];
                             provider_paths?: {
                                 claude?: string;
@@ -8617,6 +8833,24 @@ export interface paths {
                              */
                             mcp?: "orc" | "native";
                         };
+                        favorite_models?: {
+                            agent: string;
+                            id: string;
+                        }[];
+                        composer_profiles?: {
+                            id: string;
+                            name: string;
+                            agent: string;
+                            providerId?: string;
+                            /** @default  */
+                            model?: string;
+                            /** @default  */
+                            effort?: string;
+                            /** @enum {string} */
+                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                        }[];
+                        /** @description Revision of favorite_models and composer_profiles from the last read; required when saving either. A stale revision returns 409. */
+                        composer_revision?: string;
                         agents?: string[];
                         provider_paths?: {
                             claude?: string;
@@ -8731,6 +8965,24 @@ export interface paths {
                                  */
                                 mcp: "orc" | "native";
                             };
+                            favorite_models?: {
+                                agent: string;
+                                id: string;
+                            }[];
+                            composer_profiles?: {
+                                id: string;
+                                name: string;
+                                agent: string;
+                                providerId?: string;
+                                /** @default  */
+                                model: string;
+                                /** @default  */
+                                effort: string;
+                                /** @enum {string} */
+                                permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                            }[];
+                            /** @description Revision of favorite_models and composer_profiles from the last read; required when saving either. A stale revision returns 409. */
+                            composer_revision?: string;
                             agents?: string[];
                             provider_paths?: {
                                 claude?: string;
@@ -21412,6 +21664,13 @@ export interface paths {
                             operation?: "run" | "install";
                             host?: string | null;
                         };
+                        model?: string;
+                        effort?: string;
+                        /**
+                         * @description Fresh agent terminals only. Mapped to the CLI's own flags; a mode the CLI lacks is rejected.
+                         * @enum {string}
+                         */
+                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                     };
                 };
             };
@@ -22993,6 +23252,28 @@ export interface components {
                 rollback: boolean;
                 subagents?: boolean;
                 permissionModes?: ("default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions")[];
+                permissionLabels?: {
+                    default?: {
+                        label: string;
+                        description: string;
+                    };
+                    plan?: {
+                        label: string;
+                        description: string;
+                    };
+                    acceptEdits?: {
+                        label: string;
+                        description: string;
+                    };
+                    auto?: {
+                        label: string;
+                        description: string;
+                    };
+                    bypassPermissions?: {
+                        label: string;
+                        description: string;
+                    };
+                };
                 effortChoices?: {
                     value: string;
                     label: string;

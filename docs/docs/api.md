@@ -406,6 +406,15 @@ dev script. Terminal responses include `project_id`, `worktree_path`, `dev` and
 `preview_url`. For a dev terminal, the first printed `http(s)` URL becomes
 `preview_url` and stays until that terminal exits.
 
+`GET /settings` returns `composer_revision` for `favorite_models` and
+`composer_profiles`. A `PATCH /settings` that saves either must send that revision;
+a stale one returns `409` so a save from another tab is never overwritten.
+
+`POST /terminals` accepts `model`, `effort` and `permissionMode` for a new agent
+terminal and maps them to the CLI's flags (see
+[Terminal workspace](./terminal-workspace.md)). A choice the CLI does not support, or
+any of them on a shell, dev, setup or resumed terminal, is rejected with `400`.
+
 `POST /terminals` with `live_session_id` resumes that session's native CLI
 conversation. Adding `fork: true` starts a new session from the same history
 instead: Claude runs `--resume <id> --fork-session` and Pi runs `--fork <id>`. The

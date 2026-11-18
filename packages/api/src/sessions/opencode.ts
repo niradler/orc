@@ -84,16 +84,17 @@ export async function opencodeSessionUpdated(
   sessionId: string,
 ): Promise<number | null> {
   if (!SESSION_ID.test(sessionId)) return null;
+  const where = `WHERE id = '${sessionId}'`;
   const rows = [
     ...(await queryTable<{ time_updated: number }>(
       runtime,
       dbPath,
-      `SELECT time_updated FROM session_v2 WHERE id = '${sessionId}'`,
+      `SELECT time_updated FROM session_v2 ${where}`,
     )),
     ...(await queryTable<{ time_updated: number }>(
       runtime,
       dbPath,
-      `SELECT time_updated FROM session WHERE id = '${sessionId}'`,
+      `SELECT time_updated FROM session ${where}`,
     )),
   ];
   return rows.length ? Math.max(...rows.map((row) => row.time_updated)) : null;

@@ -349,8 +349,8 @@ test("permission chip appears only when the mode is not the default", async ({ p
   });
   await openChat(page);
   const chip = page.getByTestId("chat-permission-chip");
-  await expect(chip).toHaveText("Allow edits");
-  await expect(chip).toHaveAccessibleName("Permissions: Allow edits");
+  await expect(chip).toHaveText("Auto");
+  await expect(chip).toHaveAccessibleName("Permissions: Auto");
   await chip.click();
   await expect(page.getByTestId("chat-permission-option-acceptEdits")).toBeFocused();
   await page.getByTestId("chat-permission-option-bypassPermissions").click();

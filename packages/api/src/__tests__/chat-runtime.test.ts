@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -908,57 +909,6 @@ describe("native chat runtime", () => {
     expect(saved.historyBefore).toBe(605);
   });
 
-  test("should flag an OpenCode chat as changed only when its own session moves, not when the shared database does", async () => {
-    getDb()
-      .insert(bridge_chats)
-      .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
-      .onConflictDoNothing()
-      .run();
-    const dbPath = join(home, "opencode-mark.db");
-    const db = new Database(dbPath);
-    db.run(`CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, title TEXT NOT NULL,
-      time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL)`);
-    db.run(
-      "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, data TEXT)",
-    );
-    db.run(
-      "CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)",
-    );
-    db.run("INSERT INTO session VALUES ('ses_mine', NULL, ?, 'Mine', 1000, 2000)", [home]);
-    db.run("INSERT INTO session VALUES ('ses_other', NULL, ?, 'Other', 1000, 2000)", [home]);
-    db.close();
-    getDb()
-      .insert(gateway_sessions)
-      .values({
-        id: "source-opencode-mark",
-        backend: "opencode",
-        mode: "direct",
-        status: "stopped",
-        chat_id: LIVE_CHAT_ID,
-        runtime_session_id: "ses_mine",
-        cwd: home,
-        transcript_path: dbPath,
-      })
-      .run();
-    const thread = (await (
-      await request("/chat/threads", { sourceSessionId: "source-opencode-mark" })
-    ).json()) as ChatThread;
-    expect(thread.transcriptMark).toBe("opencode:2000");
-    const changed = async () =>
-      ((await (await request(`/chat/threads/${thread.id}/session`)).json()) as { changed: boolean })
-        .changed;
-    const write = (sql: string) => {
-      const handle = new Database(dbPath);
-      handle.run(sql);
-      handle.close();
-    };
-    write("UPDATE session SET time_updated = 9000 WHERE id = 'ses_other'");
-    write("INSERT INTO part VALUES ('prt_other', 'msg', 'ses_other', 9000, '{}')");
-    expect(await changed()).toBe(false);
-    write("UPDATE session SET time_updated = 3000 WHERE id = 'ses_mine'");
-    expect(await changed()).toBe(true);
-  });
-
   test("should flag a native session that changed on disk and rebuild the chat from it", async () => {
     getDb()
       .insert(bridge_chats)
@@ -1063,6 +1013,75 @@ describe("native chat runtime", () => {
     expect((await state()).changed).toBe(false);
     rmSync(transcript);
     expect((await request(`/chat/threads/${thread.id}/refresh`, {})).status).toBe(404);
+  });
+
+  test("should not flag an OpenCode session as changed when another session writes the shared database", async () => {
+    getDb()
+      .insert(bridge_chats)
+      .values({ id: LIVE_CHAT_ID, platform: "telegram", chat_id: "chat-fixture" })
+      .onConflictDoNothing()
+      .run();
+    const dbPath = join(home, "opencode.db");
+    const db = new Database(dbPath);
+    db.run(
+      "CREATE TABLE session_v2 (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, title TEXT, time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL)",
+    );
+    db.run(
+      "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT NOT NULL, seq INTEGER NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)",
+    );
+    const say = (id: string, session: string, seq: number, text: string) =>
+      db.run("INSERT INTO session_message VALUES (?, ?, 'user', ?, 1500, ?)", [
+        id,
+        session,
+        seq,
+        JSON.stringify({ text }),
+      ]);
+    db.run("INSERT INTO session_v2 VALUES ('ses_old', NULL, ?, 'Old', 1000, 2000)", [home]);
+    db.run("INSERT INTO session_v2 VALUES ('ses_busy', NULL, ?, 'Busy', 1000, 2000)", [home]);
+    say("msg_old_1", "ses_old", 1, "old question");
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-opencode-old",
+        backend: "opencode",
+        mode: "direct",
+        status: "stopped",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: "ses_old",
+        cwd: home,
+        transcript_path: dbPath,
+      })
+      .run();
+    const thread = (await (
+      await request("/chat/threads", { sourceSessionId: "source-opencode-old" })
+    ).json()) as ChatThread;
+    expect(thread.messages.map((message) => message.content)).toEqual(["old question"]);
+    const changed = async () =>
+      ((await (await request(`/chat/threads/${thread.id}/session`)).json()) as { changed: boolean })
+        .changed;
+    expect(await changed()).toBe(false);
+    for (let seq = 1; seq <= 3; seq++) {
+      say(`msg_busy_${seq}`, "ses_busy", seq, `another session's turn ${seq}`);
+      db.run("UPDATE session_v2 SET time_updated = ? WHERE id = 'ses_busy'", [2000 + seq]);
+      const later = new Date(Date.now() + seq * 5000);
+      utimesSync(dbPath, later, later);
+      expect(await changed()).toBe(false);
+    }
+    say("msg_old_2", "ses_old", 2, "asked in opencode");
+    db.run("UPDATE session_v2 SET time_updated = 9000 WHERE id = 'ses_old'");
+    expect(await changed()).toBe(true);
+    const refreshed = await request(`/chat/threads/${thread.id}/refresh`, {});
+    expect(refreshed.status).toBe(200);
+    expect(((await refreshed.json()) as ChatThread).messages.map((m) => m.content)).toEqual([
+      "old question",
+      "asked in opencode",
+    ]);
+    expect(await changed()).toBe(false);
+    db.run("DELETE FROM session_v2 WHERE id = 'ses_old'");
+    expect(await changed()).toBe(false);
+    db.close();
+    rmSync(dbPath);
+    expect(await changed()).toBe(false);
   });
 
   test("resumes native identity and stale status while rejecting real owners, unsupported and missing sources", async () => {

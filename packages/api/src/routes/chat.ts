@@ -849,11 +849,11 @@ async function transcriptMark(thread: ChatThread, source?: NativeSource | null) 
   const row = source === undefined ? await nativeSource(thread) : source;
   if (!row?.transcript_path) return null;
   const runtime = hostRuntime(execHostFor(thread.host));
-  if (row.backend === "opencode" && row.runtime_session_id) {
+  if (row.backend === "opencode") {
     const updated = await opencodeSessionUpdated(
       runtime,
       row.transcript_path,
-      row.runtime_session_id,
+      row.runtime_session_id ?? "",
     ).catch(() => null);
     return updated === null ? null : `opencode:${updated}`;
   }
