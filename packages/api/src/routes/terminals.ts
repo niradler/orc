@@ -547,6 +547,7 @@ app.openapi(createTerminalRoute, async (c) => {
       worktreePath: workspace.worktreePath,
       dev: Boolean(body.dev),
     },
+    notice: workspace.warning,
   });
   rememberTerminalFolder(info.cwd, info.host);
   recordAudit(c, {

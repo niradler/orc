@@ -2,11 +2,12 @@ import type { ExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import {
   ensureWorkspaceEnvironment,
-  isWorktreePath,
   parseWorkspaceEnvironment,
   resolveWorkspaceEnvironment,
   type WorkspaceRecord,
+  workspaceConfigured,
   workspacePortEnv,
+  worktreeDir,
   worktreeRoot,
 } from "@orc/core/workspace-environment";
 import { getSqlite } from "@orc/db/client";
@@ -45,24 +46,26 @@ export async function workspaceEnvFor(
 
   const config = parseWorkspaceEnvironment(project.workspace);
   const resolved = resolveWorkspaceEnvironment(config);
-  const runSetup = isWorktreePath(cwd);
+  if (!workspaceConfigured(config)) return { env: resolved.env, setup: null };
+  const worktree = worktreeDir(cwd);
+  const path = worktree ?? cwd;
   let setup: WorkspaceRecord;
   try {
     setup = await ensureWorkspaceEnvironment({
       store: workspaceEnvironmentStore(getSqlite()),
       host,
       projectId: project.id,
-      path: cwd,
-      repoRoot: worktreeRoot(cwd) ?? project.scope,
+      path,
+      repoRoot: worktreeRoot(path) ?? project.scope,
       platform: host.kind === "ssh" ? "linux" : process.platform,
-      workspace: runSetup ? config : { ...config, setup_script: null },
+      workspace: worktree ? config : { ...config, setup_script: null },
       env: resolved.env,
       redact: resolved.redact,
       log: (message) => logger.info(message),
     });
   } catch (error) {
-    logger.error(`Workspace environment failed for ${cwd}: ${String(error)}`);
-    return EMPTY;
+    logger.error(`Workspace environment failed for ${path}: ${String(error)}`);
+    return { env: resolved.env, setup: null };
   }
 
   const base = setup.port_base ?? config.port_base ?? 3100;
@@ -71,8 +74,8 @@ export async function workspaceEnvFor(
     env: {
       ...workspacePortEnv(base, count),
       ORC_PROJECT_ID: project.id,
-      ORC_WORKSPACE: cwd,
-      ...(runSetup ? { ORC_WORKTREE: cwd } : {}),
+      ORC_WORKSPACE: path,
+      ...(worktree ? { ORC_WORKTREE: worktree } : {}),
       ...resolved.env,
     },
     setup,

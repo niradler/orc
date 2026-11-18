@@ -189,7 +189,9 @@ starting from 3100, and no variables.
 
 `GET /workspaces` returns workspace records with `setup_status`, `setup_output`,
 the allocated `port_base`/`port_count` block, `preview_url` and the owning
-project. Filter by `project_id`, or pass `path` for exactly one folder. Setup runs
+project. Filter by `project_id`, or pass `path` for exactly one folder; a folder
+inside a managed worktree returns that worktree's record. Records exist only for
+projects with a setup script, a dev script or a custom port range. Setup runs
 once per managed worktree; a project's main checkout gets a port block but no
 setup.
 

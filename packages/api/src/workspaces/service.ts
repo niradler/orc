@@ -3,12 +3,13 @@ import type { ExecHost } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import {
   ensureWorkspaceEnvironment,
-  isWorktreePath,
   parseWorkspaceEnvironment,
   resolveWorkspaceEnvironment,
   type WorkspaceEnvironment,
   type WorkspaceRecord,
+  workspaceConfigured,
   workspacePortEnv,
+  worktreeDir,
   worktreeRoot,
 } from "@orc/core/workspace-environment";
 import { getSqlite } from "@orc/db/client";
@@ -67,6 +68,7 @@ export interface WorkspaceLaunch {
   env: Record<string, string>;
   previewUrl: string | null;
   setup: WorkspaceRecord | null;
+  warning: string | null;
 }
 
 const EMPTY_LAUNCH: WorkspaceLaunch = {
@@ -75,12 +77,13 @@ const EMPTY_LAUNCH: WorkspaceLaunch = {
   env: {},
   previewUrl: null,
   setup: null,
+  warning: null,
 };
 
 /**
  * Ports, environment and one-time setup for a folder a terminal or agent will
- * use. Setup runs only for managed worktrees; a plain project checkout just
- * gets a stable port block.
+ * use, once the project configures a workspace environment. Setup runs only
+ * for managed worktrees; a plain project checkout just gets a stable port block.
  */
 export async function workspaceLaunch(
   host: ExecHost,
@@ -93,27 +96,45 @@ export async function workspaceLaunch(
 
   const config = projectWorkspaceConfig(project);
   const resolved = resolveWorkspaceEnvironment(config);
-  const runSetup = isWorktreePath(cwd);
-  const record = await ensureWorkspace({
-    host,
-    project,
-    path: cwd,
-    // Ports stay stable for the main checkout, but its setup is the developer's own.
-    workspace: runSetup ? config : { ...config, setup_script: null },
-    redact: resolved.redact,
+  const worktree = worktreeDir(cwd);
+  const launch: WorkspaceLaunch = {
+    projectId: project.id,
+    worktreePath: worktree,
     env: resolved.env,
-  });
+    previewUrl: null,
+    setup: null,
+    warning: null,
+  };
+  if (!workspaceConfigured(config)) return launch;
+  const path = worktree ?? cwd;
+  let record: WorkspaceRecord;
+  try {
+    record = await ensureWorkspace({
+      host,
+      project,
+      path,
+      // Ports stay stable for the main checkout, but its setup is the developer's own.
+      workspace: worktree ? config : { ...config, setup_script: null },
+      redact: resolved.redact,
+      env: resolved.env,
+    });
+  } catch (error) {
+    logger.error(`Workspace environment failed for ${path}: ${String(error)}`);
+    return {
+      ...launch,
+      warning: `Workspace ports are unavailable: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 
   const base = record.port_base ?? config.port_base ?? 3100;
   const count = record.port_count ?? config.port_count;
   return {
-    projectId: project.id,
-    worktreePath: isWorktreePath(cwd) ? cwd : null,
+    ...launch,
     env: {
       ...workspacePortEnv(base, count),
       ORC_PROJECT_ID: project.id,
-      ORC_WORKSPACE: cwd,
-      ...(isWorktreePath(cwd) ? { ORC_WORKTREE: cwd } : {}),
+      ORC_WORKSPACE: path,
+      ...(worktree ? { ORC_WORKTREE: worktree } : {}),
       ...resolved.env,
     },
     previewUrl: record.preview_url,

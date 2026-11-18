@@ -41,9 +41,9 @@ runs in a new shell in the same folder and host; the first `http(s)` URL it prin
 becomes the preview link. **Preview** appears in the pane toolbar and in the
 terminal's menu. The link is cleared when that dev terminal exits.
 
-Terminals that belong to a project receive its port block and environment
-variables. A session's inspector shows the workspace ports, setup state and
-preview; a task's Git links show the same workspace status with its setup output
+Terminals that belong to a project receive its environment variables, and its
+port block once the project has a setup script, dev script or a custom port range.
+A session's inspector shows the workspace ports, setup state and preview; a task's Git links show the same workspace status with its setup output
 when the setup script failed. Setup runs once per managed worktree, before the
 first agent starts there; a failure is reported but does not block the agent.
 

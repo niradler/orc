@@ -1,4 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
+import { worktreeDir } from "@orc/core/workspace-settings";
 import { getSqlite } from "@orc/db/client";
 import { listWorkspaceEnvironments, workspaceEnvironmentByPath } from "@orc/db/workspaces";
 import { createRouter } from "../lib/router.js";
@@ -52,7 +53,7 @@ app.openapi(listRoute, (c) => {
   const { project_id, path } = c.req.valid("query");
   const sqlite = getSqlite();
   if (path) {
-    const row = workspaceEnvironmentByPath(sqlite, path);
+    const row = workspaceEnvironmentByPath(sqlite, worktreeDir(path) ?? path);
     return c.json({ workspaces: row ? [row] : [] }, 200);
   }
   return c.json({ workspaces: listWorkspaceEnvironments(sqlite, project_id) }, 200);

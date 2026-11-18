@@ -2494,6 +2494,8 @@ async function beginTurn(
         const projectWorkspace = thread.projectId
           ? await workspaceLaunch(execHostFor(thread.host), thread.cwd, thread.projectId)
           : null;
+        if (projectWorkspace?.warning)
+          await emit({ type: "system_status", text: projectWorkspace.warning });
         const opts: SessionOpts = {
           ...(projectWorkspace && Object.keys(projectWorkspace.env).length
             ? { env: projectWorkspace.env }
