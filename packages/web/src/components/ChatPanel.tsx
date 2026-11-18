@@ -87,6 +87,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
+import { useOpenLiveSession } from "@/hooks/useOpenLiveSession";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
 import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
@@ -94,6 +95,7 @@ import { useSessionHome } from "@/hooks/useSessionHome";
 import {
   useSendSessionMessage,
   useSessionChildren,
+  useSessionLineage,
   useSessionSubagents,
 } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
@@ -392,6 +394,29 @@ export function ChatPanel({
     }
   };
   const home = useSessionHome();
+  const lineage = useSessionLineage(thread?.sourceId ?? null);
+  const parentSession = thread?.sourceId ? (lineage.data?.parent ?? null) : null;
+  const openSession = useOpenLiveSession();
+  const [parentOpening, setParentOpening] = useState(false);
+  const [parentError, setParentError] = useState<string | null>(null);
+  const openParent = async () => {
+    if (!parentSession || parentOpening) return;
+    setParentOpening(true);
+    setParentError(null);
+    try {
+      if (parentSession.kind === "chat") {
+        const next = await api.chat.get(parentSession.id);
+        openThread(next);
+        home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
+      } else await openSession(parentSession.id);
+    } catch (cause) {
+      setParentError(
+        cause instanceof Error ? cause.message : "The parent session could not be opened.",
+      );
+    } finally {
+      setParentOpening(false);
+    }
+  };
   const terminalControl = useChatContinueInTerminal({
     inChat: true,
     onOpened: (terminal) => home.go({ terminalId: terminal.id }),
@@ -903,6 +928,20 @@ export function ChatPanel({
             )}
           >
             {!phone && terminalBack}
+            {parentSession && (
+              <ActionHelp label={`Back to ${parentSession.title}`}>
+                <button
+                  type="button"
+                  data-testid="chat-parent-back"
+                  aria-label={`Back to ${parentSession.title}`}
+                  disabled={parentOpening}
+                  onClick={() => void openParent()}
+                  className={cn(iconButton, "shrink-0", phone && "min-h-11 min-w-11")}
+                >
+                  <ArrowLeft size={18} />
+                </button>
+              </ActionHelp>
+            )}
             {phone ? (
               <>
                 {terminalBack}
@@ -1114,9 +1153,9 @@ export function ChatPanel({
               </ActionHelp>
             )}
           </header>
-          {linkError && (
+          {(linkError || parentError) && (
             <p role="alert" className="px-4 py-1 text-xs text-error">
-              {linkError}
+              {linkError ?? parentError}
             </p>
           )}
           {terminalCenter && <SessionTerminalCenter context={context} />}

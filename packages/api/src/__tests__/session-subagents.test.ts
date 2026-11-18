@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -62,6 +63,34 @@ beforeAll(() => {
   );
   session("xparent", "codex", "codex-parent", rollout, null, 1);
   session("xchild", "codex", "codex-child", join(root, "codex-child.jsonl"), "codex-parent", 2);
+  const opencodeDb = join(root, "opencode.db");
+  const opencode = new Database(opencodeDb);
+  opencode.run(
+    "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT NOT NULL, seq INTEGER NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)",
+  );
+  opencode.run("INSERT INTO session_message VALUES (?, ?, 'assistant', 1, 4000, ?)", [
+    "oc-message",
+    "ses_opencode_parent",
+    JSON.stringify({
+      time: { created: 4000 },
+      content: [
+        {
+          type: "tool",
+          id: "call_sub",
+          name: "task",
+          state: {
+            status: "completed",
+            input: { description: "Inspect the parser" },
+            content: [{ type: "text", text: "Working in the background" }],
+            metadata: { sessionID: "ses_opencode_child" },
+          },
+        },
+      ],
+    }),
+  ]);
+  opencode.close();
+  session("oparent", "opencode", "ses_opencode_parent", opencodeDb, null, 1);
+  session("ochild", "opencode", "ses_opencode_child", null, "ses_opencode_parent", 2);
   new ChatStore(getSqlite()).save(
     ChatThreadSchema.parse({
       id: "22222222-2222-4222-8222-222222222222",
@@ -135,6 +164,8 @@ test("a session lists its subagents with the tool call that started each", async
     await req(app, "GET", "/sessions/live/44444444-4444-4444-8444-444444444444/subagents")
   ).json();
   expect(unlinked.subagents).toMatchObject([{ id: "xchild", tool_call_id: "call_9" }]);
+  const opencode = await (await req(app, "GET", "/sessions/live/oparent/subagents")).json();
+  expect(opencode.subagents).toMatchObject([{ id: "ochild", tool_call_id: "call_sub" }]);
   const none = await (await req(app, "GET", "/sessions/live/cchild1/subagents")).json();
   expect(none.subagents).toEqual([]);
 });
