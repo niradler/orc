@@ -4,13 +4,13 @@ import {
   ChatQuestionSchema,
   type ChatSubagentPayload,
 } from "@orc/core/chat";
-import { ChatAgentOptionsSchema } from "@orc/core/chat-options";
+import { ChatAgentOptionsSchema, codexPermissionPreset } from "@orc/core/chat-options";
 import { type ExecHost, ensureSshMaster, hostSpawn } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
 import { CODEX_CAPABILITIES } from "./capabilities.js";
 import { buildCodexEnv, codexCommand, hasConfiguredOrcMcp } from "./codex.js";
 import { elicitationForm } from "./elicitation.js";
-import { endStdin, readLines, writeToStdin } from "./io.js";
+import { endStdin, readLines, stderrTail, writeToStdin } from "./io.js";
 import { buildOrcMcpServer } from "./orc-mcp.js";
 import { planEvent } from "./plan.js";
 import { codexLimitEvent } from "./provider-limits.js";
@@ -626,19 +626,21 @@ export class CodexAppSession implements AgentSession {
         cwd: this.opts.cwd,
         stdin: "pipe",
         stdout: "pipe",
-        stderr: "ignore",
+        stderr: "pipe",
         env,
         passEnv: ["ORC_CODEX_MCP_TOKEN", ...Object.keys(this.opts.env ?? {})],
       });
       const child = this.child;
+      const stderr = stderrTail(child.proc.stderr, this.readerAbort.signal);
       if (this.closed || this.closing) {
         child.kill();
         await child.proc.exited;
         throw new Error("Codex connection was closed during startup.");
       }
-      const failTransport = (error: Error) => {
+      const failTransport = (cause: Error) => {
         if (this.transportFailed || this.closed) return;
         this.transportFailed = true;
+        const error = new Error(stderr.append(cause.message));
         for (const call of this.calls.values()) call.reject(error);
         for (const id of this.pending.keys()) this.resolved(id);
         if (!this.done) this.push({ type: "error", data: error.message });
@@ -663,9 +665,10 @@ export class CodexAppSession implements AgentSession {
             this.readerAbort.signal,
             2_000_000,
           )
-            .then(() =>
-              failTransport(new Error("Codex output closed before the connection ended.")),
-            )
+            .then(async () => {
+              await stderr.settled();
+              failTransport(new Error("Codex output closed before the connection ended."));
+            })
             .catch((error: unknown) =>
               failTransport(error instanceof Error ? error : new Error("Codex output failed.")),
             )
@@ -695,14 +698,8 @@ export class CodexAppSession implements AgentSession {
               : {}),
           cwd: this.opts.cwd,
           model: this.opts.model,
-          approvalPolicy: mode === "default" ? "on-request" : "never",
+          ...codexPermissionPreset(mode),
           approvalsReviewer: "user",
-          sandbox:
-            mode === "bypassPermissions"
-              ? "danger-full-access"
-              : mode === "acceptEdits"
-                ? "workspace-write"
-                : "read-only",
           ...(this.opts.systemPromptAppend
             ? { developerInstructions: this.opts.systemPromptAppend }
             : {}),
@@ -746,14 +743,15 @@ export class CodexAppSession implements AgentSession {
 
   private collaborationMode(): Record<string, unknown> {
     const live = this.liveMode ?? this.threadMode;
+    const preset = live && codexPermissionPreset(live);
     const policy =
-      live && live !== this.threadMode
+      live && preset && live !== this.threadMode
         ? {
-            approvalPolicy: live === "default" ? "on-request" : "never",
+            approvalPolicy: preset.approvalPolicy,
             sandboxPolicy:
-              live === "bypassPermissions"
+              preset.sandbox === "danger-full-access"
                 ? { type: "dangerFullAccess" }
-                : live === "acceptEdits"
+                : preset.sandbox === "workspace-write"
                   ? {
                       type: "workspaceWrite",
                       writableRoots: [],

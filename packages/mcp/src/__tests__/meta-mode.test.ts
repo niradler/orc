@@ -86,13 +86,16 @@ describe("meta mode", () => {
     const client = await connect("meta");
     for (const args of [{}, { query: "  " }, { query: "the a" }]) {
       const text = textOf(await client.callTool({ name: "tool_search", arguments: args }));
-      const available = toolDefinitions.filter((tool) => !tool.name.startsWith("preview_"));
+      const available = toolDefinitions.filter(
+        (tool) => !tool.name.startsWith("preview_") && tool.name !== "speak",
+      );
       expect(text).toStartWith(`${available.length} tools by toolset:`);
       expect(text).toMatch(/^memory \(\d+\): .*memory_list/m);
       expect(text).toMatch(/^core \(\d+\): .*\bcontext\b/m);
       for (const tool of available) expect(text).toContain(tool.name);
       for (const tool of toolDefinitions.filter((tool) => tool.name.startsWith("preview_")))
         expect(text).not.toContain(tool.name);
+      expect(text).not.toMatch(/\bspeak\b/);
     }
   });
 

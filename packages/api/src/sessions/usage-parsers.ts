@@ -299,6 +299,7 @@ export type OpenCodeMessageRow = {
 export function parseOpenCodeUsage(rows: readonly OpenCodeMessageRow[]): ParsedUsage {
   const events: UsageEventInput[] = [];
   let model: string | null = null;
+  let permissionMode: string | null = null;
   for (const row of rows) {
     let data: Json;
     try {
@@ -306,6 +307,7 @@ export function parseOpenCodeUsage(rows: readonly OpenCodeMessageRow[]): ParsedU
     } catch {
       continue;
     }
+    permissionMode = text(data.agent) ?? text(data.mode) ?? permissionMode;
     const tokens = data.tokens as Json | undefined;
     if (!tokens) continue;
     const cache = tokens.cache as Json | undefined;
@@ -323,5 +325,5 @@ export function parseOpenCodeUsage(rows: readonly OpenCodeMessageRow[]): ParsedU
     model = event.model ?? model;
     events.push(event);
   }
-  return finish(events, model);
+  return { ...finish(events, model), permissionMode };
 }

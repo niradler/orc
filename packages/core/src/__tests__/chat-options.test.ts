@@ -5,6 +5,7 @@ import {
   ChatAgentOptionsMapSchema,
   ChatAgentOptionsSchema,
   chatRuntime,
+  terminalLaunchArgs,
 } from "../chat-options";
 
 test("should accept ACPX permission and timeout arguments without shell parsing", () => {
@@ -101,4 +102,22 @@ test("OpenCode effort options parse and legacy ACPX arguments stay readable", ()
   expect(
     ChatAgentOptionsMapSchema.safeParse({ opencode: { runtime: "codex", args: [] } }).success,
   ).toBe(false);
+});
+
+test("terminal launch flags cover Cursor and reject what a CLI lacks", () => {
+  expect(terminalLaunchArgs("cursor", { model: "gpt-5", permissionMode: "plan" })).toEqual([
+    "--model",
+    "gpt-5",
+    "--mode",
+    "plan",
+  ]);
+  expect(terminalLaunchArgs("cursor", { permissionMode: "bypassPermissions" })).toEqual([
+    "--force",
+  ]);
+  expect(terminalLaunchArgs("pi", {})).toEqual([]);
+  expect(() => terminalLaunchArgs("pi", { model: "x" })).toThrow("no model, effort or mode");
+  expect(() => terminalLaunchArgs("cursor", { effort: "high" })).toThrow("no effort flag");
+  expect(() => terminalLaunchArgs("cursor", { permissionMode: "acceptEdits" })).toThrow(
+    "acceptEdits",
+  );
 });

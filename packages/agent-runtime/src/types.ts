@@ -125,8 +125,15 @@ export type LivePermissionMode = "default" | "plan" | "acceptEdits" | "auto" | "
 /** Approval prompts for file edits that `acceptEdits` answers itself. */
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "file changes"]);
 
+export const isSpeakTool = (tool: string) =>
+  /^(mcp__)?orc(_runtime_[\w-]+)?_{1,2}speak$/.test(tool);
+
 export function permissionModeAllows(mode: LivePermissionMode | undefined, tool: string): boolean {
-  return mode === "bypassPermissions" || (mode === "acceptEdits" && EDIT_TOOLS.has(tool));
+  return (
+    isSpeakTool(tool) ||
+    mode === "bypassPermissions" ||
+    (mode === "acceptEdits" && EDIT_TOOLS.has(tool))
+  );
 }
 
 export interface AgentSession {

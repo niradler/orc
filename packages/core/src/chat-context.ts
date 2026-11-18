@@ -12,8 +12,12 @@ export const ChatTurnContextSchema = z
       .max(2000)
       .regex(/^\/(?!\/)/)
       .optional(),
+    voice: z.literal(true).optional(),
   })
   .strict();
+
+export const VOICE_TURN_INSTRUCTION =
+  "The user spoke this turn and may not be looking at the screen. Talk to them only through the ORC speak tool: a short acknowledgement before any other tool, brief progress on long work, then a concise answer. Use plain spoken sentences; never read code, paths, diffs or markdown aloud. If the transcript looks wrong, ask through speak. Approvals and questions need the screen; say so through speak.";
 export type ChatTurnContext = z.infer<typeof ChatTurnContextSchema>;
 
 const MAX_VALUE = 500;

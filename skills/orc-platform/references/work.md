@@ -103,8 +103,10 @@ human signoff. Inspect the task/gate before `/approve` or `/reject`; do not assu
 every approval command means the same transition. Missing notifications: inspect
 authorized_users, adapter health, chosen chat and actual human-gate state.
 
-Telegram voice input uses configured `speech` (openai/groq/qwen); voice replies use
-`tts` (openai/qwen). Inspect enabled/provider/credentials and provider
+Telegram voice input uses configured `speech` (openai/groq/qwen/vocal); voice replies use
+`tts` (openai/qwen/vocal). In a chat, talk to the user with the `speak` tool: it is
+posted to the transcript and spoken when voice mode is on. Keep it to short plain
+sentences, never code. Inspect enabled/provider/credentials and provider
 connectivity. `voice_only` versus `always` controls
 reply behavior. Configure within scope and verify a user-authorized voice exchange;
 do not send messages to other people as a test or expose provider keys in logs.

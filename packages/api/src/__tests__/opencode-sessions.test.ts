@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
@@ -135,6 +135,7 @@ test("should list OpenCode sessions from both storage generations, newest first"
       title: "Migrate storage",
       cwd: "/work/api",
       status: "stopped",
+      pendingHuman: false,
       createdAt: new Date(6000),
       lastActivityAt: new Date(9000),
       transcriptPath: dbPath,
@@ -148,6 +149,7 @@ test("should list OpenCode sessions from both storage generations, newest first"
       title: "Fix login",
       cwd: "/work/app",
       status: "stopped",
+      pendingHuman: false,
       createdAt: new Date(1000),
       lastActivityAt: new Date(5000),
       transcriptPath: dbPath,
@@ -162,6 +164,7 @@ test("should list OpenCode sessions from both storage generations, newest first"
       title: "Subagent",
       cwd: "/work/app",
       status: "stopped",
+      pendingHuman: false,
       createdAt: new Date(1100),
       lastActivityAt: new Date(1200),
       transcriptPath: dbPath,
@@ -181,6 +184,7 @@ test("should list legacy-only OpenCode databases without v2 tables", async () =>
       title: "Old install",
       cwd: "/work/old",
       status: "stopped",
+      pendingHuman: false,
       createdAt: new Date(1000),
       lastActivityAt: new Date(2000),
       transcriptPath: legacyDbPath,
@@ -189,6 +193,20 @@ test("should list legacy-only OpenCode databases without v2 tables", async () =>
       usage: expect.any(Function),
     },
   ]);
+});
+
+test("should find the OpenCode database under XDG_DATA_HOME", async () => {
+  const saved = process.env.XDG_DATA_HOME;
+  process.env.XDG_DATA_HOME = join(dir, "xdg");
+  mkdirSync(join(dir, "xdg", "opencode"), { recursive: true });
+  copyFileSync(legacyDbPath, join(dir, "xdg", "opencode", "opencode.db"));
+  try {
+    const records = await opencodeAdapter(undefined, runtime).list(new Map());
+    expect(records.map((record) => record.externalId)).toEqual(["ses_legacy"]);
+  } finally {
+    if (saved === undefined) delete process.env.XDG_DATA_HOME;
+    else process.env.XDG_DATA_HOME = saved;
+  }
 });
 
 test("should return no sessions when OpenCode is not installed", async () => {
@@ -220,6 +238,97 @@ test("should report a session as running while OpenCode keeps writing its row", 
     ["ses_done", "stopped"],
     ["ses_live", "running"],
   ]);
+});
+
+test("should report an open OpenCode question as waiting, and nothing it cannot see", async () => {
+  const askPath = join(dir, "ask.db");
+  const ask = new Database(askPath);
+  ask.run(`CREATE TABLE session (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, title TEXT NOT NULL,
+    time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, tokens_input INTEGER, tokens_output INTEGER, tokens_reasoning INTEGER)`);
+  ask.run(
+    "CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, data TEXT)",
+  );
+  const now = Date.now();
+  const session = (id: string, updated: number, parent: string | null = null) =>
+    ask.run("INSERT INTO session VALUES (?, ?, '/work/ask', ?, ?, ?, 0, 0, 0)", [
+      id,
+      parent,
+      id,
+      updated - 1000,
+      updated,
+    ]);
+  const tool = (sessionId: string, name: string, status: string) =>
+    ask.run("INSERT INTO part VALUES (?, 'msg', ?, ?, ?)", [
+      `prt_${sessionId}_${name}`,
+      sessionId,
+      now,
+      JSON.stringify({
+        type: "tool",
+        tool: name,
+        callID: "chatcmpl-tool-bdd081adfaa5b7f6",
+        state: {
+          status,
+          input: { questions: [{ question: "Tabs or spaces?", header: "Indentation" }] },
+          time: { start: now - 120_000 },
+        },
+      }),
+    ]);
+  session("ses_asking", now - 120_000);
+  tool("ses_asking", "question", "running");
+  session("ses_child_asking", now - 120_000, "ses_asking");
+  tool("ses_child_asking", "question", "running");
+  session("ses_answered", now - 120_000);
+  tool("ses_answered", "question", "completed");
+  session("ses_permission", now - 120_000);
+  tool("ses_permission", "read", "running");
+  session("ses_abandoned", now - 2 * 86_400_000);
+  tool("ses_abandoned", "question", "running");
+  ask.run(`CREATE TABLE session_v2 (id TEXT PRIMARY KEY, parent_id TEXT, directory TEXT NOT NULL, title TEXT,
+    time_created INTEGER NOT NULL, time_updated INTEGER NOT NULL, tokens_input INTEGER, tokens_output INTEGER, tokens_reasoning INTEGER)`);
+  ask.run(
+    "CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT NOT NULL, seq INTEGER NOT NULL, time_created INTEGER NOT NULL, data TEXT NOT NULL)",
+  );
+  const v2 = (id: string, name: string, status: string, data?: string) => {
+    ask.run("INSERT INTO session_v2 VALUES (?, NULL, '/work/ask', ?, ?, ?, 0, 0, 0)", [
+      id,
+      id,
+      now - 121_000,
+      now - 120_000,
+    ]);
+    ask.run("INSERT INTO session_message VALUES (?, ?, 'assistant', 1, ?, ?)", [
+      `msg_${id}`,
+      id,
+      now - 120_000,
+      data ??
+        JSON.stringify({
+          content: [
+            { type: "text", text: "Let me ask." },
+            { type: "tool", id: "call_q", name, state: { status, input: { questions: [] } } },
+          ],
+        }),
+    ]);
+  };
+  v2("ses_v2_asking", "question", "running");
+  v2("ses_v2_answered", "question", "completed");
+  v2("ses_v2_reading", "read", "running");
+  v2("ses_v2_garbled", "question", "running", "not json");
+  ask.close();
+  const records = await opencodeAdapter(askPath, runtime).list(new Map());
+  expect(
+    Object.fromEntries(
+      records.map((r) => [r.externalId, [r.status, r.pendingHuman, r.waitingFor ?? null]]),
+    ),
+  ).toEqual({
+    ses_asking: ["running", true, { reason: "question", tool: null }],
+    ses_child_asking: ["running", true, { reason: "question", tool: null }],
+    ses_answered: ["stopped", false, null],
+    ses_permission: ["stopped", false, null],
+    ses_abandoned: ["stopped", false, null],
+    ses_v2_asking: ["running", true, { reason: "question", tool: null }],
+    ses_v2_answered: ["stopped", false, null],
+    ses_v2_reading: ["stopped", false, null],
+    ses_v2_garbled: ["stopped", false, null],
+  });
 });
 
 test("should index OpenCode compaction requests instead of dropping their tokens", async () => {

@@ -1,6 +1,8 @@
+import { TERMINAL_LAUNCH_SUPPORT, type TerminalLaunchOptions } from "@orc/core/chat-options";
+import { agentLabel } from "@orc/core/coding-agents";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
-import { FolderOpen, GitBranch, Plus, Trash2, X } from "lucide-react";
+import { FolderOpen, GitBranch, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { Fragment, useEffect, useId, useRef, useState } from "react";
 import {
   ApiError,
@@ -13,10 +15,12 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { RecentFolders } from "@/components/RecentFolders";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useProviders } from "@/hooks/useAgents";
+import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
+import { useComposerPreferences, useProviders } from "@/hooks/useAgents";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useRemoveWorktree, useWorktrees } from "@/hooks/useGit";
 import { useSsh } from "@/hooks/useSsh";
+import { agentEffortChoices, type PermissionMode, permissionText } from "@/lib/composer-chips";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import {
@@ -25,6 +29,8 @@ import {
   needsFolderPick,
   readLaunchPrefs,
   saveLaunchPref,
+  terminalModes,
+  terminalProfileOptions,
   WORKTREE_KEY,
 } from "@/lib/terminal-launch";
 import { cn } from "@/lib/utils";
@@ -45,6 +51,116 @@ interface NewTerminalMenuProps {
 }
 
 type Removal = { worktree: Worktree; step: "confirm" | "dirty" };
+
+function LaunchOptions({
+  agent,
+  providerId,
+  host,
+  disabled,
+  onLaunch,
+}: {
+  agent: string;
+  providerId: string | undefined;
+  host: string | null;
+  disabled: boolean;
+  onLaunch: (options: TerminalLaunchOptions) => void;
+}) {
+  const [model, setModel] = useState("");
+  const [effort, setEffort] = useState("");
+  const [mode, setMode] = useState("");
+  const id = useId();
+  const capabilities = useAgentCapabilities(agent);
+  const catalog = useQuery({
+    queryKey: ["chat-models", agent, providerId, undefined, host],
+    queryFn: () => api.chat.models(agent, undefined, host, undefined, providerId),
+    staleTime: 120_000,
+    retry: false,
+  });
+  const models = catalog.data?.models ?? [];
+  const efforts = TERMINAL_LAUNCH_SUPPORT[agent]?.effort
+    ? agentEffortChoices(agent, models.find((entry) => entry.id === model)?.efforts)
+    : [];
+  const field =
+    "grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 text-xs text-on-surface-variant";
+  return (
+    <div
+      data-testid="terminal-launch-options"
+      className="ml-6 space-y-1.5 border-l border-outline-variant py-1 pl-2"
+    >
+      <label htmlFor={`${id}-model`} className={field}>
+        Model
+        <TerminalSelect
+          id={`${id}-model`}
+          data-testid="terminal-option-model"
+          value={model}
+          onChange={(event) => {
+            setModel(event.target.value);
+            setEffort("");
+          }}
+        >
+          <option value="">Agent default</option>
+          {models.map((entry) => (
+            <option key={entry.id} value={entry.id}>
+              {entry.label}
+            </option>
+          ))}
+        </TerminalSelect>
+      </label>
+      {efforts.length > 0 && (
+        <label htmlFor={`${id}-effort`} className={field}>
+          Effort
+          <TerminalSelect
+            id={`${id}-effort`}
+            data-testid="terminal-option-effort"
+            value={effort}
+            onChange={(event) => setEffort(event.target.value)}
+          >
+            <option value="">Default</option>
+            {efforts.map((choice) => (
+              <option key={choice.value} value={choice.value}>
+                {choice.label}
+              </option>
+            ))}
+          </TerminalSelect>
+        </label>
+      )}
+      <label htmlFor={`${id}-mode`} className={field}>
+        Mode
+        <TerminalSelect
+          id={`${id}-mode`}
+          data-testid="terminal-option-mode"
+          value={mode}
+          onChange={(event) => setMode(event.target.value)}
+        >
+          <option value="">Agent default</option>
+          {terminalModes(agent).map((option) => (
+            <option key={option} value={option}>
+              {permissionText(option, capabilities).label}
+            </option>
+          ))}
+        </TerminalSelect>
+      </label>
+      {!TERMINAL_LAUNCH_SUPPORT[agent]?.effort && (
+        <p className="text-xs text-on-surface-variant">No effort flag for {agentLabel(agent)}</p>
+      )}
+      <button
+        type="button"
+        data-testid="terminal-option-launch"
+        disabled={disabled}
+        onClick={() =>
+          onLaunch({
+            ...(model ? { model } : {}),
+            ...(effort ? { effort } : {}),
+            ...(mode ? { permissionMode: mode as PermissionMode } : {}),
+          })
+        }
+        className="min-h-11 w-full rounded-md bg-primary px-3 font-label text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50 sm:min-h-8"
+      >
+        Launch
+      </button>
+    </div>
+  );
+}
 
 const storage = (() => {
   try {
@@ -139,6 +255,8 @@ export function NewTerminalMenu({
   } = draft ?? localDraft;
   const [localError, setLocalError] = useState<string | null>(null);
   const [removal, setRemoval] = useState<Removal | null>(null);
+  const [optionsFor, setOptionsFor] = useState<string | null>(null);
+  const { profiles } = useComposerPreferences();
   const rootRef = useRef<HTMLDivElement>(null);
   const folderTrigger = useRef<HTMLButtonElement>(null);
   const { data: ssh, error: hostsError } = useSsh();
@@ -192,14 +310,27 @@ export function NewTerminalMenu({
     setRemoteBrowsing(true);
   };
 
-  const launch = async (kind: TerminalKind, providerId?: string, name?: string) => {
+  const launch = async (
+    kind: TerminalKind,
+    providerId?: string,
+    name?: string,
+    options: TerminalLaunchOptions = {},
+  ) => {
     setLocalError(null);
     const folderToUse = cwd.trim();
     if (needsFolderPick(kind, folderToUse)) {
       browse();
       return;
     }
-    if (await onCreate({ ...launchRequest(kind, folderToUse, worktree), host, providerId, name })) {
+    if (
+      await onCreate({
+        ...launchRequest(kind, folderToUse, worktree),
+        host,
+        providerId,
+        name,
+        ...options,
+      })
+    ) {
       rememberFolder(host, folderToUse);
       if (host === null) saveLaunchPref(storage, CWD_KEY, folderToUse);
     }
@@ -454,22 +585,78 @@ export function NewTerminalMenu({
               ).map((entry) => {
                 const kind = entry.kind;
                 const { label, icon: Icon } = terminalKind(kind);
+                const name = entry.providerId ? entry.name : undefined;
                 return (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    data-testid={`terminal-launch-${entry.id}`}
-                    disabled={busy}
-                    onClick={() =>
-                      void launch(kind, entry.providerId, entry.providerId ? entry.name : undefined)
-                    }
-                    className="w-full flex items-center gap-2 min-h-11 px-2 py-1.5 rounded-md font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
-                  >
-                    <Icon size={14} />
-                    {entry.name || label}
-                  </button>
+                  <div key={entry.id}>
+                    <div className="flex items-center">
+                      <button
+                        type="button"
+                        data-testid={`terminal-launch-${entry.id}`}
+                        disabled={busy}
+                        onClick={() => void launch(kind, entry.providerId, name)}
+                        className="flex-1 min-w-0 flex items-center gap-2 min-h-11 px-2 py-1.5 rounded-md font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
+                      >
+                        <Icon size={14} />
+                        {entry.name || label}
+                      </button>
+                      {TERMINAL_LAUNCH_SUPPORT[kind] && (
+                        <button
+                          type="button"
+                          data-testid={`terminal-options-${entry.id}`}
+                          aria-expanded={optionsFor === entry.id}
+                          aria-label={`${entry.name || label} model, effort and mode`}
+                          title="Model, effort and mode"
+                          disabled={busy}
+                          onClick={() =>
+                            setOptionsFor((current) => (current === entry.id ? null : entry.id))
+                          }
+                          className="shrink-0 inline-flex items-center justify-center size-11 sm:size-8 rounded-md text-on-surface-variant hover:bg-surface hover:text-on-surface aria-expanded:bg-surface disabled:opacity-50"
+                        >
+                          <SlidersHorizontal size={14} />
+                        </button>
+                      )}
+                    </div>
+                    {optionsFor === entry.id && (
+                      <LaunchOptions
+                        agent={kind}
+                        providerId={entry.providerId}
+                        host={host}
+                        disabled={busy}
+                        onLaunch={(options) => void launch(kind, entry.providerId, name, options)}
+                      />
+                    )}
+                  </div>
                 );
               })}
+              {profiles
+                .filter((profile) => launchers.includes(profile.agent))
+                .map((profile) => {
+                  const { icon: Icon } = terminalKind(profile.agent);
+                  const provider = providerSettings.data?.providers.find(
+                    (item) => item.id === profile.providerId && item.enabled,
+                  );
+                  return (
+                    <button
+                      key={profile.id}
+                      type="button"
+                      data-testid={`terminal-profile-${profile.id}`}
+                      disabled={busy}
+                      onClick={() =>
+                        void launch(
+                          profile.agent,
+                          provider?.id,
+                          profile.name,
+                          terminalProfileOptions(profile),
+                        )
+                      }
+                      className="w-full flex items-center gap-2 min-h-11 px-2 py-1.5 rounded-md font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
+                    >
+                      <Icon size={14} />
+                      <span className="truncate">{profile.name}</span>
+                      <span className="ml-auto shrink-0">Profile</span>
+                    </button>
+                  );
+                })}
               {launchers.length === 0 && (
                 <p className="min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface-variant">
                   No launchers available

@@ -36,10 +36,26 @@ export function installWorkspaceEnvironments(db: Database): void {
   );
 }
 
+function failInterruptedSetups(db: Database): void {
+  db.query(
+    `UPDATE workspace_environments
+        SET setup_status = 'failed',
+            setup_output = 'Setup was interrupted before it finished.',
+            setup_ended_at = unixepoch(),
+            updated_at = unixepoch()
+      WHERE setup_status = 'running'
+        AND setup_started_at + 60 + COALESCE(
+          (SELECT CASE WHEN json_valid(workspace) THEN json_extract(workspace, '$.setup_timeout_secs') END
+             FROM projects WHERE projects.id = workspace_environments.project_id),
+          3600) < unixepoch()`,
+  ).run();
+}
+
 export function workspaceEnvironmentByPath(
   db: Database,
   path: string,
 ): WorkspaceEnvironmentRow | null {
+  failInterruptedSetups(db);
   return (
     db
       .query<Row, [string]>("SELECT * FROM workspace_environments WHERE worktree_path = ?")
@@ -51,6 +67,7 @@ export function listWorkspaceEnvironments(
   db: Database,
   projectId?: string | null,
 ): WorkspaceEnvironmentRow[] {
+  failInterruptedSetups(db);
   if (projectId) {
     return db
       .query<Row, [string]>(
@@ -162,5 +179,7 @@ export function workspaceEnvironmentStore(db: Database): WorkspaceEnvironmentSto
     create: (input) => createWorkspaceEnvironment(db, input),
     setSetup: (input) => setWorkspaceSetup(db, input),
     usedPorts: () => usedWorkspacePorts(db),
+    list: () => listWorkspaceEnvironments(db),
+    remove: (path) => deleteWorkspaceEnvironment(db, path),
   };
 }

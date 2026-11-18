@@ -1,4 +1,4 @@
-import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { type HostRuntime, hostRuntime, LOCAL_HOST, probeHost } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
 import { activityAdvanced, oneLine, statusFromMtime } from "./common.js";
@@ -78,10 +78,36 @@ async function sessionRows(
   }
 }
 
+export async function opencodeSessionUpdated(
+  runtime: HostRuntime,
+  dbPath: string,
+  sessionId: string,
+): Promise<number | null> {
+  if (!SESSION_ID.test(sessionId)) return null;
+  const where = `WHERE id = '${sessionId}'`;
+  const rows = [
+    ...(await queryTable<{ time_updated: number }>(
+      runtime,
+      dbPath,
+      `SELECT time_updated FROM session_v2 ${where}`,
+    )),
+    ...(await queryTable<{ time_updated: number }>(
+      runtime,
+      dbPath,
+      `SELECT time_updated FROM session ${where}`,
+    )),
+  ];
+  return rows.length ? Math.max(...rows.map((row) => row.time_updated)) : null;
+}
+
 export async function opencodeDbPath(runtime: HostRuntime): Promise<string> {
   const home = await runtime.home();
   const sep = runtime.host.kind === "ssh" || !home.includes("\\") ? "/" : "\\";
-  return [home, ".local", "share", "opencode", "opencode.db"].join(sep);
+  const data =
+    (runtime.host.kind === "ssh"
+      ? (await probeHost(runtime.host)).dataHome
+      : process.env.XDG_DATA_HOME) || [home, ".local", "share"].join(sep);
+  return [data, "opencode", "opencode.db"].join(sep);
 }
 
 export function opencodeAdapter(
@@ -115,6 +141,21 @@ export function opencodeAdapter(
             grew = true;
           }
       }
+      const since = Date.now() - 86_400_000;
+      const asking = new Set(
+        [
+          ...(await queryTable<{ session_id: string }>(
+            runtime,
+            path,
+            `SELECT DISTINCT session_id FROM part WHERE session_id IN (SELECT id FROM session WHERE time_updated > ${since}) AND json_extract(data, '$.type') = 'tool' AND json_extract(data, '$.tool') = 'question' AND json_extract(data, '$.state.status') IN ('pending', 'running')`,
+          )),
+          ...(await queryTable<{ session_id: string }>(
+            runtime,
+            path,
+            `SELECT DISTINCT m.session_id FROM session_message m, json_each(CASE WHEN json_valid(m.data) THEN m.data ELSE '{}' END, '$.content') c WHERE m.session_id IN (SELECT id FROM session_v2 WHERE time_updated > ${since}) AND json_extract(c.value, '$.type') = 'tool' AND coalesce(json_extract(c.value, '$.name'), json_extract(c.value, '$.tool')) = 'question' AND json_extract(c.value, '$.state.status') IN ('pending', 'running')`,
+          )),
+        ].map((row) => row.session_id),
+      );
       const seen = new Set<string>();
       const records: SessionRecord[] = [];
       for (const raw of [...current, ...legacy, ...children]) {
@@ -138,7 +179,13 @@ export function opencodeAdapter(
           // OpenCode persists the session row as the turn and its parts advance,
           // so recent writes are the only cross-version liveness signal: its
           // lifecycle columns (time_busy/time_idle) stay stale after a turn.
-          status: statusFromMtime(row.time_updated),
+          ...(asking.has(row.id)
+            ? {
+                status: "running",
+                pendingHuman: true,
+                waitingFor: { reason: "question", tool: null },
+              }
+            : { status: statusFromMtime(row.time_updated), pendingHuman: false }),
           createdAt: new Date(row.time_created),
           lastActivityAt: new Date(row.time_updated),
           transcriptPath: path,

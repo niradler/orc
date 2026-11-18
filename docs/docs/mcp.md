@@ -349,6 +349,7 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 | `session_log`      | Log a session summary after a unit of work                                                                                              |
 | `session_handoff`  | Move a Claude Code or Codex session to ORC                                                                                              |
 | `session_send`     | Send a note to another session: `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next) |
+| `speak`            | Say a short line to the user: posted to the chat and spoken when voice mode is on. Needs a conversation-bound connection; auto-approved |
 | `session_start`    | Start a headless child session with a prompt; returns its id at once                                                                    |
 | `session_status`   | A started session's status, last reply, queue, parent and children                                                                      |
 | `session_wait`     | Block until one or several started sessions stop running, wait for a human, or reply                                                    |

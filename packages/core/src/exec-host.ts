@@ -43,6 +43,7 @@ export interface ExecResult {
 export interface HostProbe {
   os: string;
   home: string;
+  dataHome: string;
   shell: string;
   binaries: Record<string, string | null>;
 }
@@ -1101,7 +1102,7 @@ async function signalRemote(host: SshExecHost, pidFile: string): Promise<void> {
 }
 
 export function parseProbe(stdout: string): HostProbe {
-  const probe: HostProbe = { os: "", home: "", shell: "", binaries: {} };
+  const probe: HostProbe = { os: "", home: "", dataHome: "", shell: "", binaries: {} };
   for (const line of stdout.split("\n")) {
     const at = line.indexOf("=");
     if (at < 0) continue;
@@ -1109,6 +1110,7 @@ export function parseProbe(stdout: string): HostProbe {
     const value = line.slice(at + 1).trim();
     if (key === "os") probe.os = value;
     else if (key === "home") probe.home = value;
+    else if (key === "data_home") probe.dataHome = value;
     else if (key === "shell") probe.shell = value;
     else if (key.startsWith("bin."))
       probe.binaries[key.slice(4)] = value.startsWith("/") ? value : null;
@@ -1120,6 +1122,7 @@ async function runProbe(host: SshExecHost): Promise<HostProbe> {
   const script = [
     'printf "os=%s\\n" "$(uname -s)"',
     'printf "home=%s\\n" "$HOME"',
+    'printf "data_home=%s\\n" "$XDG_DATA_HOME"',
     'printf "shell=%s\\n" "$SHELL"',
     `for b in ${PROBE_BINARIES.join(" ")}; do printf "bin.%s=%s\\n" "$b" "$(command -v "$b" 2>/dev/null)"; done`,
   ].join("; ");

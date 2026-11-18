@@ -18,6 +18,7 @@ import {
 import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
 import { changes } from "@orc/core/changes";
 import {
+  AGENT_COMMAND_PATTERN,
   appendChatActivity,
   CHAT_HISTORY_PAGE_SIZE,
   CHAT_SUBAGENT_DONE,
@@ -48,6 +49,7 @@ import { expandChatCommands } from "@orc/core/chat-commands";
 import {
   type ChatTurnContext,
   ChatTurnContextSchema,
+  VOICE_TURN_INSTRUCTION,
   withOrcContext,
 } from "@orc/core/chat-context";
 import { ChatAgentOptionsMapSchema, unsupportedPermissionMode } from "@orc/core/chat-options";
@@ -121,12 +123,14 @@ import { chatHistory } from "../sessions/chat-history.js";
 import { isClaudeProcessName } from "../sessions/claude.js";
 import { projectIdFor } from "../sessions/common.js";
 import { notifySpawner, spawnChain } from "../sessions/control.js";
+import { opencodeSessionUpdated } from "../sessions/opencode.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { readTranscriptBytes, type TranscriptTurn } from "../sessions/transcript.js";
 import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
 import { activeTurns, type ChatTarget, registerChatControl, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
+import { voiceNotice } from "../voice.js";
 import { workspaceLaunch } from "../workspaces/service.js";
 
 const logger = createLogger("api:chat");
@@ -169,6 +173,7 @@ interface ChatRun {
   events: string[];
   listeners: Set<(data: string | null) => void>;
   stop: () => void;
+  say?: (text: string) => Promise<void>;
 }
 const runs = new Map<string, ChatRun>();
 
@@ -287,7 +292,7 @@ const params = z.object({ id });
 const modelCatalogs = new Map<string, { at: number; result: Promise<ChatModels> }>();
 let modelRequests = 0;
 
-function requireThread(id: string): ChatThread {
+export function requireThread(id: string): ChatThread {
   const thread = store().get(id);
   if (!thread) throw new NotFoundError("Chat", id);
   // Older conversations used the built-in adapter, never a later named default.
@@ -846,9 +851,16 @@ async function linkNativeSource(thread: ChatThread): Promise<ChatThread> {
 async function transcriptMark(thread: ChatThread, source?: NativeSource | null) {
   const row = source === undefined ? await nativeSource(thread) : source;
   if (!row?.transcript_path) return null;
-  const info = await hostRuntime(execHostFor(thread.host))
-    .stat(row.transcript_path)
-    .catch(() => null);
+  const runtime = hostRuntime(execHostFor(thread.host));
+  if (row.backend === "opencode") {
+    const updated = await opencodeSessionUpdated(
+      runtime,
+      row.transcript_path,
+      row.runtime_session_id ?? "",
+    ).catch(() => null);
+    return updated === null ? null : `opencode:${updated}`;
+  }
+  const info = await runtime.stat(row.transcript_path).catch(() => null);
   return info ? `${info.size}:${info.mtimeMs}` : null;
 }
 
@@ -2267,7 +2279,7 @@ async function beginTurn(
   if (input.trim() === "/compact") {
     if (!thread.runtimeId)
       throw new ValidationError("Start a conversation before compacting context.");
-    if (thread.backend !== "claude" && thread.backend !== "codex-cli" && thread.backend !== "pi")
+    if (!["claude", "codex-cli", "opencode", "pi"].includes(thread.backend))
       throw new ValidationError("This integration does not support manual context compaction.");
     const options = thread.config.agentOptions.claude;
     if (
@@ -2448,6 +2460,11 @@ async function beginTurn(
       assistant.activity = appendChatActivity(assistant.activity ?? [], event);
       publish(run, event);
     };
+    run.say = async (text) => {
+      proseInterrupted = true;
+      await emit({ type: "text", text });
+      proseInterrupted = true;
+    };
     try {
       // Slim event: metadata plus the just-pushed user message only. The full
       // transcript stays on GET /chat/threads/{id}; /live replays this on every
@@ -2477,6 +2494,8 @@ async function beginTurn(
         const projectWorkspace = thread.projectId
           ? await workspaceLaunch(execHostFor(thread.host), thread.cwd, thread.projectId)
           : null;
+        if (projectWorkspace?.warning)
+          await emit({ type: "system_status", text: projectWorkspace.warning });
         const opts: SessionOpts = {
           ...(projectWorkspace && Object.keys(projectWorkspace.env).length
             ? { env: projectWorkspace.env }
@@ -2603,8 +2622,11 @@ async function beginTurn(
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
         const message =
-          setup.context && !/^\/[\p{L}\p{N}][\p{L}\p{N}_:.-]*(?:\s|$)/u.test(turn)
-            ? withOrcContext(turn, setup.context)
+          setup.context && !AGENT_COMMAND_PATTERN.test(turn)
+            ? withOrcContext(turn, {
+                ...setup.context,
+                voice: setup.context.voice ? VOICE_TURN_INSTRUCTION : undefined,
+              })
             : turn;
         const sent =
           setup.continuation && input.trim() !== "/compact"
@@ -2689,6 +2711,7 @@ async function beginTurn(
             run.permissions.add(event.data.requestId);
             changes.publish("human-requests");
             await emit(event);
+            voiceNotice(thread.id);
             notify(
               "chat",
               chatPush(thread, "Approval needed", "The agent is waiting for your approval."),
@@ -2699,6 +2722,7 @@ async function beginTurn(
             run.questions.set(event.data.requestId, event.data);
             changes.publish("human-requests");
             await emit(event);
+            voiceNotice(thread.id);
             notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
           } else if (event.type === "request_resolved") {
             resolveChatNotification(thread.id, `${runId}:${event.data.requestId}`);
@@ -3119,6 +3143,32 @@ export function stopChat(id: string, cascade: boolean, by: string | null): strin
   }
   if (stopped.length) changes.publish("sessions");
   return stopped;
+}
+
+export async function sayInChat(threadId: string, text: string): Promise<boolean> {
+  requireThread(threadId);
+  const say = threadRun(threadId)?.[1].say;
+  if (say) await say(text);
+  return say !== undefined;
+}
+
+export async function voiceTurn(threadId: string, text: string): Promise<"sent" | "waiting"> {
+  requireThread(threadId);
+  const run = threadRun(threadId)?.[1];
+  if (run) {
+    if (run.permissions.size || run.questions.size) return "waiting";
+    const ended = new Promise<void>((resolve) =>
+      run.listeners.add((data) => data === null && resolve()),
+    );
+    run.stop();
+    await ended;
+  }
+  await openChat({
+    threadId,
+    messages: [{ role: "user", content: text }],
+    context: { source: "webchat", voice: true },
+  });
+  return "sent";
 }
 
 export function chatStatus(id: string): SessionStatus {

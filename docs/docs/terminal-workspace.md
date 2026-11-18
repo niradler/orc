@@ -41,15 +41,24 @@ runs in a new shell in the same folder and host; the first `http(s)` URL it prin
 becomes the preview link. **Preview** appears in the pane toolbar and in the
 terminal's menu. The link is cleared when that dev terminal exits.
 
-Terminals that belong to a project receive its port block and environment
-variables. A session's inspector shows the workspace ports, setup state and
-preview; a task's Git links show the same workspace status with its setup output
+Terminals that belong to a project receive its environment variables, and its
+port block once the project has a setup script, dev script or a custom port range.
+A session's inspector shows the workspace ports, setup state and preview; a task's Git links show the same workspace status with its setup output
 when the setup script failed. Setup runs once per managed worktree, before the
 first agent starts there; a failure is reported but does not block the agent.
 
 ## Local and SSH hosts
 
-**New terminal** selects Local or an existing SSH-config host for that launch. The launcher offers a shell plus enabled named providers from **Settings → Agents → Providers** whose native CLI is installed on that host (or has a configured local executable). Provider launches receive their environment overrides and, for Claude/Codex, their default model. Chat JSON options apply to the chat adapter; package setups retain their own launch configuration. A plain shell does not receive a coding provider's environment. Selecting a host scopes launcher availability, folder browsing and worktrees to that host. The global SSH setting is unchanged. Searching a supported SSH host in the terminal palette offers **New terminal on that host**, which opens the launcher without executing anything automatically.
+**New terminal** selects Local or an existing SSH-config host for that launch. The launcher offers a shell plus enabled named providers from **Settings → Agents → Providers** whose native CLI is installed on that host (or has a configured local executable). Provider launches receive their environment overrides and their default model. The sliders button beside an agent picks a model, effort and mode for that launch, mapped to the CLI's own flags:
+
+| Agent       | Model     | Effort                        | Mode                                                         |
+| ----------- | --------- | ----------------------------- | ------------------------------------------------------------ |
+| Claude Code | `--model` | `--effort`                    | `--permission-mode` with plan, acceptEdits, auto or bypassPermissions |
+| Codex       | `--model` | `-c model_reasoning_effort=…` | `--sandbox` and `--ask-for-approval`: Read only, Auto, Full access |
+| OpenCode    | `--model` | none                          | Plan: `--agent plan`                                         |
+| Cursor      | `--model` | none                          | Plan: `--mode plan`; Full access: `--force`                  |
+
+Other agents launch without these options. Saved chat profiles appear in the launcher and start their agent with the profile's choices in one click; a choice the CLI lacks (for example Codex Plan or OpenCode effort) is left out. Chat JSON options apply to the chat adapter; package setups retain their own launch configuration. A plain shell does not receive a coding provider's environment. Selecting a host scopes launcher availability, folder browsing and worktrees to that host. The global SSH setting is unchanged. Searching a supported SSH host in the terminal palette offers **New terminal on that host**, which opens the launcher without executing anything automatically.
 
 Remote folder choices are kept separately from Local during the launch menu's lifetime. The new-worktree checkbox preference is remembered. Existing terminals retain their host, and resumed agent sessions retain their saved execution host. Resuming a session in a terminal from the session list reattaches the running terminal when one exists; **Fork in terminal** always opens a new terminal on the same host and folder and leaves the source conversation and any resume terminal unchanged.
 

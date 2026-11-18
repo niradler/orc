@@ -3,7 +3,12 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexAppSession } from "../codex-app";
-import type { AgentEvent, PermissionResult, SessionOpts } from "../types";
+import {
+  type AgentEvent,
+  type PermissionResult,
+  permissionModeAllows,
+  type SessionOpts,
+} from "../types";
 
 const temporaryDirectories: string[] = [];
 function temporaryDirectory(prefix: string): string {
@@ -137,7 +142,11 @@ for await (const line of createInterface({input:process.stdin})) {
 });
 
 // Shape captured from codex-cli 0.160: tool approval arrives as an empty MCP form.
-function mcpApprovalFixture(permissionMode: SessionOpts["permissionMode"]) {
+function mcpApprovalFixture(
+  permissionMode: SessionOpts["permissionMode"],
+  server = "probe",
+  tool = "ping",
+) {
   const cwd = temporaryDirectory(join(tmpdir(), "orc-mcp-approval-"));
   const script = join(cwd, "native.ts");
   writeFileSync(
@@ -147,8 +156,8 @@ import { createInterface } from 'node:readline';
 const emit = value => console.log(JSON.stringify(value));
 const received = {};
 const ask = (id, persist) => {
- emit({method:'item/started',params:{threadId:'mcp',item:{type:'mcpToolCall',id:'call-'+id,server:'probe',tool:'ping',status:'inProgress',arguments:{to:id}}}});
- emit({id,method:'mcpServer/elicitation/request',params:{threadId:'mcp',turnId:'t',serverName:'probe',mode:'form',_meta:{codex_approval_kind:'mcp_tool_call',persist,tool_description:'Returns pong',tool_params:{to:id},tool_params_display:[]},message:'Allow the probe MCP server to run tool "ping"?',requestedSchema:{type:'object',properties:{}}}});
+ emit({method:'item/started',params:{threadId:'mcp',item:{type:'mcpToolCall',id:'call-'+id,server:'${server}',tool:'${tool}',status:'inProgress',arguments:{to:id}}}});
+ emit({id,method:'mcpServer/elicitation/request',params:{threadId:'mcp',turnId:'t',serverName:'${server}',mode:'form',_meta:{codex_approval_kind:'mcp_tool_call',persist,tool_description:'Returns pong',tool_params:{to:id},tool_params_display:[]},message:'Allow the probe MCP server to run tool "ping"?',requestedSchema:{type:'object',properties:{}}}});
 };
 for await (const line of createInterface({input:process.stdin})) {
  const m=JSON.parse(line);
@@ -210,6 +219,41 @@ test("should ask for MCP tool approval instead of cancelling the call", async ()
   });
 });
 
+test("approves the ORC speak tool without asking in default mode", async () => {
+  const session = mcpApprovalFixture("default", "orc_runtime_01HX", "speak");
+  let asked = 0;
+  let received: Record<string, unknown> | undefined;
+  try {
+    await session.send("Speak");
+    for await (const event of session.events()) {
+      if (event.type === "permission_request") {
+        asked++;
+        session.respondPermission(event.data.requestId, "denied");
+      }
+      if (event.type === "text") received = JSON.parse(event.data);
+    }
+  } finally {
+    await session.close();
+  }
+  expect(asked).toBe(0);
+  expect(
+    Object.values(received ?? {}).map((answer) => (answer as { action: string }).action),
+  ).toEqual(["accept", "accept", "accept", "accept"]);
+});
+
+test("only ORC's own speak tool skips approval", () => {
+  expect(
+    ["mcp__orc__speak", "mcp__orc_runtime_01HX__speak", "orc_speak"].map((tool) =>
+      permissionModeAllows("default", tool),
+    ),
+  ).toEqual([true, true, true]);
+  expect(
+    ["mcp__evil__speak", "speak", "mcp__orc__speak_all", "mcp__orc__session_send"].map((tool) =>
+      permissionModeAllows("default", tool),
+    ),
+  ).toEqual([false, false, false, false]);
+});
+
 test("should approve MCP tool calls without asking when permissions are bypassed", async () => {
   const session = mcpApprovalFixture("bypassPermissions");
   session.setPermissionMode("bypassPermissions");
@@ -235,7 +279,7 @@ test("should approve MCP tool calls without asking when permissions are bypassed
 
 for (const [mode, sandbox, approval] of [
   ["default", "read-only", "on-request"],
-  ["acceptEdits", "workspace-write", "never"],
+  ["acceptEdits", "workspace-write", "on-request"],
   ["bypassPermissions", "danger-full-access", "never"],
 ] as const) {
   test(`should round-trip approvals and questions with ${mode} and resume the same conversation`, async () => {
@@ -604,9 +648,25 @@ for await (const line of createInterface({input:process.stdin})) {
     expect(sent).toEqual([
       [{ mode: "plan", settings }, null, null],
       [null, null, null],
-      [{ mode: "default", settings }, "never", "workspaceWrite"],
+      [{ mode: "default", settings }, "on-request", "workspaceWrite"],
     ]);
   } finally {
     await session.close();
   }
+});
+
+test("a Codex app-server that exits at startup reports its own stderr", async () => {
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-codex-stderr-"));
+  const script = join(cwd, "broken.ts");
+  writeFileSync(
+    script,
+    'console.error("Error: unknown variant `bogus`\\nin `sandbox_mode`"); process.exit(1);',
+  );
+  const session = new CodexAppSession({ cwd, orcMcp: false }, { kind: "local" }, async () => [
+    process.execPath,
+    script,
+  ]);
+  await expect(session.send("Hello")).rejects.toThrow(
+    "Codex output closed before the connection ended.\nError: unknown variant `bogus`\nin `sandbox_mode`",
+  );
 });

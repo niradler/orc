@@ -52,6 +52,7 @@ for await (const line of createInterface({input:process.stdin})) {
   else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold'||mode==='steer-extension'||mode==='steer-decline'||mode==='steer-legacy') {}
   else if(mode==='client-fs'||mode==='client-terminal') {emit({id:'client-access',method:mode==='client-fs'?'fs/write_text_file':'terminal/create',params:mode==='client-fs'?{sessionId:session,path:process.cwd()+'/forbidden.txt',content:'must not write'}:{sessionId:session,command:'node',args:['-e',"require('fs').writeFileSync('forbidden.txt','must not run')"],env:[]}});}
   else if(mode==='result-exit') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'last frame'}});emit({id:promptId,result:{stopReason:'end_turn'}});process.exit(0);}
+  else if(mode==='usage') {update(session,{sessionUpdate:'usage_update',used:0,size:0});update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'USAGE'}});update(session,{sessionUpdate:'usage_update',used:19828,size:200000,cost:{amount:0,currency:'USD'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
   else if(mode==='effort') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'EFFORT OK'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
   else if(mode==='effort-switch') {update(session,{sessionUpdate:'config_option_update',configOptions:[{id:'effort',name:'Effort',category:'thought_level',type:'select',currentValue:'low',options:[{value:'low',name:'Low'},{value:'medium',name:'Medium'}]}]});update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'SWITCHED'}});emit({id:promptId,result:{stopReason:'end_turn'}});}
   else if(mode==='child-chatty') {
@@ -91,7 +92,7 @@ for await (const line of createInterface({input:process.stdin})) {
    update('other-session',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'WRONG SESSION'}});
    update(session,{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Working'}});
    update(session,{sessionUpdate:'tool_call',toolCallId:'read-1',title:'Read file',kind:'read',status:'pending',rawInput:{path:'a.txt'}});
-   emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',title:'Read file',kind:'read'},options:mode==='session-grant'?[{optionId:'native-once',name:'Yes',kind:'allow_once'},{optionId:'native-always',name:'Always allow',kind:'allow_always'},{optionId:'native-deny',name:'No',kind:'reject_once'}]:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
+   emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',...(mode==='speak'?{title:'orc_speak'}:mode==='speak-named'?{name:'orc_speak',title:'Talk to the user'}:mode==='speak-spoofed'?{name:'bash',title:'orc_speak'}:{title:'Read file'}),kind:'read'},options:mode==='session-grant'?[{optionId:'native-once',name:'Yes',kind:'allow_once'},{optionId:'native-always',name:'Always allow',kind:'allow_always'},{optionId:'native-deny',name:'No',kind:'reject_once'}]:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
   }
  } else if(m.id==='child-permission') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'CHILD DONE'}});emit({id:promptId,result:{stopReason:'end_turn'}});
  } else if(m.id==='permission') {
@@ -376,6 +377,26 @@ test("ACP applies an advertised model config and rejects a model it cannot honor
   expect(unsupported.alive()).toBe(false);
 });
 
+for (const [mode, prompted] of [
+  ["speak", false],
+  ["speak-named", false],
+  ["speak-spoofed", true],
+] as const)
+  test(`ACP auto-approves only the ORC speak tool, by name before title (${mode})`, async () => {
+    const { session } = fixture({}, mode);
+    await session.initialize();
+    await session.send("Say it");
+    const events = await run(session, "denied");
+    expect(events.some((e) => e.type === "permission_request")).toBe(prompted);
+    const text = events
+      .filter((e) => e.type === "text")
+      .map((e) => e.data)
+      .join("");
+    expect(JSON.parse(text)).toEqual({
+      outcome: { outcome: "selected", optionId: prompted ? "native-deny" : "native-allow" },
+    });
+  });
+
 for (const mode of ["idle-permission", "cancel-late"]) {
   test(`ACP never auto-approves a permission outside an active uncancelled turn (${mode})`, async () => {
     const { session, cwd } = fixture({ autoApprove: true }, mode);
@@ -493,6 +514,36 @@ test("ACP refreshes effort choices when the agent reports a config option update
     { value: "low", label: "Low" },
     { value: "medium", label: "Medium" },
   ]);
+});
+
+test("ACP reports the context window from the agent's usage update and omits it when none came", async () => {
+  const { session } = fixture({}, "usage");
+  await session.initialize();
+  await session.send("Hi");
+  const events = await run(session);
+  expect(events.find((e) => e.type === "text")?.data).toBe("USAGE");
+  expect(events.find((e) => e.type === "result")?.data).toMatchObject({ contextWindow: 200000 });
+  const quiet = fixture({}, "effort").session;
+  await quiet.initialize();
+  await quiet.send("Hi");
+  const result = (await run(quiet)).find((e) => e.type === "result");
+  expect(result?.type === "result" && "contextWindow" in result.data).toBe(false);
+});
+
+test("ACP sends an agent slash command bare so the agent runs it, and other turns with the ORC preamble", async () => {
+  const { session, cwd } = fixture({ systemPromptAppend: "ORC PREAMBLE" }, "effort");
+  await session.initialize();
+  await session.send("/hello world");
+  await run(session);
+  await session.send("/var/log/app.log is empty");
+  await run(session);
+  const prompts = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((message) => message.method === "session/prompt")
+    .map((message) => message.params.prompt[0].text);
+  expect(prompts).toEqual(["/hello world", "ORC PREAMBLE\n\n/var/log/app.log is empty"]);
 });
 
 test("ACP keeps a long subagent delegation under the output limit", async () => {

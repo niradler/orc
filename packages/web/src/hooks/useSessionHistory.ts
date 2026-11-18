@@ -262,7 +262,11 @@ export function useSessionHistory({
       setRefreshingSessions(false);
     }
   };
-  async function select(load: () => ReturnType<typeof api.chat.get>, projectId?: string | null) {
+  async function select(
+    load: () => ReturnType<typeof api.chat.get>,
+    projectId?: string | null,
+    opened?: ChatHistoryEntry,
+  ) {
     setPending(true);
     setError("");
     try {
@@ -271,6 +275,7 @@ export function useSessionHistory({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Session could not be opened.");
     } finally {
+      if (opened) markSeen(opened.seenKeys, Math.max(Date.now(), opened.updatedAt));
       setPending(false);
     }
   }
@@ -350,7 +355,20 @@ export function useSessionHistory({
       matchesFilter(states.get(entry.id) ?? "idle", filter) ||
       withDescendants(entry).some(isSelected),
   );
-  const byId = new Map(listed.map((entry) => [entry.id, entry]));
+  const byId = new Map(
+    listed.flatMap((entry) => {
+      const source =
+        entry.kind === "local"
+          ? entry.tab.thread?.sourceId
+          : entry.kind === "saved"
+            ? entry.thread.sourceId
+            : null;
+      return [
+        ...(source ? [[`native:${source}`, entry] as const] : []),
+        [entry.id, entry] as const,
+      ];
+    }),
+  );
   const counts = filterCounts(scopedEntries.map((entry) => states.get(entry.id) ?? "idle"));
   const loading =
     threads.isLoading ||
@@ -475,8 +493,12 @@ export function useSessionHistory({
     return () => markSeen(keys);
   }, [activeKeys, activeUpdated]);
   const selectEntry = (entry: ChatHistoryEntry) => {
-    markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
     const terminalId = home || entry.kind === "terminal" ? entry.terminalId : undefined;
+    if (
+      terminalId ||
+      !(entry.kind === "saved" || (entry.kind === "native" && nativeChatAgent(entry.session.agent)))
+    )
+      markSeen(entry.seenKeys, Math.max(Date.now(), entry.updatedAt));
     if (terminalId) {
       setOpen(false);
       if (home) home.go({ terminalId });
@@ -489,7 +511,7 @@ export function useSessionHistory({
       if (home) {
         home.go({ terminalId: null }, { chatThread: entry.thread.id });
         setOpen(false);
-      } else void select(() => api.chat.get(entry.thread.id), entry.projectId);
+      } else void select(() => api.chat.get(entry.thread.id), entry.projectId, entry);
     } else if (entry.kind === "native") {
       if (!nativeChatAgent(entry.session.agent)) {
         if (!home) {
@@ -505,7 +527,7 @@ export function useSessionHistory({
         return;
       }
       home?.go({ terminalId: null });
-      void select(() => api.chat.resume(entry.session.id), entry.projectId);
+      void select(() => api.chat.resume(entry.session.id), entry.projectId, entry);
     } else if (entry.kind === "archive") {
       const session = entry.session;
       setSelectedArchive(session);

@@ -16,10 +16,9 @@ import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useChat } from "@/hooks/useChat";
 import {
   effectivePermissionMode,
-  PERMISSION_DESCRIPTIONS,
-  PERMISSION_LABELS,
   type PermissionMode,
   permissionModes,
+  permissionText,
   withPermissionMode,
 } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
@@ -62,12 +61,12 @@ export function ChatPermissionSelect({
       >
         {modes.map((option) => (
           <option key={option} value={option}>
-            {PERMISSION_LABELS[option]}
+            {permissionText(option, capabilities).label}
           </option>
         ))}
       </select>
       <p data-testid="chat-permission-description" className="text-xs text-muted-foreground">
-        {supported && PERMISSION_DESCRIPTIONS[mode]}
+        {supported && permissionText(mode, capabilities).description}
         {supported && !modes.includes("plan") && " · "}
         {!modes.includes("plan") && `No Plan mode for ${agentLabel(config.agent)}`}
       </p>
@@ -88,6 +87,7 @@ export function ChatPermissionChip() {
   // the current permissions stay visible and changeable beside the composer.
   if (modes.length < 2 || (mode === "default" && !thread)) return null;
   const Icon = MODE_ICONS[mode];
+  const label = permissionText(mode, capabilities).label;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -95,14 +95,14 @@ export function ChatPermissionChip() {
           type="button"
           data-testid="chat-permission-chip"
           data-mode={mode}
-          aria-label={`Permissions: ${PERMISSION_LABELS[mode]}`}
-          title={`Permissions: ${PERMISSION_LABELS[mode]}`}
+          aria-label={`Permissions: ${label}`}
+          title={`Permissions: ${label}`}
           disabled={!ready || (streaming && !live)}
           className={cn(composerChip, mode === "bypassPermissions" && "text-warning")}
         >
           <Icon size={14} aria-hidden="true" />
           <span data-chip-label className="truncate">
-            {PERMISSION_LABELS[mode]}
+            {label}
           </span>
           <ChevronDown
             data-chip-label
@@ -139,9 +139,9 @@ export function ChatPermissionChip() {
               className={chipOption}
             >
               <span className="flex min-w-0 flex-1 flex-col py-1">
-                <span className="truncate">{PERMISSION_LABELS[option]}</span>
+                <span className="truncate">{permissionText(option, capabilities).label}</span>
                 <span className="truncate text-xs text-muted-foreground">
-                  {PERMISSION_DESCRIPTIONS[option]}
+                  {permissionText(option, capabilities).description}
                 </span>
               </span>
               {option === mode && <Check size={14} aria-hidden="true" />}

@@ -209,28 +209,38 @@ turns and job actions that run in that project's folders.
   `.orc/worktrees`, `.claude/worktrees` or `.codex/worktrees`, before the first
   agent or terminal starts there. ORC runs it with the project's shell on the
   terminal's host, from the worktree folder. A failed or timed-out script is
-  recorded with its output and the agent still starts. The script does not rerun
-  for an existing worktree, and a project's main checkout is never prepared for
-  you. **Setup timeout** is 900 seconds by default (30–3600).
+  recorded with its output and the agent still starts. A setup cut off by an ORC
+  restart is reported as failed once its timeout has passed. The script does not
+  rerun for an existing worktree, and a project's main checkout is never prepared
+  for you. **Setup timeout** is 900 seconds by default (30–3600).
 - **Dev script** starts with **Start dev server** in the terminal launcher. It
   opens as a shell terminal in the current folder; the first printed `http(s)`
   URL becomes the workspace preview link. Loopback hosts such as `0.0.0.0` and
   `::` are shown as `localhost`, and later URLs in the same terminal are ignored.
 - **Port range** gives each workspace a stable block instead of a single port.
   The first workspace of a project starts at 3100 with 10 ports unless
-  **Port range start** or **Ports per workspace** is changed (1-100). Later workspaces
+  **Port range start** or **Ports per workspace** is changed (1-100); changing
+  either turns ports on even without scripts. Later workspaces
   take the next free block, and blocks never overlap on the same API host, even
   across projects. Ports already bound on a local host are skipped; SSH hosts
-  cannot be probed, so only ORC's own allocations are avoided there.
+  cannot be probed, so only ORC's own allocations are avoided there. A block is
+  released when ORC removes the worktree. A local block whose folder was deleted
+  while its repository is still present is reclaimed by the project's next
+  workspace, or by any project once no block is free. If no block can be found,
+  the terminal or chat still starts without ports and says why.
 - **Environment** holds extra variables for every launch in the project. Mark
   sensitive values **Secret** to encrypt them with ORC's machine key; secrets are
   write-only and read back as empty placeholders. An untouched placeholder keeps
   the saved value. `ORC_` names are reserved for ORC.
 
-Workspaces export `PORT`, `ORC_PORT`, `ORC_PORT_END`, `ORC_PORT_COUNT` and
+Once a project has a setup script, a dev script, a **Port range start** or a
+changed **Ports per workspace**, workspaces export `PORT`, `ORC_PORT`,
+`ORC_PORT_END`, `ORC_PORT_COUNT` and
 `ORC_PORT_1`…`ORC_PORT_<count>`, plus `ORC_PROJECT_ID` and `ORC_WORKSPACE`
-(`ORC_WORKTREE` only inside a managed worktree). Project environment values are
-added last.
+(`ORC_WORKTREE` only inside a managed worktree). Without any of them, only the
+project environment values are added. Any folder inside a managed worktree shares
+that worktree's ports and setup, and `ORC_WORKSPACE` is the worktree folder.
+Project environment values are added last.
 
 Setup status, ports and the preview link appear in a session's inspector and on a
 task's Git links, and are readable through `GET /api/workspaces`. The preview
@@ -240,10 +250,10 @@ per-node worktrees are not created yet.
 
 ## Manual context compaction
 
-For an existing idle Claude, Codex or Pi chat, choose **Compact context** from session
-actions (an icon in the expanded desktop header), or send `/compact`. This uses the
-same native session: Claude's SDK command, Codex's `thread/compact/start` RPC, or
-Pi's `compact` RPC.
+For an existing idle Claude, Codex, OpenCode or Pi chat, choose **Compact context** from
+session actions (an icon in the expanded desktop header), or send `/compact`. This uses the
+same native session: Claude's SDK command, Codex's `thread/compact/start` RPC, OpenCode's
+own `/compact` command, or Pi's `compact` RPC.
 Progress, failures and completion use the normal conversation stream and history.
 Running turns, attachments and integrations without native support cannot be
 compacted this way. Keep automatic compaction under the agent's own control;
@@ -252,8 +262,10 @@ There is no ORC idle-compaction timer. Compaction summarizes model context and m
 use provider quota; it does not erase the displayed ORC transcript.
 
 The context meter beside **Send** shows how full the agent's context is. It shows a
-ring and a percentage when the agent reports its model's window (Codex, and Claude
-and Pi chats run through ORC), and raw tokens otherwise. From 80% it warns that the
+ring and a percentage when the agent reports its model's window (Codex, and Claude,
+Pi and OpenCode chats run through ORC), and raw tokens otherwise. OpenCode counts
+the same total its own sidebar shows: input, output, reasoning and cache tokens of
+the last request. From 80% it warns that the
 agent will soon compact or stop. Open it for exact tokens, cache reuse and the
 compaction count.
 
@@ -386,7 +398,11 @@ An invalid config file stops ORC with `Invalid orc config` and the failing key.
 {
   "api": { "port": 7700, "host": "127.0.0.1", "secret": "change-me" },
   "activeProject": "my-app",
-  "agent_loop": { "enabled": true, "default_backend": "claude", "max_workers": 2 },
+  "agent_loop": {
+    "enabled": true,
+    "default_backend": "claude",
+    "max_workers": 2
+  },
   "runner": { "default_timeout_secs": 300, "max_concurrent_jobs": 5 },
   "rules": { "enabled": true }
 }
@@ -497,14 +513,14 @@ Channels are configured under **Settings → Connections → Channels**.
 
 ### `speech`, `tts`
 
-| Env                                                          | Purpose                    |
-| ------------------------------------------------------------ | -------------------------- |
-| `ORC_SPEECH_PROVIDER`                                        | `openai`, `groq` or `qwen` |
-| `ORC_SPEECH_LANGUAGE`                                        | Transcription language     |
-| `ORC_TTS_PROVIDER`                                           | `openai` or `qwen`         |
-| `ORC_TTS_VOICE`                                              | Voice (default `alloy`)    |
-| `ORC_TTS_MODE`                                               | `voice_only` or `always`   |
-| `ORC_OPENAI_API_KEY`, `ORC_GROQ_API_KEY`, `ORC_QWEN_API_KEY` | Speech provider keys       |
+| Env                                                          | Purpose                             |
+| ------------------------------------------------------------ | ----------------------------------- |
+| `ORC_SPEECH_PROVIDER`                                        | `openai`, `groq`, `qwen` or `vocal` |
+| `ORC_SPEECH_LANGUAGE`                                        | Transcription language              |
+| `ORC_TTS_PROVIDER`                                           | `openai`, `qwen` or `vocal`         |
+| `ORC_TTS_VOICE`                                              | Voice (provider default)            |
+| `ORC_TTS_MODE`                                               | `voice_only` or `always`            |
+| `ORC_OPENAI_API_KEY`, `ORC_GROQ_API_KEY`, `ORC_QWEN_API_KEY` | Speech provider keys                |
 
 Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_*` enables text-to-speech.
 
@@ -526,6 +542,49 @@ records 16 kHz mono WAV in the browser, and Telegram voice notes arrive as
 OGG/Opus; openai, groq and qwen all accept WAV, OGG, WebM, MP3 and MP4/M4A.
 OpenAI voice replies are requested as OGG/Opus and arrive as Telegram voice
 notes. Qwen returns WAV, which Telegram receives as a file.
+
+`vocal` is a local [Vocal](https://github.com/niradler/vocal) server
+(`uvx --from "vocal-ai[kokoro]" vocal serve`). It needs no key; `base_url`
+defaults to `http://localhost:8000/v1`, STT to `Systran/faster-whisper-tiny` and
+TTS to `hexgrad/Kokoro-82M` (WAV). Set `tts.voice` to a Vocal voice such as
+`af_heart`.
+
+Dictation and voice mode can each pick their own provider and model, and voice
+mode its own TTS. Unset fields fall back to the shared `speech` / `tts` values:
+
+```json
+{
+  "speech": {
+    "enabled": true,
+    "provider": "openai",
+    "openai": { "api_key": "sk-..." },
+    "dictation": { "model": "gpt-4o-mini-transcribe" },
+    "voice_mode": {
+      "provider": "vocal",
+      "silence_ms": 800,
+      "threshold_db": -45
+    }
+  },
+  "tts": {
+    "enabled": true,
+    "provider": "openai",
+    "voice_mode": { "provider": "vocal", "voice": "af_heart" }
+  }
+}
+```
+
+**Voice mode** talks to a chat hands-free. `POST /api/chat/threads/{id}/voice/ticket`
+returns a single-use ticket for the WebSocket `/api/chat/threads/{id}/voice?ticket=`.
+The client sends 16 kHz mono 16-bit PCM as binary frames. The server ends a turn
+after `speech.voice_mode.silence_ms` below `threshold_db` (dBFS), transcribes it,
+drops empty and filler-only transcripts ("um", "uh"), stops the running turn and
+sends the transcript as the next message, telling the agent to answer through the
+`speak` MCP tool. Each spoken line arrives as `{"type":"speak","text":...,"format":...}`
+followed by one binary audio frame per sentence. Speech starting while ORC talks
+drops the rest of that speech (barge-in). A turn waiting for an approval or a
+question is not interrupted: voice says "It needs you on screen." and the prompt
+stays in the UI. Other events: `ready`, `speech_start`, `speech_end`, `transcript`,
+`ignored`, `error`.
 
 Channels answer a voice message with a voice reply. With `tts.mode: "always"` they
 also speak replies to text messages. Spoken replies drop code blocks and markdown,
@@ -662,7 +721,6 @@ curl -s -X POST http://127.0.0.1:7700/api/auth/token \
 Returns `{"token": "...", "expires_at": <unix seconds>}`. Pass `expires_at` (unix seconds) to choose the expiry, up to 365 days. Rotating the secret revokes every token.
 
 For exposing ORC beyond localhost, see [Self-hosting](./self-hosted.md).
-
 
 ### Direct ACP commands
 

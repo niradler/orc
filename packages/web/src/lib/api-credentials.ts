@@ -1,4 +1,4 @@
-import type { ChatSettings } from "@orc/core/chat";
+import type { ChatSettings, ComposerProfile, FavoriteModel } from "@orc/core/chat";
 import type { ProviderPaths } from "@orc/core/coding-agents";
 import { activeApiHeaders } from "./api-hosts";
 
@@ -19,6 +19,9 @@ export type WorkspacePreferences = {
   theme?: "dark" | "light";
   terminal_font?: string;
   chat?: ChatSettings;
+  favorite_models?: FavoriteModel[];
+  composer_profiles?: ComposerProfile[];
+  composer_revision?: string;
   agents?: string[];
   provider_paths?: ProviderPaths;
 };

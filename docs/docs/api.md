@@ -189,7 +189,9 @@ starting from 3100, and no variables.
 
 `GET /workspaces` returns workspace records with `setup_status`, `setup_output`,
 the allocated `port_base`/`port_count` block, `preview_url` and the owning
-project. Filter by `project_id`, or pass `path` for exactly one folder. Setup runs
+project. Filter by `project_id`, or pass `path` for exactly one folder; a folder
+inside a managed worktree returns that worktree's record. Records exist only for
+projects with a setup script, a dev script or a custom port range. Setup runs
 once per managed worktree; a project's main checkout gets a port block but no
 setup.
 
@@ -301,7 +303,7 @@ It also accepts optional `host` and `cwd` for a job destination.
 Omit `host` to follow the selected host, use `__local__` to pin local, or supply an
 SSH alias. An existing `threadId` owns its host/directory and rejects these overrides.
 `GET /chat/commands?agent=` returns the agent's own slash commands and skills
-(Claude and Codex; other agents return none) and `GET /chat/files?path=` lists one
+(Claude, Codex and OpenCode; other agents return none) and `GET /chat/files?path=` lists one
 folder under the working directory; both take the same `threadId`, `host` and `cwd`.
 
 ### Sessions, chat and terminals
@@ -310,7 +312,7 @@ folder under the working directory; both take the same `threadId`, `host` and `c
 | --- | --- | --- |
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
-| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones at any depth (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id. `spawned_from_id` is the id of the session that started a top-level session as an independent one (Claude Desktop `start_session`). `model` is the model the transcript last reported and `permission_mode` the latest permission mode (Claude `permissionMode`, Codex `approval_policy/sandbox_policy`); both are `null` when unknown. `waiting_for` says why a session waits for a human (`permission`, `question` or `dialog`) and which `tool` waits; `background_work` is `true` while a session idles between turns with background work still running (Claude Code background shells) |
+| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones at any depth (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id. `spawned_from_id` is the id of the session that started a top-level session as an independent one (Claude Desktop `start_session`). `model` is the model the transcript last reported and `permission_mode` the latest permission mode (Claude `permissionMode`, Codex `approval_policy/sandbox_policy`, OpenCode agent such as `build` or `plan`); both are `null` when unknown. `waiting_for` says why a session waits for a human (`permission`, `question` or `dialog`) and which `tool` waits (Claude permissions and questions; Codex `request_user_input` questions; OpenCode questions, with `tool` `null`); `background_work` is `true` while a session idles between turns with background work still running (Claude Code background shells) |
 | `GET` | `/sessions/live/{id}` | One discovered session, for the read-only viewer |
 | `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
@@ -405,6 +407,15 @@ terminal rejects an agent `kind` or `providerId`, and fails when the project has
 dev script. Terminal responses include `project_id`, `worktree_path`, `dev` and
 `preview_url`. For a dev terminal, the first printed `http(s)` URL becomes
 `preview_url` and stays until that terminal exits.
+
+`GET /settings` returns `composer_revision` for `favorite_models` and
+`composer_profiles`. A `PATCH /settings` that saves either must send that revision;
+a stale one returns `409` so a save from another tab is never overwritten.
+
+`POST /terminals` accepts `model`, `effort` and `permissionMode` for a new agent
+terminal and maps them to the CLI's flags (see
+[Terminal workspace](./terminal-workspace.md)). A choice the CLI does not support, or
+any of them on a shell, dev, setup or resumed terminal, is rejected with `400`.
 
 `POST /terminals` with `live_session_id` resumes that session's native CLI
 conversation. Adding `fork: true` starts a new session from the same history

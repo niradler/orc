@@ -511,6 +511,7 @@ test("a live session shows a short model name and a readable permission mode", (
   expect(sessionModeLabel("acceptEdits")).toBe("Allow edits");
   expect(sessionModeLabel("bypassPermissions")).toBe("Full access");
   expect(sessionModeLabel("plan")).toBe("Plan");
+  expect(sessionModeLabel("build")).toBe("Build");
   expect(sessionModeLabel("never/danger-full-access")).toBe("Full access");
   expect(sessionModeLabel("on-request/workspace-write")).toBe("Workspace write");
   expect(sessionModeLabel("never/read-only")).toBe("Read only");

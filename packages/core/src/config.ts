@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { ChannelConnectionSchema } from "./channels.js";
-import { ChatSettingsSchema } from "./chat.js";
+import { ChatSettingsSchema, ComposerProfilesSchema, FavoriteModelsSchema } from "./chat.js";
 import { AGENT_ID_PATTERN, ProviderPathsSchema } from "./coding-agents.js";
 import { orcHome, userHome } from "./home.js";
 import { McpSettingsSchema } from "./mcp-settings.js";
@@ -69,23 +69,44 @@ export const SpeechProviderConfigSchema = z.object({
   model: z.string().optional(),
 });
 
+const SpeechProviderSchema = z.enum(["openai", "groq", "qwen", "vocal"]);
+const TtsProviderSchema = z.enum(["openai", "qwen", "vocal"]);
+const SpeechSiteSchema = z.object({
+  provider: SpeechProviderSchema.optional(),
+  model: z.string().optional(),
+});
+
 export const SpeechConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  provider: z.enum(["openai", "groq", "qwen"]).default("openai"),
+  provider: SpeechProviderSchema.default("openai"),
   language: z.string().default(""),
   openai: SpeechProviderConfigSchema.default({}),
   groq: SpeechProviderConfigSchema.default({}),
   qwen: SpeechProviderConfigSchema.default({}),
+  vocal: SpeechProviderConfigSchema.default({}),
+  dictation: SpeechSiteSchema.default({}),
+  voice_mode: SpeechSiteSchema.extend({
+    silence_ms: z.number().int().min(200).max(5000).default(800),
+    threshold_db: z.number().min(-90).max(0).default(-45),
+  }).default({ silence_ms: 800, threshold_db: -45 }),
 });
 
 export const TtsConfigSchema = z.object({
   enabled: z.boolean().default(false),
-  provider: z.enum(["openai", "qwen"]).default("openai"),
-  voice: z.string().default("alloy"),
+  provider: TtsProviderSchema.default("openai"),
+  voice: z.string().default(""),
   mode: z.enum(["voice_only", "always"]).default("voice_only"),
   max_text_len: z.number().int().min(0).default(0),
   openai: SpeechProviderConfigSchema.default({}),
   qwen: SpeechProviderConfigSchema.default({}),
+  vocal: SpeechProviderConfigSchema.default({}),
+  voice_mode: z
+    .object({
+      provider: TtsProviderSchema.optional(),
+      model: z.string().optional(),
+      voice: z.string().optional(),
+    })
+    .default({}),
 });
 
 const defaultDbPath = () => join(orcHome(), "orc.db");
@@ -100,6 +121,8 @@ export const OrcConfigSchema = z.object({
       notification_retention_days: z.number().int().min(1).max(3650).optional(),
       audit_retention_days: z.number().int().min(1).max(3650).optional(),
       chat: ChatSettingsSchema.optional(),
+      favorite_models: FavoriteModelsSchema.optional(),
+      composer_profiles: ComposerProfilesSchema.optional(),
       agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
       provider_paths: ProviderPathsSchema.optional(),
     })
@@ -347,15 +370,20 @@ export const OrcConfigSchema = z.object({
     openai: {},
     groq: {},
     qwen: {},
+    vocal: {},
+    dictation: {},
+    voice_mode: { silence_ms: 800, threshold_db: -45 },
   }),
   tts: TtsConfigSchema.default({
     enabled: false,
     provider: "openai",
-    voice: "alloy",
+    voice: "",
     mode: "voice_only",
     max_text_len: 0,
     openai: {},
     qwen: {},
+    vocal: {},
+    voice_mode: {},
   }),
 
   activeProject: z.string().optional(),
