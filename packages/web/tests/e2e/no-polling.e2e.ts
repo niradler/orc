@@ -5,25 +5,61 @@ import { API_BASE, apiDelete, apiPost, gotoView, tid } from "./_helpers";
 const IDLE_MS = 30_000;
 
 function apiRequests(page: Page) {
-  const paths: string[] = [];
+  const requests: { path: string; at: number }[] = [];
+  const changes: number[] = [];
   let last = Date.now();
+  page.on("console", (message) => {
+    if (message.text() === "orc-e2e-change") changes.push(Date.now());
+  });
   page.on("request", (event) => {
     const path = new URL(event.url()).pathname;
     if (!path.startsWith("/api/") || path === "/api/events") return;
-    paths.push(path);
+    requests.push({ path, at: Date.now() });
     last = Date.now();
   });
-  return { paths, quiet: () => Date.now() - last >= 1000 };
+  return {
+    requests,
+    quiet: () => Date.now() - last >= 1000,
+    timed: (from: number) =>
+      requests
+        .slice(from)
+        .filter(({ at }) => !changes.some((change) => change <= at && at - change < 2000))
+        .map(({ path }) => path),
+  };
+}
+
+async function watchChanges(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((ready) => {
+        void fetch("/api/events", {
+          headers: { Accept: "text/event-stream" },
+          credentials: "include",
+        }).then(async (response) => {
+          const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+          const decoder = new TextDecoder();
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) return;
+            const text = decoder.decode(value);
+            if (text.includes("event: ready")) ready();
+            if (text.includes("event: change")) console.log("orc-e2e-change");
+          }
+        });
+      }),
+  );
 }
 
 async function expectIdle(page: Page, requests: ReturnType<typeof apiRequests>) {
+  await watchChanges(page);
   await expect.poll(requests.quiet).toBe(true);
-  const start = requests.paths.length;
+  const start = requests.requests.length;
   await page.waitForTimeout(IDLE_MS);
+  const timed = requests.timed(start);
   console.log(
-    `${test.info().title}: ${requests.paths.length - start} API requests in ${IDLE_MS / 1000}s idle`,
+    `${test.info().title}: ${requests.requests.length - start} API requests in ${IDLE_MS / 1000}s idle, ${timed.length} without a change event`,
   );
-  expect(requests.paths.slice(start)).toEqual([]);
+  expect(timed).toEqual([]);
 }
 
 test.describe("views refresh from resource events, not timers", () => {
