@@ -1,5 +1,5 @@
-import { CHANGE_RESOURCES, type ChangeResource } from "@orc/core/changes";
-import type { QueryClient } from "@tanstack/react-query";
+import { CHANGE_RESOURCES, type ChangeResource, type ResourceChange } from "@orc/core/changes";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
 type ResourceConnection = "connecting" | "connected" | "disconnected";
 let connection: ResourceConnection = "connecting";
@@ -105,7 +105,18 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "channel-notification-deliveries",
     "channel-notification-policy",
   ],
+  "desktop-preview": [],
 };
+
+const changeListeners = new Set<(resources: ChangeResource[]) => void>();
+export function subscribeResourceChanges(
+  listener: (resources: ChangeResource[]) => void,
+): () => void {
+  changeListeners.add(listener);
+  return () => {
+    changeListeners.delete(listener);
+  };
+}
 
 // A running session publishes `sessions` changes about every 100 ms; one trailing refresh
 // per window keeps that from re-reading every mounted list for each transcript write.
@@ -113,6 +124,7 @@ const COALESCE_MS = 350;
 
 interface PendingRefresh {
   roots: Set<string>;
+  sessions: Set<string>;
   promise: Promise<void>;
   resolve: () => void;
   reject: (error: unknown) => void;
@@ -124,15 +136,25 @@ const pendingRefreshes = new WeakMap<QueryClient, PendingRefresh>();
 function flushPending(client: QueryClient, pending: PendingRefresh): void {
   clearTimeout(pending.timer);
   pendingRefreshes.delete(client);
-  refreshQueries(client, (root) => pending.roots.has(root)).then(pending.resolve, pending.reject);
+  refreshQueries(
+    client,
+    (key) =>
+      pending.roots.has(String(key[0])) ||
+      (QUERY_ROOTS.sessions.includes(String(key[0])) &&
+        key.some((part) => typeof part === "string" && pending.sessions.has(part))),
+  ).then(pending.resolve, pending.reject);
 }
 
 export function invalidateResources(
   client: QueryClient,
   resources: ChangeResource[],
+  sessions?: string[],
 ): Promise<void> {
-  const roots = resources.flatMap((resource) => QUERY_ROOTS[resource]);
-  if (roots.length === 0) return Promise.resolve();
+  for (const listener of changeListeners) listener(resources);
+  const roots = resources
+    .filter((resource) => !sessions || resource !== "sessions")
+    .flatMap((resource) => QUERY_ROOTS[resource]);
+  if (roots.length === 0 && !sessions?.length) return Promise.resolve();
   let pending = pendingRefreshes.get(client);
   if (!pending) {
     let resolve!: () => void;
@@ -141,12 +163,19 @@ export function invalidateResources(
       resolve = done;
       reject = fail;
     });
-    const created: PendingRefresh = { roots: new Set(), promise, resolve, reject };
+    const created: PendingRefresh = {
+      roots: new Set(),
+      sessions: new Set(),
+      promise,
+      resolve,
+      reject,
+    };
     created.timer = setTimeout(() => flushPending(client, created), COALESCE_MS);
     pendingRefreshes.set(client, created);
     pending = created;
   }
   for (const root of roots) pending.roots.add(root);
+  for (const id of sessions ?? []) pending.sessions.add(id);
   return pending.promise;
 }
 
@@ -160,11 +189,9 @@ export function flushResourceChanges(client: QueryClient): Promise<void> {
 
 export async function refreshQueries(
   client: QueryClient,
-  matches: (root: string) => boolean = () => true,
+  matches: (key: QueryKey) => boolean = () => true,
 ): Promise<void> {
-  const queries = client
-    .getQueryCache()
-    .findAll({ predicate: (query) => matches(String(query.queryKey[0])) });
+  const queries = client.getQueryCache().findAll({ predicate: (query) => matches(query.queryKey) });
   await Promise.all(
     queries.map(async (query) => {
       // An event may arrive after the server captured an initial snapshot but before it
@@ -202,7 +229,7 @@ export class EventFrames {
   }
 }
 
-export function parseResources(data: string): ChangeResource[] {
+export function parseResources(data: string): ResourceChange {
   const value: unknown = JSON.parse(data);
   if (
     !value ||
@@ -211,10 +238,15 @@ export function parseResources(data: string): ChangeResource[] {
     !Array.isArray(value.resources)
   )
     throw new Error("Invalid resource event");
-  return value.resources.filter(
+  const resources = value.resources.filter(
     (resource): resource is ChangeResource =>
       typeof resource === "string" && (CHANGE_RESOURCES as readonly string[]).includes(resource),
   );
+  if (!("sessions" in value) || !Array.isArray(value.sessions)) return { resources };
+  return {
+    resources,
+    sessions: value.sessions.filter((id): id is string => typeof id === "string"),
+  };
 }
 
 export async function consumeResourceEvents(

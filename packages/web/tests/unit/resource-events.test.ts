@@ -6,6 +6,7 @@ import {
   flushResourceChanges,
   invalidateResources,
   parseResources,
+  subscribeResourceChanges,
 } from "../../src/lib/resource-events";
 
 describe("resource events", () => {
@@ -175,6 +176,59 @@ describe("resource events", () => {
     }
   });
 
+  test("should refresh only the open session's queries when another session's work changes", async () => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
+    });
+    const reads = { list: 0, viewed: 0, thread: 0, other: 0, tasks: 0 };
+    const query = (key: unknown[], hit: keyof typeof reads) =>
+      new QueryObserver(client, {
+        queryKey: key,
+        queryFn: async () => {
+          reads[hit]++;
+          return { hit };
+        },
+      });
+    const observers = [
+      query(["sessions", "live", true], "list"),
+      query(["sessions", "lineage", "viewed"], "viewed"),
+      query(["chat-threads", "session", "viewed-chat"], "thread"),
+      query(["sessions", "children", "other"], "other"),
+      query(["tasks"], "tasks"),
+    ];
+    const unsubscribe = observers.map((observer) => observer.subscribe(() => {}));
+    try {
+      await Promise.all(observers.map((observer) => observer.refetch()));
+      await invalidateResources(client, ["sessions"], ["busy", "busy-native"]);
+      expect(reads).toEqual({ list: 1, viewed: 1, thread: 1, other: 1, tasks: 1 });
+      await invalidateResources(client, ["sessions"], ["viewed", "viewed-chat"]);
+      expect(reads).toEqual({ list: 1, viewed: 2, thread: 2, other: 1, tasks: 1 });
+      await Promise.all([
+        invalidateResources(client, ["sessions"], ["viewed"]),
+        invalidateResources(client, ["sessions"]),
+      ]);
+      expect(reads).toEqual({ list: 2, viewed: 3, thread: 3, other: 2, tasks: 1 });
+    } finally {
+      for (const stop of unsubscribe) stop();
+      client.clear();
+    }
+  });
+
+  test("should tell subscribers a desktop preview request is waiting without refreshing queries", async () => {
+    const client = new QueryClient();
+    client.setQueryData(["sessions", "live", true], []);
+    const seen: string[][] = [];
+    const unsubscribe = subscribeResourceChanges((resources) => seen.push(resources));
+    try {
+      await invalidateResources(client, ["desktop-preview"]);
+      expect(seen).toEqual([["desktop-preview"]]);
+      expect(client.getQueryState(["sessions", "live", true])?.isInvalidated).toBe(false);
+    } finally {
+      unsubscribe();
+      client.clear();
+    }
+  });
+
   test("should flush queued changes on demand and cancel the pending window", async () => {
     const client = new QueryClient({
       defaultOptions: { queries: { staleTime: Number.POSITIVE_INFINITY } },
@@ -207,8 +261,14 @@ describe("resource events", () => {
       ["ready", "{}"],
       ["change", '{"resources":\n["tasks"]}'],
     ]);
-    expect(parseResources(events[1]?.[1] ?? "")).toEqual(["tasks"]);
-    expect(parseResources('{"resources":["unknown","terminals"]}')).toEqual(["terminals"]);
+    expect(parseResources(events[1]?.[1] ?? "")).toEqual({ resources: ["tasks"] });
+    expect(parseResources('{"resources":["unknown","terminals"]}')).toEqual({
+      resources: ["terminals"],
+    });
+    expect(parseResources('{"resources":["sessions"],"sessions":["s1",2]}')).toEqual({
+      resources: ["sessions"],
+      sessions: ["s1"],
+    });
     expect(() => parseResources("{}")).toThrow();
   });
 

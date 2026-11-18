@@ -2,6 +2,11 @@ import type { PreviewRequest } from "@orc/core/desktop-preview";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, apiFetch } from "@/api/client";
 import { type PreviewCompletion, PreviewExecutionLedger } from "@/lib/preview-delivery";
+import {
+  getResourceConnection,
+  subscribeResourceChanges,
+  subscribeResourceConnection,
+} from "@/lib/resource-events";
 
 export function usePreviewDelivery(
   session: string | null,
@@ -54,8 +59,9 @@ export function usePreviewDelivery(
       return;
     }
     let stopped = false,
-      timer: ReturnType<typeof setTimeout> | undefined;
-    const poll = async () => {
+      running = false,
+      again = false;
+    const deliver = async (receive: boolean) => {
       try {
         let activeLease: string | undefined;
         const registration = registrationQueue.current.then(async () => {
@@ -76,7 +82,9 @@ export function usePreviewDelivery(
         );
         await registration;
         if (stopped || !activeLease) return;
-        const pending = await api.preview.pending(client.current, activeLease);
+        const pending = receive
+          ? await api.preview.pending(client.current, activeLease)
+          : { requests: [] };
         for (const request of pending.requests) {
           if (stopped || latestScope.current !== scopeKey) break;
           const completion = await ledger.current.run(request.id, () => execute(request));
@@ -93,14 +101,35 @@ export function usePreviewDelivery(
       } catch (cause) {
         if (!stopped)
           setError(cause instanceof Error ? cause.message : "Agent preview delivery unavailable");
-      } finally {
-        if (!stopped) timer = setTimeout(() => void poll(), 1000);
       }
     };
-    void poll();
+    const sync = (receive = true): void => {
+      if (running) {
+        again ||= receive;
+        return;
+      }
+      running = true;
+      void deliver(receive).finally(() => {
+        running = false;
+        if (again && !stopped) {
+          again = false;
+          sync();
+        }
+      });
+    };
+    sync();
+    const heartbeat = setInterval(() => sync(getResourceConnection() !== "connected"), 20_000);
+    const offChange = subscribeResourceChanges((resources) => {
+      if (resources.includes("desktop-preview")) sync();
+    });
+    const offConnection = subscribeResourceConnection(() => {
+      if (getResourceConnection() === "connected") sync();
+    });
     return () => {
       stopped = true;
-      clearTimeout(timer);
+      clearInterval(heartbeat);
+      offChange();
+      offConnection();
     };
   }, [session, scopeKey, execute, agentAccess, browserReady, release]);
   return error;

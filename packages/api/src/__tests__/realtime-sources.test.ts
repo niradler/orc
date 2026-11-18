@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { changes } from "@orc/core/changes";
+import { changes, type ResourceChange } from "@orc/core/changes";
 import { LOCAL_HOST } from "@orc/core/exec-host";
 import { watchProcessExit } from "../realtime/process-watch.js";
 import { scheduleGithubRechecks, watchResourcePath } from "../realtime/sources.js";
@@ -74,24 +74,46 @@ test("should report a process that already exited as exited", async () => {
   }
 });
 
-test("should notify transcript file changes even when the session metadata does not change", async () => {
+test("should name only the session whose transcript changed when its metadata does not change", async () => {
   setupTestApp();
   const root = mkdtempSync(join(tmpdir(), "orc-transcript-watch-"));
+  const transcript = join(root, "transcript.jsonl");
+  writeFileSync(transcript, "{}\n");
   const stop = startSessionWatcher({
-    adapters: [{ backend: "unchanged-metadata", minIntervalMs: 0, list: async () => [] }],
+    adapters: [
+      {
+        backend: "unchanged-metadata",
+        minIntervalMs: 0,
+        list: async () => [
+          {
+            backend: "unchanged-metadata",
+            externalId: "native-unchanged",
+            title: "Unchanged",
+            status: "stopped",
+            createdAt: new Date(0),
+            lastActivityAt: new Date(0),
+            transcriptPath: transcript,
+          },
+        ],
+      },
+    ],
     registryDir: root,
     liveRegistryDir: null,
   });
-  let events = 0;
+  const events: ResourceChange[] = [];
   let unsubscribe = (): void => {};
   try {
     await Bun.sleep(300);
     unsubscribe = changes.subscribe((event) => {
-      if (event.resources.includes("sessions")) events++;
+      if (event.resources.includes("sessions")) events.push(event);
     });
-    writeFileSync(join(root, "transcript.jsonl"), '{"message":"new output"}\n');
+    writeFileSync(join(root, "unrelated.json"), "{}");
     await Bun.sleep(400);
-    expect(events).toBeGreaterThan(0);
+    expect(events).toEqual([]);
+    writeFileSync(transcript, '{"message":"new output"}\n');
+    await Bun.sleep(400);
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((event) => event.sessions?.includes("native-unchanged"))).toBe(true);
   } finally {
     unsubscribe();
     stop();

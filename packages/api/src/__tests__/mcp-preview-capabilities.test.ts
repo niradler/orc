@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { changes } from "@orc/core/changes";
 import { ChatThreadSchema } from "@orc/core/chat";
 import { resetConfig } from "@orc/core/config";
 import { ChatStore } from "@orc/db/chat";
@@ -133,16 +134,19 @@ test("should reflect only the caller's session/client capabilities through real 
       })
     ).isError,
   ).not.toBe(true);
+  const queued = new Promise<void>((resolve) => {
+    const unsubscribe = changes.subscribe(({ resources }) => {
+      if (!resources.includes("desktop-preview")) return;
+      unsubscribe();
+      resolve();
+    });
+  });
   const targeted = full.callTool({
     name: "preview_open_url",
     arguments: { client_id: id, url: "https://example.test" },
   });
-  const deadline = Date.now() + 2000;
-  let pending = previewBroker.pending(id, lease);
-  while (!pending.length && Date.now() < deadline) {
-    await Bun.sleep(10);
-    pending = previewBroker.pending(id, lease);
-  }
+  await queued;
+  const pending = previewBroker.pending(id, lease);
   expect(pending).toHaveLength(1);
   previewBroker.acknowledge(id, lease, pending[0]?.id as string, "opened", null);
   expect((await targeted).isError).not.toBe(true);

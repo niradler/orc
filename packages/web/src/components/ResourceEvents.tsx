@@ -61,7 +61,10 @@ export function ResourceEvents(): null {
               setResourceConnection("connected");
               attempt = 0;
               void refreshQueries(client);
-            } else if (event === "change") void invalidateResources(client, parseResources(data));
+            } else if (event === "change") {
+              const change = parseResources(data);
+              void invalidateResources(client, change.resources, change.sessions);
+            }
           },
           keepAlive,
         );

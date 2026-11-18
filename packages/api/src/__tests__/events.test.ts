@@ -122,4 +122,32 @@ describe("shared resource event stream", () => {
       await reader.cancel();
     }
   });
+
+  test("should name the sessions whose work changed and drop the names once every session changed", async () => {
+    const response = await req(app, "GET", "/events");
+    if (!response.body) throw new Error("Missing SSE response body");
+    const reader = response.body.getReader();
+    const frames = async (until: (text: string) => boolean): Promise<string> => {
+      let text = "";
+      const end = Date.now() + 2000;
+      while (!until(text) && Date.now() < end)
+        text += new TextDecoder().decode((await reader.read()).value);
+      return text;
+    };
+    try {
+      await reader.read();
+      changes.publishSessions(["scoped-session", "scoped-session"]);
+      expect(await frames((text) => text.includes("scoped-session"))).toContain(
+        '"sessions":["scoped-session"]',
+      );
+      changes.publishSessions(["merged-session"]);
+      changes.publish("sessions");
+      changes.publish("terminals");
+      const text = await frames((value) => value.includes('"terminals"'));
+      expect(text).toContain('"sessions"');
+      expect(text).not.toContain("merged-session");
+    } finally {
+      await reader.cancel();
+    }
+  });
 });

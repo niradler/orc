@@ -8,6 +8,7 @@ import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
 import { agentHomes } from "@orc/core/provider-service";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
+import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { NotificationStore } from "@orc/db/notifications";
 import { gateway_sessions } from "@orc/db/schema";
@@ -98,6 +99,8 @@ let usageChain: Promise<unknown> = Promise.resolve();
 let nextUsageMaintenance = 0;
 let synchronized: (() => Promise<void>) | undefined;
 let refreshWatchers: (() => void) | undefined;
+const activity = new Map<string, number>();
+const touched = new Set<string>();
 type RunState = { waiting: boolean; waitingFor: SessionWaiting | null; background: boolean };
 const runStates = new Map<string, Map<string, RunState>>();
 
@@ -209,6 +212,39 @@ export async function settleStaleRun<S extends string>(row: {
     changes.publish("sessions");
     return status;
   });
+}
+
+function touchedSessions(paths: string[]): string[] {
+  const ids = [...touched];
+  touched.clear();
+  if (!ids.length && !paths.length) return [];
+  const sqlite = getSqlite();
+  const chats = new ChatStore(sqlite);
+  return sqlite
+    .query<
+      {
+        id: string;
+        runtime_session_id: string | null;
+        parent_session_id: string | null;
+        backend: string;
+        execution_host: string | null;
+      },
+      string[]
+    >(
+      `SELECT id, runtime_session_id, parent_session_id, backend, execution_host FROM gateway_sessions
+       WHERE id IN (${ids.map(() => "?").join(",")}) OR transcript_path IN (${paths.map(() => "?").join(",")})`,
+    )
+    .all(...ids, ...paths)
+    .flatMap((row) => [
+      row.id,
+      row.runtime_session_id,
+      row.parent_session_id,
+      chats.bySource(row.id)?.id,
+      ...(row.runtime_session_id
+        ? chats.byRuntime(row.backend, row.execution_host, row.runtime_session_id).map((t) => t.id)
+        : []),
+    ])
+    .filter((id): id is string => !!id);
 }
 
 const hostCondition = (alias: string | null) =>
@@ -431,6 +467,9 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
     }[] = [];
     for (const r of records) {
       const id = await upsertRecord(r, executionHost);
+      const activeAt = r.lastActivityAt.getTime();
+      if (activity.has(id) && activity.get(id) !== activeAt) touched.add(id);
+      activity.set(id, activeAt);
       if (r.tokens) queueTokens(id, r.tokens, r.tokensVersion);
       if (r.usage)
         usageJobs.push({
@@ -650,6 +689,7 @@ export function startSessionWatcher(
   let stopped = false;
   let requested = false;
   let changedFiles = false;
+  const changedPaths = new Set<string>();
   let syncing = false;
   let debounce: ReturnType<typeof setTimeout> | undefined;
   let expiration: ReturnType<typeof setTimeout> | undefined;
@@ -657,9 +697,10 @@ export function startSessionWatcher(
   const fileWatchers: (() => void)[] = [];
   let watcherGeneration = 0;
   const processes = new Map<string, () => void>();
-  const schedule = (fileChanged = false): void => {
+  const schedule = (changed: boolean | string[] = false): void => {
     if (stopped) return;
-    changedFiles ||= fileChanged;
+    if (Array.isArray(changed)) for (const path of changed) changedPaths.add(path);
+    else changedFiles ||= changed;
     requested = true;
     if (debounce || syncing) return;
     debounce = setTimeout(() => {
@@ -667,11 +708,14 @@ export function startSessionWatcher(
       requested = false;
       const notify = changedFiles;
       changedFiles = false;
+      const paths = [...changedPaths];
+      changedPaths.clear();
       syncing = true;
       void liveState()
         .then(async (before) => {
           await runSync(currentAdapters, { force: true });
           if (notify || before !== (await liveState())) changes.publish("sessions");
+          else changes.publishSessions(touchedSessions(paths));
         })
         .catch((error) => logger.error("Session change sync failed", error))
         .finally(() => {
@@ -688,14 +732,16 @@ export function startSessionWatcher(
           id: gateway_sessions.id,
           status: gateway_sessions.status,
           pid: gateway_sessions.pid,
-          updated: gateway_sessions.updated_at,
+          title: gateway_sessions.title,
+          project: gateway_sessions.project_id,
+          model: gateway_sessions.model,
         })
         .from(gateway_sessions)
         .where(
           and(eq(gateway_sessions.chat_id, LIVE_CHAT_ID), ne(gateway_sessions.status, "stopped")),
         )
     )
-      .map((row) => `${row.id}:${row.status}:${row.pid}:${row.updated?.getTime()}`)
+      .map((row) => JSON.stringify(row))
       .sort()
       .join("|");
   synchronized = async () => {
@@ -757,7 +803,11 @@ export function startSessionWatcher(
             fileWatchers.push(watchRemotePaths(host, paths, () => schedule(true)));
           else
             for (const path of paths)
-              fileWatchers.push(watchResourcePath(path, () => schedule(true)));
+              fileWatchers.push(
+                watchResourcePath(path, (changed) =>
+                  schedule(changed.map((name) => join(path, name))),
+                ),
+              );
         })
         .catch((error) => logger.warn("Cannot watch Pi and OpenCode session files", { error }));
       const sources = [
@@ -802,7 +852,10 @@ export function startSessionWatcher(
         local.add(`${cursorStateDbPath()}-wal`);
       }
     }
-    for (const path of local) fileWatchers.push(watchResourcePath(path, () => schedule(true)));
+    for (const path of local)
+      fileWatchers.push(
+        watchResourcePath(path, (changed) => schedule(changed.map((name) => join(path, name)))),
+      );
     schedule();
   };
   refreshWatchers = attach;
