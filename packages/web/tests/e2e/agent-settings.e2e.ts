@@ -122,6 +122,7 @@ for (const width of [1440, 390]) {
       await gotoView(page, "tasks");
       await page.goto("/tasks?chat=full");
       await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+      if (width < 640) await page.getByTestId("chat-picker-tab-agent").click();
       await expect(page.getByTestId("chat-agent-option-copilot")).toHaveText("GitHub Copilot");
       await expect(
         page.getByRole("menuitemradio", { name: "Qoder work", exact: true }),
@@ -389,6 +390,7 @@ for (const width of [1440, 390])
         });
         await expect(page.getByTestId("chat-messages")).toContainText("profile ready");
         await page.getByTestId("chat-agent-model-button").filter({ visible: true }).click();
+        if (width < 640) await page.getByTestId("chat-picker-tab-agent").click();
         await page.getByTestId("chat-agent-option-claude").click();
         await expect(
           page.getByTestId("chat-agent-model-button").filter({ visible: true }),

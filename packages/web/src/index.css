@@ -270,6 +270,13 @@ html[data-chat-font="serif"] {
   }
 }
 
+@container chat-composer (width < 340px) {
+  .chat-composer-tools,
+  .chat-workspace-controls {
+    column-gap: 0;
+  }
+}
+
 @media (max-width: 639px), (pointer: coarse) {
   .composer-chip {
     min-width: 44px;

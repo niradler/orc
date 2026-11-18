@@ -425,6 +425,11 @@ test("streaming follows only while pinned and Jump to latest returns with a new 
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await installStreamControl(page);
+  await page.route("**/api/chat/capabilities?*threadId=*", (route) => {
+    const url = new URL(route.request().url());
+    url.searchParams.delete("threadId");
+    return route.continue({ url: url.href });
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?chat=open");
   await expect(page.getByTestId("chat-input")).toBeEnabled();
