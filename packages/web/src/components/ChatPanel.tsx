@@ -6,7 +6,6 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
-  Bot,
   ChartColumn,
   ChevronDown,
   ChevronsDownUp,
@@ -388,8 +387,6 @@ export function ChatPanel({
     }
   };
   const home = useSessionHome();
-  // A conversation resumed from a child session keeps its place in the tree: the
-  // header names the parent so the subagent never looks like a lost top-level chat.
   const lineage = useSessionLineage(thread?.sourceId ?? null);
   const parentSession = thread?.sourceId ? (lineage.data?.parent ?? null) : null;
   const openSession = useOpenLiveSession();
@@ -404,9 +401,7 @@ export function ChatPanel({
         const next = await api.chat.get(parentSession.id);
         openThread(next);
         home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
-      } else {
-        await openSession(parentSession.id);
-      }
+      } else await openSession(parentSession.id);
     } catch (cause) {
       setParentError(
         cause instanceof Error ? cause.message : "The parent session could not be opened.",
@@ -515,18 +510,6 @@ export function ChatPanel({
       ? (viewed?.name ?? "Session")
       : thread?.title;
   const headerState = viewId ? (viewed ? liveSessionState(viewed) : null) : sessionState;
-  const parentCrumb = parentSession ? (
-    <button
-      type="button"
-      data-testid="chat-parent-session"
-      title={`Back to ${parentSession.title}`}
-      disabled={parentOpening}
-      onClick={() => void openParent()}
-      className="min-w-0 truncate rounded-md px-0.5 text-muted-foreground underline-offset-2 hover:text-on-surface hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-60"
-    >
-      {parentSession.title}
-    </button>
-  ) : null;
   const dividers = useMemo(() => {
     const raw = chatDividers(messages, contextUsage.data?.compactions ?? []);
     const { displayId } = groupChatMessages(messages);
@@ -937,21 +920,22 @@ export function ChatPanel({
             )}
           >
             {!phone && terminalBack}
+            {parentSession && (
+              <ActionHelp label={`Back to ${parentSession.title}`}>
+                <button
+                  type="button"
+                  data-testid="chat-parent-back"
+                  aria-label={`Back to ${parentSession.title}`}
+                  disabled={parentOpening}
+                  onClick={() => void openParent()}
+                  className={cn(iconButton, "shrink-0", phone && "min-h-11 min-w-11")}
+                >
+                  <ArrowLeft size={18} />
+                </button>
+              </ActionHelp>
+            )}
             {phone ? (
               <>
-                {parentSession && (
-                  <button
-                    type="button"
-                    data-testid="chat-parent-back"
-                    aria-label={`Back to ${parentSession.title}`}
-                    title={`Back to ${parentSession.title}`}
-                    disabled={parentOpening}
-                    className={cn(iconButton, "min-h-11 min-w-11")}
-                    onClick={() => void openParent()}
-                  >
-                    <ArrowLeft size={18} />
-                  </button>
-                )}
                 {terminalBack}
                 <button
                   type="button"
@@ -993,15 +977,6 @@ export function ChatPanel({
                   </h2>
                   {!focusChat && (
                     <p className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
-                      {parentSession && (
-                        <span
-                          data-testid="chat-subagent-kind"
-                          className="flex shrink-0 items-center gap-0.5 text-primary"
-                        >
-                          <Bot aria-hidden="true" size={11} />
-                          Subagent
-                        </span>
-                      )}
                       {headerState && (
                         <StateBadge
                           state={headerState}
@@ -1009,12 +984,6 @@ export function ChatPanel({
                           testId="chat-header-state"
                           className="shrink-0"
                         />
-                      )}
-                      {parentCrumb && (
-                        <>
-                          {parentCrumb}
-                          <span aria-hidden="true">·</span>
-                        </>
                       )}
                       <span className="truncate">
                         <span data-testid="session-project-breadcrumb">{projectName}</span>
@@ -1059,36 +1028,6 @@ export function ChatPanel({
                   </Popover>
                 )}
               </>
-            ) : parentSession ? (
-              // A subagent puts its full path on a second line: the panel is narrow,
-              // and project + parent + title on one line would truncate the way back.
-              <div
-                className="flex min-w-0 shrink flex-col"
-                title={`${fullscreen ? `${projectName} / ` : ""}${parentSession.title} / ${title ?? "New session"}`}
-              >
-                <h2 className="flex min-w-0 items-center gap-1.5 text-sm font-medium">
-                  <span
-                    data-testid="chat-subagent-kind"
-                    title="Subagent"
-                    className="flex shrink-0 items-center text-primary"
-                  >
-                    <Bot aria-hidden="true" size={13} />
-                    <span className="sr-only">Subagent</span>
-                  </span>
-                  <span className="min-w-0 truncate">{title ?? "New session"}</span>
-                </h2>
-                <p className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
-                  {fullscreen && (
-                    <>
-                      <span data-testid="session-project-breadcrumb" className="min-w-0 truncate">
-                        {projectName}
-                      </span>
-                      <span aria-hidden="true">/</span>
-                    </>
-                  )}
-                  {parentCrumb}
-                </p>
-              </div>
             ) : title || fullscreen ? (
               <h2
                 className="flex min-w-0 shrink items-center gap-1.5 text-sm font-medium"
@@ -1206,18 +1145,9 @@ export function ChatPanel({
               </ActionHelp>
             )}
           </header>
-          {linkError && (
+          {(linkError || parentError) && (
             <p role="alert" className="px-4 py-1 text-xs text-error">
-              {linkError}
-            </p>
-          )}
-          {parentError && (
-            <p
-              role="alert"
-              data-testid="chat-parent-error"
-              className="px-4 py-1 text-xs text-error"
-            >
-              {parentError}
+              {linkError ?? parentError}
             </p>
           )}
           {terminalCenter && <SessionTerminalCenter context={context} />}

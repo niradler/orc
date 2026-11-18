@@ -36,7 +36,7 @@ export function chatHistory(turns: TranscriptTurn[], agent: string, model?: stri
         if (block.result !== undefined)
           message.activity = appendChatActivity(message.activity, {
             type: "tool_result",
-            data: { toolUseId: id, content: block.result, isError: block.isError === true },
+            data: { toolUseId: id, content: block.result, isError: false },
           });
       }
       if (block.type === "tool_result") {

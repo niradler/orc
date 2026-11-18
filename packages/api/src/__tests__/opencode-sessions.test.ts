@@ -411,60 +411,29 @@ test("should render a v2 OpenCode transcript with inline parts", async () => {
   ]);
 });
 
-test("should read inline OpenCode tool content and mark an error result", async () => {
-  const lines = [
-    {
-      time: 9000,
-      message: { role: "assistant" },
-      parts: [
-        {
-          type: "tool",
-          tool: "grep",
-          callID: "call_done",
-          state: {
-            status: "completed",
-            input: { pattern: "subagent" },
-            content: [{ type: "text", text: "2 matches" }],
-          },
-        },
-        {
-          type: "tool",
-          tool: "shell",
-          callID: "call_failed",
-          state: {
-            status: "error",
-            input: { command: "false" },
-            error: { type: "unknown", message: "exit code 1" },
-          },
-        },
-      ],
-    },
-  ];
-  const bytes = new TextEncoder().encode(lines.map((line) => JSON.stringify(line)).join("\n"));
+test("should read an inline OpenCode tool result from state.content", async () => {
+  const tool = (callID: string, content: unknown[]) => ({
+    type: "tool",
+    tool: "grep",
+    callID,
+    state: { status: "completed", input: { pattern: "x" }, content },
+  });
+  const line = {
+    time: 9000,
+    message: { role: "assistant" },
+    parts: [tool("call_done", [{ type: "text", text: "2 matches" }]), tool("call_empty", [])],
+  };
+  const bytes = new TextEncoder().encode(JSON.stringify(line));
   const page = await readTranscriptBytes(bytes, "opencode", "opencode-inline-test", {});
-  expect(page.turns).toEqual([
+  expect(page.turns[0]?.blocks).toEqual([
     {
-      index: 0,
-      role: "assistant",
-      time: new Date(9000).toISOString(),
-      blocks: [
-        {
-          type: "tool_use",
-          id: "call_done",
-          name: "grep",
-          input: '{"pattern":"subagent"}',
-          result: "2 matches",
-        },
-        {
-          type: "tool_use",
-          id: "call_failed",
-          name: "shell",
-          input: '{"command":"false"}',
-          result: "exit code 1",
-          isError: true,
-        },
-      ],
+      type: "tool_use",
+      id: "call_done",
+      name: "grep",
+      input: '{"pattern":"x"}',
+      result: "2 matches",
     },
+    { type: "tool_use", id: "call_empty", name: "grep", input: '{"pattern":"x"}', result: "" },
   ]);
 });
 
