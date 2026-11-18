@@ -145,9 +145,7 @@ A webhook source is a reusable signed endpoint that triggers jobs. Generic sourc
 
 ## Channels
 
-Channels connect ORC to Telegram and Slack. In **Settings → Connections → Channels** you add a connection, pair approved recipients, and define ordered inbound rules that route messages to agents. Agent replies return to the same conversation. Agents send on their own with `channel_send` or `POST /api/channels/messages`. Attention notifications are a separate opt-in.
-
-The older config-based gateway (`gateway.telegram`, `gateway.slack`) still supports `/status`, `/tasks`, `/approve`, `/reject`, `/jobs`, `/run`, `/mem` and `/agent`.
+Channels connect ORC to Telegram and Slack. In **Settings → Connections → Channels** you add a connection, pair approved recipients, and define ordered inbound rules that route messages to agents. Agent replies return to the same conversation. Agents send on their own with `channel_send` or `POST /api/channels/messages`. Attention notifications are a separate opt-in. See [Notifications → Inbound rules](./notifications.md#inbound-rules).
 
 ## Human requests
 

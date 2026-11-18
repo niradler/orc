@@ -263,11 +263,11 @@ setup.
 | `PATCH` `DELETE` | `/webhooks/{id}` | Update / delete |
 | `POST` | `/webhooks/{token}` (no `/api`) | Receive a signed delivery |
 | `GET` | `/channels`, `/channels/providers` | Channels and providers |
-| `POST` | `/channels/messages` | Send a message |
+| `POST` | `/channels/{id}/route-test` | Preview the first matching inbound rule, without invoking an agent |
+| `POST` | `/channels/messages` | Send a message to a fixed destination; `*` (any chat) destinations only carry replies and refuse API sends |
 | `GET` `PUT` | `/channels/notification-policy` | Read/save global forwarding opt-in and ORC link origin |
 | `POST` | `/channels/notification-preview` | Test draft type/category/severity/outcome/project filters without sending |
 | `GET` | `/channels/notification-deliveries` | Recent delivery status and safe errors; `limit` 1–100 |
-| `GET` | `/gateway/status` | Gateway adapters and sessions; `POST /gateway/send` sends |
 
 Jobs accept optional `settings` and `environment` in create/update requests.
 `settings` is replaced as a whole when supplied: `host` is an SSH alias, `null`

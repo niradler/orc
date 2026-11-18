@@ -65,7 +65,7 @@ flowchart LR
     API[REST API /api]
     MCP[MCP /mcp]
     Runner[Runner: task loop, flows, jobs]
-    GW[Channels / gateway]
+    GW[Channels]
     Term[Terminals]
   end
 
@@ -95,7 +95,7 @@ flowchart LR
 | Desktop app | `packages/desktop` | Bundles the daemon, dashboard and CLI; attaches to a running daemon or starts one |
 | Runner | `packages/runner` | Task loop, flow engine, job executor and scheduler |
 | Agent runtime | `packages/agent-runtime` | Backend adapters that launch and drive coding agents |
-| Channels / gateway | `packages/channels`, `packages/gateway` | Telegram and Slack transport, routing and agent chat |
+| Channels | `packages/channels`, `packages/gateway` | Telegram and Slack transport, inbound routing and agent chat |
 | Database | `packages/db` | SQLite via Drizzle, at `~/.orc/orc.db` |
 
 Data flows `Agent → MCP → API/DB` and `CLI → SDK → API → DB`.

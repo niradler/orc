@@ -29,14 +29,12 @@ export function channelsCommand() {
     .requiredOption("--connection <id>", "Connection ID")
     .requiredOption("--target <id>", "Destination ID")
     .requiredOption("--text <text>", "Message text (Markdown)")
-    .option("--chat <id>", "Chat ID, required when the destination accepts any chat")
     .option("--thread <id>", "Telegram topic or Slack thread timestamp")
     .action(async (opts) => {
       const { data, error } = await createOrcClient().channels.send({
         connection: opts.connection,
         target: opts.target,
         message: { text: opts.text, format: "markdown", links: [] },
-        ...(opts.chat ? { chat_id: opts.chat } : {}),
         ...(opts.thread ? { thread_id: opts.thread } : {}),
       });
       if (error) fail(error);

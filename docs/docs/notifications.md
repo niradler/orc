@@ -138,6 +138,86 @@ recipient's filters, destination or project restrictions start with new events;
 history and events produced during a global pause are not replayed. An in-flight
 send can finish after a pause. Saved configuration survives restart.
 
+### Inbound rules
+
+Settings → Connections → Channels → **Inbound routing** turns an incoming message
+into an agent turn. Rules run in saved order; the first enabled rule whose
+condition matches wins. Conditions nest `all` (AND), `any` (OR) and `not`, up to
+5 levels and 100 condition nodes. Fields: `sender`, `chat`, `thread`, `text`,
+`command`, `is_direct`, `is_mention`, `is_followup` (the message continues a
+thread an agent already answered on this connection), `kind`. Operators: `is`,
+`in`, `contains`, `contains_any` (case-insensitive keyword list), `starts_with`
+— regex is deliberately unsupported (inbound text is untrusted). A `time`
+condition restricts a rule to a window (`days` 0=Sun..6=Sat, `from`, `to`, `tz`,
+overnight ranges allowed; wrap it in `not` for "outside hours"). An optional
+**Otherwise** rule (`condition: {"always": true}`) must be last if present.
+
+A rule's action is `ignore`, `agent`, or `job`. An `agent` action names the
+agent and project, and an optional `model` and `profile` — an [agent
+profile](./agent-packages.md) whose instructions, tool allowlist and model
+become that rule's persona. `session` picks `continue` (one rolling
+conversation per chat/thread/sender, the default), `thread` (one session per
+thread; a top-level Slack message starts a new thread and the reply lands in
+it) or `message` (a fresh session every message). `permission_mode` picks
+`default`, `plan` (read-only) or `acceptEdits`. A `job` action runs that job
+with the message text on stdin and `ORC_CHANNEL_CONNECTION`,
+`ORC_CHANNEL_PROVIDER`, `ORC_CHANNEL_CHAT`, `ORC_CHANNEL_THREAD`,
+`ORC_CHANNEL_SENDER`, `ORC_CHANNEL_SENDER_NAME` and `ORC_CHANNEL_ROUTE` in its
+environment; the job's stdout becomes the reply.
+
+Worked example: any DM to the bot gets a read-only assistant persona; a mention
+in `#ops` during work hours that names a deploy or rollback runs Codex in the
+ops project with one session per thread; everything else is ignored.
+
+```json
+[
+  {
+    "id": "dm-assistant",
+    "name": "DMs to the bot",
+    "enabled": true,
+    "condition": { "field": "is_direct", "op": "is", "value": true },
+    "action": {
+      "type": "agent",
+      "agent": "claude",
+      "project_id": "PROJECT_ID",
+      "profile": "read-only-assistant",
+      "session": "continue",
+      "permission_mode": "plan"
+    }
+  },
+  {
+    "id": "ops-deploys",
+    "name": "Ops deploy mentions during work hours",
+    "enabled": true,
+    "condition": {
+      "all": [
+        { "field": "is_mention", "op": "is", "value": true },
+        { "field": "chat", "op": "is", "value": "C0OPS" },
+        { "field": "text", "op": "contains_any", "value": ["deploy", "rollback"] },
+        { "time": { "days": [1, 2, 3, 4, 5], "from": "09:00", "to": "18:00", "tz": "Asia/Jerusalem" } }
+      ]
+    },
+    "action": { "type": "agent", "agent": "codex", "project_id": "OPS_PROJECT_ID", "session": "thread" }
+  },
+  { "id": "otherwise", "name": "Otherwise", "enabled": true, "condition": { "always": true }, "action": { "type": "ignore" } }
+]
+```
+
+Rules only see messages from an inbound destination. To let anyone DM the bot,
+add a destination with **Any chat** and **Any sender** (`chat_id: "*"`,
+`user_ids: ["*"]`). A sender matched only through `*` gets replies only: no chat
+controls, no `/project`, `/agent` or `/model`, and approvals or questions from
+their turns go to ORC Notifications, never to them. A `*` chat cannot carry
+notifications, Attention or a fixed thread, a `*` sender cannot carry
+Attention, and API or `channel_send` messages cannot target a `*` chat. Pair
+such a destination with `permission_mode: "plan"` and a profile with a limited
+tool allowlist.
+
+Preview which rule a message would hit without invoking an agent:
+`orc channels test --connection <id> --sender <id> --chat <id> --text "..."
+[--thread <id>] [--direct] [--mention] [--followup]`, or
+`POST /api/channels/{id}/route-test`.
+
 **Recent deliveries** shows status, attempt count, safe errors and a channel receipt
 ID through the API. Stable notification/destination IDs prevent replay of completed
 deliveries after restart. Definite provider rate limits retry at most four times
