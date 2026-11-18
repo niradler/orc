@@ -124,9 +124,9 @@ for (const [name, viewport] of [
       await expect(page.getByText("Reconnecting")).toHaveCount(0);
       await page.screenshot({ path: testInfo.outputPath(`started-${name}.png`) });
       await expect(page.getByRole("button", { name: "Open it on Devbox" })).toBeVisible();
-      await expect(page.getByRole("status").filter({ hasText: `(${remote.url}/chat` })).toHaveCount(
-        1,
-      );
+      await expect(
+        page.getByRole("status").filter({ hasText: `(${remote.url}/chat?chatThread=` }),
+      ).toHaveCount(1);
 
       const deadline = Date.now() + 30_000;
       let threads = "";
