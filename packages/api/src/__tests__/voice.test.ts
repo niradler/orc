@@ -319,7 +319,13 @@ test("a spoken line during a turn is posted to the transcript as its own paragra
 
 for (const kind of ["approval", "question"] as const)
   test(`speech never stops a turn waiting for ${kind === "approval" ? "an approval" : "a question"}; voice says it needs the screen`, async () => {
-    const original = createBackend("codex-cli");
+    const id = await chat("Reply with exactly: ok");
+    const backend = (
+      (await (await app.request(`/api/chat/threads/${id}`, { headers: AUTH })).json()) as {
+        backend: string;
+      }
+    ).backend;
+    const original = createBackend(backend);
     let release = () => {};
     const released = new Promise<void>((resolve) => {
       release = resolve;
@@ -356,8 +362,9 @@ for (const kind of ["approval", "question"] as const)
         yield { type: "result", data: { runtimeSessionId: "voice-native" } };
       },
     };
-    registerBackend("codex-cli", () => ({
+    registerBackend(backend, () => ({
       ...original,
+      preflight: async () => ({ ok: true }),
       startSession: async () => session,
       resumeSession: async () => session,
     }));
@@ -366,7 +373,7 @@ for (const kind of ["approval", "question"] as const)
       const stream = app.request("/api/chat/stream", {
         method: "POST",
         headers: AUTH,
-        body: JSON.stringify({ agent: "codex", messages: [{ role: "user", content: "write it" }] }),
+        body: JSON.stringify({ threadId: id, messages: [{ role: "user", content: "write it" }] }),
       });
       let waiting: { thread_id: string; kind: string }[] = [];
       await until(async () => {
@@ -377,8 +384,7 @@ for (const kind of ["approval", "question"] as const)
         ).waiting;
         return waiting.length > 0;
       });
-      expect(waiting.map((w) => w.kind)).toEqual([kind]);
-      const id = waiting[0]?.thread_id ?? "";
+      expect(waiting.map((w) => [w.thread_id, w.kind])).toEqual([[id, kind]]);
       const voice = await connect(id);
       voice.say(speech);
       await voice.next("transcript");
@@ -391,13 +397,13 @@ for (const kind of ["approval", "question"] as const)
       };
       expect(still.waiting.map((w) => w.kind)).toEqual([kind]);
       expect(stopped).toBe(0);
-      expect((await thread(id)).messages.filter((m) => m.role === "user")).toHaveLength(1);
+      expect((await thread(id)).messages.filter((m) => m.role === "user")).toHaveLength(2);
       voice.ws.close();
       release();
       await (await stream).text();
     } finally {
       process.env.ORC_E2E_CHAT_MOCK = "1";
-      registerBackend("codex-cli", () => original);
+      registerBackend(backend, () => original);
     }
   });
 
