@@ -345,6 +345,37 @@ describe("native chat runtime", () => {
     }
     calls.length = 0;
   });
+  test("should send compact to an existing OpenCode session as a native prompt", async () => {
+    const originalOpenCode = createBackend("opencode");
+    registerBackend("opencode", () => ({
+      ...originalOpenCode,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => session({ id: null, opts }),
+      resumeSession: async (id, opts) => {
+        const call = { id, opts };
+        calls.push(call);
+        return session(call);
+      },
+    }));
+    try {
+      const started = await turn({
+        agent: "opencode",
+        messages: [{ role: "user", content: "Start OpenCode for compaction" }],
+      });
+      const opened = started.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing OpenCode thread");
+      expect(opened.thread.backend).toBe("opencode");
+      const compact = await turn({
+        threadId: opened.thread.id,
+        messages: [{ role: "user", content: "/compact" }],
+      });
+      expect(compact.response.status).toBe(200);
+      expect(calls.at(-1)).toMatchObject({ id: "native-fixture", prompt: "/compact" });
+    } finally {
+      registerBackend("opencode", () => originalOpenCode);
+      calls.length = 0;
+    }
+  });
   test("should keep pre-tool prose in the reply instead of folding it as narration", async () => {
     narrateBeforeTool = true;
     try {

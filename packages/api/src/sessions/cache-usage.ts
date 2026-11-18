@@ -253,6 +253,12 @@ async function readOpenCodeCacheUsage(
       cached_input_tokens: event.cacheReadTokens,
       cache_write_tokens: event.cacheWriteTokens,
       output_tokens: event.outputTokens,
+      context_tokens:
+        event.inputTokens +
+        event.outputTokens +
+        event.reasoningTokens +
+        event.cacheReadTokens +
+        event.cacheWriteTokens,
     });
   }
   result.compactions = compactions.map((entry) => ({

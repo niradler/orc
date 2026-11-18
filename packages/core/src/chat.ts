@@ -154,6 +154,8 @@ export const ChatModelsSchema = z.object({
 });
 export type ChatModels = z.infer<typeof ChatModelsSchema>;
 
+export const AGENT_COMMAND_PATTERN = /^\/[\p{L}\p{N}][\p{L}\p{N}_:.-]*(?:\s|$)/u;
+
 export const ChatAgentCommandSchema = z.object({
   name: z.string().max(200),
   token: z.string().max(201),

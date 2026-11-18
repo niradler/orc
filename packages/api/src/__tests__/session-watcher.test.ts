@@ -480,6 +480,56 @@ describe("codex adapter", () => {
     const [second] = await adapter.list(known);
     expect(second?.usage).toBeUndefined();
   });
+
+  test("should name the question and its tool while a live Codex session waits on request_user_input", async () => {
+    const dbPath = join(root, "codex-question.sqlite");
+    const asked = {
+      timestamp: "2026-11-17T23:30:45.466Z",
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "request_user_input",
+        call_id: "call_f141f9a0e5d24cefb62f33145e750eb9",
+        arguments: '{"questions":[{"header":"Indentation","id":"indentation"}]}',
+      },
+    };
+    const answered = {
+      timestamp: "2026-11-17T23:31:01.850Z",
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call_f141f9a0e5d24cefb62f33145e750eb9",
+        output: '{"answers":{"indentation":{"answers":["Tabs"]}}}',
+      },
+    };
+    const waiting = join(root, "rollout-waiting.jsonl");
+    const done = join(root, "rollout-answered.jsonl");
+    writeFileSync(waiting, `${JSON.stringify(asked)}\n`);
+    writeFileSync(done, `${JSON.stringify(asked)}\n${JSON.stringify(answered)}\n`);
+    const db = new Database(dbPath);
+    db.exec(`CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT, name TEXT, cwd TEXT,
+      preview TEXT, first_user_message TEXT, tokens_used INTEGER, rollout_path TEXT,
+      created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER,
+      archived INTEGER)`);
+    const now = Date.now();
+    const ins = db.prepare("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    for (const [id, rollout] of [
+      ["cx-waiting", waiting],
+      ["cx-answered", done],
+    ] as const)
+      ins.run(id, id, null, "/tmp/cx", "", "", 0, rollout, now, now / 1000, now, now / 1000, 0);
+    ins.finalize();
+    db.close();
+    const rows = await codexAdapter(dbPath, { writer: () => true }).list(new Map());
+    expect(
+      Object.fromEntries(
+        rows.map((row) => [row.externalId, [row.pendingHuman, row.waitingFor ?? null]]),
+      ),
+    ).toEqual({
+      "cx-waiting": [true, { reason: "question", tool: "request_user_input" }],
+      "cx-answered": [false, null],
+    });
+  });
 });
 
 describe("claude adapter: missing transcript", () => {

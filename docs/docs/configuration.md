@@ -240,10 +240,10 @@ per-node worktrees are not created yet.
 
 ## Manual context compaction
 
-For an existing idle Claude, Codex or Pi chat, choose **Compact context** from session
-actions (an icon in the expanded desktop header), or send `/compact`. This uses the
-same native session: Claude's SDK command, Codex's `thread/compact/start` RPC, or
-Pi's `compact` RPC.
+For an existing idle Claude, Codex, OpenCode or Pi chat, choose **Compact context** from
+session actions (an icon in the expanded desktop header), or send `/compact`. This uses the
+same native session: Claude's SDK command, Codex's `thread/compact/start` RPC, OpenCode's
+own `/compact` command, or Pi's `compact` RPC.
 Progress, failures and completion use the normal conversation stream and history.
 Running turns, attachments and integrations without native support cannot be
 compacted this way. Keep automatic compaction under the agent's own control;
@@ -252,8 +252,10 @@ There is no ORC idle-compaction timer. Compaction summarizes model context and m
 use provider quota; it does not erase the displayed ORC transcript.
 
 The context meter beside **Send** shows how full the agent's context is. It shows a
-ring and a percentage when the agent reports its model's window (Codex, and Claude
-and Pi chats run through ORC), and raw tokens otherwise. From 80% it warns that the
+ring and a percentage when the agent reports its model's window (Codex, and Claude,
+Pi and OpenCode chats run through ORC), and raw tokens otherwise. OpenCode counts
+the same total its own sidebar shows: input, output, reasoning and cache tokens of
+the last request. From 80% it warns that the
 agent will soon compact or stop. Open it for exact tokens, cache reuse and the
 compaction count.
 

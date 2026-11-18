@@ -5,12 +5,14 @@ import {
   parseAgentModels,
   readAgentCatalog,
   readAgentModelCatalog,
+  readOpenCodeCommands,
   readTextModelCatalog,
 } from "../models";
 import claudeInitialize from "./fixtures/claude-initialize-commands.json";
 import claudeModels from "./fixtures/claude-initialize-models.json";
 import codexModels from "./fixtures/codex-model-list.json";
 import codexSkills from "./fixtures/codex-skills-list.json";
+import opencodeCommands from "./fixtures/opencode-command-list.json";
 
 describe("native command discovery", () => {
   test("Claude initialize commands keep name, alias, hint and source", () => {
@@ -81,6 +83,41 @@ describe("native command discovery", () => {
       "superpowers:brainstorming",
       "imagegen",
     ]);
+  });
+
+  test("OpenCode commands come from its server's command list, authenticated and scoped to the folder", async () => {
+    const server = `const auth="Basic "+btoa("opencode:"+process.env.OPENCODE_SERVER_PASSWORD);const s=Bun.serve({hostname:"127.0.0.1",port:0,fetch(r){const u=new URL(r.url);if(r.headers.get("authorization")!==auth)return new Response("",{status:401});if(u.pathname!=="/command"||u.searchParams.get("directory")!==process.cwd())return new Response("",{status:404});return Response.json(${JSON.stringify(opencodeCommands)});}});console.log("opencode server listening on http://127.0.0.1:"+s.port);`;
+    const commands = await readOpenCodeCommands(
+      { kind: "local" },
+      [process.execPath, "-e", server, "--"],
+      process.cwd(),
+    );
+    expect(
+      commands.map(({ token, source, argumentHint }) => ({ token, source, argumentHint })),
+    ).toEqual([
+      { token: "/init", source: "command", argumentHint: "$ARGUMENTS" },
+      { token: "/review", source: "command", argumentHint: "$ARGUMENTS" },
+      { token: "/hello", source: "command", argumentHint: "$1" },
+      { token: "/customize-opencode", source: "skill", argumentHint: "" },
+    ]);
+  });
+
+  test("OpenCode command discovery fails when the server never starts or refuses the list", async () => {
+    await expect(
+      readOpenCodeCommands(
+        { kind: "local" },
+        [process.execPath, "-e", "process.exit(1)", "--"],
+        process.cwd(),
+      ),
+    ).rejects.toThrow("closed before returning its commands");
+    const refusing = `const s=Bun.serve({hostname:"127.0.0.1",port:0,fetch:()=>new Response("",{status:401})});console.log("opencode server listening on http://127.0.0.1:"+s.port);`;
+    await expect(
+      readOpenCodeCommands(
+        { kind: "local" },
+        [process.execPath, "-e", refusing, "--"],
+        process.cwd(),
+      ),
+    ).rejects.toThrow("could not list its commands");
   });
 });
 

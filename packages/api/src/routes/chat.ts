@@ -18,6 +18,7 @@ import {
 import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
 import { changes } from "@orc/core/changes";
 import {
+  AGENT_COMMAND_PATTERN,
   appendChatActivity,
   CHAT_HISTORY_PAGE_SIZE,
   CHAT_SUBAGENT_DONE,
@@ -2283,7 +2284,7 @@ async function beginTurn(
   if (input.trim() === "/compact") {
     if (!thread.runtimeId)
       throw new ValidationError("Start a conversation before compacting context.");
-    if (thread.backend !== "claude" && thread.backend !== "codex-cli" && thread.backend !== "pi")
+    if (!["claude", "codex-cli", "opencode", "pi"].includes(thread.backend))
       throw new ValidationError("This integration does not support manual context compaction.");
     const options = thread.config.agentOptions.claude;
     if (
@@ -2624,7 +2625,7 @@ async function beginTurn(
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
         const message =
-          setup.context && !/^\/[\p{L}\p{N}][\p{L}\p{N}_:.-]*(?:\s|$)/u.test(turn)
+          setup.context && !AGENT_COMMAND_PATTERN.test(turn)
             ? withOrcContext(turn, {
                 ...setup.context,
                 voice: setup.context.voice ? VOICE_TURN_INSTRUCTION : undefined,

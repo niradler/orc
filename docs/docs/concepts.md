@@ -62,7 +62,7 @@ A backend is the coding agent that runs a task node, job or chat session.
 | Backend | Runs |
 | --- | --- |
 | `claude` | Claude Agent SDK in-process (default) |
-| `claude-cli` | The `claude` binary |
+| `claude-cli` | The `claude` binary in print mode: resume, fork and model choice, without approvals, Stop, steering or live permission modes |
 | `codex-cli` | The `codex` binary |
 | `acpx` | ACP CLI, which drives 14+ agents (Gemini, Copilot, Cursor, Kiro, ...) |
 | `acp` | An explicitly configured direct ACP command with negotiated capabilities |

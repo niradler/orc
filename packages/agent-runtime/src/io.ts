@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from "node:util";
+
 export async function readLines(
   stream: ReadableStream<Uint8Array> | number,
   onLine: (line: string) => void,
@@ -49,6 +51,23 @@ export function endStdin(stdin: import("bun").FileSink | number | undefined): vo
 export const STREAM_DRAIN_TIMEOUT_MS = 2000;
 
 type OutputStream = ReadableStream<Uint8Array> | number | null | undefined;
+
+export function stderrTail(stream: OutputStream, signal?: AbortSignal) {
+  let tail = "";
+  const drained = stream
+    ? readLines(
+        stream,
+        (line) => {
+          tail = `${tail}${stripVTControlCharacters(line)}\n`.slice(-8192);
+        },
+        signal,
+      ).catch(() => {})
+    : Promise.resolve();
+  return {
+    settled: () => Promise.race([drained, Bun.sleep(STREAM_DRAIN_TIMEOUT_MS)]),
+    append: (message: string) => (tail.trim() ? `${message}\n${tail.trim()}` : message),
+  };
+}
 
 export interface ProcessOutputHandlers {
   stdout?: (line: string) => void;
