@@ -128,6 +128,7 @@ export function ChatLiveStatus({
  *  A reply loaded without streaming (rebuild, or a turn that finished before reattach)
  *  is announced too. */
 export function ChatLiveAnnouncer({
+  tabKey,
   streaming,
   refreshing,
   settled,
@@ -135,6 +136,7 @@ export function ChatLiveAnnouncer({
   text,
   last,
 }: {
+  tabKey: string;
   streaming: boolean;
   refreshing: boolean;
   settled: number;
@@ -146,10 +148,11 @@ export function ChatLiveAnnouncer({
   const spoken = useRef(0);
   const textRef = useRef(text);
   textRef.current = text;
+  const lastTab = useRef(tabKey);
   const wasStreaming = useRef(streaming);
   const wasRefreshing = useRef(refreshing);
   const wasSettled = useRef(settled);
-  const announced = useRef<string | null>(null);
+  const announced = useRef(new Map<string, string>());
 
   useEffect(() => {
     if (text.length < spoken.current) spoken.current = 0;
@@ -171,22 +174,31 @@ export function ChatLiveAnnouncer({
   }, [streaming, agent]);
 
   useEffect(() => {
-    const streamFinished = wasStreaming.current && !streaming;
+    // Switching conversations swaps every flag at once; that is not a completion.
+    // Resync the edges to the new tab so only its own transitions announce.
+    const tabChanged = lastTab.current !== tabKey;
+    lastTab.current = tabKey;
+    if (tabChanged) {
+      spoken.current = 0;
+      setMessage("");
+    }
+    const streamFinished = !tabChanged && wasStreaming.current && !streaming;
     // A rebuild that loads a finished reply never streams, so it has no
     // streaming falling edge; announce it when the refresh completes instead.
-    const rebuildFinished = wasRefreshing.current && !refreshing && !streaming;
+    const rebuildFinished = !tabChanged && wasRefreshing.current && !refreshing && !streaming;
     // A turn that finishes while reattach is pending loads its reply through a
     // 204 reload: streaming was never claimed and the refresh already fell, so
     // announce on the follow's settlement instead.
-    const settledFinished = wasSettled.current !== settled && !streaming;
+    const settledFinished = !tabChanged && wasSettled.current !== settled && !streaming;
     wasStreaming.current = streaming;
     wasRefreshing.current = refreshing;
     wasSettled.current = settled;
-    if (streaming || (!streamFinished && !rebuildFinished && !settledFinished)) return;
+    if (tabChanged || streaming || (!streamFinished && !rebuildFinished && !settledFinished))
+      return;
     if (last?.role !== "assistant") return;
-    // A refresh that returns the same reply must not read it out again.
-    if (!streamFinished && announced.current === last.id) return;
-    announced.current = last.id;
+    // A refresh that returns the same reply must not read it out again, per tab.
+    if (!streamFinished && announced.current.get(tabKey) === last.id) return;
+    announced.current.set(tabKey, last.id);
     const rest = last.content.slice(spoken.current).trim();
     const summary =
       last.activity?.length || last.providerActivity?.length || last.turn?.outcome
@@ -203,7 +215,7 @@ export function ChatLiveAnnouncer({
           )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
-  }, [streaming, refreshing, settled, last]);
+  }, [tabKey, streaming, refreshing, settled, last]);
 
   return (
     <div role="status" aria-live="polite" data-testid="chat-live-announcer" className="sr-only">

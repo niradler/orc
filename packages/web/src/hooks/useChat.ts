@@ -120,7 +120,7 @@ export interface ChatTab {
   streaming: boolean;
   reconnecting: boolean;
   refreshing: boolean;
-  /** Bumped when a followed turn settles, so a reply loaded without streaming is still announced. */
+  /** Bumped when a turn's completion is discovered or assembled, so a reply loaded without streaming is still announced. */
   settled: number;
   streamText: string;
   activity: ChatActivity[];
@@ -460,9 +460,10 @@ function useChatController() {
   );
   const finish = useCallback(
     (key: string) =>
-      update(key, (tab) => ({
-        messages:
-          tab.streamText || tab.activity.length || tab.turn?.outcome
+      update(key, (tab) => {
+        const assembled = tab.streamText || tab.activity.length || tab.turn?.outcome;
+        return {
+          messages: assembled
             ? [
                 ...tab.messages,
                 {
@@ -476,16 +477,19 @@ function useChatController() {
                 },
               ]
             : tab.messages,
-        streaming: false,
-        reconnecting: false,
-        settled: tab.settled + 1,
-        streamText: "",
-        activity: [],
-        turn: undefined,
-        permissions: [],
-        questions: [],
-        attention: tab.attention || (tab.streaming && key !== activeRef.current),
-      })),
+          streaming: false,
+          reconnecting: false,
+          // Only an assembled reply is a new completion; an idle attach that
+          // settled nothing must not announce the thread's historical reply.
+          settled: tab.settled + (assembled ? 1 : 0),
+          streamText: "",
+          activity: [],
+          turn: undefined,
+          permissions: [],
+          questions: [],
+          attention: tab.attention || (tab.streaming && key !== activeRef.current),
+        };
+      }),
     [update],
   );
   /**
@@ -552,13 +556,16 @@ function useChatController() {
                 const loaded = find(key)?.messages ?? [];
                 const fresh = await api.chat.get(threadId);
                 if (current())
-                  update(key, () => ({
+                  update(key, (tab) => ({
                     thread: fresh,
                     messages: mergeLoadedHistory(loaded, fresh.messages),
                     historyBefore: fresh.historyBefore ?? null,
                     streamText: "",
                     activity: [],
                     error: null,
+                    // The snapshot predated a just-finished turn: discovering its
+                    // reply is a completion even though no stream was open here.
+                    settled: tab.settled + 1,
                   }));
               }
               return false;

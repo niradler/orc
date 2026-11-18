@@ -1384,6 +1384,7 @@ export function ChatPanel({
               </p>
             )}
             <ChatLiveAnnouncer
+              tabKey={activeKey}
               streaming={streaming}
               refreshing={refreshing}
               settled={settled}

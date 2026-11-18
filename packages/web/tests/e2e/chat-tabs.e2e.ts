@@ -176,23 +176,24 @@ test("a reply that finishes while reattach is pending is still announced", async
   const panel = page.getByTestId("chat-panel");
   await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
   await panel.getByTestId("chat-send-button").click();
+  // Wait for the turn to actually finish: the streaming bubble matches the text too.
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
   await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
   await expect(page).toHaveURL(/[?&]chatThread=[0-9a-f-]{36}/);
 
-  // The reload sees the question still unanswered, and the reattach is held open
-  // until the turn has finished: /live answers 204 and the reply loads without
-  // streaming ever being claimed, so only the follow's settlement can announce it.
-  let first = true;
+  // Every snapshot before the reattach still shows the question unanswered, and
+  // the reattach is held open until the turn has finished: /live answers 204 and
+  // the reply loads without streaming ever being claimed, so only the follow's
+  // settlement can announce it.
+  let liveRequested = false;
   await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
     const response = await route.fetch();
     const thread = await response.json();
-    if (first) {
-      first = false;
-      thread.messages = thread.messages.slice(0, -1);
-    }
+    if (!liveRequested) thread.messages = thread.messages.slice(0, -1);
     await route.fulfill({ response, json: thread });
   });
   await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/live$/, async (route) => {
+    liveRequested = true;
     await new Promise((resolve) => setTimeout(resolve, 1500));
     await route.continue();
   });
@@ -203,4 +204,62 @@ test("a reply that finishes while reattach is pending is still announced", async
   expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
   await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
   await expect(page.getByTestId("chat-live-announcer")).toContainText(reply);
+});
+
+test("opening a finished thread does not announce its historical reply", async ({ page }) => {
+  const reply = `HISTORY-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await expect(page).toHaveURL(/[?&]chatThread=[0-9a-f-]{36}/);
+
+  // Reopening the finished thread attaches and gets a 204 with nothing new to
+  // load: that idle settlement must not read out the reply already on screen.
+  await page.reload();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await page.waitForTimeout(1500);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
+});
+
+test("switching between idle tabs does not announce their replies", async ({ page }) => {
+  const first = `FIRST-${Date.now()}`;
+  const second = `SECOND-${Date.now()}`;
+  // Isolate switching from transcript rebuilds: no session changes are reported,
+  // so any announcement here could only come from crossing tab state.
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${first}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(first);
+  // A second turn gives the first tab a different settlement count than the second.
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${first}-again.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(`${first}-again`);
+  await panel.getByTestId("chat-clear-button").click();
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${second}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(second);
+  await showSessionSection(page, "recents");
+  const tabs = panel.getByTestId("chat-session-list").getByTestId("chat-tab");
+  await expect(tabs).toHaveCount(2);
+
+  // Switching conversations is not a completion: nothing may be read out, in
+  // either direction, even though the tabs' settlement counts differ.
+  await tabs.filter({ hasText: first }).getByTestId("chat-session-select").click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(`${first}-again`);
+  await page.waitForTimeout(800);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
+  await tabs.filter({ hasText: second }).getByTestId("chat-session-select").click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(second);
+  await page.waitForTimeout(800);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).toBe("");
 });
