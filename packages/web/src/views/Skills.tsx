@@ -981,8 +981,9 @@ function SkillDetailSheet({
                         type="checkbox"
                         data-testid="skill-scope-global"
                         checked={assignedProjects.length === 0}
-                        disabled={assignedProjects.length === 0 || saveScope.isPending}
-                        onChange={() => saveScope.mutate([])}
+                        disabled={assignedProjects.length === 0}
+                        aria-disabled={saveScope.isPending}
+                        onChange={() => !saveScope.isPending && saveScope.mutate([])}
                       />
                       Global (every project)
                     </label>
@@ -992,8 +993,9 @@ function SkillDetailSheet({
                           type="checkbox"
                           data-testid={`skill-scope-project-${project.id}`}
                           checked={assignedProjects.includes(project.id)}
-                          disabled={saveScope.isPending}
+                          aria-disabled={saveScope.isPending}
                           onChange={(event) =>
+                            !saveScope.isPending &&
                             saveScope.mutate(
                               event.target.checked
                                 ? [...assignedProjects, project.id]

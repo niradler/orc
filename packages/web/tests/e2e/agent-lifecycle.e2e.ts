@@ -93,6 +93,7 @@ test("registered agents share idle visibility, transcripts, task links and sessi
       status: "stopped",
       createdAt,
       updatedAt: Date.now(),
+      transcriptPath: join(LIVE_REGISTRY_DIR, `${prefix}-${backend}.jsonl`),
     });
   await apiPost(request, "/sessions/live/sync", {});
   await page.getByTestId("session-list-refresh").click();
@@ -159,12 +160,12 @@ test("renames and hides a session and keeps both across a re-sync and reload", a
   await view.getByTestId("hide-session").click();
   await expect(view.getByTestId("detail-session-hidden")).toBeVisible();
   await gotoView(page, "sessions");
-  await page.getByTestId("chat-session-agent").selectOption("claude");
   await expect(row).toHaveCount(0);
 
   const showHidden = page.getByTestId("chat-session-hidden");
   await showHidden.click();
   await expect(showHidden).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("chat-session-agent").selectOption("claude");
   await expect(row).toBeVisible();
   await expect(row.getByTestId("chat-session-hidden-badge")).toBeVisible();
 

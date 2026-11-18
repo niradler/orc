@@ -244,6 +244,7 @@ test("composer chips are fully keyboard operable", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(branch).toHaveAttribute("data-worktree", "true");
   await expect(branch).toHaveText("New worktree from feature/chips");
+  await expect(branch).toBeFocused();
 
   await branch.press("Enter");
   await expect(page.getByTestId("chat-workspace-worktree")).toBeFocused();
@@ -390,7 +391,9 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
     await chip.click();
     await expect(page.getByTestId("chat-permission-option-plan")).toBeVisible();
-    await expect(page.getByTestId("chat-permission-option-auto")).toHaveCount(0);
+    await expect(page.getByTestId("chat-permission-option-auto")).toContainText(
+      "Workspace only, reviewer decides",
+    );
     await page.keyboard.press("Escape");
 
     await page.evaluate(() => localStorage.clear());

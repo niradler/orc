@@ -127,11 +127,13 @@ export function ChatLiveStatus({
 /** Announces streamed prose by paragraph and the finished turn, never every token. */
 export function ChatLiveAnnouncer({
   streaming,
+  refreshing,
   agent,
   text,
   last,
 }: {
   streaming: boolean;
+  refreshing: boolean;
   agent: string;
   text: string;
   last: ChatMessage | undefined;
@@ -140,7 +142,10 @@ export function ChatLiveAnnouncer({
   const spoken = useRef(0);
   const textRef = useRef(text);
   textRef.current = text;
-  const wasStreaming = useRef(streaming);
+  const busy = streaming || refreshing;
+  const wasBusy = useRef(busy);
+  const lastBefore = useRef(last?.id);
+  const streamed = useRef(false);
 
   useEffect(() => {
     if (text.length < spoken.current) spoken.current = 0;
@@ -162,12 +167,17 @@ export function ChatLiveAnnouncer({
   }, [streaming, agent]);
 
   useEffect(() => {
-    if (streaming || !wasStreaming.current) {
-      wasStreaming.current = streaming;
+    if (busy || !wasBusy.current) {
+      if (!wasBusy.current) {
+        lastBefore.current = last?.id;
+        streamed.current = false;
+      }
+      if (streaming) streamed.current = true;
+      wasBusy.current = busy;
       return;
     }
-    wasStreaming.current = false;
-    if (last?.role !== "assistant") return;
+    wasBusy.current = false;
+    if (last?.role !== "assistant" || (!streamed.current && last.id === lastBefore.current)) return;
     const rest = last.content.slice(spoken.current).trim();
     const summary =
       last.activity?.length || last.providerActivity?.length || last.turn?.outcome
@@ -184,7 +194,7 @@ export function ChatLiveAnnouncer({
           )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
-  }, [streaming, last]);
+  }, [busy, streaming, last]);
 
   return (
     <div role="status" aria-live="polite" data-testid="chat-live-announcer" className="sr-only">

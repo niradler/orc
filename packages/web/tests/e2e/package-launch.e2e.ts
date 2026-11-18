@@ -221,7 +221,13 @@ test("Use package selects Codex, browses SSH, and opens chat on the selected hos
   await page.getByTestId("setup-host").selectOption("test-ssh");
   const originalFolder = await page.getByTestId("setup-cwd").inputValue();
   await page.getByTestId("setup-browse").click();
-  await expect(page.getByTestId("folder-picker-dialog")).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("folder-picker-dialog")
+        .evaluate((element) => element.contains(document.activeElement)),
+    )
+    .toBe(true);
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("folder-picker-dialog")).toBeHidden();
   await expect(page.getByTestId("setup-cwd")).toHaveValue(originalFolder);

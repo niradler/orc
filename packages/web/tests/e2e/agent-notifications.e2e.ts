@@ -147,6 +147,12 @@ test("Done: sessions finishing together open from the bell on the chat page", as
     liveSession(2, "idle"),
     liveSession(3, "idle"),
   ];
+  await page.route("**/api/sessions/live/notify-live-*", (route) =>
+    route.fulfill({
+      json: scenario.state.sessions.find((session) => route.request().url().endsWith(session.id)),
+    }),
+  );
+  await mockResumedChat(page, "notify-live-1");
   await poll(page);
   await page.clock.runFor(1_500);
 
@@ -154,7 +160,8 @@ test("Done: sessions finishing together open from the bell on the chat page", as
   await page.getByTestId("notification-bell").first().click();
   await expect(page.getByTestId("notification-menu")).toBeVisible();
   await page.getByTestId("notification-menu").getByTestId("notification-open").first().click();
-  await expect(page).toHaveURL(/\/chat\?.*sessionLive=notify-live-/);
+  await expect(page).toHaveURL(/\/chat\?/);
+  await expect(page.getByText("Resumed.").first()).toBeVisible();
 });
 
 test("Done: the open chat clears its completion without a toast", async ({ page }) => {
