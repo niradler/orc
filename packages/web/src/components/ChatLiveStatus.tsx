@@ -205,6 +205,7 @@ export function ChatLiveAnnouncer({
     // same message, and syncThread swapping the client id for the persisted one
     // is not a new reply either.
     const lastChanged = prevLast.current?.id !== last?.id;
+    const previousLast = prevLast.current;
     // The history baseline and the turn's user id are captured at every dispatch
     // (background queue drains included), so they name the reply that was on screen
     // before THIS turn and the message this tab sent even when the tab finished
@@ -257,11 +258,19 @@ export function ChatLiveAnnouncer({
     // Only a newly loaded reply announces: a no-op or failed refresh returns the
     // same message, and an empty turn assembles nothing. Per-tab dedupe on top.
     if (!discovered || announced.current.get(tabKey) === last.id) return;
+    // An in-place id change with identical content is the same message re-id'd —
+    // syncThread's client→persisted swap arriving through a refresh instead of
+    // its silent idle commit — not a new reply, whether or not it announced.
+    if (lastChanged && previousLast?.role === "assistant" && previousLast.content === last.content)
+      return;
     // A completion edge can load history too: the 204 reload and finish() batch
     // into one commit, so a restored twin arrives with a changed id exactly as
     // streaming falls. Require the same turn evidence as the mid-stream path;
     // a live assembly always carries the dispatched user id in its snapshot.
-    if (!isNewTurn(last)) return;
+    // A rebuild is exempt: it loads whatever changed on disk — an external turn,
+    // not a local dispatch — and native imports regenerate every message id, so
+    // dispatch evidence cannot apply; the in-place rule still absorbs history.
+    if (!rebuildFinished && !isNewTurn(last)) return;
     announced.current.set(tabKey, last.id);
     // A discovered reply was never streamed here; read it from the start. The
     // streaming edge keeps its offset so it only reads the unspoken remainder.

@@ -803,6 +803,128 @@ test("a refresh to an older user tail does not corrupt the turn's identity", asy
   releaseGets();
 });
 
+test("an unchanged refresh before syncThread does not re-announce after a tab switch", async ({
+  page,
+}) => {
+  const reply = `RESWAP-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // Hold every thread GET so syncThread cannot replace the client-generated
+  // reply id, and stub the session query against auto-rebuilds.
+  let allowGets = false;
+  let releaseGets: () => void;
+  const getsGate = new Promise<void>((resolve) => {
+    releaseGets = resolve;
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    if (!allowGets) {
+      await getsGate;
+      await route.abort().catch(() => {});
+      return;
+    }
+    await route.continue();
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(reply);
+
+  // Leave and return: the tab change clears the live region. syncThread is
+  // still held, so the reply on screen keeps its client id.
+  await panel.getByTestId("chat-clear-button").click();
+  await showSessionSection(page, "recents");
+  const tabs = panel.getByTestId("chat-session-list").getByTestId("chat-tab");
+  await tabs.filter({ hasText: reply }).getByTestId("chat-session-select").click();
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+
+  // The unchanged refresh now delivers the persisted id through the refreshing
+  // falling edge — the same reply re-id'd in place, not a new completion.
+  allowGets = true;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await page.waitForTimeout(1000);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).not.toContain(reply);
+  releaseGets();
+});
+
+test("an external rebuild whose reply matches older history is still announced", async ({
+  page,
+}) => {
+  const same = `EXTERNAL-${Date.now()}`;
+  const other = `LOCALB-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // Hold thread GETs so the local turns keep client ids; the rebuild below
+  // regenerates every message id, as a native transcript import does.
+  let allowGets = false;
+  let releaseGets: () => void;
+  const getsGate = new Promise<void>((resolve) => {
+    releaseGets = resolve;
+  });
+  let native: unknown = null;
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    if (!allowGets) {
+      await getsGate;
+      await route.abort().catch(() => {});
+      return;
+    }
+    const response = await route.fetch();
+    const thread = await response.json();
+    if (!native) {
+      const messages = thread.messages.map((m: { id: string }) => ({
+        ...m,
+        id: crypto.randomUUID(),
+      }));
+      native = {
+        ...thread,
+        messages: [
+          ...messages,
+          {
+            id: crypto.randomUUID(),
+            role: "user",
+            content: "external prompt",
+            timestamp: Date.now(),
+          },
+          { id: crypto.randomUUID(), role: "assistant", content: same, timestamp: Date.now() },
+        ],
+      };
+    }
+    await route.fulfill({ response, json: native });
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+
+  // Turn A's reply is the text the external turn repeats; turn B makes it the
+  // dispatch-time baseline and leaves a local send id the rebuild removes.
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${same}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(same);
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${other}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(other);
+
+  // The rebuild loads an external turn whose reply matches the stale baseline
+  // under regenerated ids. It is a genuine disk change, not a local revert —
+  // dispatch evidence cannot apply, and the reply must be announced.
+  allowGets = true;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(same);
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(same);
+  releaseGets();
+});
+
 test("opening a finished thread does not announce its historical reply", async ({ page }) => {
   const reply = `HISTORY-${Date.now()}`;
   await page.goto("/tasks?chat=full");
