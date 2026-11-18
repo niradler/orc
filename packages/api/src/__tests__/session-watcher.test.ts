@@ -52,6 +52,13 @@ function writeEntry(pid: number, sessionId: string, status: string) {
   );
 }
 
+const storedStatus = (sessionId: string) =>
+  getSqlite()
+    .query<{ status: string }, [string]>(
+      "SELECT status FROM gateway_sessions WHERE runtime_session_id = ?",
+    )
+    .get(sessionId)?.status;
+
 async function live(opts: { active?: boolean; agent?: string } = {}) {
   const q = `active=${opts.active ?? true}${opts.agent ? `&agent=${opts.agent}` : ""}&limit=1000`;
   const res = await req(app, "GET", `/sessions/live?${q}`);
@@ -105,8 +112,7 @@ describe("claude adapter: live registry", () => {
     writeEntry(DEAD_PID, "dead-session", "busy");
     await runSync([claude()], { force: true });
     expect((await live()).map((r) => r.session_id)).toEqual([SESSION_ID]);
-    const all = await live({ active: false });
-    expect(all.find((r) => r.session_id === "dead-session")?.status).toBe("stopped");
+    expect(storedStatus("dead-session")).toBe("stopped");
     unlinkSync(join(registry, `${DEAD_PID}.json`));
   });
 
@@ -151,9 +157,7 @@ describe("claude adapter: live registry", () => {
     unlinkSync(join(registry, `${process.pid}.json`));
     await runSync([claude()], { force: true });
     expect(await live()).toHaveLength(0);
-    expect((await live({ active: false })).find((r) => r.session_id === SESSION_ID)?.status).toBe(
-      "stopped",
-    );
+    expect(storedStatus(SESSION_ID)).toBe("stopped");
   });
 
   test("the fs watcher picks up a new file without a periodic sync", async () => {
@@ -204,13 +208,20 @@ describe("claude adapter: ended sessions, tokens and summary", () => {
     write("local_grand", "spawn-grand", { spawnedFrom: { sessionId: "local_child" } });
     write("local_gone", "spawn-orphan", { spawnedFrom: { sessionId: "local_missing" } });
     write("local_bad", "spawn-bad", { spawnedFrom: "not an object" });
+    const transcripts = join(root, "desktop-spawn-projects", "-tmp-spawn-repo");
+    mkdirSync(transcripts, { recursive: true });
+    for (const cliId of ["spawn-root", "spawn-child", "spawn-grand", "spawn-orphan", "spawn-bad"])
+      writeFileSync(
+        join(transcripts, `${cliId}.jsonl`),
+        `${JSON.stringify({ type: "user", message: { content: cliId } })}\n`,
+      );
 
     await runSync(
       [
         claudeAdapter({
           registry: join(root, "empty-registry"),
           desktop: join(root, "desktop-spawn"),
-          projects: null,
+          projects: join(root, "desktop-spawn-projects"),
         }),
       ],
       { force: true },
@@ -397,6 +408,9 @@ describe("codex adapter", () => {
       created_at_ms INTEGER, created_at INTEGER, updated_at_ms INTEGER, updated_at INTEGER,
       archived INTEGER)`);
     const ins = db.prepare("INSERT INTO threads VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const rollout = join(root, "codex-state-rollout.jsonl");
+    writeFileSync(rollout, "");
+    utimesSync(rollout, 1_790_000_900, 1_790_000_900);
     ins.run(
       "cx-1",
       "Review the diff",
@@ -405,7 +419,7 @@ describe("codex adapter", () => {
       "review preview text",
       "first msg",
       2540869,
-      "/nope/rollout.jsonl",
+      rollout,
       1_790_000_000_000,
       1_790_000_000,
       1_790_000_900_000,

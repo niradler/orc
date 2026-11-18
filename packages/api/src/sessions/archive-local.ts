@@ -3,6 +3,7 @@ import { execHostFor, hostRuntime } from "@orc/core/exec-host";
 import { getSqlite } from "@orc/db/client";
 import { getSessionArchive } from "./archive.js";
 import { LIVE_CHAT_ID } from "./common.js";
+import { readTranscriptFile } from "./transcript-source.js";
 
 type ScanResult = { indexed: number; failed: number; skipped: number };
 let running = Promise.resolve();
@@ -66,7 +67,7 @@ async function scan(projectId?: string) {
           result.skipped++;
           continue;
         }
-        const bytes = await runtime.readFile(row.transcript_path, 60 * 1024 * 1024);
+        const bytes = await readTranscriptFile(runtime, row.transcript_path, 60 * 1024 * 1024);
         const after = await runtime.stat(row.transcript_path);
         if (!after || after.size !== before.size || after.mtimeMs !== before.mtimeMs) {
           result.skipped++;

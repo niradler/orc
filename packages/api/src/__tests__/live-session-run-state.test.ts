@@ -186,6 +186,10 @@ test("a subagent's wait names the subagent's tool, never the Agent call", async 
 
 test("failure paths: dead pid, no transcript, unknown waits and statuses", async () => {
   register("3.json", dead, "waiting", "permission prompt");
+  writeFileSync(
+    join(projects, "-tmp-orc", `${dead}.jsonl`),
+    jsonl([{ type: "user", message: { content: "run the tests" } }, toolUse("d1", "Bash")]),
+  );
   register("4.json", orphan, "waiting", "dialog open");
   await runSync(adapters, { force: true });
   let live = await rows();

@@ -14,7 +14,8 @@ const A = "aaaaaaaa-1111-4222-8333-000000000001";
 const B = "bbbbbbbb-1111-4222-8333-000000000002";
 const C = "cccccccc-1111-4222-8333-000000000003";
 
-const writeSession = (pid: number, id: string) =>
+const projects = join(root, "projects", "-tmp-x");
+const writeSession = (pid: number, id: string) => {
   writeFileSync(
     join(root, `${pid}.json`),
     JSON.stringify({
@@ -25,6 +26,11 @@ const writeSession = (pid: number, id: string) =>
       status: "idle",
     }),
   );
+  writeFileSync(
+    join(projects, `${id}.jsonl`),
+    `${JSON.stringify({ type: "user", message: { content: "hello" } })}\n`,
+  );
+};
 
 const live = async (query = "") => {
   const res = await req(app, "GET", `/sessions/live?active=false${query}`);
@@ -36,13 +42,16 @@ const live = async (query = "") => {
 
 beforeAll(async () => {
   app = setupTestApp();
-  mkdirSync(root, { recursive: true });
+  mkdirSync(projects, { recursive: true });
   writeSession(process.pid, A);
   writeSession(1, B);
   writeSession(2, C);
-  await runSync([claudeAdapter({ registry: root, desktop: null, projects: null })], {
-    force: true,
-  });
+  await runSync(
+    [claudeAdapter({ registry: root, desktop: null, projects: join(root, "projects") })],
+    {
+      force: true,
+    },
+  );
 });
 
 afterAll(() => {

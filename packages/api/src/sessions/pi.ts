@@ -1,9 +1,9 @@
 import { isAbsolute, join, posix } from "node:path";
 import { loadConfig } from "@orc/core/config";
-import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { type HostRuntime, hostRuntime, LIST_FILES_LIMIT, LOCAL_HOST } from "@orc/core/exec-host";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
-import { activityAdvanced, oneLine } from "./common.js";
+import { activityAdvanced, droppedTranscripts, oneLine } from "./common.js";
 import type { SessionAdapter, SessionRecord } from "./types.js";
 import { parsePiUsage } from "./usage-parsers.js";
 
@@ -110,9 +110,10 @@ export function piAdapter(
     async list(known) {
       const records: SessionRecord[] = [];
       const directories = root ? [root] : await piSessionRoots(runtime);
-      const files = (
-        await Promise.all(directories.map((directory) => runtime.listFiles(directory)))
-      ).flat();
+      const listings = await Promise.all(
+        directories.map((directory) => runtime.listFiles(directory)),
+      );
+      const files = listings.flat();
       const seen = new Set<string>();
       for (const file of files) {
         if (seen.has(file.path)) continue;
@@ -161,6 +162,14 @@ export function piAdapter(
         }
         records.push(record);
       }
+      const listed = new Set(records.map((record) => record.externalId));
+      for (const record of await droppedTranscripts(
+        known,
+        seen,
+        listings.every((listing) => listing.length < LIST_FILES_LIMIT),
+        runtime,
+      ))
+        if (!listed.has(record.externalId)) records.push(record);
       return records;
     },
   };

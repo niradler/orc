@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { realpath } from "node:fs/promises";
 import { posix, relative } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
+import { NATIVE_CHAT_AGENTS } from "@orc/core/chat";
 import { ChatAnalyticsSchema } from "@orc/core/chat-analytics";
 import { NotFoundError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
@@ -9,7 +10,19 @@ import { SessionCacheUsageSchema } from "@orc/core/usage";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { previewSession } from "../desktop-preview/session.js";
 import { checkoutFiles } from "../git/files.js";
 import { gitStatus } from "../git/panel.js";
@@ -504,6 +517,13 @@ app.openapi(liveListRoute, async (c) => {
       isNull(gateway_sessions.parent_session_id),
       include_hidden ? undefined : isNull(gateway_sessions.hidden_at),
       sql`NOT (coalesce(${gateway_sessions.tokens_used}, -1) = 0 AND ${gateway_sessions.summary} IS NULL)`,
+      task_id
+        ? undefined
+        : or(
+            isNotNull(gateway_sessions.transcript_path),
+            ne(gateway_sessions.status, "stopped"),
+            notInArray(gateway_sessions.backend, NATIVE_CHAT_AGENTS),
+          ),
       project_id === "unassigned"
         ? isNull(gateway_sessions.project_id)
         : project_id

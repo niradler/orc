@@ -3,7 +3,7 @@ import type { HostRuntime } from "@orc/core/exec-host";
 import type { CacheTokenUsage, SessionCacheUsage } from "@orc/core/usage";
 import { z } from "zod";
 import { parsePiSession } from "./pi.js";
-import { MAX_TRANSCRIPT_BYTES } from "./transcript.js";
+import { readTranscriptFile } from "./transcript-source.js";
 import { parseOpenCodeUsage } from "./usage-parsers.js";
 
 const Count = z.number().int().nonnegative();
@@ -82,7 +82,7 @@ export async function loadSessionCacheUsage(
         externalId,
       );
     }
-    return readSessionCacheUsage(backend, await runtime.readFile(path, MAX_TRANSCRIPT_BYTES));
+    return readSessionCacheUsage(backend, await readTranscriptFile(runtime, path));
   } catch {
     throw new OrcError("Session cache usage could not be read", "CACHE_UNAVAILABLE", 503);
   }
