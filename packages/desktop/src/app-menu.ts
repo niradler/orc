@@ -11,8 +11,6 @@ export type ZoomDirection = "in" | "out" | "reset";
 
 export interface AppMenuState {
   platform: NodeJS.Platform;
-  /** Developer tools belong to source runs; an installed build ships without them. */
-  packaged: boolean;
 }
 
 export interface AppMenuActions {
@@ -85,15 +83,11 @@ export function appMenuTemplate(
           accelerator: "Shift+CmdOrCtrl+R",
           click: () => actions.reload(true),
         },
-        ...(state.packaged
-          ? []
-          : [
-              {
-                label: "Toggle Developer Tools",
-                accelerator: mac ? "Alt+Command+I" : "Ctrl+Shift+I",
-                click: () => actions.toggleDevTools(),
-              } satisfies MenuItemConstructorOptions,
-            ]),
+        {
+          label: "Toggle Developer Tools",
+          accelerator: mac ? "Alt+Command+I" : "Ctrl+Shift+I",
+          click: () => actions.toggleDevTools(),
+        },
         { type: "separator" },
         { label: "Actual Size", accelerator: "CmdOrCtrl+0", click: () => actions.zoom("reset") },
         { label: "Zoom In", accelerator: "CmdOrCtrl+=", click: () => actions.zoom("in") },

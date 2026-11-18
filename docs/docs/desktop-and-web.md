@@ -839,8 +839,7 @@ The desktop app is an Electron shell around the same dashboard. On top of the br
 
 Menu commands that change the page act on the window itself. **Reload**, **Zoom In**,
 **Zoom Out** and **Actual Size** never reach the page open in the inspector's
-**Browser** tab. **Toggle Developer Tools** appears only when the app runs from
-source.
+**Browser** tab. **Toggle Developer Tools** opens the window's own developer tools.
 
 **File** holds **Connection…**, **Browser and files**, **Start at login** and, on
 Windows and Linux, **Quit orc**. **Help** opens this documentation and the issue
