@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import type { APIRequestContext } from "@playwright/test";
 import { expect, test } from "@playwright/test";
-import { API_PORT, apiGet, apiPost, gotoView, repoRoot, tid } from "./_helpers";
+import { API_PORT, apiDelete, apiGet, apiPost, gotoView, repoRoot, tid } from "./_helpers";
 
 const execute = promisify(execFile);
 const git = (...args: string[]) =>
@@ -227,10 +227,15 @@ async function teardown(fixture: Fixture): Promise<void> {
   rmSync(fixture.root, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
 }
 
-function seedHost(fixture: Fixture): string {
-  return JSON.stringify([
-    { id: "send-box", label: "Send box", url: fixture.destUrl, token: "dest-secret", headers: [] },
-  ]);
+async function saveHost(request: APIRequestContext, fixture: Fixture): Promise<string> {
+  const { hosts } = await apiPost<{ hosts: { id: string }[] }>(request, "/remote-hosts", {
+    label: "Send box",
+    url: fixture.destUrl,
+    token: "dest-secret",
+  });
+  const id = hosts.at(-1)?.id;
+  if (!id) throw new Error("The remote host was not saved");
+  return id;
 }
 
 test("Send to host moves the session and the destination continues it", async ({
@@ -239,18 +244,15 @@ test("Send to host moves the session and the destination continues it", async ({
 }) => {
   test.setTimeout(120_000);
   const fixture = await setup(request);
+  const hostId = await saveHost(request, fixture);
   try {
-    await page.addInitScript(
-      (hosts: string) => localStorage.setItem("orc_api_hosts", hosts),
-      seedHost(fixture),
-    );
     await gotoView(page, "activity");
     const row = page.locator(`[data-session-id="${fixture.liveId}"]`).locator("..");
     await expect(row).toBeVisible();
     await row.getByTestId("resume-actions-menu").click();
     await page.getByTestId("send-to-host").click();
     await expect(page.getByTestId("send-to-host-dialog")).toBeVisible();
-    await page.getByTestId("send-to-host-send-box").click();
+    await page.getByTestId(`send-to-host-${hostId}`).click();
     const select = page.getByTestId("send-to-project-select");
     await expect(select).toBeVisible();
     await expect(select).toHaveValue(fixture.destProject);
@@ -303,6 +305,7 @@ test("Send to host moves the session and the destination continues it", async ({
     await page.reload();
     await expect(page.getByTestId("session-sent-badge").first()).toContainText("Sent to Send box");
   } finally {
+    await apiDelete(request, `/remote-hosts/${hostId}`).catch(() => {});
     await teardown(fixture);
   }
 });
@@ -313,18 +316,15 @@ test.describe("phone", () => {
   test("Send to host dialog works on a phone", async ({ page, request }) => {
     test.setTimeout(120_000);
     const fixture = await setup(request);
+    const hostId = await saveHost(request, fixture);
     try {
-      await page.addInitScript(
-        (hosts: string) => localStorage.setItem("orc_api_hosts", hosts),
-        seedHost(fixture),
-      );
       await gotoView(page, "activity");
       const row = page.locator(`[data-session-id="${fixture.liveId}"]`).locator("..");
       await expect(row).toBeVisible();
       await row.getByTestId("resume-actions-menu").tap();
       await page.getByTestId("send-to-host").tap();
       await expect(page.getByTestId("send-to-host-dialog")).toBeVisible();
-      await page.getByTestId("send-to-host-send-box").tap();
+      await page.getByTestId(`send-to-host-${hostId}`).tap();
       await expect(page.getByTestId("send-to-project-select")).toBeVisible();
       await expect(page.getByTestId("send-to-submit")).toBeVisible();
       await page.getByTestId("send-to-submit").tap();
@@ -333,6 +333,7 @@ test.describe("phone", () => {
       });
       await expect(page.getByTestId("send-to-open")).toBeVisible();
     } finally {
+      await apiDelete(request, `/remote-hosts/${hostId}`).catch(() => {});
       await teardown(fixture);
     }
   });

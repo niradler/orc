@@ -27,6 +27,7 @@ import {
   withAgentEffort,
   withPermissionMode,
 } from "@/lib/composer-chips";
+import { isRemoteHost } from "@/lib/host-labels";
 
 const profileChip =
   "inline-flex min-h-8 items-center px-2 text-xs hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus max-sm:min-h-11 pointer-coarse:min-h-11";
@@ -36,7 +37,8 @@ export function ChatAgentModelPicker() {
   const { config, setConfig, streaming, thread, ready, workspace } = chat;
   const { data: ssh } = useSsh();
   // A new chat asks the server for models on the host it will actually run on.
-  const host = workspace?.host === undefined ? (ssh?.host ?? null) : workspace.host;
+  const picked = workspace?.host === undefined ? (ssh?.host ?? null) : workspace.host;
+  const host = isRemoteHost(picked) ? null : picked;
   const agents = Array.from(new Set([...useEnabledAgents(), config.agent]));
   const providerSettings = useProviders();
   const providers =

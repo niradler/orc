@@ -1,5 +1,7 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, Plus, Save, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { api, type RemoteHost, type RemoteHostDraft } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { HelpPopover } from "@/components/HelpPopover";
 import { SshHostSettings } from "@/components/SshHostSettings";
@@ -67,14 +69,218 @@ export function HostsSettings({ expandExecution = false }: { expandExecution?: b
           Hosts
         </h2>
         <HelpPopover label="hosts" testId="hosts-help">
-          Where the connected server runs agents, terminals and jobs: its own machine, or a host
-          from its <code className="text-primary">~/.ssh/config</code>.
+          Where the connected server runs agents, terminals and jobs: its own machine, a host from
+          its <code className="text-primary">~/.ssh/config</code>, or a remote ORC server that runs
+          the session on its own machine or SSH hosts. Remote ORC hosts and their tokens are saved
+          in the server's <code className="text-primary">~/.orc/config.json</code>.
         </HelpPopover>
       </div>
       <ul className="divide-y divide-border border-y border-border">
         <ExecutionHostRow openOn={expandExecution} />
+        <RemoteHostRows />
       </ul>
     </section>
+  );
+}
+
+function RemoteHostRows() {
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["remote-hosts"],
+    queryFn: () => api.remoteHosts.list(),
+    staleTime: 60_000,
+  });
+  const [draft, setDraft] = useState<RemoteHostDraft | null>(null);
+  const [deleting, setDeleting] = useState<RemoteHost | null>(null);
+  const [status, setStatus] = useState<Record<string, string>>({});
+  const [error, setError] = useState("");
+  const [pending, setPending] = useState(false);
+  const hosts = data?.hosts ?? [];
+  const editing = draft?.id ? hosts.find((host) => host.id === draft.id) : undefined;
+
+  const refresh = (next: { hosts: RemoteHost[] }) => {
+    queryClient.setQueryData(["remote-hosts"], next);
+    void queryClient.invalidateQueries({ queryKey: ["remote-host-targets"] });
+  };
+  const test = async (host: RemoteHost) => {
+    setStatus((current) => ({ ...current, [host.id]: "Testing…" }));
+    const result = await api.remoteHosts.test(host.id).catch((cause: unknown) => ({
+      ok: false,
+      version: null,
+      error: cause instanceof Error ? cause.message : String(cause),
+    }));
+    setStatus((current) => ({
+      ...current,
+      [host.id]: result.ok
+        ? `Connected to ORC ${result.version ?? ""}`.trim()
+        : (result.error ?? "Failed"),
+    }));
+  };
+  const save = async () => {
+    if (!draft) return;
+    setPending(true);
+    setError("");
+    try {
+      refresh(await api.remoteHosts.save(draft));
+      setDraft(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <>
+      {hosts.map((host) => (
+        <li
+          key={host.id}
+          data-testid={`remote-host-${host.id}`}
+          className="flex min-h-12 flex-wrap items-center gap-2 py-3"
+        >
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="shrink-0 font-mono text-[10px] tracking-wide">
+                ORC
+              </Badge>
+              <span className="truncate text-sm font-medium">{host.label}</span>
+            </div>
+            <div className="truncate text-xs text-muted-foreground">
+              {status[host.id] ?? `${host.url}${host.has_token ? " · token saved" : ""}`}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid={`remote-host-test-${host.id}`}
+            className="min-h-11 md:min-h-8"
+            onClick={() => void test(host)}
+          >
+            Test
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid={`remote-host-edit-${host.id}`}
+            className="min-h-11 md:min-h-8"
+            onClick={() => {
+              setError("");
+              setDraft({ id: host.id, label: host.label, url: host.url, token: "" });
+            }}
+          >
+            Edit
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={`Delete ${host.label}`}
+            data-testid={`remote-host-delete-${host.id}`}
+            className="size-11 md:size-8"
+            onClick={() => setDeleting(host)}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </li>
+      ))}
+      <li className="py-2">
+        <Button
+          variant="outline"
+          data-testid="remote-host-add"
+          disabled={draft !== null}
+          onClick={() => {
+            setError("");
+            setDraft({ label: "", url: "", token: "", headers: [] });
+          }}
+        >
+          <Plus className="size-4" />
+          Add remote ORC
+        </Button>
+      </li>
+      {draft && (
+        <li className="py-4" data-testid="remote-host-editor">
+          <div className="space-y-4 rounded-md border border-border p-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-medium">
+                {draft.id ? "Edit remote ORC" : "Add remote ORC"}
+              </h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Close remote ORC editor"
+                className="size-11 md:size-8"
+                onClick={() => setDraft(null)}
+              >
+                <X className="size-4" />
+              </Button>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="remote-host-name">Name</Label>
+              <Input
+                id="remote-host-name"
+                data-testid="remote-host-name"
+                value={draft.label}
+                placeholder="Devbox"
+                onChange={(event) => setDraft({ ...draft, label: event.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="remote-host-url">ORC address</Label>
+              <Input
+                id="remote-host-url"
+                data-testid="remote-host-url"
+                inputMode="url"
+                value={draft.url}
+                placeholder="https://orc.example.com"
+                onChange={(event) => setDraft({ ...draft, url: event.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="remote-host-token">Access token</Label>
+              <TokenField
+                id="remote-host-token"
+                testId="remote-host-token"
+                value={draft.token ?? ""}
+                placeholder={
+                  editing?.has_token
+                    ? "Saved token; leave blank to keep"
+                    : "Token from its Security settings"
+                }
+                onChange={(token) => setDraft({ ...draft, token })}
+              />
+            </div>
+            {!draft.id && (
+              <div className="space-y-2">
+                <Label>Headers</Label>
+                <HeaderFields
+                  headers={draft.headers ?? []}
+                  onChange={(headers) => setDraft({ ...draft, headers })}
+                />
+              </div>
+            )}
+            <Button data-testid="remote-host-save" disabled={pending} onClick={() => void save()}>
+              <Save className="size-4" />
+              {pending ? "Saving…" : "Save"}
+            </Button>
+            {error && (
+              <p role="alert" data-testid="remote-host-error" className="text-sm text-error">
+                {error}
+              </p>
+            )}
+          </div>
+        </li>
+      )}
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Delete remote ORC"
+        description={`Remove ${deleting?.label ?? "this host"} and its saved token from this server?`}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => {
+          const target = deleting;
+          setDeleting(null);
+          if (target) void api.remoteHosts.remove(target.id).then(refresh);
+        }}
+      />
+    </>
   );
 }
 
