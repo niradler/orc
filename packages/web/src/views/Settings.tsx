@@ -336,10 +336,7 @@ export default function Settings() {
 
             {mounted("hosts") && (
               <div hidden={activeGroup !== "hosts"}>
-                <HostsSettings
-                  expandExecution={rawSection === "execution"}
-                  expandConnection={rawSection === "connection"}
-                />
+                <HostsSettings expandExecution={rawSection === "execution"} />
               </div>
             )}
 

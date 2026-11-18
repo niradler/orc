@@ -204,6 +204,8 @@ contextBridge.exposeInMainWorld("orcDesktop", {
       ipcRenderer.invoke("orc:connection", { action: "test", ...draft }),
     save: (draft: Record<string, unknown>) =>
       ipcRenderer.invoke("orc:connection", { action: "save", ...draft }),
+    use: (id: string | null) => ipcRenderer.invoke("orc:connection", { action: "use", id }),
+    remove: (id: string) => ipcRenderer.invoke("orc:connection", { action: "delete", id }),
     openLocalSettings: () =>
       ipcRenderer.invoke("orc:connection", { action: "open-local-settings" }),
   },

@@ -57,12 +57,20 @@ export interface DesktopUpdates {
 
 export type DesktopConnectionMode = "local" | "remote";
 export type DesktopHeaderPair = { name: string; value: string };
-export type DesktopConnectionDraft = {
-  mode: DesktopConnectionMode;
-  url?: string;
-  token?: string;
-  clear_token?: boolean;
-  headers?: DesktopHeaderPair[];
+export type DesktopServerDraft = {
+  id?: string;
+  label: string;
+  url: string;
+  token: string;
+  clear_token: boolean;
+  headers: DesktopHeaderPair[];
+};
+export type DesktopServer = {
+  id: string;
+  label: string;
+  url: string;
+  has_token: boolean;
+  headers: DesktopHeaderPair[];
 };
 export type DesktopConnectionState = {
   mode: DesktopConnectionMode;
@@ -71,6 +79,9 @@ export type DesktopConnectionState = {
   has_token: boolean;
   headers: DesktopHeaderPair[];
   editable: boolean;
+  /** Absent from desktop builds before the saved server list. */
+  active?: string | null;
+  servers?: DesktopServer[];
 };
 export type DesktopConnectionTest = {
   status: "ready" | "sign_in_required";
@@ -79,8 +90,10 @@ export type DesktopConnectionTest = {
 
 export interface DesktopConnection {
   state(): Promise<DesktopConnectionState>;
-  test(draft: DesktopConnectionDraft): Promise<DesktopConnectionTest>;
-  save(draft: DesktopConnectionDraft): Promise<DesktopConnectionState>;
+  test(draft: DesktopServerDraft): Promise<DesktopConnectionTest>;
+  save(draft: DesktopServerDraft): Promise<DesktopConnectionState>;
+  use(id: string | null): Promise<DesktopConnectionState>;
+  remove(id: string): Promise<DesktopConnectionState>;
   openLocalSettings(): Promise<void>;
 }
 
