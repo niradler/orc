@@ -24,6 +24,7 @@ import {
   invalidateProjectFolderCache,
   LIVE_CHAT_ID,
   leavesScope,
+  oneLine,
   projectIdFor,
   projectScopeFor,
   RECENT_WRITE_MS,
@@ -235,7 +236,7 @@ async function upsertRecord(r: SessionRecord, executionHost: string | null): Pro
   // every sync for an activity timestamp that only differs below a second.
   const lastActivityAt = new Date(Math.floor(r.lastActivityAt.getTime() / 1000) * 1000);
   const fields = {
-    title: r.title,
+    title: oneLine(r.title, 120),
     status: r.status,
     last_activity_at: lastActivityAt,
     updated_at: new Date(),
@@ -365,6 +366,7 @@ async function loadKnown(
             title: r.title ?? (r.runtime_session_id as string),
             cwd: r.cwd,
             summary: r.summary,
+            transcriptPath: r.transcript_path,
             status: "stopped" as const,
             createdAt: r.created_at,
             lastActivityAt: r.last_activity_at ?? r.updated_at,

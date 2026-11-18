@@ -41,6 +41,15 @@ files. They form a tree, so a spawned session that starts more shows them under
 itself, and the parent row counts them as **N sessions**. A spawned session keeps
 its own notifications and usage.
 
+The list shows only sessions that can be opened. An ended Claude, Codex, Gemini or
+Pi session leaves it when its transcript file is gone, including a session that
+ended before any prompt was sent, and returns when the file comes back. A task's
+session list keeps its linked sessions either way. A Codex
+rollout compressed in place (`.jsonl.zst`) stays listed and opens as before. Codex's
+own review and approval runs are not listed. Titles skip slash-command and IDE
+wrappers and terminal color codes, and a Cursor chat whose title was never generated
+is named from its first message or folder.
+
 Choosing a session never changes the project filter in the header: **All projects**
 stays on **All projects**. A session whose project no longer exists groups by its
 folder, and folders that share a name show as much of the path as tells them apart.

@@ -1,10 +1,11 @@
 import { statSync } from "node:fs";
 import { basename, dirname } from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { projectForFolder } from "@orc/core/project-path";
 import { getDb, getSqlite } from "@orc/db/client";
 import { projects } from "@orc/db/schema";
-import type { SessionStatus } from "./types.js";
+import type { KnownSession, SessionRecord, SessionStatus } from "./types.js";
 
 export const LIVE_CHAT_ID = "__live-sessions__";
 export const RECENT_WRITE_MS = 30_000;
@@ -49,8 +50,42 @@ export function activityAdvanced(activity: Date | number, knownMs: number): bool
 }
 
 export function oneLine(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = stripVTControlCharacters(text)
+    .replace(/[\s\p{Cc}]+/gu, " ")
+    .trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+export function promptText(text: string | null | undefined): string {
+  const plain = stripVTControlCharacters(text ?? "")
+    .replace(
+      /<(system-reminder|ide_opened_file|ide_selection|local-command-stdout|local-command-stderr|local-command-caveat|command-message)>[\s\S]*?<\/\1>/g,
+      "",
+    )
+    .replace(
+      /<command-name>([\s\S]*?)<\/command-name>\s*<command-args>([\s\S]*?)<\/command-args>/g,
+      (_, name: string, args: string) => (args.trim() ? `${name.trim()} ${args.trim()}` : ""),
+    )
+    .trim();
+  return plain.startsWith("<") ? "" : plain;
+}
+
+export async function droppedTranscripts(
+  known: Map<string, KnownSession>,
+  present: Set<string>,
+  complete: boolean,
+  runtime: HostRuntime,
+): Promise<SessionRecord[]> {
+  const dropped: SessionRecord[] = [];
+  if (!complete) return dropped;
+  for (const { session } of known.values())
+    if (
+      session?.transcriptPath &&
+      !present.has(session.transcriptPath) &&
+      !(await runtime.stat(session.transcriptPath))
+    )
+      dropped.push({ ...session, transcriptPath: null });
+  return dropped;
 }
 
 const projectByCwd = new Map<string, string | null>();

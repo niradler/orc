@@ -2,10 +2,17 @@ import { closeSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { pathLabel } from "@orc/core/display-path";
-import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { type HostRuntime, hostRuntime, LIST_FILES_LIMIT, LOCAL_HOST } from "@orc/core/exec-host";
 import { CLAUDE_TOKENS_VERSION, USAGE_EVENT_VERSION } from "@orc/core/usage";
 import { z } from "zod";
-import { activityAdvanced, isAlive, oneLine, statusFromMtime } from "./common.js";
+import {
+  activityAdvanced,
+  droppedTranscripts,
+  isAlive,
+  oneLine,
+  promptText,
+  statusFromMtime,
+} from "./common.js";
 import type { SessionAdapter, SessionRecord, SessionWaiting } from "./types.js";
 import { lifetimeUsage, type ParsedUsage, parseClaudeUsage } from "./usage-parsers.js";
 
@@ -115,14 +122,17 @@ function firstPromptFromText(content: string): string | null {
   for (const line of content.slice(0, 200_000).split("\n")) {
     if (!line.includes('"type":"user"')) continue;
     try {
-      const body = JSON.parse(line)?.message?.content;
+      const entry = JSON.parse(line);
+      if (entry?.isMeta) continue;
+      const body = entry?.message?.content;
       const text =
         typeof body === "string"
           ? body
           : Array.isArray(body)
             ? body.find((block: { type?: string }) => block.type === "text")?.text
             : null;
-      if (text && !text.trimStart().startsWith("<")) return oneLine(text, 400);
+      const prompt = promptText(text);
+      if (prompt) return oneLine(prompt, 400);
     } catch {}
   }
   return null;
@@ -210,7 +220,7 @@ export function isClaudeProcessName(title: string, cwd: string | null | undefine
 }
 
 function storedTitle(title: string | undefined, cwd: string | null | undefined): string | null {
-  return title && !isClaudeProcessName(title, cwd) ? title : null;
+  return title && title !== "New session" && !isClaudeProcessName(title, cwd) ? title : null;
 }
 
 const SubagentMeta = z.object({
@@ -266,8 +276,13 @@ export function claudeAdapter(
       const subagents: { path: string; parentId: string; mtimeMs: number; birthtimeMs: number }[] =
         [];
       const subagentMeta = new Map<string, number>();
+      const present = new Set<string>();
+      let complete = true;
       for (const projectsDir of projectsDirs) {
-        for (const file of await runtime.listFiles(projectsDir)) {
+        const files = await runtime.listFiles(projectsDir);
+        complete &&= files.length < LIST_FILES_LIMIT;
+        for (const file of files) {
+          present.add(file.path);
           if (basename(dirname(file.path)) === "subagents") {
             if (file.path.endsWith(".meta.json")) subagentMeta.set(file.path, file.mtimeMs);
             else if (basename(file.path).startsWith("agent-") && file.path.endsWith(".jsonl"))
@@ -383,7 +398,9 @@ export function claudeAdapter(
         if (
           !records.has(id) &&
           before.session &&
-          (before.tokensVersion !== CLAUDE_TOKENS_VERSION ||
+          (!before.session.transcriptPath ||
+            before.session.title === "New session" ||
+            before.tokensVersion !== CLAUDE_TOKENS_VERSION ||
             before.usageVersion !== USAGE_EVENT_VERSION) &&
           transcripts.has(id)
         ) {
@@ -412,6 +429,11 @@ export function claudeAdapter(
           records.set(id, { ...before.session, title: "New session" });
         }
       }
+      for (const record of await droppedTranscripts(known, present, complete, runtime))
+        records.set(record.externalId, {
+          ...(records.get(record.externalId) ?? record),
+          transcriptPath: null,
+        });
       for (const record of records.values()) {
         const transcript = transcripts.get(record.externalId);
         if (!transcript) continue;
@@ -424,7 +446,8 @@ export function claudeAdapter(
         let parsed: ParsedUsage | null = null;
         if (
           changed ||
-          (record.waitingFor && cached?.mtime !== mtime) ||
+          ((record.waitingFor || before?.session?.title === "New session") &&
+            cached?.mtime !== mtime) ||
           before?.tokensUsed == null ||
           before?.tokensVersion !== CLAUDE_TOKENS_VERSION
         ) {
