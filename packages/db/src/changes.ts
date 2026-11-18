@@ -27,7 +27,7 @@ const TABLE_RESOURCES: Record<string, ChangeResource> = {
   gateway_sessions: "sessions",
   session_handoffs: "sessions",
   bridge_chats: "sessions",
-  bridge_messages: "sessions",
+  bridge_messages: "session-messages",
   bridge_permissions: "sessions",
   audit_log: "audit",
   skill_changes: "skills",
@@ -52,19 +52,19 @@ const TABLE_RESOURCES: Record<string, ChangeResource> = {
   scratchpads: "scratchpads",
   workspace_environments: "workspaces",
 };
+const ACTIVITY_COLUMNS = [
+  "last_activity_at",
+  "tokens_used",
+  "tokens_version",
+  "usage_version",
+  "usage_synced_at",
+];
 const observers = new WeakMap<Database, () => void>();
 
 export function installChangeTracking(sqlite: Database, path: string): void {
   sqlite.exec(
     "CREATE TABLE IF NOT EXISTS orc_change_versions (resource TEXT PRIMARY KEY, revision INTEGER NOT NULL DEFAULT 0)",
   );
-  sqlite.exec(
-    "CREATE TABLE IF NOT EXISTS orc_session_changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, native_id TEXT)",
-  );
-  let sessionSeq =
-    sqlite
-      .query<{ seq: number | null }, []>("SELECT max(seq) AS seq FROM orc_session_changes")
-      .get()?.seq ?? 0;
   const tables = new Set(
     sqlite
       .query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE type='table'")
@@ -89,19 +89,6 @@ export function installChangeTracking(sqlite: Database, path: string): void {
       revisions.set(row.resource, row.revision);
     }
     changes.publish(...dirty);
-    const moved = sqlite
-      .query<{ seq: number; session_id: string; native_id: string | null }, [number]>(
-        "SELECT seq, session_id, native_id FROM orc_session_changes WHERE seq > ? ORDER BY seq",
-      )
-      .all(sessionSeq);
-    const last = moved.at(-1);
-    if (!last) return;
-    sessionSeq = last.seq;
-    changes.publishSessions(
-      "sessions",
-      moved.flatMap((row) => (row.native_id ? [row.session_id, row.native_id] : [row.session_id])),
-    );
-    sqlite.run("DELETE FROM orc_session_changes WHERE seq <= ?", [sessionSeq - 1000]);
   };
   const schedule = (): void => {
     if (!stopped && !timer) {
@@ -111,8 +98,7 @@ export function installChangeTracking(sqlite: Database, path: string): void {
   };
   for (const [table, resource] of Object.entries(TABLE_RESOURCES)) {
     if (!tables.has(table)) continue;
-    sqlite.query("INSERT OR IGNORE INTO orc_change_versions(resource) VALUES (?)").run(resource);
-    const columns = sqlite
+    const all = sqlite
       .query<{ name: string }, []>(`PRAGMA table_info("${table}")`)
       .all()
       .map((column) => column.name)
@@ -124,23 +110,36 @@ export function installChangeTracking(sqlite: Database, path: string): void {
             "access_count",
             "last_accessed_at",
             "owner_heartbeat_at",
-            "last_activity_at",
-            "tokens_used",
-            "tokens_version",
-            "usage_version",
-            "usage_synced_at",
           ].includes(name),
       );
-    const changed = columns.map((name) => `OLD."${name}" IS NOT NEW."${name}"`).join(" OR ");
-    for (const operation of ["INSERT", "UPDATE", "DELETE"]) {
-      const name = `orc_change_${table}_${operation}`;
-      const guard = operation === "UPDATE" ? `WHEN ${changed}` : "";
-      const row = operation === "DELETE" ? "OLD" : "NEW";
-      const action =
-        table === "gateway_sessions"
-          ? `INSERT INTO orc_session_changes(session_id, native_id) VALUES (${row}.id, ${row}.runtime_session_id)`
-          : `UPDATE orc_change_versions SET revision=revision+1 WHERE resource='${resource}'`;
-      const trigger = `CREATE TRIGGER ${name} AFTER ${operation} ON "${table}" ${guard} BEGIN ${action}; END`;
+    const activity =
+      table === "gateway_sessions" ? all.filter((name) => ACTIVITY_COLUMNS.includes(name)) : [];
+    const changed = (columns: string[]) =>
+      columns.map((name) => `OLD."${name}" IS NOT NEW."${name}"`).join(" OR ");
+    const triggers: [string, string, string, ChangeResource][] = [
+      ["INSERT", "INSERT", "", resource],
+      [
+        "UPDATE",
+        "UPDATE",
+        `WHEN ${changed(all.filter((name) => !activity.includes(name)))}`,
+        resource,
+      ],
+      ["DELETE", "DELETE", "", resource],
+    ];
+    if (activity.length)
+      triggers.push(["ACTIVITY", "UPDATE", `WHEN ${changed(activity)}`, "session-activity"]);
+    if (activity.includes("tokens_used"))
+      triggers.push([
+        "TOKENS",
+        "UPDATE",
+        `WHEN (OLD."tokens_used" = 0) IS NOT (NEW."tokens_used" = 0)`,
+        resource,
+      ]);
+    for (const [, , , target] of triggers)
+      sqlite.query("INSERT OR IGNORE INTO orc_change_versions(resource) VALUES (?)").run(target);
+    for (const [suffix, operation, guard, target] of triggers) {
+      const name = `orc_change_${table}_${suffix}`;
+      const trigger = `CREATE TRIGGER ${name} AFTER ${operation} ON "${table}" ${guard} BEGIN UPDATE orc_change_versions SET revision=revision+1 WHERE resource='${target}'; END`;
       const existing = sqlite
         .query<{ sql: string }, [string]>(
           "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",

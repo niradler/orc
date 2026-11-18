@@ -126,4 +126,34 @@ export class ChatStore {
       )
       .run(thread.id, thread.title, thread.updatedAt, JSON.stringify(thread));
   }
+  relatedSessionIds(ids: string[], paths: string[]): string[] {
+    if (!ids.length && !paths.length) return [];
+    return this.db
+      .query<
+        {
+          id: string;
+          runtime_session_id: string | null;
+          parent_session_id: string | null;
+          backend: string;
+          execution_host: string | null;
+        },
+        string[]
+      >(
+        `SELECT id, runtime_session_id, parent_session_id, backend, execution_host FROM gateway_sessions
+         WHERE id IN (${ids.map(() => "?").join(",")}) OR transcript_path IN (${paths.map(() => "?").join(",")})`,
+      )
+      .all(...ids, ...paths)
+      .flatMap((row) => [
+        row.id,
+        row.runtime_session_id,
+        row.parent_session_id,
+        this.bySource(row.id)?.id,
+        ...(row.runtime_session_id
+          ? this.byRuntime(row.backend, row.execution_host, row.runtime_session_id).map(
+              (thread) => thread.id,
+            )
+          : []),
+      ])
+      .filter((id): id is string => !!id);
+  }
 }

@@ -214,37 +214,6 @@ export async function settleStaleRun<S extends string>(row: {
   });
 }
 
-function relatedSessions(ids: string[], paths: string[]): string[] {
-  if (!ids.length && !paths.length) return [];
-  const sqlite = getSqlite();
-  const chats = new ChatStore(sqlite);
-  return sqlite
-    .query<
-      {
-        id: string;
-        runtime_session_id: string | null;
-        parent_session_id: string | null;
-        backend: string;
-        execution_host: string | null;
-      },
-      string[]
-    >(
-      `SELECT id, runtime_session_id, parent_session_id, backend, execution_host FROM gateway_sessions
-       WHERE id IN (${ids.map(() => "?").join(",")}) OR transcript_path IN (${paths.map(() => "?").join(",")})`,
-    )
-    .all(...ids, ...paths)
-    .flatMap((row) => [
-      row.id,
-      row.runtime_session_id,
-      row.parent_session_id,
-      chats.bySource(row.id)?.id,
-      ...(row.runtime_session_id
-        ? chats.byRuntime(row.backend, row.execution_host, row.runtime_session_id).map((t) => t.id)
-        : []),
-    ])
-    .filter((id): id is string => !!id);
-}
-
 const hostCondition = (alias: string | null) =>
   alias ? eq(gateway_sessions.execution_host, alias) : isNull(gateway_sessions.execution_host);
 
@@ -500,7 +469,7 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
       void indexPending.then(() => {
         changes.publishSessions(
           "usage",
-          relatedSessions(
+          new ChatStore(getSqlite()).relatedSessionIds(
             readyUsage.map((job) => job.id),
             [],
           ),
@@ -715,21 +684,16 @@ export function startSessionWatcher(
       const paths = [...changedPaths];
       changedPaths.clear();
       syncing = true;
-      void liveState()
-        .then(async (before) => {
-          await runSync(currentAdapters, { force: true });
-          const after = await liveState();
+      void runSync(currentAdapters, { force: true })
+        .then(() => {
           const active = [...touched];
           touched.clear();
-          if (notify) {
-            changes.publish("sessions");
-            return;
-          }
-          const moved = [...new Set([...before.keys(), ...after.keys()])].filter(
-            (id) => before.get(id) !== after.get(id),
-          );
-          changes.publishSessions("sessions", relatedSessions(moved, []));
-          changes.publishSessions("session-activity", relatedSessions(active, paths));
+          if (notify) changes.publish("sessions");
+          else
+            changes.publishSessions(
+              "session-activity",
+              new ChatStore(getSqlite()).relatedSessionIds(active, paths),
+            );
         })
         .catch((error) => logger.error("Session change sync failed", error))
         .finally(() => {
@@ -739,24 +703,6 @@ export function startSessionWatcher(
     }, 100);
     debounce.unref();
   };
-  const liveState = async () =>
-    new Map(
-      (
-        await getDb()
-          .select({
-            id: gateway_sessions.id,
-            status: gateway_sessions.status,
-            pid: gateway_sessions.pid,
-            title: gateway_sessions.title,
-            project: gateway_sessions.project_id,
-            model: gateway_sessions.model,
-          })
-          .from(gateway_sessions)
-          .where(
-            and(eq(gateway_sessions.chat_id, LIVE_CHAT_ID), ne(gateway_sessions.status, "stopped")),
-          )
-      ).map((row) => [row.id, JSON.stringify(row)]),
-    );
   synchronized = async () => {
     if (stopped || opts.adapters) return;
     const rows = await getDb().query.gateway_sessions.findMany({
