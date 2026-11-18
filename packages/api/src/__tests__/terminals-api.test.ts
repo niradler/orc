@@ -1114,6 +1114,7 @@ test("new agent terminals map model, effort and mode to each CLI's flags", async
   const tail = async (body: Record<string, unknown>, length: number) => {
     const response = await launch(body);
     expect(response.status).toBe(201);
+    await req(app, "DELETE", `/terminals/${(await response.json()).id}`);
     return ptys.at(-1)?.argv.slice(-length);
   };
   expect(
@@ -1142,6 +1143,14 @@ test("new agent terminals map model, effort and mode to each CLI's flags", async
     "read-only",
     "--ask-for-approval",
     "on-request",
+  ]);
+  expect(await tail({ kind: "codex", permissionMode: "auto" }, 6)).toEqual([
+    "--sandbox",
+    "workspace-write",
+    "--ask-for-approval",
+    "on-request",
+    "-c",
+    'approvals_reviewer="auto_review"',
   ]);
   expect(await tail({ kind: "codex", permissionMode: "bypassPermissions" }, 4)).toEqual([
     "--sandbox",

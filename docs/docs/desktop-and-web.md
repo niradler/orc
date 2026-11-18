@@ -636,7 +636,8 @@ saved in workspace preferences (`favorite_models`).
 **Profiles** at the bottom of the picker save the current agent, provider, model,
 effort and permission mode under a name (**Save current**). Clicking a profile
 restores all of them; in a started chat, a profile for another agent or provider
-opens a new chat. Profiles are saved in workspace preferences
+opens a new chat. The pencil beside a profile renames it in place; tick **Use current**
+to also replace its agent, provider, model, effort and mode with the composer's current ones. Profiles are saved in workspace preferences
 (`composer_profiles`) and also appear in the **New terminal** launcher.
 
 ## Chat turn progress
@@ -738,7 +739,9 @@ Claude also offers **Auto** (Claude's classifier approves safe actions). Codex
 offers its own approval presets, named by `permissionLabels` in the capabilities:
 **Read only** (`on-request` approvals, `read-only` sandbox), **Auto**
 (`on-request`, `workspace-write`: works in the workspace and asks before going
-outside it) and **Full access** (`never`, `danger-full-access`). Pi offers Ask in
+outside it), **Auto-review** (`on-request`, `workspace-write`, approvals reviewer
+`auto_review`: Codex's reviewer agent approves or denies each request to leave the
+workspace instead of asking you) and **Full access** (`never`, `danger-full-access`). Pi offers Ask in
 chat, Allow edits and Full access; OpenCode offers Ask in chat and Plan, applied
 from the next message. Pi and ACPX agents show that Plan
 isn't available. Leaving Plan during a Claude response applies to the running
