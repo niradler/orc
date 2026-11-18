@@ -230,11 +230,11 @@ Open each ORC's dashboard in its own browser tab: `http://127.0.0.1:7700` and `h
 
 The desktop app keeps its local daemon and can also load a remote server:
 
-1. Open **File → Connection…** (or the tray's **Connection…**). This opens the local dashboard's **Settings → Hosts** with the ORC server editor open.
-2. Choose **Remote server**, enter `https://orc.example.com`, and optionally an access token and reverse-proxy headers.
-3. Choose **Test connection**, then **Save and reconnect**.
+1. Open **File → Servers…** (or the tray's **Servers…**). This opens the local dashboard's **Settings → Servers**.
+2. Choose **Add server**, enter `https://orc.example.com`, and optionally an access token and reverse-proxy headers.
+3. Choose **Test connection**, then **Save and use**.
 
-The local daemon keeps running, so **Local (this machine)** switches back without a restart. The selected server, token and headers are stored in the desktop app's data folder (`connection.json`), not in the server's `~/.orc/config.json`. Use a revocable access token from the server's **Settings → Security**; leave the token blank to sign in with the server's normal prompt. The CLI and stdio MCP still target the local installation unless you set `ORC_API_BASE`. The integrated preview browser, local file picker, desktop update controls and native notifications are available only in the local dashboard, so a remote window does not show them. Links and pop-ups in a remote window open in your default browser.
+The local daemon keeps running, so **Use** on **Local** switches back without a restart. Saved servers, tokens and headers are stored in the desktop app's data folder (`connection.json`), not in the server's `~/.orc/config.json`. Use a revocable access token from the server's **Settings → Security**; leave the token blank to sign in with the server's normal prompt. The CLI and stdio MCP still target the local installation unless you set `ORC_API_BASE`. The integrated preview browser, local file picker, desktop update controls and native notifications are available only in the local dashboard, so a remote window does not show them. Links and pop-ups in a remote window open in your default browser.
 
 ## Move work to the server
 
@@ -272,7 +272,7 @@ The worktree is `<repo>/.orc/worktrees/<handoff-id>` on branch `orc/handoff/<han
 
 Without involving the agent, open the session's actions menu on the laptop dashboard and
 choose **Send to host…**. The picker lists the ORC servers saved under
-[Settings → Hosts](./desktop-and-web.md#settings); pick the server, then a project on it
+[Settings → Servers](./desktop-and-web.md#settings); pick the server, then a project on it
 whose folder is a checkout of the same repository, and send. The laptop ORC snapshots the
 work (secret-looking files stay local), pushes it to the shared Git remote, uploads the
 conversation and prepares it on the server. The session shows **Ready to resume** there

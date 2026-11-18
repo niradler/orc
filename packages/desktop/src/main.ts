@@ -30,21 +30,24 @@ import {
 } from "./app-menu.js";
 import { loadDesktopConfig, saveDesktopConnection } from "./connection.js";
 import {
-  applyConnectionDraft,
+  activeServer,
+  applyServerDraft,
   appMicrophoneAllowed,
-  type ConnectionDraft,
   type ConnectionMode,
   type ConnectionSettings,
+  draftToken,
   headerRecord,
   localConnection,
   mergeHeaders,
   normalizeHeaders,
   normalizeServerUrl,
-  normalizeToken,
-  parseConnectionDraft,
+  parseServerDraft,
   publicConnection,
   readConnectionSettings,
+  removeServer,
   requestOrigin,
+  type ServerDraft,
+  selectServer,
   webOrigin,
   writeConnectionSettings,
 } from "./connection-settings.js";
@@ -71,8 +74,7 @@ const orcDir = daemonHome();
 const HIDDEN_FLAG = "--hidden";
 const QUIT_FLAG = "--quit";
 const CONNECTION_CHANNEL = "orc:connection";
-// The legacy section id still maps to the Hosts group and opens its connection editor.
-const CONNECTION_SECTION = "/settings?settingsSection=connection";
+const CONNECTION_SECTION = "/settings?settingsSection=servers";
 
 type WindowTarget = { url: string; origin: string };
 
@@ -83,12 +85,14 @@ function localOrigin(): string | null {
 }
 
 function remoteOrigin(): string | null {
-  return connection.remote?.url ? webOrigin(connection.remote.url) : null;
+  const server = activeServer(connection);
+  return server ? webOrigin(server.url) : null;
 }
 
 function remoteHeaders(settings: ConnectionSettings): Record<string, string> {
-  const headers = headerRecord(settings.remote?.headers);
-  if (settings.remote?.token) headers.authorization = `Bearer ${settings.remote.token}`;
+  const server = activeServer(settings);
+  const headers = headerRecord(server?.headers);
+  if (server?.token) headers.authorization = `Bearer ${server.token}`;
   return headers;
 }
 
@@ -191,7 +195,7 @@ const connectionPath = () => join(app.getPath("userData"), "connection.json");
 
 function targetFor(settings: ConnectionSettings): WindowTarget {
   if (!daemon) throw new Error("The local ORC server is not available.");
-  const url = settings.mode === "remote" && settings.remote?.url ? settings.remote.url : daemon.url;
+  const url = activeServer(settings)?.url ?? daemon.url;
   return { url, origin: new URL(url).origin };
 }
 
@@ -417,7 +421,7 @@ async function recover(reason: string, open = true): Promise<void> {
     console.error(`[orc-desktop] ${message}`);
     const remote = windowTarget
       ? windowTarget.origin !== localOrigin()
-      : connection.mode === "remote";
+      : Boolean(activeServer(connection));
     const buttons = remote ? ["Retry", "Use local server", "Quit"] : ["Retry", "Quit"];
     const { response } = await dialog.showMessageBox({
       type: "error",
@@ -502,16 +506,13 @@ function localSender(event: IpcMainInvokeEvent | IpcMainEvent): boolean {
 }
 
 async function probeConnection(
-  draft: ConnectionDraft,
+  draft: ServerDraft,
   current: ConnectionSettings,
 ): Promise<{ status: "ready" | "sign_in_required"; version: string }> {
-  if (draft.mode !== "remote") throw new Error("Choose the remote server first.");
   const url = normalizeServerUrl(draft.url ?? "");
   const headers = headerRecord(normalizeHeaders(draft.headers));
-  const token = draft.clear_token
-    ? ""
-    : normalizeToken(draft.token) ||
-      (current.remote?.url === url ? normalizeToken(current.remote?.token) : "");
+  const saved = draft.id ? current.servers.find((server) => server.id === draft.id) : undefined;
+  const token = draftToken(draft, saved, url);
   if (token) headers.authorization = `Bearer ${token}`;
   const options = {
     headers,
@@ -544,6 +545,15 @@ async function probeConnection(
   return { status: "ready", version: health.version };
 }
 
+/** Saves the target list; a switch reloads the window onto the newly active server. */
+async function commit(next: ConnectionSettings, open: boolean) {
+  if (open && !(await leaveCurrentPreview())) throw new Error("Connection change cancelled.");
+  writeConnectionSettings(connectionPath(), next);
+  connection = next;
+  if (open) loadTarget(applyTarget(connection), true);
+  return publicConnection(connection, true, currentMode());
+}
+
 function registerConnectionIpc(): void {
   ipcMain.handle(CONNECTION_CHANNEL, async (event, payload: unknown) => {
     const request = payload as { action?: unknown } | null;
@@ -555,16 +565,19 @@ function registerConnectionIpc(): void {
       return null;
     }
     if (!localSender(event)) throw new Error("Change the server from the local ORC dashboard.");
-    if (request.action === "test")
-      return probeConnection(parseConnectionDraft(payload), connection);
+    if (request.action === "test") return probeConnection(parseServerDraft(payload), connection);
+    const { id } = request as { id?: unknown };
     if (request.action === "save") {
-      if (!(await leaveCurrentPreview())) throw new Error("Connection change cancelled.");
-      const next = applyConnectionDraft(parseConnectionDraft(payload), connection);
-      writeConnectionSettings(connectionPath(), next);
-      connection = next;
-      const target = applyTarget(connection);
-      loadTarget(target, true);
-      return publicConnection(connection, true, currentMode());
+      const { settings, server } = applyServerDraft(parseServerDraft(payload), connection);
+      return commit(settings, settings.active === server.id && connection.active !== server.id);
+    }
+    if (request.action === "use") {
+      if (id !== null && typeof id !== "string") throw new Error("Choose a saved server.");
+      return commit(selectServer(connection, id), true);
+    }
+    if (request.action === "delete") {
+      if (typeof id !== "string") throw new Error("Choose a saved server.");
+      return commit(removeServer(connection, id), false);
     }
     throw new Error("Unknown connection request.");
   });
@@ -628,7 +641,7 @@ function createTray(): void {
   tray.setToolTip("orc");
   trayMenu = Menu.buildFromTemplate([
     { label: "Open orc", click: showWindow },
-    { label: "Connection…", click: () => void showConnectionSettings() },
+    { label: "Servers…", click: () => void showConnectionSettings() },
     {
       id: "browser-and-files",
       label: "Browser and files",

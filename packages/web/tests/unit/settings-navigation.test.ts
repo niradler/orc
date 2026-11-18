@@ -31,7 +31,7 @@ describe("settings navigation", () => {
     expect(resolveSettingsTarget("appearance")).toEqual({ group: "general" });
     expect(resolveSettingsTarget("terminals")).toEqual({ group: "general" });
     expect(resolveSettingsTarget("browser")).toEqual({ group: "general" });
-    expect(resolveSettingsTarget("connection")).toEqual({ group: "hosts" });
+    expect(resolveSettingsTarget("connection")).toEqual({ group: "servers" });
     expect(resolveSettingsTarget("execution")).toEqual({ group: "hosts" });
     expect(resolveSettingsTarget("hosts")).toEqual({ group: "hosts" });
     expect(resolveSettingsTarget("agents")).toEqual({ group: "agents" });

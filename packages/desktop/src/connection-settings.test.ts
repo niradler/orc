@@ -3,17 +3,19 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  applyConnectionDraft,
+  applyServerDraft,
   appMicrophoneAllowed,
   localConnection,
   mergeHeaders,
   normalizeHeaders,
   normalizeServerUrl,
   normalizeToken,
-  parseConnectionDraft,
+  parseServerDraft,
   publicConnection,
   readConnectionSettings,
+  removeServer,
   requestOrigin,
+  selectServer,
   webOrigin,
   writeConnectionSettings,
 } from "./connection-settings.js";
@@ -106,11 +108,17 @@ test("should validate custom headers without letting them replace managed ones",
   expect(() => normalizeToken("abc\ndef")).toThrow("invalid characters");
 });
 
-test("should reject an unknown connection mode from the preload bridge", () => {
-  expect(() => parseConnectionDraft({ mode: "server" })).toThrow("local or a remote");
-  expect(parseConnectionDraft({ mode: "remote", url: "https://orc.example.com" })).toMatchObject({
-    mode: "remote",
+test("should keep only the draft fields the form owns from the preload bridge", () => {
+  expect(() => parseServerDraft("x")).toThrow("Invalid server settings");
+  expect(
+    parseServerDraft({ id: "a", url: "https://orc.example.com", extra: 1, headers: [{ name: 1 }] }),
+  ).toEqual({
+    id: "a",
+    label: "",
     url: "https://orc.example.com",
+    token: "",
+    clear_token: false,
+    headers: [],
   });
 });
 
@@ -123,51 +131,58 @@ test("should replace a managed header regardless of the request's casing", () =>
   ).toEqual({ Accept: "application/json", authorization: "Bearer shell-token" });
 });
 
+const work = {
+  id: "work",
+  label: "Work",
+  url: "https://orc.example.com",
+  token: "saved-token",
+  headers: [{ name: "CF-Access-Client-Id", value: "id" }],
+};
+
 test("should keep a saved token only while the server address is unchanged", () => {
-  const current = {
-    mode: "remote" as const,
-    remote: {
-      url: "https://orc.example.com",
-      token: "saved-token",
-      headers: [{ name: "CF-Access-Client-Id", value: "id" }],
-    },
-  };
-  expect(
-    applyConnectionDraft({ mode: "remote", url: "https://orc.example.com/", headers: [] }, current),
-  ).toEqual({
-    mode: "remote",
-    remote: { url: "https://orc.example.com", token: "saved-token" },
+  const current = { active: "work", servers: [work] };
+  const edit = (draft: object) =>
+    applyServerDraft({ id: "work", label: "Work", headers: [], ...draft }, current).server;
+  expect(edit({ url: "https://orc.example.com/" })).toEqual({
+    id: "work",
+    label: "Work",
+    url: "https://orc.example.com",
+    token: "saved-token",
   });
-  expect(
-    applyConnectionDraft(
-      { mode: "remote", url: "https://other.example.com", headers: [] },
-      current,
-    ),
-  ).toEqual({ mode: "remote", remote: { url: "https://other.example.com" } });
-  expect(
-    applyConnectionDraft(
-      { mode: "remote", url: "https://orc.example.com", token: "new", headers: [] },
-      current,
-    ),
-  ).toEqual({ mode: "remote", remote: { url: "https://orc.example.com", token: "new" } });
-  expect(
-    applyConnectionDraft(
-      { mode: "remote", url: "https://orc.example.com", clear_token: true },
-      current,
-    ),
-  ).toEqual({ mode: "remote", remote: { url: "https://orc.example.com" } });
-  expect(applyConnectionDraft({ mode: "local" }, current)).toEqual({ ...current, mode: "local" });
+  expect(edit({ url: "https://other.example.com" }).token).toBeUndefined();
+  expect(edit({ url: "https://orc.example.com", token: "new" }).token).toBe("new");
+  expect(edit({ url: "https://orc.example.com", clear_token: true }).token).toBeUndefined();
+  expect(() => applyServerDraft({ id: "gone", url: "https://x.example.com" }, current)).toThrow(
+    "no longer saved",
+  );
 });
 
-test("should persist the selected server and not expose its token to a remote page", () => {
+test("should save several servers, use one, and fall back to local when it is removed", () => {
+  const first = applyServerDraft({ url: "https://a.example.com" }, localConnection());
+  expect(first.server.label).toBe("a.example.com");
+  expect(first.settings.active).toBe(first.server.id);
+  const second = applyServerDraft({ label: "B", url: "https://b.example.com" }, first.settings);
+  expect(second.settings.servers.map((server) => server.label)).toEqual(["a.example.com", "B"]);
+  expect(second.settings.active).toBe(second.server.id);
+  const renamed = applyServerDraft(
+    { id: first.server.id, label: "A", url: "https://a.example.com" },
+    second.settings,
+  );
+  expect(renamed.settings.active).toBe(second.server.id);
+  const local = selectServer(renamed.settings, null);
+  expect(local.active).toBeNull();
+  const backToA = selectServer(local, first.server.id);
+  expect(backToA.active).toBe(first.server.id);
+  expect(() => selectServer(local, "missing")).toThrow("no longer saved");
+  const removed = removeServer(backToA, first.server.id);
+  expect(removed).toEqual({ active: null, servers: [second.server] });
+});
+
+test("should persist the list and not expose tokens or other servers to a remote page", () => {
   const path = fixture();
   const settings = {
-    mode: "remote" as const,
-    remote: {
-      url: "https://orc.example.com",
-      token: "saved-token",
-      headers: [{ name: "CF-Access-Client-Id", value: "id" }],
-    },
+    active: "work",
+    servers: [work, { id: "b", label: "B", url: "https://b.example.com" }],
   };
   writeConnectionSettings(path, settings);
   expect(readConnectionSettings(path)).toEqual(settings);
@@ -177,20 +192,50 @@ test("should persist the selected server and not expose its token to a remote pa
     url: "https://orc.example.com",
     has_token: true,
     editable: true,
+    active: "work",
+    servers: [
+      { id: "work", label: "Work", has_token: true, headers: work.headers },
+      { id: "b", label: "B", has_token: false, headers: [] },
+    ],
   });
+  expect(JSON.stringify(publicConnection(settings, true))).not.toContain("saved-token");
   expect(publicConnection(settings, false)).toMatchObject({
     mode: "remote",
     url: "https://orc.example.com",
     has_token: true,
     headers: [],
     editable: false,
+    servers: [],
+  });
+});
+
+test("should migrate the single remote target saved by earlier versions", () => {
+  const path = fixture();
+  writeFileSync(
+    path,
+    JSON.stringify({ mode: "remote", remote: { url: "https://orc.example.com/api", token: "t" } }),
+  );
+  const migrated = readConnectionSettings(path);
+  expect(migrated.servers).toMatchObject([
+    { label: "orc.example.com", url: "https://orc.example.com", token: "t" },
+  ]);
+  expect(migrated.active).toBe(migrated.servers[0]?.id ?? "missing");
+  writeFileSync(
+    path,
+    JSON.stringify({ mode: "local", remote: { url: "https://orc.example.com" } }),
+  );
+  expect(readConnectionSettings(path)).toMatchObject({
+    active: null,
+    servers: [{ label: "orc.example.com" }],
   });
 });
 
 test("should fall back to the local server when the client file is damaged", () => {
   const path = fixture();
-  writeConnectionSettings(path, { mode: "local" });
-  expect(readConnectionSettings(path)).toEqual({ mode: "local" });
+  writeConnectionSettings(path, localConnection());
+  expect(readConnectionSettings(path)).toEqual(localConnection());
+  writeFileSync(path, JSON.stringify({ active: "gone", servers: [{ url: "nope" }, work] }));
+  expect(readConnectionSettings(path)).toEqual({ active: null, servers: [work] });
   writeFileSync(path, "{broken");
   expect(readConnectionSettings(path)).toEqual(localConnection());
   expect(readConnectionSettings(join(path, "..", "missing.json"))).toEqual(localConnection());

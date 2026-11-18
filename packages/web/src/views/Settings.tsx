@@ -10,7 +10,7 @@ import { BrowserSettings } from "@/components/BrowserSettings";
 import { ChannelSettings } from "@/components/ChannelSettings";
 import { ChatSettingsForm } from "@/components/ChatSettingsForm";
 import { HelpPopover } from "@/components/HelpPopover";
-import { HostsSettings } from "@/components/HostsSettings";
+import { HostsSettings, ServersSettings } from "@/components/HostsSettings";
 import { IntegrationsSettings } from "@/components/IntegrationsSettings";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
 import { McpSettingsForm } from "@/components/McpSettingsForm";
@@ -334,12 +334,15 @@ export default function Settings() {
               </div>
             )}
 
+            {mounted("servers") && (
+              <div hidden={activeGroup !== "servers"}>
+                <ServersSettings />
+              </div>
+            )}
+
             {mounted("hosts") && (
               <div hidden={activeGroup !== "hosts"}>
-                <HostsSettings
-                  expandExecution={rawSection === "execution"}
-                  expandConnection={rawSection === "connection"}
-                />
+                <HostsSettings expandExecution={rawSection === "execution"} />
               </div>
             )}
 

@@ -1,10 +1,6 @@
 import { Eye, EyeOff, Plus, Save, Trash2, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import {
-  DesktopConnectionSettings,
-  useDesktopConnectionState,
-} from "@/components/DesktopConnectionSettings";
 import { HelpPopover } from "@/components/HelpPopover";
 import { SshHostSettings } from "@/components/SshHostSettings";
 import { Badge } from "@/components/ui/badge";
@@ -33,27 +29,37 @@ import {
   writeApiUrl,
 } from "@/lib/api-hosts";
 import { isSecretKey } from "@/lib/connection-source";
-import { desktopBridge } from "@/lib/desktop-bridge";
+import {
+  type DesktopConnectionState,
+  type DesktopServer,
+  type DesktopServerDraft,
+  desktopBridge,
+} from "@/lib/desktop-bridge";
 import { defaultServerAddress, orcServerAddress, THIS_SERVER } from "@/lib/host-labels";
 import { cn } from "@/lib/utils";
 
 const inputClass = "bg-surface-highest border-outline-variant text-on-surface font-body text-sm";
 
-/**
- * One list for both host kinds: the ORC server this dashboard talks to (API) and the host where
- * its work runs (SSH). A server that both serves the dashboard and runs work shows both badges.
- */
-export function HostsSettings({
-  expandExecution = false,
-  expandConnection = false,
-}: {
-  /** Legacy `?settingsSection=execution` links open the execution host editor. */
-  expandExecution?: boolean;
-  /** The desktop connection window opens the ORC server editor. */
-  expandConnection?: boolean;
-}) {
-  const desktop = desktopBridge()?.connection;
-  const execution = <ExecutionHostRow openOn={expandExecution} />;
+/** The ORC servers this app can open: saved in the browser, or in the desktop app's data folder. */
+export function ServersSettings() {
+  return (
+    <section aria-labelledby="servers-title" data-testid="servers-settings">
+      <div className="mb-4 flex items-center gap-1">
+        <h2 id="servers-title" className="hidden text-base font-medium md:block">
+          Servers
+        </h2>
+        <HelpPopover label="servers" testId="servers-help">
+          The ORC servers this app can open. Tokens and headers are saved on this client and only
+          sent to the address they were saved for.
+        </HelpPopover>
+      </div>
+      {desktopBridge()?.connection ? <DesktopHosts /> : <BrowserHosts />}
+    </section>
+  );
+}
+
+/** Where the connected ORC server runs agents, terminals and git. */
+export function HostsSettings({ expandExecution = false }: { expandExecution?: boolean }) {
   return (
     <section aria-labelledby="hosts-title" data-testid="hosts-settings">
       <div className="mb-4 flex items-center gap-1">
@@ -61,31 +67,14 @@ export function HostsSettings({
           Hosts
         </h2>
         <HelpPopover label="hosts" testId="hosts-help">
-          The API rows are the ORC servers this dashboard can talk to. The SSH row is where the
-          connected server runs chats, terminals and jobs: its own machine, or a host from its{" "}
-          <code className="text-primary">~/.ssh/config</code>. Tokens and headers are stored in this
-          browser and only sent to the address they were saved for.
+          Where the connected server runs agents, terminals and jobs: its own machine, or a host
+          from its <code className="text-primary">~/.ssh/config</code>.
         </HelpPopover>
       </div>
-      {desktop ? (
-        <DesktopHosts execution={execution} openOn={expandConnection} />
-      ) : (
-        <BrowserHosts execution={execution} />
-      )}
+      <ul className="divide-y divide-border border-y border-border">
+        <ExecutionHostRow openOn={expandExecution} />
+      </ul>
     </section>
-  );
-}
-
-function HostBadge({ kind }: { kind: "api" | "ssh" }) {
-  return (
-    <Badge
-      variant={kind === "api" ? "secondary" : "outline"}
-      data-testid={`host-badge-${kind}`}
-      title={kind === "api" ? "Serves this dashboard's API" : "Runs chats, terminals and jobs"}
-      className="shrink-0 font-mono text-[10px] tracking-wide"
-    >
-      {kind.toUpperCase()}
-    </Badge>
   );
 }
 
@@ -113,8 +102,11 @@ function ExecutionHostRow({ openOn = false }: { openOn?: boolean }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            {!alias && <HostBadge kind="api" />}
-            <HostBadge kind="ssh" />
+            {alias && (
+              <Badge variant="outline" className="shrink-0 font-mono text-[10px] tracking-wide">
+                SSH
+              </Badge>
+            )}
             <span className="truncate text-sm font-medium">{title}</span>
           </div>
           <div className={cn("truncate text-xs", error ? "text-error" : "text-muted-foreground")}>
@@ -141,74 +133,418 @@ function ExecutionHostRow({ openOn = false }: { openOn?: boolean }) {
   );
 }
 
-function DesktopHosts({ execution, openOn = false }: { execution: ReactNode; openOn?: boolean }) {
-  const { state, loadError, loading, retry } = useDesktopConnectionState();
-  const [editing, setEditing] = useState(openOn);
+const message = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause);
+
+/** The desktop app's saved servers live in its data folder; the main process owns their tokens. */
+function DesktopHosts() {
+  const bridge = desktopBridge()?.connection;
+  const [state, setState] = useState<DesktopConnectionState | null>(null);
+  const [loadError, setLoadError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+  const [draft, setDraft] = useState<DesktopServerDraft | null>(null);
+  const [deleting, setDeleting] = useState<DesktopServer | null>(null);
+  const [pending, setPending] = useState(false);
+  const [tested, setTested] = useState("");
+  const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState("");
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry bumps attempt to re-read the bridge.
   useEffect(() => {
-    if (openOn) setEditing(true);
-  }, [openOn]);
-  const readOnly = state?.editable === false;
-  // A failed status read must not hide the only control that can repair the target.
-  const showEditor = editing || readOnly || (!loading && !state);
-  const remote = state?.mode === "remote";
-  const title = loading ? "Loading server…" : remote ? "Remote ORC server" : THIS_SERVER;
-  const subtitle = loadError
-    ? loadError
-    : remote
-      ? state?.url || "Remote address"
-      : "The installation this app started";
+    if (!bridge) return;
+    let active = true;
+    bridge
+      .state()
+      .then((next) => {
+        if (!active) return;
+        setState(next);
+        setLoadError("");
+      })
+      .catch((cause) => active && setLoadError(message(cause)));
+    return () => {
+      active = false;
+    };
+  }, [bridge, attempt]);
+
+  if (!bridge) return null;
+
+  const resetMessages = () => {
+    setError("");
+    setFeedback("");
+    setTested("");
+  };
+
+  const run = async (action: () => Promise<DesktopConnectionState>, done?: string) => {
+    setPending(true);
+    resetMessages();
+    try {
+      setState(await action());
+      if (done) setFeedback(done);
+      return true;
+    } catch (cause) {
+      setError(message(cause));
+      return false;
+    } finally {
+      setPending(false);
+    }
+  };
+
+  if (!state)
+    return (
+      <div data-testid="desktop-hosts">
+        <ul className="divide-y divide-border border-y border-border">
+          <li
+            data-testid="host-row-api"
+            className="flex min-h-12 flex-wrap items-center gap-2 py-3"
+          >
+            <span
+              className={cn("flex-1 text-sm", loadError ? "text-error" : "text-muted-foreground")}
+            >
+              {loadError || "Loading server…"}
+            </span>
+            {loadError && (
+              <Button
+                variant="ghost"
+                size="sm"
+                data-testid="desktop-connection-retry"
+                onClick={() => setAttempt((current) => current + 1)}
+              >
+                Retry
+              </Button>
+            )}
+          </li>
+        </ul>
+      </div>
+    );
+
+  if (!state.editable)
+    return (
+      <div data-testid="desktop-hosts">
+        <ul className="divide-y divide-border border-y border-border">
+          <li
+            data-testid="host-row-api"
+            className="flex min-h-12 flex-wrap items-center gap-2 py-3"
+          >
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="truncate text-sm font-medium">Remote ORC server</span>
+                <Badge variant="secondary">Active</Badge>
+              </div>
+              <div className="truncate text-xs text-muted-foreground">{state.url}</div>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="desktop-connection-local"
+              onClick={() => void bridge.openLocalSettings()}
+            >
+              Manage servers
+            </Button>
+          </li>
+        </ul>
+      </div>
+    );
+
+  const servers = state.servers ?? [];
+  const activeId = state.active ?? null;
+  const edit = (server?: DesktopServer) => {
+    resetMessages();
+    setDraft(
+      server
+        ? {
+            id: server.id,
+            label: server.label,
+            url: server.url,
+            token: "",
+            clear_token: false,
+            headers: server.headers.map((header) => ({ ...header })),
+          }
+        : { label: "", url: "", token: "", clear_token: false, headers: [] },
+    );
+  };
+  const editing = draft?.id ? servers.find((server) => server.id === draft.id) : undefined;
+
+  const testDraft = async (candidate: DesktopServerDraft) => {
+    if (!candidate.url.trim()) {
+      setError("Enter the server URL.");
+      return;
+    }
+    setPending(true);
+    resetMessages();
+    try {
+      const result = await bridge.test(candidate);
+      setTested(
+        result.status === "ready"
+          ? `Connected to ORC ${result.version}.`
+          : `Reached ORC ${result.version}. Sign in on its dashboard, or add a token.`,
+      );
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const saveDraft = async (candidate: DesktopServerDraft) => {
+    if (!candidate.url.trim()) {
+      setError("Enter the server URL.");
+      return;
+    }
+    const saved = await run(
+      () => bridge.save(candidate),
+      candidate.id ? "Server saved." : "Server saved. Opening…",
+    );
+    if (saved) setDraft(null);
+  };
+
+  const row = (id: string | null, label: string, detail: string, server?: DesktopServer) => {
+    const isActive = id === activeId;
+    const key = id ?? "local";
+    return (
+      <li
+        key={key}
+        data-testid={`desktop-host-${key}`}
+        className="flex min-h-12 flex-wrap items-center gap-2 py-3"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-medium">{label}</span>
+            {isActive && <Badge variant="secondary">Active</Badge>}
+          </div>
+          <div className="truncate text-xs text-muted-foreground">{detail}</div>
+        </div>
+        {(id !== null || !isActive) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            data-testid={`desktop-host-use-${key}`}
+            className="min-h-11 md:min-h-8"
+            disabled={pending}
+            onClick={() => void run(() => bridge.use(id))}
+          >
+            {isActive ? "Open" : "Use"}
+          </Button>
+        )}
+        {server && (
+          <>
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid={`desktop-host-edit-${key}`}
+              className="min-h-11 md:min-h-8"
+              onClick={() => edit(server)}
+            >
+              Edit
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={`Delete ${label}`}
+              data-testid={`desktop-host-delete-${key}`}
+              className="size-11 md:size-8"
+              onClick={() => setDeleting(server)}
+            >
+              <Trash2 className="size-4" />
+            </Button>
+          </>
+        )}
+      </li>
+    );
+  };
 
   return (
     <div data-testid="desktop-hosts">
       <ul className="divide-y divide-border border-y border-border">
-        <li data-testid="host-row-api" className="flex min-h-12 flex-wrap items-center gap-2 py-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <HostBadge kind="api" />
-              <span className="truncate text-sm font-medium">{title}</span>
-              {state?.current === "remote" && <Badge variant="secondary">Active</Badge>}
-            </div>
-            <div
-              className={cn("truncate text-xs", loadError ? "text-error" : "text-muted-foreground")}
-            >
-              {subtitle}
-            </div>
-          </div>
-          {loadError && (
-            <Button
-              variant="ghost"
-              size="sm"
-              data-testid="desktop-connection-retry"
-              onClick={retry}
-            >
-              Retry
-            </Button>
-          )}
-          {(state?.editable || loadError) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              data-testid="desktop-connection-change"
-              aria-expanded={editing}
-              aria-controls="desktop-connection-editor"
-              onClick={() => setEditing((current) => !current)}
-            >
-              {editing ? "Close" : "Change"}
-            </Button>
-          )}
+        {row(null, THIS_SERVER, "The installation this app started")}
+        {servers.map((server) =>
+          row(
+            server.id,
+            server.label,
+            `${server.url}${server.has_token ? " · token saved" : ""}${
+              server.headers.length > 0
+                ? ` · ${server.headers.length} ${server.headers.length === 1 ? "header" : "headers"}`
+                : ""
+            }`,
+            server,
+          ),
+        )}
+        <li className="py-2">
+          <Button
+            variant="outline"
+            data-testid="desktop-host-add"
+            disabled={draft !== null}
+            onClick={() => edit()}
+          >
+            <Plus className="size-4" />
+            Add server
+          </Button>
         </li>
-        {execution}
+        {draft && (
+          <li className="py-4" data-testid="desktop-host-editor">
+            <div className="space-y-4 rounded-md border border-border p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-medium">{draft.id ? "Edit server" : "Add server"}</h3>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Close server editor"
+                  className="size-11 md:size-8"
+                  onClick={() => {
+                    setDraft(null);
+                    resetMessages();
+                  }}
+                >
+                  <X className="size-4" />
+                </Button>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="desktop-host-name">Name</Label>
+                <Input
+                  id="desktop-host-name"
+                  data-testid="desktop-host-name"
+                  value={draft.label}
+                  placeholder="Work ORC"
+                  onChange={(event) => setDraft({ ...draft, label: event.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="desktop-host-url">Server URL</Label>
+                  <HelpPopover label="server URL" testId="desktop-host-url-help">
+                    The remote ORC dashboard address. The app opens it in this window and sends the
+                    token and headers only to that address.
+                  </HelpPopover>
+                </div>
+                <Input
+                  id="desktop-host-url"
+                  data-testid="desktop-host-url"
+                  inputMode="url"
+                  value={draft.url}
+                  placeholder="https://orc.example.com"
+                  onChange={(event) => {
+                    setDraft({ ...draft, url: event.target.value });
+                    resetMessages();
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="desktop-host-token">Access token</Label>
+                  <HelpPopover label="server access token" testId="desktop-host-token-help">
+                    Optional. A revocable token from the server's Security settings signs the window
+                    in. It is stored in this app's data folder, never shown to the page.
+                  </HelpPopover>
+                </div>
+                <TokenField
+                  id="desktop-host-token"
+                  testId="desktop-host-token"
+                  value={draft.token}
+                  placeholder={
+                    editing?.has_token
+                      ? "Saved token; leave blank to keep"
+                      : "Optional revocable token"
+                  }
+                  onChange={(token) =>
+                    setDraft({ ...draft, token, clear_token: token ? false : draft.clear_token })
+                  }
+                />
+                {editing?.has_token && (
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      data-testid="desktop-host-clear-token"
+                      checked={draft.clear_token}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          clear_token: event.target.checked,
+                          token: event.target.checked ? "" : draft.token,
+                        })
+                      }
+                    />
+                    Remove the saved token and use sign-in
+                  </label>
+                )}
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1">
+                  <Label>Headers</Label>
+                  <HelpPopover label="server headers" testId="desktop-host-headers-help">
+                    Extra request headers for a reverse proxy, for example Cloudflare Access. They
+                    are sent only to this server's address. Authorization comes from the token.
+                  </HelpPopover>
+                </div>
+                <HeaderFields
+                  headers={draft.headers}
+                  onChange={(headers) => setDraft({ ...draft, headers })}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="outline"
+                  data-testid="desktop-host-test"
+                  disabled={pending}
+                  onClick={() => void testDraft(draft)}
+                >
+                  {pending ? "Working…" : "Test connection"}
+                </Button>
+                <Button
+                  data-testid="desktop-host-save"
+                  disabled={pending}
+                  onClick={() => void saveDraft(draft)}
+                >
+                  <Save className="size-4" />
+                  {draft.id ? "Save changes" : "Save and use"}
+                </Button>
+              </div>
+              {tested && (
+                <p
+                  role="status"
+                  data-testid="desktop-host-test-result"
+                  className="text-sm text-muted-foreground"
+                >
+                  {tested}
+                </p>
+              )}
+              {error && (
+                <p role="alert" data-testid="desktop-host-error" className="text-sm text-error">
+                  {error}
+                </p>
+              )}
+            </div>
+          </li>
+        )}
+        {feedback && !draft && (
+          <li
+            role="status"
+            data-testid="desktop-host-feedback"
+            className="py-2 text-sm text-secondary"
+          >
+            {feedback}
+          </li>
+        )}
+        {error && !draft && (
+          <li role="alert" data-testid="desktop-host-error" className="py-2 text-sm text-error">
+            {error}
+          </li>
+        )}
       </ul>
-      {showEditor && (
-        <div id="desktop-connection-editor" className="mt-4 rounded-md border border-border p-4">
-          <DesktopConnectionSettings />
-        </div>
-      )}
+      <ConfirmDialog
+        open={deleting !== null}
+        title="Delete server"
+        description={`Remove ${deleting?.label ?? "this server"} from this app? Its token and headers are deleted too.`}
+        onCancel={() => setDeleting(null)}
+        onConfirm={() => {
+          const target = deleting;
+          setDeleting(null);
+          if (target) void run(() => bridge.remove(target.id), `${target.label} was removed.`);
+        }}
+      />
     </div>
   );
 }
 
-function BrowserHosts({ execution }: { execution: ReactNode }) {
+function BrowserHosts() {
   const [hosts, setHosts] = useState<ApiHost[]>(listApiHosts);
   const [activeUrl, setActiveUrl] = useState(readApiUrl);
   const [activeId, setActiveId] = useState<string | null>(readActiveHostId);
@@ -368,7 +704,6 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
           >
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <HostBadge kind="api" />
                 <span className="truncate text-sm font-medium">Current connection</span>
                 <Badge variant="outline">Not saved</Badge>
               </div>
@@ -399,7 +734,6 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <HostBadge kind="api" />
                   <span className="truncate text-sm font-medium">{host.label}</span>
                   {isActive && <Badge variant="secondary">Active</Badge>}
                 </div>
@@ -448,7 +782,6 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
             </li>
           );
         })}
-        {execution}
         <li className="py-2">
           <Button
             variant="outline"
