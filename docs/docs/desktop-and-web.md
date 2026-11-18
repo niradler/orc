@@ -679,8 +679,10 @@ Settings → Chat. The companion control beside Stop performs the other action
 either way, so both stay one press away. Attachments always queue, because
 steering carries text only.
 When the turn cannot take the message — the reply is still starting, the backend
-answers one message at a time, or every chat worker is busy — the message stays
-queued and sends when the turn ends, without an error. A steer whose delivery the
+answers one message at a time, an approval or question is waiting for you, or every
+chat worker is busy — the message stays queued and sends when the turn ends, without
+an error. With a prompt open, the line above the composer reads, for example,
+"Bash permission pending · sends queue". A steer whose delivery the
 agent never confirmed is not resent: chat keeps the text and asks you to check
 the conversation first, because the message may already be there.
 Open the pending list to edit a message, move it up or down, remove it, or send

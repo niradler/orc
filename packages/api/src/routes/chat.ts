@@ -581,10 +581,17 @@ const STEER_UNCONFIRMED = "STEER_UNCONFIRMED";
 function steerable(
   run: ChatRun | undefined,
 ): run is ChatRun & { session: AgentSession & Required<Pick<AgentSession, "steer">> } {
-  return !!run?.session?.steer && run.session.capabilities?.steering === true;
+  return (
+    !!run?.session?.steer &&
+    run.session.capabilities?.steering === true &&
+    !run.permissions.size &&
+    !run.questions.size
+  );
 }
 
 async function steerRun(run: ChatRun, input: string, requestId: string): Promise<ChatThread> {
+  if (run.permissions.size || run.questions.size)
+    throw new ConflictError("Answer the pending prompt first. Queue a message instead.");
   if (!steerable(run))
     throw new ConflictError("This response cannot be steered. Queue a message instead.");
   if (input.trim() === "/compact")

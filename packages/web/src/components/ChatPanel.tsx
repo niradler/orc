@@ -1510,7 +1510,13 @@ export function ChatPanel({
                   data-testid="chat-send-outcome"
                   className="mx-auto mb-1.5 w-full max-w-(--chat-width) px-2 text-xs text-on-surface-variant"
                 >
-                  {canSteerLive ? "Sends steer this turn" : "Sends queue until the turn ends"}
+                  {canSteerLive
+                    ? "Sends steer this turn"
+                    : permission
+                      ? pendingLabel({ reason: "permission", tool: permission.tool })
+                      : question
+                        ? pendingLabel({ reason: "question", tool: null })
+                        : "Sends queue until the turn ends"}
                 </p>
               )}
               {savedPad && (
