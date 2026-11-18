@@ -23,6 +23,14 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
 3. **Gate locally before tagging.** Run `bunx biome check ./packages ./scripts` and
    `bun run ci:full` with the gate overrides below. Fix failures in a PR, merge it,
    then reset the worktree to the new origin/master.
+   Only when Nir explicitly says the gate is already run and green may it be skipped —
+   he always validates before a release himself, so never assume or decide that on your
+   own. There is no `--skip-checks` flag: reproduce the bump by hand in the release
+   worktree (bump every manifest, write `scripts/release-plan.json`,
+   `bun install --lockfile-only`, `git commit -m "chore: release v<v>"`), write
+   `.orc/release-state.json` with `completed: ["checks","bump"]`, `commit`, `target`,
+   then `--resume --yes`. `validate()` only runs on a fresh start, so the suite is not
+   repeated.
 4. **Release** from PowerShell, in the background, with output going to a scratchpad log.
    Export the gate overrides for the release process too — `bun run release` inherits
    the environment and otherwise runs the default four shards, which is where the
@@ -38,7 +46,15 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
    Watch `.orc/release-state.json` `completed[]`, because the log stays empty while
    autho buffers. Resume after a failure with `--resume --yes`.
    Accepting the npm archive without serving it ("npm publication is not public yet")
-   is normal lag: check `npm view orc-ai version`, then `--resume --yes`.
+   is normal lag: poll `https://registry.npmjs.org/orc-ai/<v>` (every 20 s; the script
+   itself waits only ~2.5 min and the registry can take 15) and check the returned
+   `dist.shasum` equals the checkpointed `npm.shasum`, then `--resume --yes`.
+   The tag push runs the `pre-push` hook. A version bump touches every `package.json`,
+   so `ci:pr` treats every package as changed and runs the whole suite; any unrelated
+   stale Windows test then blocks the tag. Confirm the failure is not your change,
+   `git push --no-verify origin refs/tags/v<v>`, check `git ls-remote` reports the same
+   tag object, mark `tag` complete in the checkpoint, `--resume --yes`, and file the
+   stale test as an issue.
 5. **While macOS builds, back up the lab.** Run these on `lab-z170mx`
    (sudo password: autho `homelab` via `sudo -S`). Send every remote script as a
    base64 file (`echo <b64> | base64 -d > /tmp/x.sh && bash /tmp/x.sh`), never as a
@@ -123,6 +139,8 @@ Speed rules:
 | Canonical gate fails with `connect ETIMEDOUT 127.0.0.1:<port>` in unrelated specs | `bun run release --yes` inherits no overrides and runs the default four shards (#336) | Export `PW_SHARDS=2 PW_RETRIES=1` before `bun run release`; with a clean tree a failed pre-flight gate needs no resume |
 | Remote script mangles itself, or a *later* step of it runs early | PowerShell expands `$(...)`/backticks inside a double-quoted `ssh` argument locally, so the remote gets a broken string that can still execute its leading commands (this restarted orc inside the backup window once) | Ship scripts as files: `echo <base64> \| base64 -d > /tmp/x.sh && bash /tmp/x.sh` |
 | Smoke counts are missing or `no such table: skills` | There are no `skills`/`agents` SQL tables, and the API collections are objects (`{skills:[…]}`), not arrays | Count through the API: `/api/skills`, `/api/agents`, `/api/projects`, then `.skills.length` etc. |
+| Smoke fails only on `tables` (e.g. 90 vs 89) while every data count matches | The release shipped a schema migration, so the new image creates tables the backup predates (0.1.69 added `session_sends`) | Confirm each extra table comes from a migration between the old tag and HEAD, then use the new table count as the schema baseline. Data counts (tasks/tasks_fts/sessions/jobs) must still equal the backup |
+| Smoke `job_runs` is lower than the backup by hundreds | The 7-day retention prune runs on smoke start | Expected; compare every other count and report the delta |
 | Recreate changes DNS/mounts that "should" be identical | The lab `compose.yaml` is the source of truth and may have been edited after the last deploy (0.1.67 shipped a DNS change from `192.168.7.20` to `192.168.7.29`) | Diff the running container against `compose.yaml` before the rollout, keep the compose diff to the image line, and report any other drift the recreate applies |
 | Smoke daemon exits: `daemon already running (pid N)` | Stale `daemon.pid` in reused/copied data (prior smoke was `rm -f`'d, not stopped) | Delete `daemon.pid`/`daemon.json` from the copy; always re-extract fresh |
 | Smoke health 404 or anonymous requests return 200 | Probed `/health` instead of `/api/health`; or ran without `--env-file orc.env` → open mode | Use `/api/health`; pass the env-file so auth matches prod |
@@ -131,6 +149,10 @@ Speed rules:
 | `tar: .: file changed as we read it`, orc left down | Someone restarted orc (Cockpit) inside the stopped window | ERR trap restarts orc on abort; hash archived `orc.db` vs `migration-check.db` to prove the copy predates the restart; ask Nir for hands-off |
 | Full gate fails a different random subset each run (hook timeout, `idle` vs `ended`, row counts) | Cross-shard load on one Windows box; per-shard failure lists look like retry passes | `PW_SHARDS=1` for the release gate; read both shards' final lists, not just the last summary |
 | Unchanged specs red after a UI wave (copy, popover geometry, dialog confirmation, exact counts) | Tests assert pre-wave behavior; PR CI only runs `@sanity` | Reproduce the failing cases in isolation, A/B against the pre-wave tag, then follow the intended behavior (HelpPopover content, outside-point geometry, dialog submit, seeded-title assertions) |
+| Backup warns `start events in window: 2` | `docker events --filter container=orc` also matches helpers such as `orc-backup-<v>-db`, whose `create/start/die` sit in the same window | Look at the raw event list: one `start` for `orc` plus a create/die pair for the counts container is normal. Anything else is a real restart — inspect before trusting the archive |
+| A tool call hangs forever on `docker events` | `--since` without `--until` streams until killed | Always pass `--until`, and cap the call at a few minutes |
+| Second sudo in one ssh call prints "Authentication required but not attempted" | The single piped password line is consumed by the first `sudo -S`; the timestamp cache does not carry | `printf '%s\n' "$PASS" \| sudo -S -v` once at the top, then `sudo -n` for every call in the script |
+| Tag push stops in the pre-push hook on tests that have nothing to do with the release | A version bump changes every `package.json`, so `ci:pr` sees all packages as changed and runs the full suite | Confirm the failures are pre-existing/stale, `git push --no-verify` the tag once, verify `git ls-remote` matches the local tag object, mark `tag` complete, `--resume --yes`, and file the stale test (#479) |
 
 ## Self-improvement (required)
 
