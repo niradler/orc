@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import {
   HOOK_EVENTS,
   type Options,
@@ -21,7 +23,7 @@ import {
   ORC_TASK_GUIDANCE,
 } from "@orc/core/chat";
 import { ChatAgentOptionsSchema, type ClaudeChatOptions } from "@orc/core/chat-options";
-import { localAgentBinary } from "@orc/core/config";
+import { loadConfig, localAgentBinary } from "@orc/core/config";
 import {
   type ExecHost,
   hostBinary,
@@ -34,6 +36,7 @@ import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { providerProcessEnvironment } from "@orc/core/provider-service";
 import { RULE_EVENT_ADAPTERS } from "@orc/core/rule-events";
+import { claudeConfigDirectory } from "@orc/db/agent-memory";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { CLAUDE_CAPABILITIES } from "./capabilities.js";
@@ -478,15 +481,46 @@ class ClaudeSDKSession implements AgentSession {
             },
           )
         : createSessionMessagesHook(this.runtimeSessionId ?? this.id);
-      const startupContext = this.opts.ruleGuard
-        ? await sessionStartRuleContext(
-            this.opts.ruleGuard,
-            this.opts.cwd,
-            this.runtimeSessionId ?? this.id,
-            ulid(),
-            this.runtimeSessionId ? "resume" : "startup",
-          )
-        : "";
+      const dbPath = resolve(loadConfig().db.path);
+      const settingsRuleHooks = new Set(
+        (this.host.kind === "ssh"
+          ? []
+          : [
+              join(this.opts.env?.CLAUDE_CONFIG_DIR ?? claudeConfigDirectory(), "settings.json"),
+              join(this.opts.cwd, ".claude", "settings.json"),
+              join(this.opts.cwd, ".claude", "settings.local.json"),
+            ]
+        ).flatMap((file) => {
+          try {
+            const settings = JSON.parse(readFileSync(file, "utf8")) as {
+              hooks?: Record<string, { hooks?: { command?: unknown }[] }[]>;
+            };
+            return Object.values(settings.hooks ?? {}).flatMap((entries) =>
+              entries.flatMap((entry) =>
+                (entry.hooks ?? []).flatMap((handler) => {
+                  const match =
+                    typeof handler.command === "string"
+                      ? /--db "(.+)" rules hook claude (\w+)$/.exec(handler.command)
+                      : null;
+                  return match?.[1] && match[2] && resolve(match[1]) === dbPath ? [match[2]] : [];
+                }),
+              ),
+            );
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const startupContext =
+        this.opts.ruleGuard && !settingsRuleHooks.has("SessionStart")
+          ? await sessionStartRuleContext(
+              this.opts.ruleGuard,
+              this.opts.cwd,
+              this.runtimeSessionId ?? this.id,
+              ulid(),
+              this.runtimeSessionId ? "resume" : "startup",
+            )
+          : "";
 
       const launch =
         this.host.kind === "ssh"
@@ -511,6 +545,7 @@ class ClaudeSDKSession implements AgentSession {
                   HOOK_EVENTS.filter(
                     (event) =>
                       event !== "SessionStart" &&
+                      !settingsRuleHooks.has(event) &&
                       RULE_EVENT_ADAPTERS.claude.some((entry) => entry.native === event),
                   ).map((event) => [
                     event,
@@ -525,12 +560,10 @@ class ClaudeSDKSession implements AgentSession {
               }
             : {}),
           permissionMode,
-          settingSources:
-            this.opts.toolAllowlist !== undefined || this.opts.ruleGuard
-              ? []
-              : ["user", "project", "local"],
+          settingSources: ["user", "project", "local"],
           ...(this.opts.toolAllowlist !== undefined
             ? {
+                strictMcpConfig: true,
                 tools: this.opts.toolAllowlist.filter((name) => !name.startsWith("mcp__")),
                 mcpServers: buildOrcMcpServers(
                   this.host,
