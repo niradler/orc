@@ -140,6 +140,7 @@ export function SendToHost({
         aria-describedby={undefined}
         data-testid="send-to-host-dialog"
         className="max-w-lg"
+        onOpenAutoFocus={(event) => event.preventDefault()}
       >
         <DialogTitle className="flex items-center gap-2">
           <Send size={15} aria-hidden="true" />
