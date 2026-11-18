@@ -1,4 +1,5 @@
 import {
+  CHANNEL_ANY,
   ChannelCommandsSchema,
   type ChannelCondition,
   type ChannelConnection,
@@ -30,18 +31,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useEnabledAgents } from "@/hooks/useAgents";
 import { useBackends } from "@/hooks/useBackends";
+import { useJobs } from "@/hooks/useJobs";
 
 const conditionDefault: ChannelCondition = { field: "is_direct", op: "is", value: true };
 const defaultRouteCondition: ChannelCondition = {
   all: [{ field: "kind", op: "is", value: "message" }, conditionDefault],
 };
 const control = "form-control form-control-single w-full";
+const sessionLabels = {
+  continue: "Continue the conversation",
+  thread: "New session per thread",
+  message: "New session per message",
+} as const;
+const permissionLabels = {
+  default: "Ask for approvals",
+  plan: "Read-only (plan mode)",
+  acceptEdits: "Accept edits",
+} as const;
 type Project = { id: string; name: string };
 function routeActionLabel(route: Pick<ChannelRoute, "action">, projects: Project[]): string {
   const action = route.action;
   if (action.type === "ignore") return "Ignore silently · no agent starts";
+  if (action.type === "job") return `Run job ${action.job_id} · reply with its output`;
   const project = projects.find((project) => project.id === action.project_id);
-  return `Agent: ${action.agent} · Project: ${project?.name ?? action.project_id}${action.model ? ` · Model: ${action.model}` : ""}`;
+  return `${action.profile ? `Profile: ${action.profile} · ` : ""}Agent: ${action.agent} · Project: ${project?.name ?? action.project_id} · ${sessionLabels[action.session]}${action.permission_mode !== "default" ? ` · ${permissionLabels[action.permission_mode]}` : ""}${action.model ? ` · Model: ${action.model}` : ""}`;
 }
 
 function connectionDraft(view: ChannelView): ChannelConnection {
@@ -138,7 +151,9 @@ function TargetEditor({
         <Field label="Provider chat / channel ID">
           <Input
             data-testid="channel-target-chat"
-            value={target.chat_id}
+            value={target.chat_id === CHANNEL_ANY ? "" : target.chat_id}
+            disabled={target.chat_id === CHANNEL_ANY}
+            placeholder={target.chat_id === CHANNEL_ANY ? "Any chat" : ""}
             onChange={(e) => setTarget({ ...target, chat_id: e.target.value })}
           />
         </Field>
@@ -155,12 +170,43 @@ function TargetEditor({
       <Field label="Approved sender IDs (comma separated)">
         <Input
           data-testid="channel-target-users"
-          value={target.user_ids.join(", ")}
+          value={target.user_ids.includes(CHANNEL_ANY) ? "" : target.user_ids.join(", ")}
+          disabled={target.user_ids.includes(CHANNEL_ANY)}
+          placeholder={target.user_ids.includes(CHANNEL_ANY) ? "Anyone" : ""}
           onChange={(e) =>
             setTarget({ ...target, user_ids: e.target.value.split(",").map((s) => s.trim()) })
           }
         />
       </Field>
+      <div className="flex flex-wrap items-center gap-x-5">
+        <Check
+          label="Any chat"
+          checked={target.chat_id === CHANNEL_ANY}
+          onChange={(v) =>
+            setTarget(
+              v
+                ? {
+                    ...target,
+                    chat_id: CHANNEL_ANY,
+                    attention: false,
+                    notifications: undefined,
+                    thread_id: undefined,
+                  }
+                : { ...target, chat_id: "" },
+            )
+          }
+        />
+        <Check
+          label="Any sender"
+          checked={target.user_ids.includes(CHANNEL_ANY)}
+          onChange={(v) => setTarget({ ...target, user_ids: v ? [CHANNEL_ANY] : [] })}
+        />
+        <HelpPopover label="Any chat and any sender" testId="channel-target-any-help">
+          Lets people other than you reach the agent, for example every DM to the bot. They get
+          replies only: no chat controls, commands, approvals or notifications. Pair it with a
+          read-only rule and an agent profile whose tools are limited.
+        </HelpPopover>
+      </div>
       <div className="flex flex-wrap gap-x-5">
         <Check
           label="Allow outbound"
@@ -257,6 +303,8 @@ function RouteEditor({
   const [route, setRoute] = useState(value);
   const [error, setError] = useState("");
   const [conditionValid, setConditionValid] = useState(validChannelCondition(value.condition));
+  const jobs = useJobs();
+  const profiles = useQuery({ queryKey: ["agents"], queryFn: () => api.agents.list() });
   return (
     <div className="space-y-3 border-t border-border py-3" data-testid="channel-route-editor">
       <Field label="Rule name">
@@ -298,14 +346,42 @@ function RouteEditor({
                 action:
                   e.target.value === "ignore"
                     ? { type: "ignore" }
-                    : { type: "agent", agent: "default", project_id: projects[0]?.id ?? "" },
+                    : e.target.value === "job"
+                      ? { type: "job", job_id: jobs.data?.[0]?.id ?? "" }
+                      : {
+                          type: "agent",
+                          agent: "default",
+                          project_id: projects[0]?.id ?? "",
+                          session: "continue",
+                          permission_mode: "default",
+                        },
               })
             }
           >
             <option value="agent">Invoke agent</option>
+            <option value="job">Run job</option>
             <option value="ignore">Ignore silently</option>
           </select>
         </Field>
+        {route.action.type === "job" && (
+          <Field label="Job">
+            <select
+              data-testid="channel-route-job"
+              className={control}
+              value={route.action.job_id}
+              onChange={(e) =>
+                setRoute({ ...route, action: { type: "job", job_id: e.target.value } })
+              }
+            >
+              <option value="">Choose a job</option>
+              {jobs.data?.map((job) => (
+                <option key={job.id} value={job.id}>
+                  {job.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         {route.action.type === "agent" && (
           <>
             <Field label="Agent backend">
@@ -353,8 +429,56 @@ function RouteEditor({
                 }}
               />
             </Field>
-            <Field label="Agent profile (optional)">
-              <Input
+            <Field label="Session">
+              <select
+                data-testid="channel-route-session"
+                className={control}
+                value={route.action.session}
+                onChange={(e) => {
+                  if (route.action.type === "agent")
+                    setRoute({
+                      ...route,
+                      action: {
+                        ...route.action,
+                        session: e.target.value as keyof typeof sessionLabels,
+                      },
+                    });
+                }}
+              >
+                {Object.entries(sessionLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Permissions">
+              <select
+                data-testid="channel-route-permission"
+                className={control}
+                value={route.action.permission_mode}
+                onChange={(e) => {
+                  if (route.action.type === "agent")
+                    setRoute({
+                      ...route,
+                      action: {
+                        ...route.action,
+                        permission_mode: e.target.value as keyof typeof permissionLabels,
+                      },
+                    });
+                }}
+              >
+                {Object.entries(permissionLabels).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Agent profile (persona)">
+              <select
+                data-testid="channel-route-profile"
+                className={control}
                 value={route.action.profile ?? ""}
                 onChange={(e) => {
                   if (route.action.type === "agent") {
@@ -365,7 +489,18 @@ function RouteEditor({
                     });
                   }
                 }}
-              />
+              >
+                <option value="">None</option>
+                {route.action.profile &&
+                  !profiles.data?.agents.some(
+                    (a) => route.action.type === "agent" && a.id === route.action.profile,
+                  ) && <option value={route.action.profile}>{route.action.profile}</option>}
+                {profiles.data?.agents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
             </Field>
           </>
         )}
@@ -389,7 +524,9 @@ function RouteEditor({
                   field === "name"
                     ? "Give this rule a name."
                     : field === "action"
-                      ? "Choose a project and a valid agent, model and profile."
+                      ? route.action.type === "job"
+                        ? "Choose a job."
+                        : "Choose a project and a valid agent, model and profile."
                       : "Complete the rule conditions.",
                 );
                 return;
@@ -1120,7 +1257,13 @@ function ConnectionEditor({
               name: "New rule",
               enabled: true,
               condition: defaultRouteCondition,
-              action: { type: "agent", agent: "default", project_id: projects[0]?.id ?? "" },
+              action: {
+                type: "agent",
+                agent: "default",
+                project_id: projects[0]?.id ?? "",
+                session: "continue",
+                permission_mode: "default",
+              },
             })
           }
         >
@@ -1291,8 +1434,11 @@ export function ChannelSettings({ active }: { active: boolean }) {
             value={provider}
             onChange={(e) => setProvider(e.target.value as typeof provider)}
           >
-            <option value="telegram">Telegram</option>
-            <option value="slack">Slack</option>
+            {(providers.data ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
           </select>
           <Button
             data-testid="channel-add"

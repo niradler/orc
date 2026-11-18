@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { telegramContext, telegramFiles, telegramReaction } from "./telegram";
+import { telegramContext, telegramFiles, telegramReaction } from "./telegram-inbound";
 
 test("should retain every common Telegram media kind with useful file types and descriptions", () => {
   for (const [kind, extension, mime] of [

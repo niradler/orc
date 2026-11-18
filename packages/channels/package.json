@@ -5,9 +5,11 @@
   "exports": {
     "./notifications": "./src/notifications.ts",
     ".": "./src/service.ts",
-    "./providers": "./src/providers.ts",
+    "./providers": "./src/providers/registry.ts",
+    "./providers/base": "./src/providers/base.ts",
+    "./providers/slack": "./src/providers/slack.ts",
     "./routing": "./src/routing.ts",
-    "./render": "./src/render.ts"
+    "./providers/markdown": "./src/providers/markdown.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

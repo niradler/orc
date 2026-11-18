@@ -19,7 +19,6 @@ import {
 } from "@orc/core/daemon-runtime";
 import { superviseServer } from "@orc/core/process-supervisor";
 import { ORC_VERSION } from "@orc/core/version";
-import { startGateway, stopGateway } from "@orc/gateway";
 import {
   startScheduler,
   startTaskLoop,
@@ -154,7 +153,7 @@ function installMacos(): void {
 function installLinux(): void {
   const bin = resolveOrcBin();
   const unit = `[Unit]
-Description=ORC Daemon - API + scheduler + gateway
+Description=ORC Daemon - API + scheduler + channels
 After=network-online.target
 Wants=network-online.target
 
@@ -244,7 +243,7 @@ function removePid() {
 
 export function daemonCommand() {
   const cmd = new Command("daemon").description(
-    "Run the API + scheduler + file watchers + gateway as one persistent process",
+    "Run the API + scheduler + file watchers + channels as one persistent process",
   );
 
   cmd
@@ -274,7 +273,6 @@ export function daemonCommand() {
         stopScheduler();
         try {
           await stopWatchers();
-          await stopGateway();
         } finally {
           try {
             clearDaemonRuntime(instanceId, ORC_HOME);
@@ -308,9 +306,8 @@ export function daemonCommand() {
 
       await startScheduler();
       await startWatchers();
-      await startGateway();
       startTaskLoop();
-      console.log("[orc] Scheduler + watchers + gateway + task loop active. Ctrl+C to stop.\n");
+      console.log("[orc] Scheduler + watchers + task loop active. Ctrl+C to stop.\n");
 
       await new Promise(() => {});
     });

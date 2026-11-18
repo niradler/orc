@@ -5,8 +5,9 @@ import {
   type ChannelInbound,
   channelCommand,
 } from "@orc/core/channels";
-import { createChannelTransport, slackManifest } from "./providers.js";
-import { telegramFiles } from "./telegram.js";
+import { createChannelTransport } from "./registry.js";
+import { slackManifest } from "./slack.js";
+import { telegramFiles } from "./telegram-inbound.js";
 
 const originalFetch = globalThis.fetch;
 const OriginalSocket = globalThis.WebSocket;

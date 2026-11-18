@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createChannelsRouter } from "@orc/api/channels-router";
 import { ChannelService } from "@orc/channels";
-import type { ChannelTransport } from "@orc/channels/providers";
+import type { ChannelTransport } from "@orc/channels/providers/base";
 import { resetConfig } from "@orc/core/config";
 import { ChannelStore } from "@orc/db/channels";
 import { createTestDb, getSqlite } from "@orc/db/client";

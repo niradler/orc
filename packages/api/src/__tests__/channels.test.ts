@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChannelService } from "@orc/channels";
-import type { ChannelTransport } from "@orc/channels/providers";
+import type { ChannelTransport } from "@orc/channels/providers/base";
 import { ChannelReceiptSchema, ChannelViewSchema } from "@orc/core/channels";
 import { resetConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";

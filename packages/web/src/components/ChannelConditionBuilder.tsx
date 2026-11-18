@@ -2,6 +2,7 @@ import {
   type ChannelCondition,
   ChannelFields,
   ChannelOperators,
+  type ChannelTimeWindow,
   validChannelCondition,
 } from "@orc/core/channels";
 import { X } from "lucide-react";
@@ -12,6 +13,7 @@ import { Input } from "@/components/ui/input";
 type Clause = Extract<ChannelCondition, { field: string }>;
 type Node =
   | { id: string; type: "condition"; clause: Clause }
+  | { id: string; type: "time"; window: ChannelTimeWindow }
   | { id: string; type: "all" | "any"; children: Node[] }
   | { id: string; type: "not"; child: Node };
 
@@ -23,20 +25,30 @@ const fields: Record<Clause["field"], string> = {
   command: "Command",
   is_direct: "Direct message",
   is_mention: "Mentions bot",
+  is_followup: "Continues an answered thread",
   kind: "Event type",
 };
+const booleanFields = new Set<Clause["field"]>(["is_direct", "is_mention", "is_followup"]);
+const listOperators = new Set<Clause["op"]>(["in", "contains_any"]);
 const operators: Record<Clause["op"], string> = {
   is: "is",
   in: "is one of",
   contains: "contains",
+  contains_any: "contains any of",
   starts_with: "starts with",
 };
 const negative: Record<Clause["op"], string> = {
   is: "is not",
   in: "is not one of",
   contains: "does not contain",
+  contains_any: "contains none of",
   starts_with: "does not start with",
 };
+const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const localZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const zones = (Intl as unknown as { supportedValuesOf(key: string): string[] }).supportedValuesOf(
+  "timeZone",
+);
 const control = "form-control form-control-single w-full";
 
 function fromCondition(value: ChannelCondition): Node {
@@ -45,11 +57,13 @@ function fromCondition(value: ChannelCondition): Node {
   if ("any" in value) return { id, type: "any", children: value.any.map(fromCondition) };
   if ("not" in value) return { id, type: "not", child: fromCondition(value.not) };
   if ("always" in value) throw new Error("Otherwise rules have no conditions");
+  if ("time" in value) return { id, type: "time", window: value.time };
   return { id, type: "condition", clause: value };
 }
 
 function toCondition(node: Node): ChannelCondition {
   if (node.type === "condition") return node.clause;
+  if (node.type === "time") return { time: node.window };
   if (node.type === "not") return { not: toCondition(node.child) };
   return node.type === "all"
     ? { all: node.children.map(toCondition) }
@@ -69,9 +83,16 @@ export function channelConditionSummary(value: unknown): string {
   }
   if ("not" in value) {
     if ("field" in value.not) return clauseSummary(value.not, true);
+    if ("time" in value.not) return timeSummary(value.not.time, true);
     return `NOT ${channelConditionSummary(value.not)}`;
   }
+  if ("time" in value) return timeSummary(value.time);
   return clauseSummary(value);
+}
+
+function timeSummary(window: ChannelTimeWindow, excluded = false) {
+  const days = window.days?.length ? window.days.map((d) => weekdays[d]).join(" ") : "every day";
+  return `${excluded ? "Outside" : "Within"} ${window.from}–${window.to} ${days}${window.tz ? ` (${window.tz})` : ""}`;
 }
 
 function clauseSummary(clause: Clause, excluded = false) {
@@ -113,6 +134,33 @@ function NodeEditor({
       <X className="size-4" />
     </Button>
   );
+  const rootAdd = !onRemove && depth === 0 && (
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={() =>
+        replace({ id: crypto.randomUUID(), type: "all", children: [base, newCondition()] })
+      }
+    >
+      Add condition
+    </Button>
+  );
+  if (base.type === "time")
+    return (
+      <TimeRow
+        node={base}
+        excluded={excluded}
+        actions={
+          <>
+            {actions}
+            {rootAdd}
+          </>
+        }
+        onChange={(next, isNot) =>
+          onChange(isNot ? { id: node.id, type: "not", child: next } : { ...next, id: node.id })
+        }
+      />
+    );
   if (base.type === "not")
     return (
       <fieldset
@@ -209,7 +257,7 @@ function NodeEditor({
       </fieldset>
     );
   const clause = base.clause;
-  const boolean = clause.field === "is_direct" || clause.field === "is_mention";
+  const boolean = booleanFields.has(clause.field);
   const updateClause = (next: Clause) => replace({ ...base, clause: next });
   const choices = boolean ? ["true", "false"] : ["message", "action"];
   const stringValue = Array.isArray(clause.value) ? clause.value.join(", ") : String(clause.value);
@@ -222,19 +270,23 @@ function NodeEditor({
           title={fields[clause.field]}
           value={clause.field}
           onChange={(event) => {
+            if (event.target.value === "time") {
+              replace({
+                id: base.id,
+                type: "time",
+                window: { days: [1, 2, 3, 4, 5], from: "09:00", to: "18:00", tz: localZone },
+              });
+              return;
+            }
             const field = event.target.value as Clause["field"];
             updateClause({
               field,
               op: "is",
-              value:
-                field === "is_direct" || field === "is_mention"
-                  ? true
-                  : field === "kind"
-                    ? "message"
-                    : "",
+              value: booleanFields.has(field) ? true : field === "kind" ? "message" : "",
             });
           }}
         >
+          <option value="time">Time of day</option>
           {ChannelFields.map((field) => (
             <option key={field} value={field}>
               {field === "is_direct"
@@ -252,14 +304,13 @@ function NodeEditor({
           onChange={(event) => {
             const op = event.target.value.replace("not:", "") as Clause["op"];
             const isNot = event.target.value.startsWith("not:");
-            const value =
-              op === "in"
-                ? Array.isArray(clause.value)
-                  ? clause.value
-                  : [String(clause.value)]
-                : Array.isArray(clause.value)
-                  ? clause.value.join(", ")
-                  : clause.value;
+            const value = listOperators.has(op)
+              ? Array.isArray(clause.value)
+                ? clause.value
+                : [String(clause.value)]
+              : Array.isArray(clause.value)
+                ? clause.value.join(", ")
+                : clause.value;
             const next: Node = { ...base, clause: { ...clause, op, value } };
             onChange(isNot ? { id: node.id, type: "not", child: next } : { ...next, id: node.id });
           }}
@@ -309,7 +360,7 @@ function NodeEditor({
                 aria-label="Condition value"
                 value={stringValue}
                 placeholder={
-                  clause.op === "in"
+                  listOperators.has(clause.op)
                     ? "Separate values with commas"
                     : clause.field === "command"
                       ? "Command name without /"
@@ -318,10 +369,9 @@ function NodeEditor({
                 onChange={(event) =>
                   updateClause({
                     ...clause,
-                    value:
-                      clause.op === "in"
-                        ? event.target.value.split(",").map((value) => value.trim())
-                        : event.target.value,
+                    value: listOperators.has(clause.op)
+                      ? event.target.value.split(",").map((value) => value.trim())
+                      : event.target.value,
                   })
                 }
               />
@@ -329,24 +379,118 @@ function NodeEditor({
           </div>
           <div className="flex shrink-0 gap-1">
             {actions}
-            {!onRemove && depth === 0 && (
-              <Button
-                type="button"
-                variant="ghost"
-                disabled={depth >= 4}
-                onClick={() =>
-                  replace({
-                    id: crypto.randomUUID(),
-                    type: "all",
-                    children: [base, newCondition()],
-                  })
-                }
-              >
-                Add condition
-              </Button>
-            )}
+            {rootAdd}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function TimeRow({
+  node,
+  excluded,
+  actions,
+  onChange,
+}: {
+  node: Extract<Node, { type: "time" }>;
+  excluded: boolean;
+  actions: React.ReactNode;
+  onChange: (node: Node, excluded: boolean) => void;
+}) {
+  const window = node.window;
+  const update = (next: Partial<ChannelTimeWindow>) =>
+    onChange({ ...node, window: { ...window, ...next } }, excluded);
+  const days = window.days ?? [];
+  return (
+    <div className="space-y-2" data-testid="channel-condition-time">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] items-start gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.3fr)_auto]">
+        <select
+          aria-label="Condition field"
+          className={control}
+          value="time"
+          onChange={(event) => {
+            const field = event.target.value as Clause["field"];
+            onChange(
+              {
+                id: node.id,
+                type: "condition",
+                clause: {
+                  field,
+                  op: "is",
+                  value: booleanFields.has(field) ? true : field === "kind" ? "message" : "",
+                },
+              },
+              excluded,
+            );
+          }}
+        >
+          <option value="time">Time of day</option>
+          {ChannelFields.map((field) => (
+            <option key={field} value={field}>
+              {fields[field]}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="Condition comparison"
+          className={control}
+          value={excluded ? "outside" : "within"}
+          onChange={(event) => onChange(node, event.target.value === "outside")}
+        >
+          <option value="within">is within</option>
+          <option value="outside">is outside</option>
+        </select>
+        <div className="col-span-2 flex min-w-0 items-center gap-1 sm:contents">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            <Input
+              type="time"
+              aria-label="From"
+              value={window.from}
+              onChange={(event) => update({ from: event.target.value })}
+            />
+            <span className="text-sm text-muted-foreground">–</span>
+            <Input
+              type="time"
+              aria-label="To"
+              value={window.to}
+              onChange={(event) => update({ to: event.target.value })}
+            />
+          </div>
+          <div className="flex shrink-0 gap-1">{actions}</div>
+        </div>
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-1">
+        {weekdays.map((label, day) => (
+          <Button
+            key={label}
+            type="button"
+            size="sm"
+            variant={days.includes(day) ? "default" : "outline"}
+            aria-pressed={days.includes(day)}
+            onClick={() => {
+              const next = days.includes(day)
+                ? days.filter((d) => d !== day)
+                : [...days, day].sort();
+              update({ days: next.length ? next : undefined });
+            }}
+          >
+            {label}
+          </Button>
+        ))}
+        <Input
+          aria-label="Time zone"
+          className="min-w-40 flex-1"
+          list="channel-time-zones"
+          value={window.tz ?? ""}
+          placeholder={localZone}
+          onChange={(event) => update({ tz: event.target.value || undefined })}
+        />
+        <datalist id="channel-time-zones">
+          {zones.map((zone) => (
+            <option key={zone} value={zone} />
+          ))}
+        </datalist>
       </div>
     </div>
   );

@@ -76,10 +76,13 @@ export function channelHelp(connection: ChannelConnection): string {
     "Use the buttons to choose a project, agent, model or session, and restore the agent or model default.",
   ].join("\n");
 }
-export async function ensureChannelSession(input: ChannelConversation) {
+export async function ensureChannelSession(
+  input: ChannelConversation & { fresh?: boolean; permissionMode?: string },
+) {
   const active = await getActiveGatewaySession(input.chatKey);
   const backend = input.mode.replace(/^agent:/, "");
   if (
+    !input.fresh &&
     active &&
     active.status !== "stopped" &&
     active.backend === backend &&
@@ -92,6 +95,9 @@ export async function ensureChannelSession(input: ChannelConversation) {
     cwd: input.cwd,
     mode: input.mode,
     title: `${backend} conversation`,
+    ...(input.permissionMode && input.permissionMode !== "default"
+      ? { permissionMode: input.permissionMode }
+      : {}),
   });
   await updateGatewaySession(session.id, {
     project_id: input.projectId,

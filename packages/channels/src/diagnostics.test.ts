@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { safeProviderCode } from "./providers.js";
+import { safeProviderCode } from "./providers/base.js";
 
 test("provider diagnostics accept only known codes and never raw errors or credentials", () => {
   expect(safeProviderCode("Channel provider: network_or_timeout")).toBe("network_or_timeout");

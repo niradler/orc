@@ -1,4 +1,4 @@
-import { afterAll, expect, mock, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -213,41 +213,6 @@ test("a Qwen audio link that fails to download is an error, not an empty voice r
     ).rejects.toThrow("Qwen TTS audio download failed (404)");
   } finally {
     failing.stop(true);
-  }
-});
-
-test("Telegram sends OGG as a voice note and WAV as a file", async () => {
-  const calls: { method: string; name: string }[] = [];
-  const grammy = await import("grammy");
-  mock.module("grammy", () => ({
-    ...grammy,
-    Bot: class extends grammy.Bot {
-      constructor(token: string) {
-        super(token);
-        this.api.config.use(async (_prev, method, payload) => {
-          const file =
-            (payload as { voice?: unknown; document?: unknown }).voice ??
-            (payload as { document?: unknown }).document;
-          calls.push({ method, name: (file as { filename?: string })?.filename ?? "" });
-          return { ok: true, result: true } as never;
-        });
-      }
-    },
-  }));
-  process.env.ORC_TELEGRAM_TOKEN = "123:test";
-  resetConfig();
-  try {
-    const { createTelegramAdapter } = await import("../telegram.js");
-    const telegram = createTelegramAdapter(Date.now());
-    await telegram.sendAudio("1", voiceNote, "ogg", "Voice reply");
-    await telegram.sendAudio("1", spokenWav, "wav", "Voice reply");
-    expect(calls).toEqual([
-      { method: "sendVoice", name: "audio.ogg" },
-      { method: "sendDocument", name: "audio.wav" },
-    ]);
-  } finally {
-    delete process.env.ORC_TELEGRAM_TOKEN;
-    resetConfig();
   }
 });
 
