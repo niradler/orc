@@ -147,6 +147,7 @@ const serialized = <T>(job: () => Promise<T>): Promise<T> => {
 
 const runProbes = new Map<string, number>();
 const RUN_PROBE_INTERVAL_MS = 10_000;
+const RUN_PROBE_TTL_MS = 60_000;
 
 /**
  * A cached "running" claim can outlive its turn: a missed watch event, an ORC
@@ -165,9 +166,15 @@ export async function settleStaleRun<S extends string>(row: {
   last_activity_at: Date | null;
 }): Promise<S | SessionStatus> {
   const nativeId = row.runtime_session_id;
-  if (row.status !== "running" || !nativeId) return row.status;
+  if (row.status !== "running" || !nativeId) {
+    runProbes.delete(row.id);
+    return row.status;
+  }
   if (Date.now() - (row.last_activity_at?.getTime() ?? 0) < RECENT_WRITE_MS) return row.status;
   const now = Date.now();
+  // Entries only matter inside the rate-limit window; sweep them so a long-lived
+  // daemon never accumulates one per session it has ever probed.
+  for (const [id, at] of runProbes) if (now - at > RUN_PROBE_TTL_MS) runProbes.delete(id);
   if (now - (runProbes.get(row.id) ?? 0) < RUN_PROBE_INTERVAL_MS) return row.status;
   runProbes.set(row.id, now);
   return serialized(async () => {
@@ -183,15 +190,18 @@ export async function settleStaleRun<S extends string>(row: {
       logger.warn("Cannot verify the session run state", { error });
       return row.status;
     }
-    const status = record?.status ?? "stopped";
-    if (status === row.status) return status;
+    // A listing can truncate or skip an unreadable file, so an absent record is
+    // not proof the session ended; only a positive fresh status settles the row.
+    // The watcher's own sync settles sessions the store no longer lists.
+    if (!record || record.status === row.status) return row.status;
+    const status = record.status;
     await getDb()
       .update(gateway_sessions)
       .set({ status, updated_at: new Date() })
       .where(eq(gateway_sessions.id, row.id));
     const pending = runStates.get(pendingKey(row.backend, row.execution_host));
     if (pending) {
-      const after = record ? recordRunState(record, pending.get(nativeId)) : undefined;
+      const after = recordRunState(record, pending.get(nativeId));
       if (after) pending.set(nativeId, after);
       else pending.delete(nativeId);
     }

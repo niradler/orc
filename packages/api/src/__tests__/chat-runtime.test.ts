@@ -1247,6 +1247,39 @@ describe("native chat runtime", () => {
     expect(row?.status).toBe("running");
   });
 
+  test("should keep the running claim when the native listing omits the session", async () => {
+    // A listing can truncate (OpenCode caps at 500 rows) or skip an unreadable
+    // registry file; absence is not proof the session ended, so the probe must
+    // keep the claim and leave absence to the watcher's own sync.
+    const cwd = join(home, "omitted-claim");
+    mkdirSync(cwd, { recursive: true });
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-omitted-claim",
+        backend: "claude",
+        mode: "direct",
+        status: "running",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: "omitted-claim-native",
+        cwd,
+        transcript_path: null,
+        last_activity_at: new Date(Date.now() - 90_000),
+      })
+      .run();
+    const thread = (await (
+      await request("/chat/threads", { sourceSessionId: "source-omitted-claim" })
+    ).json()) as ChatThread;
+    const state = (await (await request(`/chat/threads/${thread.id}/session`)).json()) as {
+      live: { status: string } | null;
+    };
+    expect(state.live?.status).toBe("running");
+    const row = await getDb().query.gateway_sessions.findFirst({
+      where: eq(gateway_sessions.id, "source-omitted-claim"),
+    });
+    expect(row?.status).toBe("running");
+  });
+
   test("resumes native identity and stale status while rejecting real owners, unsupported and missing sources", async () => {
     getDb()
       .insert(bridge_chats)
