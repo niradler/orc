@@ -78,6 +78,28 @@ async function sessionRows(
   }
 }
 
+export async function opencodeSessionUpdated(
+  runtime: HostRuntime,
+  dbPath: string,
+  sessionId: string,
+): Promise<number | null> {
+  if (!SESSION_ID.test(sessionId)) return null;
+  const where = `WHERE id = '${sessionId}'`;
+  const rows = [
+    ...(await queryTable<{ time_updated: number }>(
+      runtime,
+      dbPath,
+      `SELECT time_updated FROM session_v2 ${where}`,
+    )),
+    ...(await queryTable<{ time_updated: number }>(
+      runtime,
+      dbPath,
+      `SELECT time_updated FROM session ${where}`,
+    )),
+  ];
+  return rows.length ? Math.max(...rows.map((row) => row.time_updated)) : null;
+}
+
 export async function opencodeDbPath(runtime: HostRuntime): Promise<string> {
   const home = await runtime.home();
   const sep = runtime.host.kind === "ssh" || !home.includes("\\") ? "/" : "\\";
