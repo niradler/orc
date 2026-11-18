@@ -222,6 +222,40 @@ describe("resource events", () => {
     client.clear();
   });
 
+  test("should refresh every formerly polled view from the resource that changes it", async () => {
+    const cases: [Parameters<typeof invalidateResources>[1][number], unknown[]][] = [
+      ["jobs", ["job-runs", "j1"]],
+      ["jobs", ["job-run-logs", "j1", "r1", true]],
+      ["jobs", ["kb-digest", "kb1"]],
+      ["jobs", ["kb-digest-runs", "kb1", "j1", 1, "running"]],
+      ["knowledge", ["kb", "documents", "kb1"]],
+      ["knowledge", ["kb", "document", "d1"]],
+      ["knowledge", ["kb", "status"]],
+      ["knowledge", ["kb", "parsers"]],
+      ["sessions", ["sessions", "children", "s1"]],
+      ["session-messages", ["sessions", "messages", "s1"]],
+      ["webhooks", ["webhook-deliveries", "w1"]],
+      ["workspaces", ["workspaces", "path", "/repo"]],
+      ["usage", ["chat-analytics", "thread", "t1"]],
+      ["channels", ["channels"]],
+      ["channels", ["channel-pairing", "p1"]],
+      ["channels", ["channel-notification-deliveries"]],
+    ];
+    for (const [resource, key] of cases) {
+      const client = new QueryClient();
+      client.setQueryData(key, null);
+      const refreshed = invalidateResources(client, [resource]);
+      await flushResourceChanges(client);
+      await refreshed;
+      expect([resource, key, client.getQueryState(key)?.isInvalidated]).toEqual([
+        resource,
+        key,
+        true,
+      ]);
+      client.clear();
+    }
+  });
+
   test("should refresh only affected resources and mark inactive queries stale", async () => {
     const client = new QueryClient();
     client.setQueryData(["tasks"], []);

@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { changes } from "@orc/core/changes";
 import {
   ChannelConnectionSchema,
   ChannelMessageSchema,
@@ -281,6 +282,46 @@ test("Telegram polling conflicts remain stopped until an explicit configuration 
   expect(starts).toBe(2);
   await service.stop();
   db.close();
+});
+
+test("pairing offers and connection status changes publish a channels change, unchanged status does not", async () => {
+  const db = new Database(":memory:");
+  const seen: string[][] = [];
+  const unsubscribe = changes.subscribe(({ resources }) => seen.push(resources));
+  let fail: (code: string) => void = () => {};
+  const transport: ChannelTransport = {
+    identity: async () => ({ id: "bot", name: "bot" }),
+    send: async () => "1",
+    edit: async () => {},
+    start: async (_receive, report) => {
+      fail = report;
+    },
+    stop: async () => {},
+  };
+  const store = new ChannelStore(db);
+  const service = new ChannelService(store, () => transport);
+  try {
+    await service.save({
+      id: "status",
+      name: "status",
+      provider: "telegram",
+      enabled: true,
+      credentials: { token: "status" },
+    });
+    expect(seen).toEqual([["channels"]]);
+    await service.reconcile();
+    expect(seen).toHaveLength(1);
+    fail("http_500");
+    expect(seen).toHaveLength(2);
+    const pairing = store.createPairing("status");
+    store.offerPairing("status", pairing.token, { chat_id: "a", user_id: "a", name: "a" });
+    expect(seen).toHaveLength(3);
+    expect(seen.flat().every((resource) => resource === "channels")).toBe(true);
+  } finally {
+    unsubscribe();
+    await service.stop();
+    db.close();
+  }
 });
 
 test("native overrides pass arbitrary provider fields intact; credentials are hidden; sends are idempotent", async () => {

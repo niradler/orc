@@ -92,10 +92,6 @@ export function useTriggerJob() {
 export function useJobRuns(jobId: string | null) {
   return useQuery({
     queryKey: ["job-runs", jobId],
-    refetchInterval: (query) =>
-      query.state.data?.runs.some((run) => ["pending", "running"].includes(run.status))
-        ? 1000
-        : false,
     queryFn: () => api.jobs.runs(jobId as string),
     select: (data) => data.runs,
     enabled: Boolean(jobId),
@@ -105,7 +101,6 @@ export function useJobRuns(jobId: string | null) {
 export function useJobRunLogs(jobId: string | null, runId: string | null, live = false) {
   return useQuery({
     queryKey: ["job-run-logs", jobId, runId, live],
-    refetchInterval: live ? 1000 : false,
     queryFn: () => api.jobs.runLogs(jobId as string, runId as string),
     enabled: Boolean(jobId) && Boolean(runId),
     select: (data) => data.logs,

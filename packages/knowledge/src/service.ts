@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { readFileSync, statSync } from "node:fs";
 import { basename, extname, sep } from "node:path";
+import { changes } from "@orc/core/changes";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
 import {
@@ -1562,7 +1563,8 @@ export class KnowledgeService {
       .catch((err: Error) => {
         this.docling.state = "failed";
         this.docling.error = err.message.slice(0, 1000);
-      });
+      })
+      .finally(() => changes.publish("knowledge"));
     return this.docling;
   }
 

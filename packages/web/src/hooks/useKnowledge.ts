@@ -36,16 +36,6 @@ export function useKbDocuments(kbId: string | null) {
     queryKey: [KB_KEY, "documents", kbId],
     queryFn: () => api.kb.documents(kbId as string),
     enabled: Boolean(kbId),
-    // Parsing and embedding run in the background; keep states fresh while anything is pending.
-    refetchInterval: (query) =>
-      query.state.data?.documents.some(
-        (d) =>
-          d.parse_state === "pending" ||
-          d.index_state === "pending" ||
-          d.index_state === "semantic_pending",
-      )
-        ? 3000
-        : false,
   });
 }
 
@@ -54,7 +44,6 @@ export function useKbDocument(id: string | null) {
     queryKey: [KB_KEY, "document", id],
     queryFn: () => api.kb.document(id as string),
     enabled: Boolean(id),
-    refetchInterval: (query) => (query.state.data?.parse_state === "pending" ? 3000 : false),
   });
 }
 
@@ -112,10 +101,6 @@ export function useKbStatus() {
   return useQuery({
     queryKey: [KB_KEY, "status"],
     queryFn: () => api.kb.status(),
-    refetchInterval: (query) => {
-      const s = query.state.data;
-      return s && (s.jobs.queued || s.jobs.running || s.embedding.pending_chunks) ? 5000 : 60_000;
-    },
   });
 }
 
@@ -127,7 +112,6 @@ export function useKbParsers() {
   return useQuery({
     queryKey: [KB_KEY, "parsers"],
     queryFn: () => api.kb.parsers(),
-    refetchInterval: (query) => (query.state.data?.docling.state === "installing" ? 2000 : false),
   });
 }
 
@@ -150,15 +134,11 @@ export function useKbDigestTemplate(enabled: boolean) {
   });
 }
 
-const RUN_ACTIVE = new Set(["pending", "running"]);
-
 export function useKbDigest(kbId: string) {
   return useQuery({
     queryKey: [KB_DIGEST_KEY, kbId],
     queryFn: () => api.kb.digest(kbId),
     select: (data) => data.digest,
-    refetchInterval: (query) =>
-      query.state.data?.digest?.last_run?.status === "running" ? 3000 : false,
   });
 }
 
@@ -173,7 +153,5 @@ export function useKbDigestRuns(kbId: string, digest: KbDigest) {
     queryFn: () => api.kb.digestRuns(kbId, 10),
     placeholderData: (previous) => previous,
     select: (data) => data.runs,
-    refetchInterval: (query) =>
-      query.state.data?.runs.some((r) => RUN_ACTIVE.has(r.status)) ? 3000 : false,
   });
 }

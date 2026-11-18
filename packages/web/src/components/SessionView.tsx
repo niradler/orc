@@ -365,7 +365,7 @@ export function SessionView({
         <SessionCacheUsage key={sessionId} sessionId={sessionId} live={live} />
         <SessionAnalyticsDetails key={`analytics-${sessionId}`} sessionId={sessionId} live={live} />
         {session && <SessionLineage sessionId={session.id} />}
-        {session && <SessionMessageInbox key={session.id} session={session} live={live} />}
+        {session && <SessionMessageInbox key={session.id} session={session} />}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <div className="relative min-w-[150px] flex-1">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-outline" />

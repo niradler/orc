@@ -104,8 +104,8 @@ a guarantee about the next request: request generation time, prompt changes and
 other requests can affect reuse. Missing cache metrics or timing are omitted;
 there is no expiry-unavailable message. Codex does not currently provide timing
 evidence here. Other backends omit the indicator until native cache metrics are
-supported. Metrics refresh every 15 seconds while an active session's details
-are open; opening an ended session reads its recorded data once.
+supported. Metrics refresh when ORC records new usage for the session; opening
+an ended session reads its recorded data once.
 
 ![Session cache details with demo data](/screens/session-cache.png)
 

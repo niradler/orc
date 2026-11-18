@@ -14,7 +14,6 @@ export function useWebhookDeliveries(id: string | null) {
     queryFn: () => api.webhooks.deliveries(id as string),
     select: (data) => data.deliveries,
     enabled: Boolean(id),
-    refetchInterval: 3000,
   });
 }
 export function useCreateWebhook() {

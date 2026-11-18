@@ -28,6 +28,7 @@ export const CHANGE_RESOURCES = [
   "audit",
   "scratchpads",
   "workspaces",
+  "channels",
 ] as const;
 
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];
