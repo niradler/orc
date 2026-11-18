@@ -171,5 +171,9 @@ test("rebuilding an idle session's transcript does not pop the working panel", a
     "idle",
     { timeout: 15_000 },
   );
+  // Let the delayed attach fully complete, then recheck that nothing popped late.
+  await page.waitForTimeout(2500);
+  expect(await page.evaluate(() => window.__sawWorking ?? false)).toBe(false);
   await expect(page.getByTestId("chat-working-spinner")).toHaveCount(0);
+  await expect(page.getByTestId("chat-header-state").first()).toHaveAttribute("data-state", "idle");
 });

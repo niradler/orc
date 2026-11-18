@@ -1387,6 +1387,7 @@ export function ChatPanel({
             )}
             <ChatLiveAnnouncer
               streaming={streaming}
+              refreshing={refreshing}
               agent={streamingAgent}
               text={streamText}
               last={messages[messages.length - 1]}

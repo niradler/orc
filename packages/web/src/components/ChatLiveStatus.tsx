@@ -124,14 +124,17 @@ export function ChatLiveStatus({
   );
 }
 
-/** Announces streamed prose by paragraph and the finished turn, never every token. */
+/** Announces streamed prose by paragraph and the finished turn, never every token.
+ *  A rebuild that loads a finished reply without streaming is announced too. */
 export function ChatLiveAnnouncer({
   streaming,
+  refreshing,
   agent,
   text,
   last,
 }: {
   streaming: boolean;
+  refreshing: boolean;
   agent: string;
   text: string;
   last: ChatMessage | undefined;
@@ -141,6 +144,8 @@ export function ChatLiveAnnouncer({
   const textRef = useRef(text);
   textRef.current = text;
   const wasStreaming = useRef(streaming);
+  const wasRefreshing = useRef(refreshing);
+  const announced = useRef<string | null>(null);
 
   useEffect(() => {
     if (text.length < spoken.current) spoken.current = 0;
@@ -162,12 +167,17 @@ export function ChatLiveAnnouncer({
   }, [streaming, agent]);
 
   useEffect(() => {
-    if (streaming || !wasStreaming.current) {
-      wasStreaming.current = streaming;
-      return;
-    }
-    wasStreaming.current = false;
+    const streamFinished = wasStreaming.current && !streaming;
+    // A rebuild that loads a finished reply never streams, so it has no
+    // streaming falling edge; announce it when the refresh completes instead.
+    const rebuildFinished = wasRefreshing.current && !refreshing && !streaming;
+    wasStreaming.current = streaming;
+    wasRefreshing.current = refreshing;
+    if (streaming || (!streamFinished && !rebuildFinished)) return;
     if (last?.role !== "assistant") return;
+    // A refresh that returns the same reply must not read it out again.
+    if (!streamFinished && announced.current === last.id) return;
+    announced.current = last.id;
     const rest = last.content.slice(spoken.current).trim();
     const summary =
       last.activity?.length || last.providerActivity?.length || last.turn?.outcome
@@ -184,7 +194,7 @@ export function ChatLiveAnnouncer({
           )
         : "";
     setMessage([rest, summary].filter(Boolean).join(". "));
-  }, [streaming, last]);
+  }, [streaming, refreshing, last]);
 
   return (
     <div role="status" aria-live="polite" data-testid="chat-live-announcer" className="sr-only">

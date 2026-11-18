@@ -748,19 +748,21 @@ function useChatController() {
         const previous = streams.current.get(key);
         streams.current.delete(key);
         previous?.controller.abort();
-        update(key, () => ({
+        update(key, (current) => ({
           thread: fresh,
           config: fresh.config,
           messages: fresh.messages,
           historyBefore: fresh.historyBefore ?? null,
-          // A rebuild is not a turn: don't claim "working" until attach opens a
-          // live stream. Re-importing an idle session must not pop the panel.
-          streaming: false,
+          // A rebuild is not a turn: an idle session must not claim "working".
+          // Preserve a stream/reconnect that was already live so a mid-turn
+          // refresh doesn't flicker to idle while reattach is pending; attach
+          // confirms it (onOpen) or clears it (204 -> finish).
+          streaming: current.streaming,
           streamText: "",
           activity: [],
           permissions: [],
           questions: [],
-          reconnecting: false,
+          reconnecting: current.reconnecting,
         }));
         void attach(key, fresh.id);
       } catch (cause) {
