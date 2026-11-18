@@ -51,7 +51,7 @@ export function appMenuTemplate(
       label: "File",
       submenu: [
         {
-          label: "Connection…",
+          label: "Servers…",
           accelerator: "CmdOrCtrl+,",
           click: () => actions.showConnectionSettings(),
         },

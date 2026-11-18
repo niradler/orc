@@ -62,7 +62,7 @@ test("desktop hosts save, use and delete servers through the preload bridge", as
     });
   });
   await gotoView(page, "settings");
-  await page.goto("/settings?settingsSection=connection");
+  await page.goto("/settings?settingsSection=servers");
   await expect(page.getByTestId("desktop-host-local")).toContainText("Active");
   await expect(page.getByTestId("browser-hosts")).toHaveCount(0);
 

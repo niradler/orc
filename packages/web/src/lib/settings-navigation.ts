@@ -1,5 +1,6 @@
 export const SETTINGS_GROUP_IDS = [
   "general",
+  "servers",
   "hosts",
   "agents",
   "connections",
@@ -35,9 +36,15 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     domain: "workspace",
   },
   {
+    id: "servers",
+    label: "Servers",
+    description: "ORC servers this app opens",
+    domain: "workspace",
+  },
+  {
     id: "hosts",
     label: "Hosts",
-    description: "ORC server and where work runs",
+    description: "Where agents run",
     domain: "workspace",
   },
   {
@@ -99,7 +106,8 @@ type SettingsTarget = {
 /** Older `?settingsSection=` links and deep links keep landing on the right panel. */
 const SETTINGS_TARGETS: Record<string, SettingsTarget> = {
   general: { group: "general" },
-  connection: { group: "hosts" },
+  connection: { group: "servers" },
+  servers: { group: "servers" },
   hosts: { group: "hosts" },
   execution: { group: "hosts" },
   appearance: { group: "general" },

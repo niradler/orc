@@ -1,5 +1,5 @@
 import { Eye, EyeOff, Plus, Save, Trash2, X } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { HelpPopover } from "@/components/HelpPopover";
 import { SshHostSettings } from "@/components/SshHostSettings";
@@ -40,18 +40,26 @@ import { cn } from "@/lib/utils";
 
 const inputClass = "bg-surface-highest border-outline-variant text-on-surface font-body text-sm";
 
-/**
- * One list for both host kinds: the ORC server this dashboard talks to (API) and the host where
- * its work runs (SSH). A server that both serves the dashboard and runs work shows both badges.
- */
-export function HostsSettings({
-  expandExecution = false,
-}: {
-  /** Legacy `?settingsSection=execution` links open the execution host editor. */
-  expandExecution?: boolean;
-}) {
-  const desktop = desktopBridge()?.connection;
-  const execution = <ExecutionHostRow openOn={expandExecution} />;
+/** The ORC servers this app can open: saved in the browser, or in the desktop app's data folder. */
+export function ServersSettings() {
+  return (
+    <section aria-labelledby="servers-title" data-testid="servers-settings">
+      <div className="mb-4 flex items-center gap-1">
+        <h2 id="servers-title" className="hidden text-base font-medium md:block">
+          Servers
+        </h2>
+        <HelpPopover label="servers" testId="servers-help">
+          The ORC servers this app can open. Tokens and headers are saved on this client and only
+          sent to the address they were saved for.
+        </HelpPopover>
+      </div>
+      {desktopBridge()?.connection ? <DesktopHosts /> : <BrowserHosts />}
+    </section>
+  );
+}
+
+/** Where the connected ORC server runs agents, terminals and git. */
+export function HostsSettings({ expandExecution = false }: { expandExecution?: boolean }) {
   return (
     <section aria-labelledby="hosts-title" data-testid="hosts-settings">
       <div className="mb-4 flex items-center gap-1">
@@ -59,27 +67,14 @@ export function HostsSettings({
           Hosts
         </h2>
         <HelpPopover label="hosts" testId="hosts-help">
-          The API rows are the ORC servers this dashboard can talk to. The SSH row is where the
-          connected server runs chats, terminals and jobs: its own machine, or a host from its{" "}
-          <code className="text-primary">~/.ssh/config</code>. Tokens and headers are stored in this
-          browser and only sent to the address they were saved for.
+          Where the connected server runs agents, terminals and jobs: its own machine, or a host
+          from its <code className="text-primary">~/.ssh/config</code>.
         </HelpPopover>
       </div>
-      {desktop ? <DesktopHosts execution={execution} /> : <BrowserHosts execution={execution} />}
+      <ul className="divide-y divide-border border-y border-border">
+        <ExecutionHostRow openOn={expandExecution} />
+      </ul>
     </section>
-  );
-}
-
-function HostBadge({ kind }: { kind: "api" | "ssh" }) {
-  return (
-    <Badge
-      variant={kind === "api" ? "secondary" : "outline"}
-      data-testid={`host-badge-${kind}`}
-      title={kind === "api" ? "Serves this dashboard's API" : "Runs chats, terminals and jobs"}
-      className="shrink-0 font-mono text-[10px] tracking-wide"
-    >
-      {kind.toUpperCase()}
-    </Badge>
   );
 }
 
@@ -107,8 +102,11 @@ function ExecutionHostRow({ openOn = false }: { openOn?: boolean }) {
       <div className="flex flex-wrap items-center gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            {!alias && <HostBadge kind="api" />}
-            <HostBadge kind="ssh" />
+            {alias && (
+              <Badge variant="outline" className="shrink-0 font-mono text-[10px] tracking-wide">
+                SSH
+              </Badge>
+            )}
             <span className="truncate text-sm font-medium">{title}</span>
           </div>
           <div className={cn("truncate text-xs", error ? "text-error" : "text-muted-foreground")}>
@@ -139,7 +137,7 @@ const message = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
 /** The desktop app's saved servers live in its data folder; the main process owns their tokens. */
-function DesktopHosts({ execution }: { execution: ReactNode }) {
+function DesktopHosts() {
   const bridge = desktopBridge()?.connection;
   const [state, setState] = useState<DesktopConnectionState | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -215,7 +213,6 @@ function DesktopHosts({ execution }: { execution: ReactNode }) {
               </Button>
             )}
           </li>
-          {execution}
         </ul>
       </div>
     );
@@ -230,7 +227,6 @@ function DesktopHosts({ execution }: { execution: ReactNode }) {
           >
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <HostBadge kind="api" />
                 <span className="truncate text-sm font-medium">Remote ORC server</span>
                 <Badge variant="secondary">Active</Badge>
               </div>
@@ -245,7 +241,6 @@ function DesktopHosts({ execution }: { execution: ReactNode }) {
               Manage servers
             </Button>
           </li>
-          {execution}
         </ul>
       </div>
     );
@@ -313,7 +308,6 @@ function DesktopHosts({ execution }: { execution: ReactNode }) {
       >
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <HostBadge kind="api" />
             <span className="truncate text-sm font-medium">{label}</span>
             {isActive && <Badge variant="secondary">Active</Badge>}
           </div>
@@ -374,7 +368,6 @@ function DesktopHosts({ execution }: { execution: ReactNode }) {
             server,
           ),
         )}
-        {execution}
         <li className="py-2">
           <Button
             variant="outline"
@@ -551,7 +544,7 @@ function DesktopHosts({ execution }: { execution: ReactNode }) {
   );
 }
 
-function BrowserHosts({ execution }: { execution: ReactNode }) {
+function BrowserHosts() {
   const [hosts, setHosts] = useState<ApiHost[]>(listApiHosts);
   const [activeUrl, setActiveUrl] = useState(readApiUrl);
   const [activeId, setActiveId] = useState<string | null>(readActiveHostId);
@@ -711,7 +704,6 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
           >
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <HostBadge kind="api" />
                 <span className="truncate text-sm font-medium">Current connection</span>
                 <Badge variant="outline">Not saved</Badge>
               </div>
@@ -742,7 +734,6 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <HostBadge kind="api" />
                   <span className="truncate text-sm font-medium">{host.label}</span>
                   {isActive && <Badge variant="secondary">Active</Badge>}
                 </div>
@@ -791,7 +782,6 @@ function BrowserHosts({ execution }: { execution: ReactNode }) {
             </li>
           );
         })}
-        {execution}
         <li className="py-2">
           <Button
             variant="outline"

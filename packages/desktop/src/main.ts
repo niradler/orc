@@ -74,8 +74,7 @@ const orcDir = daemonHome();
 const HIDDEN_FLAG = "--hidden";
 const QUIT_FLAG = "--quit";
 const CONNECTION_CHANNEL = "orc:connection";
-// The legacy section id still maps to the Hosts group and opens its connection editor.
-const CONNECTION_SECTION = "/settings?settingsSection=connection";
+const CONNECTION_SECTION = "/settings?settingsSection=servers";
 
 type WindowTarget = { url: string; origin: string };
 
@@ -642,7 +641,7 @@ function createTray(): void {
   tray.setToolTip("orc");
   trayMenu = Menu.buildFromTemplate([
     { label: "Open orc", click: showWindow },
-    { label: "Connection…", click: () => void showConnectionSettings() },
+    { label: "Servers…", click: () => void showConnectionSettings() },
     {
       id: "browser-and-files",
       label: "Browser and files",

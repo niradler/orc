@@ -3,11 +3,9 @@ import { API_SECRET, gotoView } from "./_helpers";
 
 test("saved ORC servers keep their token and headers, switch, and come back", async ({ page }) => {
   await gotoView(page, "settings");
-  await page.goto("/settings?settingsSection=hosts");
-  await expect(page.getByTestId("hosts-settings")).toBeVisible();
-  await expect(page.getByTestId("host-badge-api").first()).toHaveText("API");
-  await expect(page.getByTestId("host-row-ssh")).toBeVisible();
-  await expect(page.getByTestId("host-badge-ssh")).toHaveText("SSH");
+  await page.goto("/settings?settingsSection=servers");
+  await expect(page.getByTestId("servers-settings")).toBeVisible();
+  await expect(page.getByTestId("host-row-ssh")).toHaveCount(0);
 
   let authorization: string | undefined;
   let proxyHeader: string | undefined;
@@ -52,13 +50,13 @@ test("saved ORC servers keep their token and headers, switch, and come back", as
   await page.getByRole("button", { name: "Close server editor" }).click();
 
   await page.reload();
-  await page.goto("/settings?settingsSection=hosts");
+  await page.goto("/settings?settingsSection=servers");
   await expect(page.locator("li").filter({ hasText: "Lab" })).toBeVisible();
 });
 
 test("saved addresses are canonical and managed headers are refused", async ({ page }) => {
   await gotoView(page, "settings");
-  await page.goto("/settings?settingsSection=hosts");
+  await page.goto("/settings?settingsSection=servers");
   await page.getByTestId("api-host-add").click();
   await page.getByTestId("api-host-name").fill("Trailing");
   await page.getByTestId("api-host-url").fill("/other-api///");
@@ -88,7 +86,7 @@ test("deleting the active saved server falls back to this server", async ({ page
     );
     localStorage.setItem("orc_api_active_host", "lab");
   }, API_SECRET);
-  await page.goto("/settings?settingsSection=hosts");
+  await page.goto("/settings?settingsSection=servers");
   const row = page.getByTestId("api-host-lab");
   await expect(row).toBeVisible();
   await expect(row.getByText("Active")).toBeVisible();
@@ -129,8 +127,7 @@ test("desktop keeps the grouped sidebar and opens each panel", async ({ page }) 
   await page.getByTestId("settings-section-hosts").click();
   await expect(page.getByTestId("settings-section-hosts")).toHaveAttribute("aria-current", "page");
   await expect(page.getByTestId("hosts-settings")).toBeVisible();
-  await expect(page.getByTestId("host-badge-api").first()).toHaveText("API");
-  await expect(page.getByTestId("host-badge-ssh")).toHaveText("SSH");
+  await expect(page.getByTestId("api-host-add")).toHaveCount(0);
   await page.getByTestId("ssh-host-change").click();
   await expect(page.getByTestId("ssh-settings")).toBeVisible();
   await page.getByTestId("settings-section-agents").click();
