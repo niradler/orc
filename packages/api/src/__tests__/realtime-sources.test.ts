@@ -2,8 +2,9 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { changes } from "@orc/core/changes";
+import { changes, type ResourceChange } from "@orc/core/changes";
 import { LOCAL_HOST } from "@orc/core/exec-host";
+import { getSqlite } from "@orc/db/client";
 import { watchProcessExit } from "../realtime/process-watch.js";
 import { scheduleGithubRechecks, watchResourcePath } from "../realtime/sources.js";
 import { startSessionWatcher } from "../session-watcher.js";
@@ -74,24 +75,107 @@ test("should report a process that already exited as exited", async () => {
   }
 });
 
-test("should notify transcript file changes even when the session metadata does not change", async () => {
+test("should name only the session whose transcript changed when its metadata does not change", async () => {
   setupTestApp();
   const root = mkdtempSync(join(tmpdir(), "orc-transcript-watch-"));
+  const transcript = join(root, "transcript.jsonl");
+  writeFileSync(transcript, "{}\n");
   const stop = startSessionWatcher({
-    adapters: [{ backend: "unchanged-metadata", minIntervalMs: 0, list: async () => [] }],
+    adapters: [
+      {
+        backend: "unchanged-metadata",
+        minIntervalMs: 0,
+        list: async () => [
+          {
+            backend: "unchanged-metadata",
+            externalId: "native-unchanged",
+            title: "Unchanged",
+            status: "stopped",
+            createdAt: new Date(0),
+            lastActivityAt: new Date(0),
+            transcriptPath: transcript,
+          },
+        ],
+      },
+    ],
     registryDir: root,
     liveRegistryDir: null,
   });
-  let events = 0;
+  const events: ResourceChange[] = [];
   let unsubscribe = (): void => {};
   try {
     await Bun.sleep(300);
     unsubscribe = changes.subscribe((event) => {
-      if (event.resources.includes("sessions")) events++;
+      if (event.resources.some((resource) => resource.startsWith("session"))) events.push(event);
     });
-    writeFileSync(join(root, "transcript.jsonl"), '{"message":"new output"}\n');
+    writeFileSync(join(root, "unrelated.json"), "{}");
     await Bun.sleep(400);
-    expect(events).toBeGreaterThan(0);
+    expect(events).toEqual([]);
+    writeFileSync(transcript, '{"message":"new output"}\n');
+    await Bun.sleep(400);
+    expect(events.length).toBeGreaterThan(0);
+    expect(events).toContainEqual({
+      resources: ["session-activity"],
+      sessions: expect.arrayContaining(["native-unchanged"]),
+    });
+    expect(events.every((event) => event.resources[0] === "session-activity")).toBe(true);
+  } finally {
+    unsubscribe();
+    stop();
+    teardownTestApp();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("should name a session whose activity moved and its token count when no changed path is known", async () => {
+  setupTestApp();
+  const root = mkdtempSync(join(tmpdir(), "orc-activity-watch-"));
+
+  const stop = startSessionWatcher({
+    adapters: [
+      {
+        backend: "moving-activity",
+        minIntervalMs: 0,
+        list: async () => [
+          {
+            backend: "moving-activity",
+            externalId: "native-moving",
+            title: "Moving",
+            status: "stopped",
+            createdAt: new Date(0),
+            lastActivityAt: new Date(Date.now() + performance.now()),
+            tokensVersion: 1,
+            tokens: async () => 42,
+          },
+        ],
+      },
+    ],
+    registryDir: root,
+    liveRegistryDir: null,
+  });
+  const events: ResourceChange[] = [];
+  let unsubscribe = (): void => {};
+  try {
+    await Bun.sleep(300);
+    unsubscribe = changes.subscribe((event) => {
+      if (event.resources.some((resource) => resource.startsWith("session"))) events.push(event);
+    });
+    writeFileSync(join(root, "unrelated.json"), "{}");
+    await Bun.sleep(400);
+    expect(events).toContainEqual({
+      resources: ["session-activity"],
+      sessions: expect.arrayContaining(["native-moving"]),
+    });
+    expect(events.some((event) => event.resources.includes("sessions") && !event.sessions)).toBe(
+      false,
+    );
+    expect(
+      getSqlite()
+        .query<{ tokens_used: number }, [string]>(
+          "SELECT tokens_used FROM gateway_sessions WHERE runtime_session_id = ?",
+        )
+        .get("native-moving")?.tokens_used,
+    ).toBe(42);
   } finally {
     unsubscribe();
     stop();

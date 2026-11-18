@@ -232,3 +232,33 @@ test("chat summaries expose project but not the working folder", () => {
     db.close();
   }
 });
+
+test("related session ids reach a subagent's parent and the chats that show either session", () => {
+  const db = new Database(":memory:");
+  installChat(db);
+  db.exec(
+    "CREATE TABLE gateway_sessions (id TEXT PRIMARY KEY, backend TEXT, runtime_session_id TEXT, parent_session_id TEXT, execution_host TEXT, transcript_path TEXT)",
+  );
+  const row = db.query("INSERT INTO gateway_sessions VALUES (?, ?, ?, ?, NULL, ?)");
+  const thread = db.query(
+    "INSERT INTO chat_threads (id, title, updated_at, data) VALUES (?, 'Chat', 1, ?)",
+  );
+  try {
+    row.run("parent", "codex", "parent-native", null, null);
+    row.run("child", "codex", "agent-child", "parent-native", "/t/child.jsonl");
+    row.run("nested", "codex", "agent-nested", "agent-child", null);
+    row.run("other", "claude", "parent-native", null, null);
+    thread.run("parent-chat", JSON.stringify({ backend: "codex-cli", runtimeId: "parent-native" }));
+    thread.run("child-chat", JSON.stringify({ sourceId: "child" }));
+    thread.run("unrelated", JSON.stringify({ backend: "codex-cli", runtimeId: "elsewhere" }));
+    const store = new ChatStore(db);
+    expect(new Set(store.relatedSessionIds([], ["/t/child.jsonl"]))).toEqual(
+      new Set(["child", "agent-child", "parent-native", "parent", "parent-chat", "child-chat"]),
+    );
+    expect(new Set(store.relatedSessionIds(["nested"], []))).toEqual(
+      new Set(["nested", "agent-nested", "agent-child", "child", "parent-native", "child-chat"]),
+    );
+  } finally {
+    db.close();
+  }
+});

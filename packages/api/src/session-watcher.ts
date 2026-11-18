@@ -8,6 +8,7 @@ import { LIVE_REGISTRY_DIR } from "@orc/core/live-session";
 import { createLogger } from "@orc/core/logger";
 import { agentHomes } from "@orc/core/provider-service";
 import { USAGE_EVENT_VERSION } from "@orc/core/usage";
+import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { NotificationStore } from "@orc/db/notifications";
 import { gateway_sessions } from "@orc/db/schema";
@@ -99,6 +100,8 @@ let usageChain: Promise<unknown> = Promise.resolve();
 let nextUsageMaintenance = 0;
 let synchronized: (() => Promise<void>) | undefined;
 let refreshWatchers: (() => void) | undefined;
+const activity = new Map<string, number>();
+const touched = new Set<string>();
 type RunState = { waiting: boolean; waitingFor: SessionWaiting | null; background: boolean };
 const runStates = new Map<string, Map<string, RunState>>();
 
@@ -382,6 +385,10 @@ function queueTokens(id: string, compute: () => Promise<number | null>, version 
           .update(gateway_sessions)
           .set({ tokens_used: tokens, tokens_version: version })
           .where(eq(gateway_sessions.id, id));
+        changes.publishSessions(
+          "session-activity",
+          new ChatStore(getSqlite()).relatedSessionIds([id], []),
+        );
       }
     })
     .catch((err) => logger.error("token count failed", err));
@@ -433,6 +440,9 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
     }[] = [];
     for (const r of records) {
       const id = await upsertRecord(r, executionHost);
+      const activeAt = r.lastActivityAt.getTime();
+      if (activity.has(id) && activity.get(id) !== activeAt) touched.add(id);
+      activity.set(id, activeAt);
       if (r.tokens) queueTokens(id, r.tokens, r.tokensVersion);
       if (r.usage)
         usageJobs.push({
@@ -463,7 +473,13 @@ async function syncAdapter(adapter: SessionAdapter): Promise<SyncResult> {
       // writes above land, so the next pass sees the updated usage versions.
       const backlog = readyUsage.length > USAGE_QUEUE_LIMIT;
       void indexPending.then(() => {
-        changes.publish("usage");
+        changes.publishSessions(
+          "usage",
+          new ChatStore(getSqlite()).relatedSessionIds(
+            readyUsage.map((job) => job.id),
+            [],
+          ),
+        );
         if (backlog) requestUsageFollowUp?.();
       });
     }
@@ -651,7 +667,7 @@ export function startSessionWatcher(
       : opts.registryDir;
   let stopped = false;
   let requested = false;
-  let changedFiles = false;
+  const changedPaths = new Set<string>();
   let syncing = false;
   let debounce: ReturnType<typeof setTimeout> | undefined;
   let expiration: ReturnType<typeof setTimeout> | undefined;
@@ -659,21 +675,25 @@ export function startSessionWatcher(
   const fileWatchers: (() => void)[] = [];
   let watcherGeneration = 0;
   const processes = new Map<string, () => void>();
-  const schedule = (fileChanged = false): void => {
+  const schedule = (changed: string[] = []): void => {
     if (stopped) return;
-    changedFiles ||= fileChanged;
+    for (const path of changed) changedPaths.add(path);
     requested = true;
     if (debounce || syncing) return;
     debounce = setTimeout(() => {
       debounce = undefined;
       requested = false;
-      const notify = changedFiles;
-      changedFiles = false;
+      const paths = [...changedPaths];
+      changedPaths.clear();
       syncing = true;
-      void liveState()
-        .then(async (before) => {
-          await runSync(currentAdapters, { force: true });
-          if (notify || before !== (await liveState())) changes.publish("sessions");
+      void runSync(currentAdapters, { force: true })
+        .then(() => {
+          const active = [...touched];
+          touched.clear();
+          changes.publishSessions(
+            "session-activity",
+            new ChatStore(getSqlite()).relatedSessionIds(active, paths),
+          );
         })
         .catch((error) => logger.error("Session change sync failed", error))
         .finally(() => {
@@ -683,23 +703,6 @@ export function startSessionWatcher(
     }, 100);
     debounce.unref();
   };
-  const liveState = async () =>
-    (
-      await getDb()
-        .select({
-          id: gateway_sessions.id,
-          status: gateway_sessions.status,
-          pid: gateway_sessions.pid,
-          updated: gateway_sessions.updated_at,
-        })
-        .from(gateway_sessions)
-        .where(
-          and(eq(gateway_sessions.chat_id, LIVE_CHAT_ID), ne(gateway_sessions.status, "stopped")),
-        )
-    )
-      .map((row) => `${row.id}:${row.status}:${row.pid}:${row.updated?.getTime()}`)
-      .sort()
-      .join("|");
   synchronized = async () => {
     if (stopped || opts.adapters) return;
     const rows = await getDb().query.gateway_sessions.findMany({
@@ -756,10 +759,14 @@ export function startSessionWatcher(
           const paths = [...roots, db, `${db}-wal`, `${db}-shm`];
           if (stopped || generation !== watcherGeneration) return;
           if (host.kind === "ssh")
-            fileWatchers.push(watchRemotePaths(host, paths, () => schedule(true)));
+            fileWatchers.push(watchRemotePaths(host, paths, () => schedule()));
           else
             for (const path of paths)
-              fileWatchers.push(watchResourcePath(path, () => schedule(true)));
+              fileWatchers.push(
+                watchResourcePath(path, (changed) =>
+                  schedule(changed.map((name) => join(path, name))),
+                ),
+              );
         })
         .catch((error) => logger.warn("Cannot watch Pi and OpenCode session files", { error }));
       const sources = [
@@ -781,7 +788,7 @@ export function startSessionWatcher(
           watchRemotePaths(
             host,
             sources.map((path) => `~/${path}`),
-            () => schedule(true),
+            () => schedule(),
           ),
         );
       else {
@@ -804,7 +811,10 @@ export function startSessionWatcher(
         local.add(`${cursorStateDbPath()}-wal`);
       }
     }
-    for (const path of local) fileWatchers.push(watchResourcePath(path, () => schedule(true)));
+    for (const path of local)
+      fileWatchers.push(
+        watchResourcePath(path, (changed) => schedule(changed.map((name) => join(path, name)))),
+      );
     schedule();
   };
   refreshWatchers = attach;

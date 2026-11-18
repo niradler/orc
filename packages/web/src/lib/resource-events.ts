@@ -1,5 +1,5 @@
-import { CHANGE_RESOURCES, type ChangeResource } from "@orc/core/changes";
-import type { QueryClient } from "@tanstack/react-query";
+import { CHANGE_RESOURCES, type ChangeResource, type ResourceChange } from "@orc/core/changes";
+import type { QueryClient, QueryKey } from "@tanstack/react-query";
 
 type ResourceConnection = "connecting" | "connected" | "disconnected";
 let connection: ResourceConnection = "connecting";
@@ -105,14 +105,26 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "channel-notification-deliveries",
     "channel-notification-policy",
   ],
+  "desktop-preview": [],
+  "session-activity": ["sessions", "session", "chat-threads", "palette-live-sessions"],
 };
 
-// A running session publishes `sessions` changes about every 100 ms; one trailing refresh
-// per window keeps that from re-reading every mounted list for each transcript write.
+const changeListeners = new Set<(resources: ChangeResource[]) => void>();
+export function subscribeResourceChanges(
+  listener: (resources: ChangeResource[]) => void,
+): () => void {
+  changeListeners.add(listener);
+  return () => {
+    changeListeners.delete(listener);
+  };
+}
+
+// Busy sessions publish changes in bursts; one trailing refresh per window keeps a burst
+// from re-reading the same mounted queries for each write.
 const COALESCE_MS = 350;
 
 interface PendingRefresh {
-  roots: Set<string>;
+  changes: { resource: ChangeResource; sessions?: string[] }[];
   promise: Promise<void>;
   resolve: () => void;
   reject: (error: unknown) => void;
@@ -124,15 +136,44 @@ const pendingRefreshes = new WeakMap<QueryClient, PendingRefresh>();
 function flushPending(client: QueryClient, pending: PendingRefresh): void {
   clearTimeout(pending.timer);
   pendingRefreshes.delete(client);
-  refreshQueries(client, (root) => pending.roots.has(root)).then(pending.resolve, pending.reject);
+  refreshQueries(client, (key) => {
+    const root = String(key[0]);
+    const own =
+      root === "session" ||
+      root === "session-cache" ||
+      root === "chat-analytics" ||
+      (root === "chat-threads" && key[1] === "session") ||
+      (root === "sessions" &&
+        ["live-one", "children", "transcript", "messages", "lineage", "subagents"].includes(
+          String(key[1]),
+        ));
+    return pending.changes.some(({ resource, sessions }) => {
+      if (!QUERY_ROOTS[resource].includes(root)) return false;
+      if (sessions && own)
+        return key.some((part) => typeof part === "string" && sessions.includes(part));
+      if (resource === "session-activity")
+        return (
+          !own &&
+          !sessions &&
+          root !== "chat-threads" &&
+          !(root === "sessions" && key[1] === "live" && (key[2] === true || key[2] === "summary"))
+        );
+      if (resource === "session-messages") return key[1] === "messages";
+      return !(
+        root === "sessions" && ["transcript", "messages", "subagents"].includes(String(key[1]))
+      );
+    });
+  }).then(pending.resolve, pending.reject);
 }
 
 export function invalidateResources(
   client: QueryClient,
   resources: ChangeResource[],
+  sessions?: string[],
 ): Promise<void> {
-  const roots = resources.flatMap((resource) => QUERY_ROOTS[resource]);
-  if (roots.length === 0) return Promise.resolve();
+  for (const listener of changeListeners) listener(resources);
+  const relevant = resources.filter((resource) => QUERY_ROOTS[resource].length);
+  if (relevant.length === 0) return Promise.resolve();
   let pending = pendingRefreshes.get(client);
   if (!pending) {
     let resolve!: () => void;
@@ -141,12 +182,12 @@ export function invalidateResources(
       resolve = done;
       reject = fail;
     });
-    const created: PendingRefresh = { roots: new Set(), promise, resolve, reject };
+    const created: PendingRefresh = { changes: [], promise, resolve, reject };
     created.timer = setTimeout(() => flushPending(client, created), COALESCE_MS);
     pendingRefreshes.set(client, created);
     pending = created;
   }
-  for (const root of roots) pending.roots.add(root);
+  for (const resource of relevant) pending.changes.push({ resource, sessions });
   return pending.promise;
 }
 
@@ -160,11 +201,9 @@ export function flushResourceChanges(client: QueryClient): Promise<void> {
 
 export async function refreshQueries(
   client: QueryClient,
-  matches: (root: string) => boolean = () => true,
+  matches: (key: QueryKey) => boolean = () => true,
 ): Promise<void> {
-  const queries = client
-    .getQueryCache()
-    .findAll({ predicate: (query) => matches(String(query.queryKey[0])) });
+  const queries = client.getQueryCache().findAll({ predicate: (query) => matches(query.queryKey) });
   await Promise.all(
     queries.map(async (query) => {
       // An event may arrive after the server captured an initial snapshot but before it
@@ -202,7 +241,7 @@ export class EventFrames {
   }
 }
 
-export function parseResources(data: string): ChangeResource[] {
+export function parseResources(data: string): ResourceChange {
   const value: unknown = JSON.parse(data);
   if (
     !value ||
@@ -211,10 +250,15 @@ export function parseResources(data: string): ChangeResource[] {
     !Array.isArray(value.resources)
   )
     throw new Error("Invalid resource event");
-  return value.resources.filter(
+  const resources = value.resources.filter(
     (resource): resource is ChangeResource =>
       typeof resource === "string" && (CHANGE_RESOURCES as readonly string[]).includes(resource),
   );
+  if (!("sessions" in value) || !Array.isArray(value.sessions)) return { resources };
+  return {
+    resources,
+    sessions: value.sessions.filter((id): id is string => typeof id === "string"),
+  };
 }
 
 export async function consumeResourceEvents(

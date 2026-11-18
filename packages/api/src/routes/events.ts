@@ -23,10 +23,13 @@ app.openapi(
     return unbufferedSSE(c, async (stream) => {
       const release = retainChangeSources();
       const pending = new Set<ChangeResource>();
+      const scoped = new Set<ChangeResource>();
+      const sessions = new Set<string>();
       let wake: (() => void) | undefined;
       let stopped = false;
-      const unsubscribe = changes.subscribe(({ resources }) => {
-        for (const resource of resources) pending.add(resource);
+      const unsubscribe = changes.subscribe((change) => {
+        for (const resource of change.resources) (change.sessions ? scoped : pending).add(resource);
+        for (const id of change.sessions ?? []) sessions.add(id);
         wake?.();
       });
       stream.onAbort(() => {
@@ -39,16 +42,29 @@ app.openapi(
       try {
         await stream.writeSSE({ event: "ready", data: "{}" });
         while (!stopped) {
-          if (!pending.size)
+          if (!pending.size && !scoped.size)
             await new Promise<void>((resolve) => {
               wake = resolve;
             });
           wake = undefined;
           if (stopped) break;
-          if (pending.size) {
-            const resources = [...pending];
+          if (pending.size || scoped.size) {
+            const global = [...pending];
+            const resources = [...scoped];
+            const ids = [...sessions];
             pending.clear();
-            await stream.writeSSE({ event: "change", data: JSON.stringify({ resources }) });
+            scoped.clear();
+            sessions.clear();
+            if (global.length)
+              await stream.writeSSE({
+                event: "change",
+                data: JSON.stringify({ resources: global }),
+              });
+            if (resources.length)
+              await stream.writeSSE({
+                event: "change",
+                data: JSON.stringify({ resources, sessions: ids }),
+              });
           } else await stream.write(": keepalive\n\n");
         }
       } finally {

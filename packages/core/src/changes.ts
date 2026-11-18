@@ -29,10 +29,12 @@ export const CHANGE_RESOURCES = [
   "scratchpads",
   "workspaces",
   "channels",
+  "desktop-preview",
+  "session-activity",
 ] as const;
 
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];
-export type ResourceChange = { resources: ChangeResource[] };
+export type ResourceChange = { resources: ChangeResource[]; sessions?: string[] };
 
 export class ChangeHub {
   private readonly listeners = new Set<(change: ResourceChange) => void>();
@@ -48,6 +50,12 @@ export class ChangeHub {
     const change = { resources: [...new Set(resources)] };
     if (!change.resources.length) return;
     for (const listener of this.listeners) listener(change);
+  }
+
+  publishSessions(resource: ChangeResource, ids: string[]): void {
+    const sessions = [...new Set(ids)];
+    if (!sessions.length) return;
+    for (const listener of this.listeners) listener({ resources: [resource], sessions });
   }
 }
 

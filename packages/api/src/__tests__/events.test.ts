@@ -122,4 +122,36 @@ describe("shared resource event stream", () => {
       await reader.cancel();
     }
   });
+
+  test("should name the sessions whose work changed and drop the names once every session changed", async () => {
+    const response = await req(app, "GET", "/events");
+    if (!response.body) throw new Error("Missing SSE response body");
+    const reader = response.body.getReader();
+    const frames = async (until: (text: string) => boolean): Promise<string> => {
+      let text = "";
+      const end = Date.now() + 2000;
+      while (!until(text) && Date.now() < end)
+        text += new TextDecoder().decode((await reader.read()).value);
+      return text;
+    };
+    try {
+      await reader.read();
+      changes.publishSessions("session-activity", ["scoped-session", "scoped-session"]);
+      changes.publishSessions("sessions", ["stopped-session"]);
+      const scoped = await frames((text) => text.includes("stopped-session"));
+      expect(scoped).toContain(
+        '{"resources":["session-activity","sessions"],"sessions":["scoped-session","stopped-session"]}',
+      );
+      changes.publishSessions("session-activity", ["merged-session"]);
+      changes.publish("session-activity");
+      changes.publish("terminals");
+      await Bun.sleep(50);
+      changes.publish("health");
+      const text = await frames((value) => value.includes('"health"'));
+      expect(text).toContain('"resources":["session-activity","terminals"]');
+      expect(text).toContain('{"resources":["session-activity"],"sessions":["merged-session"]}');
+    } finally {
+      await reader.cancel();
+    }
+  });
 });

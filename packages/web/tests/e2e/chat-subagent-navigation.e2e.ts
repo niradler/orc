@@ -40,7 +40,7 @@ test.beforeEach(async ({ page, request }) => {
   await page.route("**/api/sessions/live/parent-live", (route) =>
     route.fulfill({ json: { id: "parent-live", agent: "codex", session_id: null } }),
   );
-  await page.route("**/api/sessions/live/child-live/lineage", (route) =>
+  await page.route("**/api/sessions/live/73000000-0000-4000-8000-000000000001/lineage", (route) =>
     route.fulfill({
       json: {
         parent: { id: "parent-live", title: "Parent session", kind: "session", status: "running" },

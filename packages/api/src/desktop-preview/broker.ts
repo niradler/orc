@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
+import { changes } from "@orc/core/changes";
 import type { PreviewOperation, PreviewRequest } from "@orc/core/desktop-preview";
 import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from "@orc/core/errors";
 
@@ -120,6 +121,7 @@ export class PreviewBroker {
       expires_at: this.now() + REQUEST_TTL,
     };
     this.requests.set(request.id, request);
+    changes.publish("desktop-preview");
     return { ...request };
   }
   pending(id: string, lease: string | undefined): PreviewRequest[] {

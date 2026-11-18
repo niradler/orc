@@ -74,6 +74,43 @@ describe("database change notifications", () => {
       sqlite.close();
     }
   });
+  test("should report session activity apart from listed session changes", async () => {
+    const sqlite = new Database(":memory:");
+    sqlite.exec(
+      "CREATE TABLE gateway_sessions(id TEXT PRIMARY KEY, status TEXT, last_activity_at INTEGER, tokens_used INTEGER, updated_at INTEGER)",
+    );
+    sqlite.exec("INSERT INTO gateway_sessions VALUES ('s', 'idle', 1, 0, 1)");
+    sqlite.exec("CREATE TABLE bridge_messages(id TEXT PRIMARY KEY, body TEXT)");
+    installChangeTracking(sqlite, ":memory:");
+    const events: ResourceChange[] = [];
+    const unsubscribe = changes.subscribe((event) => events.push(event));
+    const next = async (): Promise<ResourceChange[]> => {
+      await Bun.sleep(50);
+      return events.splice(0);
+    };
+    try {
+      sqlite
+        .query(
+          "UPDATE gateway_sessions SET status = status, last_activity_at = last_activity_at, tokens_used = tokens_used",
+        )
+        .run();
+      expect(await next()).toEqual([]);
+      sqlite.query("UPDATE gateway_sessions SET last_activity_at = 2, updated_at = 2").run();
+      expect(await next()).toEqual([{ resources: ["session-activity"] }]);
+      sqlite.query("UPDATE gateway_sessions SET tokens_used = 5").run();
+      expect(await next()).toEqual([{ resources: ["sessions", "session-activity"] }]);
+      sqlite.query("UPDATE gateway_sessions SET tokens_used = 9").run();
+      expect(await next()).toEqual([{ resources: ["session-activity"] }]);
+      sqlite.query("UPDATE gateway_sessions SET status = 'running'").run();
+      expect(await next()).toEqual([{ resources: ["sessions"] }]);
+      sqlite.query("INSERT INTO bridge_messages VALUES ('m', 'hi')").run();
+      expect(await next()).toEqual([{ resources: ["session-messages"] }]);
+    } finally {
+      unsubscribe();
+      stopChangeTracking(sqlite);
+      sqlite.close();
+    }
+  });
   test("should notify knowledge base writes but not the usage recorded by reads", async () => {
     const sqlite = new Database(":memory:");
     installKnowledgeBases(sqlite);
