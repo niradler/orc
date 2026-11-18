@@ -21,6 +21,7 @@ type Wait = {
   requests: HumanRequest[];
   responding: boolean;
   permissionResult?: PermissionResult;
+  permissionFeedback?: string | undefined;
   questionIds: string[];
   tool?: string;
   ruleBound: boolean;
@@ -205,6 +206,7 @@ export function withHumanRequests(
         session.respondPermission(
           event.data.requestId,
           wait.permissionResult ?? (response.approved ? "approved" : "denied"),
+          wait.permissionFeedback,
         );
       } else {
         if (!session.respondQuestion) throw new Error("Native answer delivery unsupported");
@@ -336,14 +338,15 @@ export function withHumanRequests(
     ...(session.steer ? { steer: session.steer.bind(session) } : {}),
     getRuntimeSessionId: () => session.getRuntimeSessionId?.(),
     send: (prompt, images) => session.send(prompt, images),
-    respondPermission: (id, result) => {
+    respondPermission: (id, result, feedback) => {
       const wait = waits.get(id);
-      if (!wait) return session.respondPermission(id, result);
+      if (!wait) return session.respondPermission(id, result, feedback);
       const record = wait.requests[0];
       if (!record) throw new Error("Approval is not ready");
       currentHumanRequest(store, record.id);
       store.respond(record.id, record.version, { kind: "approval", approved: result !== "denied" });
       wait.permissionResult = result;
+      wait.permissionFeedback = feedback;
     },
     ...(session.respondQuestion
       ? {

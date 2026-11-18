@@ -49,6 +49,7 @@ for await (const line of createInterface({input:process.stdin})) {
   promptId=m.id;promptIds.push(m.id);
   if(mode==='exit') { process.exit(2); }
   else if(mode==='oversize') process.stdout.write('x'.repeat(2100000));
+  else if(mode==='deny-reason'&&promptIds.length>1) {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'FOLLOW-UP '+m.params.prompt[0].text}});emit({id:m.id,result:{stopReason:'end_turn'}});}
   else if(mode==='cancel'||mode==='cancel-late'||mode==='cancel-hold'||mode==='steer-extension'||mode==='steer-decline'||mode==='steer-legacy') {}
   else if(mode==='client-fs'||mode==='client-terminal') {emit({id:'client-access',method:mode==='client-fs'?'fs/write_text_file':'terminal/create',params:mode==='client-fs'?{sessionId:session,path:process.cwd()+'/forbidden.txt',content:'must not write'}:{sessionId:session,command:'node',args:['-e',"require('fs').writeFileSync('forbidden.txt','must not run')"],env:[]}});}
   else if(mode==='result-exit') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'last frame'}});emit({id:promptId,result:{stopReason:'end_turn'}});process.exit(0);}
@@ -284,6 +285,32 @@ test("ACP steers through _session/steering when advertised and keeps a single pr
     prompt: [{ type: "text", text: "steer" }],
     _meta: { steering: { idleBehavior: "promptRequired" } },
   });
+});
+
+test("ACP rejects an approval and sends the reason as the next prompt of the same turn", async () => {
+  const { session, cwd } = fixture({}, "deny-reason");
+  await session.initialize();
+  await session.send("Inspect a file");
+  const events: AgentEvent[] = [];
+  for await (const event of session.events()) {
+    events.push(event);
+    if (event.type === "permission_request")
+      session.respondPermission(event.data.requestId, "denied", " use bun, not npm ");
+  }
+  const wire = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+  expect(wire.find((m) => m.id === "permission").result).toEqual({
+    outcome: { outcome: "selected", optionId: "native-deny" },
+  });
+  expect(wire.filter((m) => m.method === "session/prompt")[1].params.prompt).toEqual([
+    { type: "text", text: "use bun, not npm" },
+  ]);
+  expect(events.filter((e) => e.type === "result")).toHaveLength(1);
+  expect(events.some((e) => e.type === "text" && e.data === "FOLLOW-UP use bun, not npm")).toBe(
+    true,
+  );
 });
 
 test("ACP surfaces a promptRequired steer decline as not consumed and keeps the capability", async () => {

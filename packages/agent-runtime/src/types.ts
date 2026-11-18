@@ -97,6 +97,8 @@ export type AgentEvent =
         command: string;
         input?: Record<string, unknown>;
         cwd?: string;
+        allowSession?: boolean;
+        grant?: string;
       };
     }
   | {
@@ -144,7 +146,7 @@ export interface AgentSession {
   /** Native identity may be known before a turn completes, including on cancellation. */
   getRuntimeSessionId?(): string | undefined;
   send(prompt: string, images?: ImageAttachment[]): Promise<void>;
-  respondPermission(requestId: string, result: PermissionResult): void;
+  respondPermission(requestId: string, result: PermissionResult, feedback?: string): void;
   respondQuestion?(requestId: string, answers: Record<string, string[]>): void | Promise<void>;
   /**
    * Loosen approvals for the rest of a running turn: prompts the new mode would not ask

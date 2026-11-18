@@ -161,9 +161,10 @@ const response = {
   },
 };
 const store = () => new ChatStore(getSqlite());
+const sessionGrants = new Map<string, Set<string>>();
 interface ChatRun {
   session: AgentSession | null;
-  permissions: Set<string>;
+  permissions: Map<string, string>;
   questions: Map<string, ChatQuestion>;
   steering: Map<string, { input: string; result: Promise<ChatThread> }>;
   threadId: string;
@@ -237,7 +238,7 @@ app.openapi(
             native_session_id: run.session?.getRuntimeSessionId?.() ?? run.thread.runtimeId ?? null,
           };
           return [
-            ...[...run.permissions].map((id) => ({
+            ...[...run.permissions.keys()].map((id) => ({
               ...base,
               request_key: waitingKey(id),
               kind: "approval" as const,
@@ -1812,7 +1813,8 @@ app.openapi(
             schema: z
               .object({
                 requestId: z.string().min(1).max(256),
-                decision: z.enum(["approved", "denied"]),
+                decision: z.enum(["approved", "session", "denied"]),
+                feedback: z.string().max(4000).optional(),
               })
               .strict(),
           },
@@ -1828,10 +1830,13 @@ app.openapi(
   }),
   (c) => {
     const run = runs.get(c.req.valid("param").id);
-    const { requestId, decision } = c.req.valid("json");
-    if (!run?.session || !run.permissions.has(requestId))
+    const { requestId, decision, feedback } = c.req.valid("json");
+    const grant = run?.permissions.get(requestId);
+    if (!run?.session || grant === undefined)
       throw new ConflictError("This permission request is no longer pending.");
-    run.session.respondPermission(requestId, decision);
+    run.session.respondPermission(requestId, decision, feedback);
+    if (decision === "session" && grant)
+      sessionGrants.set(run.threadId, (sessionGrants.get(run.threadId) ?? new Set()).add(grant));
     run.permissions.delete(requestId);
     resolveChatNotification(run.thread.id, `${c.req.valid("param").id}:${requestId}`);
     changes.publish("human-requests");
@@ -2319,7 +2324,7 @@ async function beginTurn(
   done.catch(() => {});
   const run: ChatRun = {
     session: null,
-    permissions: new Set(),
+    permissions: new Map(),
     questions: new Map(),
     steering: new Map(),
     threadId: thread.id,
@@ -2703,9 +2708,17 @@ async function beginTurn(
             await emit({ type: "subagent", data: event.data });
           } else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
           else if (event.type === "permission_request") {
+            const grant = `${event.data.tool}\0${event.data.grant ?? event.data.command}`;
+            if (sessionGrants.get(thread.id)?.has(grant)) {
+              run.session?.respondPermission(event.data.requestId, "session");
+              continue;
+            }
             recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
             notifySpawner(thread, `${runId}:${event.data.requestId}`, "approval");
-            run.permissions.add(event.data.requestId);
+            run.permissions.set(
+              event.data.requestId,
+              event.data.allowSession === false ? "" : grant,
+            );
             changes.publish("human-requests");
             await emit(event);
             voiceNotice(thread.id);
@@ -2828,7 +2841,7 @@ async function beginTurn(
         if (mark) thread.transcriptMark = mark;
       }
       thread.updatedAt = Date.now();
-      for (const requestId of [...run.permissions, ...run.questions.keys()])
+      for (const requestId of [...run.permissions.keys(), ...run.questions.keys()])
         resolveChatNotification(thread.id, `${runId}:${requestId}`);
       if (!stopped && (completed || failure))
         recordChatNotification(thread, runId, failure ? "failed" : "finished");

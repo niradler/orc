@@ -141,6 +141,56 @@ for await (const line of createInterface({input:process.stdin})) {
   }
 });
 
+test("declines a command and steers the running turn with the user's reason", async () => {
+  const cwd = temporaryDirectory(join(tmpdir(), "orc-deny-reason-"));
+  const script = join(cwd, "native.ts");
+  writeFileSync(
+    script,
+    `
+import { createInterface } from 'node:readline';
+const emit = value => console.log(JSON.stringify(value));
+let decision;
+for await (const line of createInterface({input:process.stdin})) {
+ const m=JSON.parse(line);
+ if(m.method==='initialize') emit({id:m.id,result:{}});
+ else if(m.method==='thread/start') emit({id:m.id,result:{thread:{id:'deny'}}});
+ else if(m.method==='turn/start') {
+  emit({id:m.id,result:{turn:{id:'t1'}}});
+  emit({method:'turn/started',params:{threadId:'deny',turn:{id:'t1'}}});
+  emit({id:'cmd',method:'item/commandExecution/requestApproval',params:{threadId:'deny',turnId:'t1',command:'npm test'}});
+ } else if(m.id==='cmd') decision=m.result;
+ else if(m.method==='turn/steer') {
+  emit({id:m.id,result:{}});
+  emit({method:'item/agentMessage/delta',params:{threadId:'deny',turnId:'t1',delta:JSON.stringify({decision,steer:m.params.input})}});
+  emit({method:'turn/completed',params:{threadId:'deny',turn:{id:'t1',status:'completed'}}});
+ }
+}`,
+  );
+  const session = new CodexAppSession({ cwd, orcMcp: false }, { kind: "local" }, async () => [
+    process.execPath,
+    script,
+  ]);
+  try {
+    await session.send("Run the tests");
+    let text = "";
+    let grant: string | undefined;
+    for await (const event of session.events()) {
+      if (event.type === "permission_request") {
+        grant = event.data.grant;
+        session.respondPermission(event.data.requestId, "denied", "use bun test");
+      }
+      if (event.type === "text") text += event.data;
+    }
+    expect(grant).toBe("npm test\0");
+    expect(JSON.parse(text)).toEqual({
+      decision: { decision: "decline" },
+      steer: [{ type: "text", text: "use bun test" }],
+    });
+  } finally {
+    await session.close();
+  }
+});
+
 // Shape captured from codex-cli 0.160: tool approval arrives as an empty MCP form.
 function mcpApprovalFixture(
   permissionMode: SessionOpts["permissionMode"],

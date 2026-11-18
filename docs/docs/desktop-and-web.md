@@ -742,6 +742,27 @@ from the next message. Pi and ACPX agents show that Plan
 isn't available. Leaving Plan during a Claude response applies to the running
 turn.
 
+An approval prompt offers **Allow once**, **Allow for session**, **Deny** and
+**Deny with reason**. **Allow for session** answers the same request again
+without asking for the rest of the conversation: Claude receives its own
+suggested rules for the session (so `Bash(npm test:*)` covers later variants),
+Codex receives `acceptForSession`, and OpenCode its `allow_always` option; ORC
+also remembers the exact request so later messages in the conversation do not
+ask again. Claude hides the action when it marks a request as unsafe to
+remember. **Deny with reason** sends your text to the agent: Claude receives it
+as the denial message, Codex as a steer on the running turn, and OpenCode as the
+next prompt once the denied turn ends. Agents without
+`approvalFeedback` in their capabilities offer plain **Deny** only.
+
+When a Claude plan is ready, its `ExitPlanMode` request opens a plan card with
+the plan rendered as Markdown. **Approve, accept edits** switches the
+conversation to Allow edits and lets Claude start, **Approve** switches to Ask in
+chat, and **Revise** sends your feedback so Claude reworks the plan. After a
+Codex or OpenCode plan-mode turn, the same card appears above the composer:
+approving switches the mode (Codex Auto or Read only, OpenCode's build agent)
+and sends "Implement the plan."; **Revise** sends your feedback while staying in
+Plan.
+
 **Session settings** in the chat header organizes the conversation into tabs.
 **Overview** shows the agent, model, execution host and folder, backend, last
 activity, tools connection and capabilities, plus the identifiers: the ORC chat
