@@ -305,6 +305,65 @@ test("a refresh that reverts to pre-turn history does not announce it", async ({
   release();
 });
 
+test("a persisted-id twin of an unsynced reply is not re-announced as a completion", async ({
+  page,
+}) => {
+  const reply = `SWAP-${Date.now()}`;
+  const second = `UNSENT2-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // Hold every thread GET until the refresh so syncThread cannot replace the
+  // client-generated reply id, and stub the session query so no auto-rebuild
+  // competes for the snapshot.
+  let allowGets = false;
+  let releaseGets: () => void;
+  const getsGate = new Promise<void>((resolve) => {
+    releaseGets = resolve;
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    if (!allowGets) {
+      await getsGate;
+      await route.abort().catch(() => {});
+      return;
+    }
+    await route.continue();
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}\/session$/, (route) =>
+    route.fulfill({ json: { changed: false, running: false, live: null, queued: [] } }),
+  );
+
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${reply}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  // The reply was announced live under its client id; syncThread is still held.
+
+  // The next send never reaches the server; the refresh snapshot returns the
+  // SAME historical reply under its persisted id while streaming is claimed.
+  let releasePost: () => void;
+  const postGate = new Promise<void>((resolve) => {
+    releasePost = resolve;
+  });
+  await page.route(/\/api\/chat\/stream$/, async (route) => {
+    await postGate;
+    await route.abort().catch(() => {});
+  });
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${second}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  allowGets = true;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  // /live answers 204 (no run was started) and finish() appends nothing. The
+  // persisted twin of the already-announced reply must not be read out again.
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(reply);
+  await page.waitForTimeout(1000);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).not.toContain(reply);
+  releasePost();
+  releaseGets();
+});
+
 test("opening a finished thread does not announce its historical reply", async ({ page }) => {
   const reply = `HISTORY-${Date.now()}`;
   await page.goto("/tasks?chat=full");

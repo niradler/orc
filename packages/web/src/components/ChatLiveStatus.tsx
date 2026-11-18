@@ -153,7 +153,7 @@ export function ChatLiveAnnouncer({
   const wasRefreshing = useRef(refreshing);
   const wasSettled = useRef(settled);
   const prevLast = useRef(last);
-  const idleLast = useRef(new Map<string, string | undefined>());
+  const idleLast = useRef(new Map<string, ChatMessage | undefined>());
   const pendingCompletion = useRef(new Map<string, string>());
   const announced = useRef(new Map<string, string>());
 
@@ -200,8 +200,10 @@ export function ChatLiveAnnouncer({
     // This tab's history baseline: the last message seen while idle, seeded on
     // first sight. A mid-turn refresh can REVERT the snapshot to the reply that
     // was on screen before the turn (the new message never reached the server);
-    // that is history, not a completion.
-    if (!idleLast.current.has(tabKey) || !streaming) idleLast.current.set(tabKey, last?.id);
+    // that is history, not a completion — even when syncThread has not yet
+    // replaced the client id, so the persisted twin arrives under a new id.
+    if (!idleLast.current.has(tabKey) || !streaming) idleLast.current.set(tabKey, last);
+    const baseline = idleLast.current.get(tabKey);
     // A mid-turn refresh can load the finished reply while streaming is still
     // claimed; the 204 that follows appends nothing, so hold the reply's identity
     // until a completion edge can announce it — unless it is the pre-turn history.
@@ -209,7 +211,8 @@ export function ChatLiveAnnouncer({
       streaming &&
       lastChanged &&
       last?.role === "assistant" &&
-      last.id !== idleLast.current.get(tabKey) &&
+      last.id !== baseline?.id &&
+      last.content !== baseline?.content &&
       announced.current.get(tabKey) !== last.id
     )
       pendingCompletion.current.set(tabKey, last.id);
