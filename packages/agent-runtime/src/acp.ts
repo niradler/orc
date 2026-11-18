@@ -328,7 +328,10 @@ export class AcpSession implements AgentSession {
       return Promise.resolve({ outcome: { outcome: "cancelled" } });
     // Never turn an ordinary ORC approval into the agent's persistent policy.
     const once = params.options.find((option) => option.kind === "allow_once");
-    if ((this.opts.autoApprove || isSpeakTool(params.toolCall.title ?? "")) && once)
+    if (
+      (this.opts.autoApprove || isSpeakTool(params.toolCall.name ?? params.toolCall.title ?? "")) &&
+      once
+    )
       return Promise.resolve({ outcome: { outcome: "selected", optionId: once.optionId } });
     const id = ulid();
     return new Promise<RequestPermissionResponse>((resolve) => {

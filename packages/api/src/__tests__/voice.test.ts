@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import {
+  type AgentEvent,
+  type AgentSession,
+  createBackend,
+  registerBackend,
+} from "@orc/agent-runtime";
 import { resetConfig } from "@orc/core/config";
 import { handleVoiceUpgrade, type VoiceSocketData, voiceWebsocket } from "../voice.js";
 import { setupTestApp, teardownTestApp } from "./helpers.js";
@@ -15,6 +21,8 @@ const oldMock = process.env.ORC_E2E_CHAT_MOCK;
 let app: ReturnType<typeof setupTestApp>;
 let transcript = "add a retry to the deploy step";
 let ttsDelayMs = 0;
+let sttFails = false;
+let ttsFails = false;
 let heard: { size: number; header: string }[] = [];
 let synthesized: string[] = [];
 const provider = Bun.serve({
@@ -22,6 +30,7 @@ const provider = Bun.serve({
   port: 0,
   async fetch(request) {
     if (new URL(request.url).pathname.endsWith("/audio/transcriptions")) {
+      if (sttFails) return new Response("model not loaded", { status: 500 });
       const file = (await request.formData()).get("file") as File;
       const bytes = new Uint8Array(await file.arrayBuffer());
       heard.push({ size: bytes.length, header: new TextDecoder().decode(bytes.slice(8, 16)) });
@@ -29,6 +38,7 @@ const provider = Bun.serve({
     }
     const { input } = (await request.json()) as { input: string };
     synthesized.push(input);
+    if (ttsFails) return new Response("tts down", { status: 500 });
     await Bun.sleep(ttsDelayMs);
     return new Response(new TextEncoder().encode(`audio:${input}`));
   },
@@ -79,6 +89,8 @@ beforeEach(() => {
   configure();
   transcript = "add a retry to the deploy step";
   ttsDelayMs = 0;
+  sttFails = false;
+  ttsFails = false;
   heard = [];
   synthesized = [];
 });
@@ -304,3 +316,122 @@ test("a spoken line during a turn is posted to the transcript as its own paragra
   await (await slow).text();
   expect((await thread(id)).messages.at(-1)?.content).toBe("Working on it.\n\ndone after 800ms");
 });
+
+for (const kind of ["approval", "question"] as const)
+  test(`speech never stops a turn waiting for ${kind === "approval" ? "an approval" : "a question"}; voice says it needs the screen`, async () => {
+    const original = createBackend("codex-cli");
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let stopped = 0;
+    const session: AgentSession = {
+      id: "voice-fixture",
+      capabilities: original.capabilities,
+      getRuntimeSessionId: () => "voice-native",
+      send: async () => {},
+      respondPermission: () => release(),
+      respondQuestion: () => release(),
+      interrupt: async () => {
+        stopped++;
+        release();
+      },
+      alive: () => true,
+      close: async () => release(),
+      async *events(): AsyncIterable<AgentEvent> {
+        yield kind === "approval"
+          ? {
+              type: "permission_request",
+              data: { requestId: "perm-1", tool: "Write", command: "Write note.txt" },
+            }
+          : {
+              type: "question_request",
+              data: {
+                requestId: "q-1",
+                questions: [{ id: "c", header: "Pick", question: "Which file?", options: null }],
+              },
+            };
+        await released;
+        yield { type: "text", data: "done" };
+        yield { type: "result", data: { runtimeSessionId: "voice-native" } };
+      },
+    };
+    registerBackend("codex-cli", () => ({
+      ...original,
+      startSession: async () => session,
+      resumeSession: async () => session,
+    }));
+    delete process.env.ORC_E2E_CHAT_MOCK;
+    try {
+      const stream = app.request("/api/chat/stream", {
+        method: "POST",
+        headers: AUTH,
+        body: JSON.stringify({ agent: "codex", messages: [{ role: "user", content: "write it" }] }),
+      });
+      let waiting: { thread_id: string; kind: string }[] = [];
+      await until(async () => {
+        waiting = (
+          (await (await app.request("/api/chat/waiting", { headers: AUTH })).json()) as {
+            waiting: typeof waiting;
+          }
+        ).waiting;
+        return waiting.length > 0;
+      });
+      expect(waiting.map((w) => w.kind)).toEqual([kind]);
+      const id = waiting[0]?.thread_id ?? "";
+      const voice = await connect(id);
+      voice.say(speech);
+      await voice.next("transcript");
+      await until(async () => voice.messages.some((m) => m.type === "speak"));
+      expect(voice.messages.filter((m) => m.type === "speak")).toEqual([
+        { type: "speak", text: "It needs you on screen.", format: "wav" },
+      ]);
+      const still = (await (await app.request("/api/chat/waiting", { headers: AUTH })).json()) as {
+        waiting: { kind: string }[];
+      };
+      expect(still.waiting.map((w) => w.kind)).toEqual([kind]);
+      expect(stopped).toBe(0);
+      expect((await thread(id)).messages.filter((m) => m.role === "user")).toHaveLength(1);
+      voice.ws.close();
+      release();
+      await (await stream).text();
+    } finally {
+      process.env.ORC_E2E_CHAT_MOCK = "1";
+      registerBackend("codex-cli", () => original);
+    }
+  });
+
+for (const failing of ["stt", "tts"] as const)
+  test(`a ${failing.toUpperCase()} failure mid-turn reports an error and keeps listening`, async () => {
+    const id = await chat("Reply with exactly: ok");
+    const voice = await connect(id);
+    if (failing === "stt") sttFails = true;
+    else ttsFails = true;
+    voice.say(speech);
+    if (failing === "stt") {
+      await voice.next("error");
+      expect(voice.messages.find((m) => m.type === "error")?.message).toContain("model not loaded");
+    } else {
+      await voice.next("transcript");
+      const res = await app.request(`/api/chat/threads/${id}/speak`, {
+        method: "POST",
+        headers: AUTH,
+        body: JSON.stringify({ text: "This will fail." }),
+      });
+      expect(await res.json()).toMatchObject({ spoken: true });
+      await voice.next("error");
+      expect(voice.messages.find((m) => m.type === "error")?.message).toContain("tts down");
+    }
+    sttFails = false;
+    ttsFails = false;
+    voice.messages.length = 0;
+    const res = await app.request(`/api/chat/threads/${id}/speak`, {
+      method: "POST",
+      headers: AUTH,
+      body: JSON.stringify({ text: "Back again." }),
+    });
+    expect(await res.json()).toMatchObject({ spoken: true });
+    await until(async () => voice.audio.includes("audio:Back again."));
+    expect(voice.audio).toContain("audio:Back again.");
+    voice.ws.close();
+  });

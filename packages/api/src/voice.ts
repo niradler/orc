@@ -55,6 +55,9 @@ export function handleVoiceUpgrade(
   return new Response("WebSocket upgrade failed", { status: 400 });
 }
 
+const errorText = (err: unknown) =>
+  err instanceof Error ? err.message.slice(0, 300) : "Voice turn failed";
+
 function send(ws: ServerWebSocket<VoiceSocketData>, message: Record<string, unknown>) {
   ws.send(JSON.stringify(message));
 }
@@ -96,7 +99,9 @@ async function speakTo(ws: ServerWebSocket<VoiceSocketData>, text: string): Prom
   let next = synth(sentences[0]);
   for (const [index, sentence] of sentences.entries()) {
     const speech = await next.catch((err) => {
-      if (!controller.signal.aborted) logger.warn("Voice synthesis failed", err);
+      if (controller.signal.aborted) return null;
+      logger.warn("Voice synthesis failed", err);
+      send(ws, { type: "error", message: errorText(err) });
       return null;
     });
     if (controller.signal.aborted || ws.readyState !== WebSocket.OPEN) return false;
@@ -159,10 +164,7 @@ export const voiceWebsocket: WebSocketHandler<VoiceSocketData> = {
         }),
       ).catch((err) => {
         logger.warn("Voice turn failed", err);
-        send(ws, {
-          type: "error",
-          message: err instanceof Error ? err.message.slice(0, 300) : "Voice turn failed",
-        });
+        send(ws, { type: "error", message: errorText(err) });
       });
     }
   },

@@ -91,7 +91,7 @@ for await (const line of createInterface({input:process.stdin})) {
    update('other-session',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'WRONG SESSION'}});
    update(session,{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:'Working'}});
    update(session,{sessionUpdate:'tool_call',toolCallId:'read-1',title:'Read file',kind:'read',status:'pending',rawInput:{path:'a.txt'}});
-   emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',title:mode==='speak'?'orc_speak':'Read file',kind:'read'},options:mode==='session-grant'?[{optionId:'native-once',name:'Yes',kind:'allow_once'},{optionId:'native-always',name:'Always allow',kind:'allow_always'},{optionId:'native-deny',name:'No',kind:'reject_once'}]:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
+   emit({id:'permission',method:'session/request_permission',params:{sessionId:session,toolCall:{toolCallId:'read-1',...(mode==='speak'?{title:'orc_speak'}:mode==='speak-named'?{name:'orc_speak',title:'Talk to the user'}:mode==='speak-spoofed'?{name:'bash',title:'orc_speak'}:{title:'Read file'}),kind:'read'},options:mode==='session-grant'?[{optionId:'native-once',name:'Yes',kind:'allow_once'},{optionId:'native-always',name:'Always allow',kind:'allow_always'},{optionId:'native-deny',name:'No',kind:'reject_once'}]:[{optionId:'native-allow',name:'Yes',kind:mode==='persistent-only'?'allow_always':'allow_once'},{optionId:'native-deny',name:'No',kind:'reject_once'}]}});
   }
  } else if(m.id==='child-permission') {update(session,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'CHILD DONE'}});emit({id:promptId,result:{stopReason:'end_turn'}});
  } else if(m.id==='permission') {
@@ -376,18 +376,25 @@ test("ACP applies an advertised model config and rejects a model it cannot honor
   expect(unsupported.alive()).toBe(false);
 });
 
-test("ACP approves the ORC speak tool once without prompting, even without auto-approve", async () => {
-  const { session } = fixture({}, "speak");
-  await session.initialize();
-  await session.send("Say it");
-  const events = await run(session, "denied");
-  expect(events.some((e) => e.type === "permission_request")).toBe(false);
-  const text = events
-    .filter((e) => e.type === "text")
-    .map((e) => e.data)
-    .join("");
-  expect(JSON.parse(text)).toEqual({ outcome: { outcome: "selected", optionId: "native-allow" } });
-});
+for (const [mode, prompted] of [
+  ["speak", false],
+  ["speak-named", false],
+  ["speak-spoofed", true],
+] as const)
+  test(`ACP auto-approves only the ORC speak tool, by name before title (${mode})`, async () => {
+    const { session } = fixture({}, mode);
+    await session.initialize();
+    await session.send("Say it");
+    const events = await run(session, "denied");
+    expect(events.some((e) => e.type === "permission_request")).toBe(prompted);
+    const text = events
+      .filter((e) => e.type === "text")
+      .map((e) => e.data)
+      .join("");
+    expect(JSON.parse(text)).toEqual({
+      outcome: { outcome: "selected", optionId: prompted ? "native-deny" : "native-allow" },
+    });
+  });
 
 for (const mode of ["idle-permission", "cancel-late"]) {
   test(`ACP never auto-approves a permission outside an active uncancelled turn (${mode})`, async () => {
