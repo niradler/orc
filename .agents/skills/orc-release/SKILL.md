@@ -23,12 +23,14 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
 3. **Gate locally before tagging.** Run `bunx biome check ./packages ./scripts` and
    `bun run ci:full` with the gate overrides below. Fix failures in a PR, merge it,
    then reset the worktree to the new origin/master.
-   If Nir says the gate is already run and green, there is no `--skip-checks` flag:
-   reproduce the bump by hand in the release worktree (bump every manifest, write
-   `scripts/release-plan.json`, `bun install --lockfile-only`, `git commit -m
-   "chore: release v<v>"`), write `.orc/release-state.json` with
-   `completed: ["checks","bump"]`, `commit`, `target`, then `--resume --yes`.
-   `validate()` only runs on a fresh start, so the suite is not repeated.
+   Only when Nir explicitly says the gate is already run and green may it be skipped —
+   he always validates before a release himself, so never assume or decide that on your
+   own. There is no `--skip-checks` flag: reproduce the bump by hand in the release
+   worktree (bump every manifest, write `scripts/release-plan.json`,
+   `bun install --lockfile-only`, `git commit -m "chore: release v<v>"`), write
+   `.orc/release-state.json` with `completed: ["checks","bump"]`, `commit`, `target`,
+   then `--resume --yes`. `validate()` only runs on a fresh start, so the suite is not
+   repeated.
 4. **Release** from PowerShell, in the background, with output going to a scratchpad log.
    Export the gate overrides for the release process too — `bun run release` inherits
    the environment and otherwise runs the default four shards, which is where the
