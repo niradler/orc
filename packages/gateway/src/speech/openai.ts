@@ -7,13 +7,16 @@ import {
   type TextToSpeech,
 } from "./audio.js";
 
+type ProviderSettings = OrcConfig["speech"]["openai"];
+type Defaults = { baseUrl: string; model: string; keyless?: boolean };
+
 export function whisperSpeechToText(
-  settings: OrcConfig["speech"]["openai"],
+  settings: ProviderSettings,
   language: string,
-  defaults: { baseUrl: string; model: string },
+  defaults: Defaults,
 ): SpeechToText | null {
   const apiKey = settings.api_key;
-  if (!apiKey) return null;
+  if (!apiKey && !defaults.keyless) return null;
   const baseUrl = (settings.base_url ?? defaults.baseUrl).replace(/\/$/, "");
   return {
     maxBytes: 25 * 1024 * 1024,
@@ -29,13 +32,47 @@ export function whisperSpeechToText(
       );
       const response = await fetch(`${baseUrl}/audio/transcriptions`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}` },
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
         body: form,
         signal: requestSignal(input.signal),
       });
       const text = await response.text();
       if (!response.ok) throw new Error(text || `Speech request failed (${response.status})`);
-      return text.trim();
+      if (!response.headers.get("content-type")?.includes("json")) return text.trim();
+      return String((JSON.parse(text) as { text?: unknown }).text ?? "").trim();
+    },
+  };
+}
+
+function speechEndpoint(
+  settings: ProviderSettings,
+  voice: string | undefined,
+  defaults: Defaults & { format: "opus" | "wav" },
+): TextToSpeech | null {
+  const apiKey = settings.api_key;
+  if (!apiKey && !defaults.keyless) return null;
+  const baseUrl = (settings.base_url ?? defaults.baseUrl).replace(/\/$/, "");
+  return {
+    async synthesize(text, signal) {
+      const response = await fetch(`${baseUrl}/audio/speech`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: settings.model ?? defaults.model,
+          input: text,
+          ...(voice ? { voice } : {}),
+          response_format: defaults.format,
+        }),
+        signal: requestSignal(signal),
+      });
+      if (!response.ok) throw new Error(await response.text());
+      return {
+        audio: new Uint8Array(await response.arrayBuffer()),
+        format: defaults.format === "opus" ? "ogg" : "wav",
+      };
     },
   };
 }
@@ -46,26 +83,26 @@ export const openaiSpeechToText = (config: OrcConfig) =>
     model: "whisper-1",
   });
 
-export function openaiTextToSpeech(config: OrcConfig): TextToSpeech | null {
-  const { tts } = config;
-  const apiKey = tts.openai.api_key ?? config.speech.openai.api_key;
-  if (!apiKey) return null;
-  const baseUrl = (tts.openai.base_url ?? "https://api.openai.com/v1").replace(/\/$/, "");
-  return {
-    async synthesize(text, signal) {
-      const response = await fetch(`${baseUrl}/audio/speech`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: tts.openai.model ?? "tts-1",
-          input: text,
-          voice: tts.voice || "alloy",
-          response_format: "opus",
-        }),
-        signal: requestSignal(signal),
-      });
-      if (!response.ok) throw new Error(await response.text());
-      return { audio: new Uint8Array(await response.arrayBuffer()), format: "ogg" };
-    },
-  };
-}
+export const openaiTextToSpeech = (config: OrcConfig) =>
+  speechEndpoint(
+    { ...config.tts.openai, api_key: config.tts.openai.api_key ?? config.speech.openai.api_key },
+    config.tts.voice || "alloy",
+    { baseUrl: "https://api.openai.com/v1", model: "tts-1", format: "opus" },
+  );
+
+const VOCAL_URL = "http://localhost:8000/v1";
+
+export const vocalSpeechToText = (config: OrcConfig) =>
+  whisperSpeechToText(config.speech.vocal, config.speech.language, {
+    baseUrl: VOCAL_URL,
+    model: "Systran/faster-whisper-tiny",
+    keyless: true,
+  });
+
+export const vocalTextToSpeech = (config: OrcConfig) =>
+  speechEndpoint(config.tts.vocal, config.tts.voice || undefined, {
+    baseUrl: VOCAL_URL,
+    model: "hexgrad/Kokoro-82M",
+    format: "wav",
+    keyless: true,
+  });

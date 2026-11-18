@@ -48,6 +48,7 @@ import { expandChatCommands } from "@orc/core/chat-commands";
 import {
   type ChatTurnContext,
   ChatTurnContextSchema,
+  VOICE_TURN_INSTRUCTION,
   withOrcContext,
 } from "@orc/core/chat-context";
 import { ChatAgentOptionsMapSchema, unsupportedPermissionMode } from "@orc/core/chat-options";
@@ -128,6 +129,7 @@ import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-
 import { activeTurns, type ChatTarget, registerChatControl, turnKey } from "../sessions/turns.js";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps, sessionDirDeps } from "../terminals/service.js";
+import { voiceNotice } from "../voice.js";
 import { workspaceLaunch } from "../workspaces/service.js";
 
 const logger = createLogger("api:chat");
@@ -170,6 +172,7 @@ interface ChatRun {
   events: string[];
   listeners: Set<(data: string | null) => void>;
   stop: () => void;
+  say?: (text: string) => Promise<void>;
 }
 const runs = new Map<string, ChatRun>();
 
@@ -288,7 +291,7 @@ const params = z.object({ id });
 const modelCatalogs = new Map<string, { at: number; result: Promise<ChatModels> }>();
 let modelRequests = 0;
 
-function requireThread(id: string): ChatThread {
+export function requireThread(id: string): ChatThread {
   const thread = store().get(id);
   if (!thread) throw new NotFoundError("Chat", id);
   // Older conversations used the built-in adapter, never a later named default.
@@ -2456,6 +2459,11 @@ async function beginTurn(
       assistant.activity = appendChatActivity(assistant.activity ?? [], event);
       publish(run, event);
     };
+    run.say = async (text) => {
+      proseInterrupted = true;
+      await emit({ type: "text", text });
+      proseInterrupted = true;
+    };
     try {
       // Slim event: metadata plus the just-pushed user message only. The full
       // transcript stays on GET /chat/threads/{id}; /live replays this on every
@@ -2612,7 +2620,10 @@ async function beginTurn(
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
         const message =
           setup.context && !/^\/[\p{L}\p{N}][\p{L}\p{N}_:.-]*(?:\s|$)/u.test(turn)
-            ? withOrcContext(turn, setup.context)
+            ? withOrcContext(turn, {
+                ...setup.context,
+                voice: setup.context.voice ? VOICE_TURN_INSTRUCTION : undefined,
+              })
             : turn;
         const sent =
           setup.continuation && input.trim() !== "/compact"
@@ -2697,6 +2708,7 @@ async function beginTurn(
             run.permissions.add(event.data.requestId);
             changes.publish("human-requests");
             await emit(event);
+            voiceNotice(thread.id);
             notify(
               "chat",
               chatPush(thread, "Approval needed", "The agent is waiting for your approval."),
@@ -2707,6 +2719,7 @@ async function beginTurn(
             run.questions.set(event.data.requestId, event.data);
             changes.publish("human-requests");
             await emit(event);
+            voiceNotice(thread.id);
             notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
           } else if (event.type === "request_resolved") {
             resolveChatNotification(thread.id, `${runId}:${event.data.requestId}`);
@@ -3127,6 +3140,32 @@ export function stopChat(id: string, cascade: boolean, by: string | null): strin
   }
   if (stopped.length) changes.publish("sessions");
   return stopped;
+}
+
+export async function sayInChat(threadId: string, text: string): Promise<boolean> {
+  requireThread(threadId);
+  const say = threadRun(threadId)?.[1].say;
+  if (say) await say(text);
+  return say !== undefined;
+}
+
+export async function voiceTurn(threadId: string, text: string): Promise<"sent" | "waiting"> {
+  requireThread(threadId);
+  const run = threadRun(threadId)?.[1];
+  if (run) {
+    if (run.permissions.size || run.questions.size) return "waiting";
+    const ended = new Promise<void>((resolve) =>
+      run.listeners.add((data) => data === null && resolve()),
+    );
+    run.stop();
+    await ended;
+  }
+  await openChat({
+    threadId,
+    messages: [{ role: "user", content: text }],
+    context: { source: "webchat", voice: true },
+  });
+  return "sent";
 }
 
 export function chatStatus(id: string): SessionStatus {

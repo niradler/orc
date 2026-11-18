@@ -323,6 +323,12 @@ export const toolDefinitions = [
     inputSchema: SessionMessageCreateSchema,
   },
   {
+    name: "speak",
+    description:
+      "Say a short line to the user in this conversation. It is posted to the chat and, when voice mode is on, spoken aloud. Write plain spoken sentences: no code, paths, diffs or markdown.",
+    inputSchema: z.object({ text: z.string().trim().min(1).max(4000) }),
+  },
+  {
     name: "session_start",
     description:
       "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree on a new branch cut from your committed HEAD, or from another project's checkout; uncommitted edits are not carried), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC pushes the child's final reply, failure, stop or human question into this session: steered into your live turn when the agent supports it, otherwise at your next safe point. Use session_wait to block instead, session_send to message it, session_stop to stop it.",
@@ -1534,6 +1540,22 @@ export async function executeTool(
       resolveProjectId(project)?.id ?? null,
       options.projectScopes?.map((p) => p.id),
     );
+  }
+  if (name === "speak") {
+    if (!options.agentSessionId)
+      throw new ValidationError(
+        "speak needs the calling conversation; reconnect MCP with ?session=<session id>",
+      );
+    const { posted, spoken } = await orcApi<{ posted: boolean; spoken: boolean }>(
+      "POST",
+      `/chat/threads/${encodeURIComponent(options.agentSessionId)}/speak`,
+      { body: z.object({ text: z.string() }).parse(args) },
+    );
+    return spoken
+      ? "Spoken."
+      : posted
+        ? "Posted to the chat; voice mode is off."
+        : "Not delivered: this conversation is not responding.";
   }
   if (name === "session_send") {
     const input = SessionMessageCreateSchema.parse(args);

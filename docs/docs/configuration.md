@@ -386,7 +386,11 @@ An invalid config file stops ORC with `Invalid orc config` and the failing key.
 {
   "api": { "port": 7700, "host": "127.0.0.1", "secret": "change-me" },
   "activeProject": "my-app",
-  "agent_loop": { "enabled": true, "default_backend": "claude", "max_workers": 2 },
+  "agent_loop": {
+    "enabled": true,
+    "default_backend": "claude",
+    "max_workers": 2
+  },
   "runner": { "default_timeout_secs": 300, "max_concurrent_jobs": 5 },
   "rules": { "enabled": true }
 }
@@ -497,14 +501,14 @@ Channels are configured under **Settings → Connections → Channels**.
 
 ### `speech`, `tts`
 
-| Env                                                          | Purpose                    |
-| ------------------------------------------------------------ | -------------------------- |
-| `ORC_SPEECH_PROVIDER`                                        | `openai`, `groq` or `qwen` |
-| `ORC_SPEECH_LANGUAGE`                                        | Transcription language     |
-| `ORC_TTS_PROVIDER`                                           | `openai` or `qwen`         |
-| `ORC_TTS_VOICE`                                              | Voice (default `alloy`)    |
-| `ORC_TTS_MODE`                                               | `voice_only` or `always`   |
-| `ORC_OPENAI_API_KEY`, `ORC_GROQ_API_KEY`, `ORC_QWEN_API_KEY` | Speech provider keys       |
+| Env                                                          | Purpose                             |
+| ------------------------------------------------------------ | ----------------------------------- |
+| `ORC_SPEECH_PROVIDER`                                        | `openai`, `groq`, `qwen` or `vocal` |
+| `ORC_SPEECH_LANGUAGE`                                        | Transcription language              |
+| `ORC_TTS_PROVIDER`                                           | `openai`, `qwen` or `vocal`         |
+| `ORC_TTS_VOICE`                                              | Voice (provider default)            |
+| `ORC_TTS_MODE`                                               | `voice_only` or `always`            |
+| `ORC_OPENAI_API_KEY`, `ORC_GROQ_API_KEY`, `ORC_QWEN_API_KEY` | Speech provider keys                |
 
 Setting any `ORC_SPEECH_*` or provider key enables speech; setting any `ORC_TTS_*` enables text-to-speech.
 
@@ -526,6 +530,49 @@ records 16 kHz mono WAV in the browser, and Telegram voice notes arrive as
 OGG/Opus; openai, groq and qwen all accept WAV, OGG, WebM, MP3 and MP4/M4A.
 OpenAI voice replies are requested as OGG/Opus and arrive as Telegram voice
 notes. Qwen returns WAV, which Telegram receives as a file.
+
+`vocal` is a local [Vocal](https://github.com/niradler/vocal) server
+(`uvx --from "vocal-ai[kokoro]" vocal serve`). It needs no key; `base_url`
+defaults to `http://localhost:8000/v1`, STT to `Systran/faster-whisper-tiny` and
+TTS to `hexgrad/Kokoro-82M` (WAV). Set `tts.voice` to a Vocal voice such as
+`af_heart`.
+
+Dictation and voice mode can each pick their own provider and model, and voice
+mode its own TTS. Unset fields fall back to the shared `speech` / `tts` values:
+
+```json
+{
+  "speech": {
+    "enabled": true,
+    "provider": "openai",
+    "openai": { "api_key": "sk-..." },
+    "dictation": { "model": "gpt-4o-mini-transcribe" },
+    "voice_mode": {
+      "provider": "vocal",
+      "silence_ms": 800,
+      "threshold_db": -45
+    }
+  },
+  "tts": {
+    "enabled": true,
+    "provider": "openai",
+    "voice_mode": { "provider": "vocal", "voice": "af_heart" }
+  }
+}
+```
+
+**Voice mode** talks to a chat hands-free. `POST /api/chat/threads/{id}/voice/ticket`
+returns a single-use ticket for the WebSocket `/api/chat/threads/{id}/voice?ticket=`.
+The client sends 16 kHz mono 16-bit PCM as binary frames. The server ends a turn
+after `speech.voice_mode.silence_ms` below `threshold_db` (dBFS), transcribes it,
+drops empty and filler-only transcripts ("um", "uh"), stops the running turn and
+sends the transcript as the next message, telling the agent to answer through the
+`speak` MCP tool. Each spoken line arrives as `{"type":"speak","text":...,"format":...}`
+followed by one binary audio frame per sentence. Speech starting while ORC talks
+drops the rest of that speech (barge-in). A turn waiting for an approval or a
+question is not interrupted: voice says "It needs you on screen." and the prompt
+stays in the UI. Other events: `ready`, `speech_start`, `speech_end`, `transcript`,
+`ignored`, `error`.
 
 Channels answer a voice message with a voice reply. With `tts.mode: "always"` they
 also speak replies to text messages. Spoken replies drop code blocks and markdown,
@@ -662,7 +709,6 @@ curl -s -X POST http://127.0.0.1:7700/api/auth/token \
 Returns `{"token": "...", "expires_at": <unix seconds>}`. Pass `expires_at` (unix seconds) to choose the expiry, up to 365 days. Rotating the secret revokes every token.
 
 For exposing ORC beyond localhost, see [Self-hosting](./self-hosted.md).
-
 
 ### Direct ACP commands
 
