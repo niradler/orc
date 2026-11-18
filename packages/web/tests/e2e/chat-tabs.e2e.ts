@@ -271,6 +271,40 @@ test("a mid-turn refresh that already loads the finished reply still announces i
   await expect(page.getByTestId("chat-live-announcer")).toContainText(reply);
 });
 
+test("a refresh that reverts to pre-turn history does not announce it", async ({ page }) => {
+  const first = `BASE-${Date.now()}`;
+  const second = `UNSENT-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${first}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(first);
+
+  // The next send never reaches the server, so the snapshot still ends with the
+  // historical reply while the tab optimistically claims streaming.
+  let release: () => void;
+  const stalled = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(/\/api\/chat\/stream$/, async (route) => {
+    await stalled;
+    await route.abort().catch(() => {});
+  });
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${second}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  // The refresh reverts to the pre-turn history; /live answers 204 (no run was
+  // ever started) and finish() appends nothing. History must stay silent.
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(first);
+  await page.waitForTimeout(1000);
+  expect(await page.getByTestId("chat-live-announcer").textContent()).not.toContain(first);
+  release();
+});
+
 test("opening a finished thread does not announce its historical reply", async ({ page }) => {
   const reply = `HISTORY-${Date.now()}`;
   await page.goto("/tasks?chat=full");

@@ -153,7 +153,8 @@ export function ChatLiveAnnouncer({
   const wasRefreshing = useRef(refreshing);
   const wasSettled = useRef(settled);
   const prevLast = useRef(last);
-  const pendingCompletion = useRef<string | undefined>(undefined);
+  const idleLast = useRef(new Map<string, string | undefined>());
+  const pendingCompletion = useRef(new Map<string, string>());
   const announced = useRef(new Map<string, string>());
 
   useEffect(() => {
@@ -183,7 +184,6 @@ export function ChatLiveAnnouncer({
     if (tabChanged) {
       spoken.current = 0;
       setMessage("");
-      pendingCompletion.current = undefined;
     }
     const streamFinished = !tabChanged && wasStreaming.current && !streaming;
     // A rebuild that loads a finished reply never streams, so it has no
@@ -197,26 +197,31 @@ export function ChatLiveAnnouncer({
     // same message, and syncThread swapping the client id for the persisted one
     // is not a new reply either.
     const lastChanged = prevLast.current?.id !== last?.id;
+    // This tab's history baseline: the last message seen while idle, seeded on
+    // first sight. A mid-turn refresh can REVERT the snapshot to the reply that
+    // was on screen before the turn (the new message never reached the server);
+    // that is history, not a completion.
+    if (!idleLast.current.has(tabKey) || !streaming) idleLast.current.set(tabKey, last?.id);
     // A mid-turn refresh can load the finished reply while streaming is still
     // claimed; the 204 that follows appends nothing, so hold the reply's identity
-    // until a completion edge can announce it.
+    // until a completion edge can announce it — unless it is the pre-turn history.
     if (
       streaming &&
       lastChanged &&
       last?.role === "assistant" &&
+      last.id !== idleLast.current.get(tabKey) &&
       announced.current.get(tabKey) !== last.id
     )
-      pendingCompletion.current = last.id;
+      pendingCompletion.current.set(tabKey, last.id);
     wasStreaming.current = streaming;
     wasRefreshing.current = refreshing;
     wasSettled.current = settled;
     prevLast.current = last;
     if (tabChanged || streaming || (!streamFinished && !rebuildFinished && !settledFinished))
       return;
-    const discovered =
-      lastChanged ||
-      (pendingCompletion.current !== undefined && last?.id === pendingCompletion.current);
-    pendingCompletion.current = undefined;
+    const pending = pendingCompletion.current.get(tabKey);
+    pendingCompletion.current.delete(tabKey);
+    const discovered = lastChanged || (pending !== undefined && last?.id === pending);
     if (last?.role !== "assistant") return;
     // Only a newly loaded reply announces: a no-op or failed refresh returns the
     // same message, and an empty turn assembles nothing. Per-tab dedupe on top.
