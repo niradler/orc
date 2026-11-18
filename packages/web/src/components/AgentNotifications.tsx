@@ -123,7 +123,26 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const phone = !useBreakpoint("md");
   const { tabs, activeKey, projectScope } = useChat();
   const requests = useHumanRequests();
-  const sessions = useActiveLiveSessionsSummary();
+  const summary = useActiveLiveSessionsSummary();
+  const viewParams = new URLSearchParams(location.search);
+  const viewedSessionId =
+    location.pathname === "/chat"
+      ? (viewParams.get("sessionLive") ??
+        viewParams.get("sessionView") ??
+        tabs.find((tab) => tab.key === activeKey)?.thread?.sourceId ??
+        null)
+      : null;
+  const viewedSession = useQuery({
+    queryKey: ["sessions", "live-one", viewedSessionId],
+    queryFn: () => api.sessions.liveOne(viewedSessionId as string),
+    enabled: !!viewedSessionId,
+    retry: false,
+  }).data;
+  const sessions = useMemo(
+    () =>
+      viewedSession ? [viewedSession, ...(summary.data?.sessions ?? [])] : summary.data?.sessions,
+    [viewedSession, summary.data],
+  );
   const [expanded, setExpanded] = useState(false);
   const [showRead, setShowRead] = useState(false);
   const [needsYou, setNeedsYou] = useState(false);
@@ -142,14 +161,14 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     tabs,
     activeKey,
     requests: requests.data,
-    sessions: sessions.data?.sessions,
+    sessions,
   });
   delivery.current = {
     location,
     tabs,
     activeKey,
     requests: requests.data,
-    sessions: sessions.data?.sessions,
+    sessions,
   };
   const notificationProject = projectScope === "all" ? undefined : projectScope;
   const query = useInfiniteQuery({
@@ -250,7 +269,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       search: location.search,
       chatThreadId: activeThreadId,
       threadSourceId: activeThreadSourceId,
-      sessions: sessions.data?.sessions,
+      sessions,
       requests: requests.data,
     };
     const settled = items.filter(
@@ -270,7 +289,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     location.search,
     activeThreadId,
     activeThreadSourceId,
-    sessions.data,
+    sessions,
     requests.data,
   ]);
 

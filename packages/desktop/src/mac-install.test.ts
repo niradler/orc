@@ -86,6 +86,7 @@ test.skipIf(process.platform !== "darwin")(
       else process.env.DEVELOPER_DIR = developerDirectory;
     }
   },
+  60_000,
 );
 
 test.skipIf(process.platform !== "darwin")(

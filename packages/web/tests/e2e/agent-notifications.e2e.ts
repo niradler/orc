@@ -85,6 +85,33 @@ test("Needs you: no toast or chime for the session already in view", async ({ pa
   expect(await scenario.chimeNotes()).toBe(0);
 });
 
+test("Needs you: no toast for the session in view when it is older than the 50 newest", async ({
+  page,
+}) => {
+  const newer = Array.from({ length: 50 }, (_, index) => ({
+    ...liveSession(1, "running"),
+    id: `notify-newer-${index}`,
+    session_id: `notify-newer-native-${index}`,
+  }));
+  const scenario = await notificationScenario(page, { sessions: newer, requests: [] });
+  await page.route("**/api/sessions/live/notify-live-0", (route) =>
+    route.fulfill({ json: liveSession(0, "running", true) }),
+  );
+  await mockResumedChat(page, "notify-live-0");
+  const loaded = sourcesLoaded(page);
+  await page.goto("/chat?sessionLive=notify-live-0");
+  await loaded;
+  await expect(page.getByText("Resumed.").first()).toBeVisible();
+  await page.keyboard.press("Shift");
+
+  scenario.state.requests = [approvalRequest(0)];
+  await poll(page);
+  await page.clock.runFor(2_500);
+
+  await expect(page.getByTestId("agent-toast")).toHaveCount(0);
+  expect(await scenario.chimeNotes()).toBe(0);
+});
+
 test("Done: a finished session lands silently in the bell without a toast", async ({ page }) => {
   const scenario = await notificationScenario(page, {
     sessions: [liveSession(1, "running")],
