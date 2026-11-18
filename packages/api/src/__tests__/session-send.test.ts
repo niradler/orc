@@ -1,7 +1,15 @@
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import type { ChatThread } from "@orc/core/chat";
@@ -352,7 +360,7 @@ describe("send a session to another ORC installation", () => {
     const handoff = SessionHandoffSchema.parse(await handoffRes.json());
     expect(handoff.status).toBe("ready");
     expect(handoff.live_session_id).toBe(send.remote_session_id);
-    const worktree = join(target, ".orc", "worktrees", handoff.id);
+    const worktree = join(realpathSync(target), ".orc", "worktrees", handoff.id);
     expect(send.commit).toBeTruthy();
     expect(await git("-C", worktree, "rev-parse", "HEAD")).toBe(send.commit ?? "");
     expect(readFileSync(join(worktree, "work.txt"), "utf8")).toBe("uncommitted edit\n");
@@ -506,7 +514,7 @@ describe("send a session to another ORC installation", () => {
     const handoff = SessionHandoffSchema.parse(
       await (await destFetch("GET", `/session-handoffs/${send.handoff_id}`)).json(),
     );
-    const worktree = join(target, ".orc", "worktrees", handoff.id);
+    const worktree = join(realpathSync(target), ".orc", "worktrees", handoff.id);
     const key = worktree.replace(/[^a-zA-Z0-9]/g, "-");
     const piDir = join(destHome, ".pi", "agent", "sessions", key);
     const fileName = readdirSync(piDir).find((name) =>
@@ -561,7 +569,7 @@ describe("send a session to another ORC installation", () => {
     const handoff = SessionHandoffSchema.parse(
       await (await destFetch("GET", `/session-handoffs/${send.handoff_id}`)).json(),
     );
-    const worktree = join(target, ".orc", "worktrees", handoff.id);
+    const worktree = join(realpathSync(target), ".orc", "worktrees", handoff.id);
     const destDb = new Database(join(destHome, ".local", "share", "opencode", "opencode.db"), {
       readonly: true,
     });
