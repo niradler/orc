@@ -61,6 +61,12 @@ import { ChatSelectionToolbar } from "@/components/ChatSelectionToolbar";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { ChatContextMeter, useChatContextUsage } from "@/components/ChatSessionStrip";
 import { ChatTurnDivider } from "@/components/ChatTurnMeta";
+import {
+  ChatVoiceButton,
+  ChatVoiceOverlay,
+  isVoiceShortcut,
+  useVoiceMode,
+} from "@/components/ChatVoiceMode";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
@@ -688,6 +694,7 @@ export function ChatPanel({
   const input = useRef<HTMLTextAreaElement>(null);
   const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
   const dictation = useDictation(input, setDraft);
+  const voice = useVoiceMode(thread?.id, streaming);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
   const promptMenuOpen = useRef(false);
   promptMenuOpen.current = promptMenu.open;
@@ -1659,6 +1666,11 @@ export function ChatPanel({
                         dictation.toggle();
                         return;
                       }
+                      if (voice.available && !dictation.busy && isVoiceShortcut(event)) {
+                        event.preventDefault();
+                        void voice.start();
+                        return;
+                      }
                       if (
                         event.key === "Enter" &&
                         !event.shiftKey &&
@@ -1674,12 +1686,13 @@ export function ChatPanel({
                   />
                 </div>
                 <div className="flex items-center justify-between gap-2">
+                  {voice.active && <ChatVoiceOverlay voice={voice} />}
                   {dictation.phase !== "idle" && <ChatDictationPill dictation={dictation} />}
                   <div
                     data-testid="chat-composer-tools"
                     className={cn(
                       "chat-composer-tools flex min-w-0 flex-1 flex-wrap items-center gap-x-1 gap-y-0.5",
-                      dictation.phase !== "idle" && "hidden",
+                      (dictation.phase !== "idle" || voice.active) && "hidden",
                     )}
                   >
                     <label
@@ -1703,11 +1716,12 @@ export function ChatPanel({
                       />
                     </label>
                     <ChatDictationButton dictation={dictation} disabled={!ready} />
+                    <ChatVoiceButton voice={voice} disabled={!ready || dictation.busy} />
                     <ChatAgentModelPicker key={thread?.id ?? "new"} />
                     <ChatWorkspaceControls />
                     <ChatPermissionChip />
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className={cn("flex items-center gap-1", voice.active && "hidden")}>
                     <ChatContextMeter
                       usage={latestUsage ?? frozenUsage}
                       window={latestUsage?.context_window ?? contextWindow}

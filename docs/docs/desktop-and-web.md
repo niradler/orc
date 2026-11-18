@@ -303,7 +303,7 @@ browser's image decoder. PDF and Office previews are not included.
 The browser uses a separate session without ORC's API credentials,
 cookies or desktop bridge. Camera, microphone, location and other site permissions
 are blocked. Only the ORC window itself may use the microphone, and only for
-composer dictation. Browser downloads are staged privately (16 MB each, four across the
+composer dictation and voice mode. Browser downloads are staged privately (16 MB each, four across the
 app); **Browser profile, display & recording** lists their status and saves completed files
 to the selected chat workspace. Interrupted/failed downloads are never reported
 as saved. Every chat uses the shared **ORC browser** profile by default, so a site
@@ -808,6 +808,18 @@ transcription, shows the reason with **Retry**, which resends the same clip
 when the recording itself succeeded. The browser needs HTTPS or `localhost` to
 reach the microphone. The audio goes to the ORC server, which forwards it to the
 configured provider; the provider key never leaves the server.
+
+### Voice mode
+
+Voice mode talks to an open chat hands-free. The waveform button beside the
+microphone (or **Cmd/Ctrl+Shift+Space** in the composer) appears once the server
+has a voice-mode speech provider. The composer footer becomes a voice bar with a
+live input level and the current state: **Listening**, **Hearing you**,
+**Thinking** or **Speaking**. Spoken replies play as they stream in; start talking
+and playback stops. **Mute** stops sending audio, **Stop** (or **Escape**)
+leaves voice mode and releases the microphone and audio. Your words and the spoken
+replies appear in the transcript. Approvals and questions stay on screen and are
+never answered by voice.
 
 ## Desktop app only
 

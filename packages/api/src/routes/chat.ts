@@ -2476,7 +2476,17 @@ async function beginTurn(
       assistant.activity = appendChatActivity(assistant.activity ?? [], event);
       publish(run, event);
     };
+    const spoken = new Set<string>();
+    let held = "";
+    const settleHeld = async () => {
+      const [first = "", ...rest] = held.trim().split(/\n\s*\n/);
+      const text = spoken.has(spokenWords(first)) ? rest.join("\n\n").trim() : held.trim();
+      held = "";
+      if (!spokenWords(text) || (!/[\n`]/.test(text) && text.length <= 200)) return;
+      await emit({ type: "text", text });
+    };
     run.say = async (text) => {
+      if (spokenWords(text)) spoken.add(spokenWords(text));
       proseInterrupted = true;
       await emit({ type: "text", text });
       proseInterrupted = true;
@@ -2659,6 +2669,7 @@ async function beginTurn(
         let receivedResult = false;
         let outputBytes = 0;
         for await (const event of run.session.events()) {
+          if (held && event.type !== "text") await settleHeld();
           // Always consume the terminal result — even after a Stop — so the turn's
           // outcome, native identity and resumability are recorded, not discarded.
           if (event.type === "result") {
@@ -2709,6 +2720,10 @@ async function beginTurn(
           else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
           outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
           if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
+          if (event.type === "text" && spoken.size) {
+            held += event.data;
+            continue;
+          }
           if (event.type === "capabilities") {
             thread.capabilities = event.data;
             await emit({ type: "capabilities", capabilities: event.data });
@@ -2756,6 +2771,7 @@ async function beginTurn(
             await emit({ type: "request_resolved", requestId: event.data.requestId });
           } else if (event.type === "error") await emit({ type: "error", message: event.data });
         }
+        await settleHeld();
         if (!receivedResult && !stopped && failure === null)
           await emit({
             type: "error",
@@ -3175,6 +3191,12 @@ export async function sayInChat(threadId: string, text: string): Promise<boolean
   if (say) await say(text);
   return say !== undefined;
 }
+
+const spokenWords = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
 
 export async function voiceTurn(threadId: string, text: string): Promise<"sent" | "waiting"> {
   requireThread(threadId);

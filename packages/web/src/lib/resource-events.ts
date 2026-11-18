@@ -79,7 +79,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   flows: ["flows", "flow"],
   rules: ["rules"],
   "human-requests": ["human-requests", "chat-waiting", "chat-threads", "chat-resume-sessions"],
-  settings: ["settings"],
+  settings: ["settings", "speech-status"],
   ssh: ["ssh", "backends", "terminals", "worktrees", "sessions", "session", "git", "github"],
   terminals: ["terminals", "worktrees"],
   git: ["git", "worktrees", "github"],
