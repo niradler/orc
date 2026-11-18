@@ -33,6 +33,10 @@ them. Pi still loads local skills from `.agents/skills`, `.pi/skills` and
 demand and never copied to disk, so there is nothing to sync. Pi sessions are already read
 by ORC's session archive.
 
+While Pi is open, porc registers the session in `~/.orc/live-sessions` with Pi's process id,
+so ORC shows it as running or idle, refuses session messages while it is open, and refuses
+chat turns while it runs a turn. It shows as ended when Pi exits or its process dies.
+
 ## Ask for it in chat
 
 ```text

@@ -96,7 +96,7 @@ describe("native ownership", () => {
 });
 
 describe("lifecycle parity", () => {
-  test.each(["claude", "codex", "cursor", "cursor-agent", "gemini"])(
+  test.each(["claude", "codex", "cursor", "cursor-agent", "gemini", "pi"])(
     "should keep %s waiting without activity and stop on exit",
     async (backend) => {
       const registry = join(root, backend);

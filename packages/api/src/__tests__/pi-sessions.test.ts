@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { nativeChatAgent } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import { writeRegistration } from "@orc/core/live-session";
+import { withLifecycle } from "../sessions/lifecycle.js";
 import { parsePiSession, piAdapter, piSessionRoots } from "../sessions/pi.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
 import { setupTestApp, teardownTestApp } from "./helpers.js";
@@ -152,5 +154,33 @@ test("should discover configured Pi roots without reading secret environment val
     expect(roots).toContain(join(home, ".pi", "agent", "sessions"));
   } finally {
     teardownTestApp();
+  }
+});
+
+test("a live Pi registration marks its transcript session running with the writer pid", async () => {
+  const root = mkdtempSync(join(tmpdir(), "orc-pi-live-"));
+  const registry = join(root, "live");
+  try {
+    writeFileSync(join(root, `2026-11-11_${nativeId}.jsonl`), `${log([header])}\n`);
+    const live = {
+      backend: "pi",
+      externalId: nativeId,
+      pid: process.pid,
+      title: "Pi session",
+      status: "running" as const,
+      createdAt: Date.parse(timestamp),
+      updatedAt: Date.now(),
+    };
+    writeRegistration(live, registry);
+    const adapter = withLifecycle(piAdapter(root), registry);
+    expect(await adapter.list(new Map())).toMatchObject([
+      { externalId: nativeId, status: "running", pid: process.pid, cwd: header.cwd },
+    ]);
+    writeRegistration({ ...live, pid: 2_000_000_000 }, registry);
+    expect(await adapter.list(new Map())).toMatchObject([
+      { externalId: nativeId, status: "stopped" },
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
   }
 });
