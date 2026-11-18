@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import {
   defineTool,
@@ -16,6 +17,7 @@ import {
   type PorcOverrides,
   porcPaths,
 } from "../src/config.js";
+import { type PiLiveSession, writePiLiveSession } from "../src/live-session.js";
 import { redact } from "../src/mcp.js";
 import { OrcMcpClient } from "../src/mcp-client.js";
 import {
@@ -1123,8 +1125,12 @@ function registerRuleHooks(pi: ExtensionAPI, state: PluginState): void {
   });
 }
 
-export default function porc(pi: ExtensionAPI): void {
+export default function porc(
+  pi: ExtensionAPI,
+  liveDir = join(homedir(), ".orc", "live-sessions"),
+): void {
   const state: PluginState = {};
+  let live: PiLiveSession | undefined;
 
   pi.registerFlag("porc-api-base", {
     description: "ORC API base URL for this session",
@@ -1164,6 +1170,13 @@ export default function porc(pi: ExtensionAPI): void {
   registerRuleHooks(pi, state);
 
   pi.on("session_start", async (event, ctx) => {
+    live = {
+      id: ctx.sessionManager.getSessionId(),
+      cwd: ctx.cwd,
+      transcriptPath: ctx.sessionManager.getSessionFile(),
+      createdAt: Date.now(),
+    };
+    writePiLiveSession(liveDir, live, "idle");
     await initialize(pi, state, ctx, {
       announce: event.reason === "startup",
       interactive: event.reason === "startup" || event.reason === "new",
@@ -1193,7 +1206,12 @@ export default function porc(pi: ExtensionAPI): void {
     if (decision?.context) pushRuleContext(session, decision.context);
   });
 
+  pi.on("agent_start", () => {
+    if (live) writePiLiveSession(liveDir, live, "running");
+  });
+
   pi.on("agent_end", async (_event, ctx) => {
+    if (live) writePiLiveSession(liveDir, live, "idle");
     const session = state.session;
     if (!session) return;
     const decision = await checkRules(session, "agent_end", {}, ctx);
@@ -1248,6 +1266,7 @@ export default function porc(pi: ExtensionAPI): void {
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
+    if (live) writePiLiveSession(liveDir, live, "stopped");
     await checkRules(state.session, "session_shutdown", {}, ctx).catch(() => undefined);
     ctx.ui.setStatus("porc", undefined);
     ctx.ui.setWidget("porc", undefined);

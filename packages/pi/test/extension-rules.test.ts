@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { readRegistrations } from "@orc/core/live-session";
 import porc from "../extensions/orc.js";
 
 type Handler = (event: Record<string, unknown>, ctx: unknown) => Promise<unknown>;
@@ -29,7 +30,7 @@ function fakeCtx(cwd: string, trusted = false) {
     cwd,
     hasUI: false,
     signal: undefined,
-    sessionManager: { getSessionId: () => "pi-extension-test" },
+    sessionManager: { getSessionId: () => "pi-extension-test", getSessionFile: () => undefined },
     isProjectTrusted: () => trusted,
     ui: {
       setStatus: () => undefined,
@@ -158,7 +159,7 @@ describe("porc rule enforcement (issue #260)", () => {
     server.stop(true);
     try {
       const { handlers, api } = fakePi();
-      porc(api as never);
+      porc(api as never, join(directory, "live"));
       const ctx = fakeCtx(directory);
       await handlers.session_start?.({ reason: "startup" }, ctx);
       writeFileSync(
@@ -178,7 +179,7 @@ describe("porc rule enforcement (issue #260)", () => {
   test("a loaded plan skips events without rules", async () => {
     rulesResponse = { enabled: true, history: [], history_truncated: false };
     const { handlers, api } = fakePi();
-    porc(api as never);
+    porc(api as never, join(directory, "live"));
     const ctx = fakeCtx(directory);
     await handlers.session_start?.({ reason: "startup" }, ctx);
     const decision = await handlers.tool_call?.(toolCall, ctx);
@@ -189,7 +190,7 @@ describe("porc rule enforcement (issue #260)", () => {
   test("periodic refresh picks up rules activated after session start", async () => {
     rulesResponse = { enabled: true, history: [], history_truncated: false };
     const { handlers, api } = fakePi();
-    porc(api as never);
+    porc(api as never, join(directory, "live"));
     const ctx = fakeCtx(directory);
     await handlers.session_start?.({ reason: "startup" }, ctx);
     expect(await handlers.tool_call?.(toolCall, ctx)).toBeUndefined();
@@ -215,7 +216,7 @@ describe("porc rule enforcement (issue #260)", () => {
     const ctx = fakeCtx(badDir, true);
     process.env.PORC_RULES = "true";
     const guarded = fakePi();
-    porc(guarded.api as never);
+    porc(guarded.api as never, join(directory, "live"));
     await guarded.handlers.session_start?.({ reason: "startup" }, ctx);
     expect(await guarded.handlers.tool_call?.(toolCall, ctx)).toEqual({
       block: true,
@@ -223,7 +224,7 @@ describe("porc rule enforcement (issue #260)", () => {
     });
     process.env.PORC_RULES = "false";
     const optedOut = fakePi();
-    porc(optedOut.api as never);
+    porc(optedOut.api as never, join(directory, "live"));
     await optedOut.handlers.session_start?.({ reason: "startup" }, ctx);
     expect(await optedOut.handlers.tool_call?.(toolCall, ctx)).toBeUndefined();
     process.env.PORC_RULES = "true";
@@ -232,7 +233,7 @@ describe("porc rule enforcement (issue #260)", () => {
   test("a confirmed global disable skips enforcement", async () => {
     rulesResponse = { enabled: false, history: [preToolRevision()], history_truncated: false };
     const { handlers, api } = fakePi();
-    porc(api as never);
+    porc(api as never, join(directory, "live"));
     const ctx = fakeCtx(directory);
     await handlers.session_start?.({ reason: "startup" }, ctx);
     const decision = await handlers.tool_call?.(toolCall, ctx);
@@ -240,4 +241,27 @@ describe("porc rule enforcement (issue #260)", () => {
     expect(callCount()).toBe(0);
     rulesResponse = { enabled: true, history: [], history_truncated: false };
   });
+});
+
+test("the session registers its pid and turn status in the ORC live registry (issue #259)", async () => {
+  const liveDir = join(directory, "live-259");
+  const { handlers, api } = fakePi();
+  porc(api as never, liveDir);
+  const ctx = fakeCtx(directory);
+  const status = () =>
+    readRegistrations(liveDir).map((record) => [
+      record.backend,
+      record.externalId,
+      record.pid,
+      record.cwd,
+      record.status,
+    ]);
+  await handlers.session_start?.({ reason: "startup" }, ctx);
+  expect(status()).toEqual([["pi", "pi-extension-test", process.pid, directory, "idle"]]);
+  await handlers.agent_start?.({}, ctx);
+  expect(status()).toEqual([["pi", "pi-extension-test", process.pid, directory, "running"]]);
+  await handlers.agent_end?.({ messages: [] }, ctx);
+  expect(status()).toEqual([["pi", "pi-extension-test", process.pid, directory, "idle"]]);
+  await handlers.session_shutdown?.({ reason: "quit" }, ctx);
+  expect(status()).toEqual([["pi", "pi-extension-test", process.pid, directory, "stopped"]]);
 });
