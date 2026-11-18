@@ -271,6 +271,57 @@ test("a mid-turn refresh that already loads the finished reply still announces i
   await expect(page.getByTestId("chat-live-announcer")).toContainText(reply);
 });
 
+test("a mid-turn refresh that loads a reply identical to the previous one still announces it", async ({
+  page,
+}) => {
+  const same = `SAME-${Date.now()}`;
+  await page.goto("/tasks?chat=full");
+  const panel = page.getByTestId("chat-panel");
+  // Two consecutive turns with the SAME reply text: the second reply matches the
+  // history baseline's content, but the transcript grew (its user message
+  // persisted), so it is a genuine completion, not the pre-turn history.
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${same}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(same);
+
+  let holding = false;
+  let serverDone: () => void;
+  const streamHeld = new Promise<void>((resolve) => {
+    serverDone = resolve;
+  });
+  let snapshotLoaded: () => void;
+  const refreshed = new Promise<void>((resolve) => {
+    snapshotLoaded = resolve;
+  });
+  await page.route(/\/api\/chat\/stream$/, async (route) => {
+    const response = await route.fetch(); // the run finishes server-side
+    holding = true;
+    serverDone();
+    await refreshed; // keep the client streaming until the mid-turn refresh
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // The refresh aborted this reader; fulfilling late is a no-op.
+    await route.fulfill({ response }).catch(() => {});
+  });
+  await page.route(/\/api\/chat\/threads\/[0-9a-f-]{36}$/, async (route) => {
+    await route.continue();
+    if (holding) snapshotLoaded();
+  });
+
+  await panel.getByTestId("chat-input").fill(`Reply with exactly: ${same}.`);
+  await panel.getByTestId("chat-send-button").click();
+  await expect(panel).toHaveAttribute("data-streaming", "true");
+  await streamHeld;
+  await openChatActions(page);
+  await page.getByTestId("chat-refresh-button").filter({ visible: true }).click();
+  // The snapshot already contains the finished identical-content reply while
+  // streaming is preserved; /live answers 204 and finish() appends nothing. The
+  // content match with the baseline must not silence a genuine new reply.
+  await expect(panel).toHaveAttribute("data-streaming", "false", { timeout: 15_000 });
+  await expect(panel.getByTestId("chat-message-content").last()).toContainText(same);
+  await expect(page.getByTestId("chat-live-announcer")).toContainText(same);
+});
+
 test("a refresh that reverts to pre-turn history does not announce it", async ({ page }) => {
   const first = `BASE-${Date.now()}`;
   const second = `UNSENT-${Date.now()}`;
