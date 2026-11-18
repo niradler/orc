@@ -106,13 +106,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
     "channel-notification-policy",
   ],
   "desktop-preview": [],
-  "session-activity": [
-    "sessions",
-    "session",
-    "chat-threads",
-    "chat-resume-sessions",
-    "palette-live-sessions",
-  ],
+  "session-activity": ["sessions", "session", "chat-threads", "palette-live-sessions"],
 };
 
 const SESSION_DETAILS = new Set([

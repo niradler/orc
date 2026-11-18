@@ -216,6 +216,23 @@ describe("resource events", () => {
     }
   });
 
+  test("should leave the session history list alone when only session activity moved", async () => {
+    const client = new QueryClient();
+    client.setQueryData(["chat-resume-sessions", true, "all", false], {});
+    await Promise.all([
+      invalidateResources(client, ["session-activity"]),
+      flushResourceChanges(client),
+    ]);
+    expect(client.getQueryState(["chat-resume-sessions", true, "all", false])?.isInvalidated).toBe(
+      false,
+    );
+    await Promise.all([invalidateResources(client, ["sessions"]), flushResourceChanges(client)]);
+    expect(client.getQueryState(["chat-resume-sessions", true, "all", false])?.isInvalidated).toBe(
+      true,
+    );
+    client.clear();
+  });
+
   test("should refresh the usage report but only the open session's cache when another session's usage lands", async () => {
     const client = new QueryClient();
     client.setQueryData(["usage-report", "30"], {});
