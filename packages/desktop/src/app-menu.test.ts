@@ -40,8 +40,8 @@ function item(items: MenuItemConstructorOptions[], label: string): MenuItemConst
   return found;
 }
 
-function state(platform: NodeJS.Platform, packaged = true): AppMenuState {
-  return { platform, packaged };
+function state(platform: NodeJS.Platform): AppMenuState {
+  return { platform };
 }
 
 describe("desktop application menu", () => {
@@ -106,11 +106,18 @@ describe("desktop application menu", () => {
     expect(view.some((entry) => (entry as { role?: string }).role === "viewMenu")).toBe(false);
   });
 
-  test("should keep developer tools out of an installed build", () => {
-    const dev = submenu(appMenuTemplate(state("win32", false), actions()), "View");
-    expect(dev.some((entry) => entry.label === "Toggle Developer Tools")).toBe(true);
-    const packaged = submenu(appMenuTemplate(state("win32", true), actions()), "View");
-    expect(packaged.some((entry) => entry.label === "Toggle Developer Tools")).toBe(false);
+  test("should offer developer tools in every build and toggle the window's own tools", () => {
+    const calls: string[] = [];
+    for (const platform of ["win32", "darwin", "linux"] as const) {
+      const view = submenu(
+        appMenuTemplate(state(platform), actions({ toggleDevTools: () => calls.push(platform) })),
+        "View",
+      );
+      const dev = item(view, "Toggle Developer Tools");
+      expect(dev.accelerator).toBe(platform === "darwin" ? "Alt+Command+I" : "Ctrl+Shift+I");
+      dev.click?.({} as never, undefined as never, {} as never);
+    }
+    expect(calls).toEqual(["win32", "darwin", "linux"]);
   });
 
   test("should give Help working documentation, issue and about entries", () => {

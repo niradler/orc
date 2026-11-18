@@ -243,7 +243,7 @@ function installApplicationMenu(): void {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
       appMenuTemplate(
-        { platform: process.platform, packaged: app.isPackaged },
+        { platform: process.platform },
         {
           showConnectionSettings: () => void showConnectionSettings(),
           openViewer: () => {
