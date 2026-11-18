@@ -25,8 +25,8 @@ const provider = Bun.serve({
     if (pathname.endsWith("/audio/transcriptions")) {
       const form = await request.formData();
       requests.push({ path: pathname, auth, body: { model: form.get("model") } });
-      return pathname.startsWith("/vocal")
-        ? Response.json({ text: " vocal heard it ", language: "en" })
+      return pathname.startsWith("/local")
+        ? Response.json({ text: " local heard it ", language: "en" })
         : new Response("heard it\n");
     }
     requests.push({
@@ -54,16 +54,19 @@ test("dictation and voice mode each use their own STT provider and model", async
       provider: "openai",
       openai: { api_key: "sk-test", base_url: `${origin}/openai` },
       groq: { api_key: "gsk-test", base_url: `${origin}/groq` },
-      vocal: { base_url: `${origin}/vocal` },
       dictation: { provider: "groq", model: "whisper-large-v3" },
-      voice_mode: { provider: "vocal", model: "Systran/faster-whisper-base" },
+      voice_mode: { model: "gpt-4o-mini-transcribe" },
     },
   });
   requests.length = 0;
   const audio = { audio: new Uint8Array(clip), format: "wav" };
   expect(await speechToText(settings)?.transcribe(audio)).toBe("heard it");
   expect(await speechToText(settings, "dictation")?.transcribe(audio)).toBe("heard it");
-  expect(await speechToText(settings, "voice_mode")?.transcribe(audio)).toBe("vocal heard it");
+  expect(await speechToText(settings, "voice_mode")?.transcribe(audio)).toBe("heard it");
+  const local = config({
+    speech: { enabled: true, provider: "openai", openai: { base_url: `${origin}/local` } },
+  });
+  expect(await speechToText(local)?.transcribe(audio)).toBe("local heard it");
   expect(requests).toEqual([
     { path: "/openai/audio/transcriptions", auth: "Bearer sk-test", body: { model: "whisper-1" } },
     {
@@ -72,10 +75,11 @@ test("dictation and voice mode each use their own STT provider and model", async
       body: { model: "whisper-large-v3" },
     },
     {
-      path: "/vocal/audio/transcriptions",
-      auth: null,
-      body: { model: "Systran/faster-whisper-base" },
+      path: "/openai/audio/transcriptions",
+      auth: "Bearer sk-test",
+      body: { model: "gpt-4o-mini-transcribe" },
     },
+    { path: "/local/audio/transcriptions", auth: null, body: { model: "whisper-1" } },
   ]);
 });
 
@@ -93,23 +97,22 @@ test("a config written before use sites existed resolves every site to the share
   );
 });
 
-test("Vocal needs no key and voice mode can choose its own TTS model and voice", async () => {
+test("an OpenAI-compatible base_url needs no key and voice mode can choose its own TTS model and voice", async () => {
   const settings = config({
     tts: {
       enabled: true,
       provider: "openai",
       openai: { api_key: "sk-test", base_url: `${origin}/openai` },
-      vocal: { base_url: `${origin}/vocal` },
-      voice_mode: { provider: "vocal", voice: "af_heart" },
+      voice_mode: { model: "hexgrad/Kokoro-82M", voice: "af_heart" },
     },
   });
   requests.length = 0;
   const shared = await textToSpeech(settings)?.synthesize("Deploy finished.");
   const voice = await textToSpeech(settings, "voice_mode")?.synthesize("Deploy finished.");
   const keyless = await textToSpeech(
-    config({ tts: { enabled: true, provider: "vocal", vocal: { base_url: `${origin}/vocal` } } }),
+    config({ tts: { enabled: true, provider: "openai", openai: { base_url: `${origin}/local` } } }),
   )?.synthesize("Hi.");
-  expect([shared?.format, voice?.format, keyless?.format]).toEqual(["ogg", "wav", "wav"]);
+  expect([shared?.format, voice?.format, keyless?.format]).toEqual(["ogg", "ogg", "ogg"]);
   expect(requests).toEqual([
     {
       path: "/openai/audio/speech",
@@ -117,19 +120,19 @@ test("Vocal needs no key and voice mode can choose its own TTS model and voice",
       body: { model: "tts-1", input: "Deploy finished.", voice: "alloy", response_format: "opus" },
     },
     {
-      path: "/vocal/audio/speech",
-      auth: null,
+      path: "/openai/audio/speech",
+      auth: "Bearer sk-test",
       body: {
         model: "hexgrad/Kokoro-82M",
         input: "Deploy finished.",
         voice: "af_heart",
-        response_format: "wav",
+        response_format: "opus",
       },
     },
     {
-      path: "/vocal/audio/speech",
+      path: "/local/audio/speech",
       auth: null,
-      body: { model: "hexgrad/Kokoro-82M", input: "Hi.", response_format: "wav" },
+      body: { model: "tts-1", input: "Hi.", voice: "alloy", response_format: "opus" },
     },
   ]);
 });
