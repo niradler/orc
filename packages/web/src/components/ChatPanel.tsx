@@ -302,6 +302,10 @@ export function ChatPanel({
     queryKey: ["chat-threads", "session", thread?.id],
     queryFn: () => api.chat.session(thread?.id ?? ""),
     enabled: !!thread?.runtimeId,
+    // A claim that went stale while this tab was away is re-verified on focus
+    // instead of popping the working panel on an idle session.
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
   const answers = session.data?.queued ?? [];
   const sessionChanged = !!session.data?.changed && !streaming && !refreshing;

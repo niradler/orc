@@ -2,6 +2,8 @@
 
 The chat page's session list and viewer use the same working, waiting and ended states, task links, search and conversation viewer for all agents. Waiting sessions stay in the active view; inactivity alone does not end a registered session.
 
+Opening a chat verifies a stale **Working** claim before showing it: when the session has no native activity for 30 seconds, ORC re-checks the agent's own store and settles the row if the turn has ended, so an idle session does not pop the working panel. Returning to the tab re-checks it the same way. A claim with recent activity stays trusted and settles through the usual process and file watches.
+
 Opening a linked task keeps you on that task even while a session search is updating.
 
 Sessions without a title use a readable folder name, including Windows extended

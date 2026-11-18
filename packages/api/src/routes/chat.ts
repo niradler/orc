@@ -116,7 +116,7 @@ import {
   retireChatFinishedNotifications,
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
-import { LIVE_CHAT_ID, liveRunFields } from "../session-watcher.js";
+import { LIVE_CHAT_ID, liveRunFields, settleStaleRun } from "../session-watcher.js";
 import { loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
@@ -1281,6 +1281,9 @@ app.openapi(
       ? await queuedAnswers(turnKey(thread.host, thread.backend, thread.runtimeId))
       : [];
     const source = await nativeSource(thread);
+    // A stale watcher "running" claim must not pop the working panel on an idle
+    // session: verify it against the native store before the chat trusts it.
+    const liveStatus = source && !running ? await settleStaleRun(source) : source?.status;
     return c.json({
       changed,
       running,
@@ -1290,7 +1293,7 @@ app.openapi(
             agent: source.backend,
             tokens_used: source.tokens_used ?? null,
             tokens_estimated: source.backend === "cursor" && source.tokens_used != null,
-            status: source.status,
+            status: liveStatus ?? source.status,
             ...liveRunFields(
               source.backend,
               source.execution_host ?? null,

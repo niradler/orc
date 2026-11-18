@@ -30,6 +30,7 @@ import { readProviderSettings, saveProviderSettings } from "@orc/core/provider-s
 import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
+import { eq } from "drizzle-orm";
 import { setChatTurnLimits } from "../routes/chat";
 import type { createApp } from "../server";
 import { LIVE_CHAT_ID } from "../session-watcher";
@@ -1121,6 +1122,129 @@ describe("native chat runtime", () => {
     db.close();
     rmSync(dbPath);
     expect(await changed()).toBe(false);
+  });
+
+  test("should settle a stale running claim instead of showing the session as working", async () => {
+    const registry = join(home, ".claude", "sessions");
+    const projects = join(home, ".claude", "projects", "-tmp-stale-claim");
+    const cwd = join(home, "stale-claim");
+    mkdirSync(registry, { recursive: true });
+    mkdirSync(projects, { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    const nativeId = "stale-claim-native";
+    const transcript = join(projects, `${nativeId}.jsonl`);
+    writeFileSync(
+      transcript,
+      [
+        { type: "user", timestamp: "2026-11-12T12:00:00Z", message: { content: "hi" } },
+        {
+          type: "assistant",
+          timestamp: "2026-11-12T12:00:05Z",
+          message: {
+            id: "msg-stale",
+            model: "claude-opus-5-5",
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join("\n"),
+    );
+    // The registry still says busy, but the process is gone and nothing has been
+    // written for a minute: the cached claim the chat would trust is stale.
+    writeFileSync(
+      join(registry, "1.json"),
+      JSON.stringify({
+        pid: 2_000_000_000,
+        sessionId: nativeId,
+        cwd,
+        status: "busy",
+        startedAt: Date.now() - 120_000,
+        updatedAt: Date.now() - 90_000,
+      }),
+    );
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-stale-claim",
+        backend: "claude",
+        mode: "direct",
+        status: "running",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: nativeId,
+        cwd,
+        transcript_path: transcript,
+        last_activity_at: new Date(Date.now() - 90_000),
+      })
+      .run();
+    const created = await request("/chat/threads", { sourceSessionId: "source-stale-claim" });
+    const thread = (await created.json()) as ChatThread;
+    const state = (await (await request(`/chat/threads/${thread.id}/session`)).json()) as {
+      live: { status: string } | null;
+    };
+    expect(state.live?.status).toBe("stopped");
+    // The row settles for the session list and notifications too, not just this chat.
+    const row = await getDb().query.gateway_sessions.findFirst({
+      where: eq(gateway_sessions.id, "source-stale-claim"),
+    });
+    expect(row?.status).toBe("stopped");
+  });
+
+  test("should trust a fresh running claim without probing the native store", async () => {
+    const registry = join(home, ".claude", "sessions");
+    const projects = join(home, ".claude", "projects", "-tmp-fresh-claim");
+    const cwd = join(home, "fresh-claim");
+    mkdirSync(registry, { recursive: true });
+    mkdirSync(projects, { recursive: true });
+    mkdirSync(cwd, { recursive: true });
+    const nativeId = "fresh-claim-native";
+    const transcript = join(projects, `${nativeId}.jsonl`);
+    writeFileSync(
+      transcript,
+      JSON.stringify({
+        type: "user",
+        timestamp: "2026-11-12T12:00:00Z",
+        message: { content: "hi" },
+      }),
+    );
+    writeFileSync(
+      join(registry, "2.json"),
+      JSON.stringify({
+        pid: 2_000_000_000,
+        sessionId: nativeId,
+        cwd,
+        status: "busy",
+        startedAt: Date.now() - 5_000,
+        updatedAt: Date.now(),
+      }),
+    );
+    getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: "source-fresh-claim",
+        backend: "claude",
+        mode: "direct",
+        status: "running",
+        chat_id: LIVE_CHAT_ID,
+        runtime_session_id: nativeId,
+        cwd,
+        transcript_path: transcript,
+        last_activity_at: new Date(),
+      })
+      .run();
+    const thread = (await (
+      await request("/chat/threads", { sourceSessionId: "source-fresh-claim" })
+    ).json()) as ChatThread;
+    const state = (await (await request(`/chat/threads/${thread.id}/session`)).json()) as {
+      live: { status: string } | null;
+    };
+    // Recent activity supports the claim; the watcher's own liveness watch owns
+    // settling it, so the chat read stays cheap and does not list the native store.
+    expect(state.live?.status).toBe("running");
+    const row = await getDb().query.gateway_sessions.findFirst({
+      where: eq(gateway_sessions.id, "source-fresh-claim"),
+    });
+    expect(row?.status).toBe("running");
   });
 
   test("resumes native identity and stale status while rejecting real owners, unsupported and missing sources", async () => {
