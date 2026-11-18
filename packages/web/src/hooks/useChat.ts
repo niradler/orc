@@ -753,7 +753,7 @@ function useChatController() {
           config: fresh.config,
           messages: fresh.messages,
           historyBefore: fresh.historyBefore ?? null,
-          streaming: true,
+          streaming: false,
           streamText: "",
           activity: [],
           permissions: [],
