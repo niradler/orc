@@ -288,9 +288,13 @@ supplying an array replaces it, and an empty array clears it. Names are unique
 (case-insensitive), `ORC_` names are reserved, and values are single-line. Exact
 secret values are redacted from job logs and saved agent summaries. Legacy `env_vars`
 inputs remain supported as nonsecret values; reads expose them through `environment`.
-Do not supply both forms in one write. Agent `action.options` accepts the shared
-validated launch-options contract for its backend; automatic approval requires
-`action.auto_approve: true`.
+Do not supply both forms in one write. An agent action is `{ type: "agent", prompt }`
+plus the agent spec shared with channel rules: `agent`, optional `model`, `profile`
+(an agent profile used as the persona) and `options` (the validated launch options
+for that agent), and `permissions`: `ask` (default), `read_only`, `accept_edits` or
+`auto`. Jobs run unattended, so tool requests the level does not cover are denied.
+Launch options that approve more than `permissions` allows are rejected. Jobs saved
+with the older `backend` and `auto_approve` fields read back in this shape.
 
 Job runs expose `session_id` for the audit record and `native_session_id` for the
 provider identity. The run-session resolver checks run ownership and discovers only

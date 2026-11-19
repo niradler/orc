@@ -57,7 +57,7 @@ describe("OrcApiClient requests", () => {
       trigger_type: "cron",
       cron_expr: "0 * * * *",
       enabled: true,
-      action: { type: "agent", prompt: "check", backend: "pi" },
+      action: { type: "agent", prompt: "check", agent: "pi" },
     });
     await api.listJobs("p 1");
     await api.listJobs();
@@ -66,7 +66,7 @@ describe("OrcApiClient requests", () => {
       "GET /api/jobs?project_id=p%201&limit=100",
       "GET /api/jobs?limit=100",
     ]);
-    expect(seen[0]?.body).toMatchObject({ cron_expr: "0 * * * *", action: { backend: "pi" } });
+    expect(seen[0]?.body).toMatchObject({ cron_expr: "0 * * * *", action: { agent: "pi" } });
   });
 
   test("reads and activates rules", async () => {

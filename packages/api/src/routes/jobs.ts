@@ -397,7 +397,7 @@ function assertAgentDestination(
   settings: JobSettings | null | undefined,
   environment: JobEnvironment | null | undefined,
 ): void {
-  if (action.type !== "agent" || !["a2a", "agentapi"].includes(action.backend)) return;
+  if (action.type !== "agent" || !["a2a", "agentapi"].includes(action.agent)) return;
   if (
     settings?.host !== undefined ||
     settings?.workspace?.mode === "worktree" ||

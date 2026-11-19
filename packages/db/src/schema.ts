@@ -1,10 +1,23 @@
 import type { GithubSyncConfig, GithubSyncState, GithubTaskSync } from "@orc/core/github-sync";
-import type { JobAction } from "@orc/core/job-actions";
+import { type JobAction, upgradeJobAction } from "@orc/core/job-actions";
 import type { JobEnvironment, JobSettings } from "@orc/core/job-settings";
 import type { SessionHandoffRequest } from "@orc/core/session-handoff";
 import type { WorkspaceEnvironment } from "@orc/core/workspace-settings";
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  customType,
+  index,
+  integer,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
+
+const jobAction = customType<{ data: JobAction | null; driverData: string | null }>({
+  dataType: () => "text",
+  toDriver: (value) => (value === null ? null : JSON.stringify(value)),
+  fromDriver: (value) => (value === null ? null : upgradeJobAction(JSON.parse(value))),
+});
 
 const timestamps = {
   created_at: integer("created_at", { mode: "timestamp" }).notNull().default(sql`(unixepoch())`),
@@ -154,7 +167,7 @@ export const jobs = sqliteTable(
     name: text("name").notNull(),
     description: text("description"),
     command: text("command").notNull(),
-    action: text("action", { mode: "json" }).$type<JobAction>(),
+    action: jobAction("action"),
     skill_name: text("skill_name"),
     prompt_vars: text("prompt_vars", { mode: "json" }).$type<Record<string, string>>(),
     inject_context: integer("inject_context", { mode: "boolean" }).default(true).notNull(),

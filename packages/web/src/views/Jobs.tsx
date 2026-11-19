@@ -288,7 +288,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
               )}
               <code className="block whitespace-pre-wrap break-all text-xs text-on-surface-variant">
                 {job.action?.type === "agent"
-                  ? `Agent: ${job.action.backend}`
+                  ? `Agent: ${job.action.agent}`
                   : job.action?.type === "task"
                     ? `Task: ${job.action.title}`
                     : job.command}
@@ -410,7 +410,7 @@ export default function Jobs({ projectId: savedProjectId }: { projectId: string 
                   <TableCell>
                     <code className="font-mono text-xs text-outline truncate block max-w-[180px]">
                       {job.action?.type === "agent"
-                        ? `Agent: ${job.action.backend}`
+                        ? `Agent: ${job.action.agent}`
                         : job.action?.type === "task"
                           ? `Task: ${job.action.title}`
                           : job.command}

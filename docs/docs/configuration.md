@@ -118,7 +118,7 @@ The model picker discovers configured models without an inference turn. Use
 
 Thinking levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`;
 Pi applies the selected model's limits. Queue modes are `all` or `one-at-a-time`.
-These controls also work as native Pi options for agent jobs using backend `pi`.
+These controls also work as native Pi options for agent jobs using agent `pi`.
 Queue mode, auto-retry and auto-compaction changes are saved to Pi's own settings
 on the execution host, so external Pi sessions use them too. Thinking level is
 scoped to the ORC session. ORC owns transport, session identity, working folder

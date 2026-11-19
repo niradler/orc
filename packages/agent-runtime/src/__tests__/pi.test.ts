@@ -55,7 +55,7 @@ test("Pi model discovery preserves provider identity and job options use the nat
   expect(
     JobActionSchema.safeParse({
       type: "agent",
-      backend: "pi",
+      agent: "pi",
       prompt: "Check files",
       options: { runtime: "pi", options: { thinkingLevel: "high" } },
     }).success,
@@ -63,7 +63,7 @@ test("Pi model discovery preserves provider identity and job options use the nat
   expect(
     JobActionSchema.safeParse({
       type: "agent",
-      backend: "pi",
+      agent: "pi",
       prompt: "Check files",
       options: { runtime: "acpx", args: [] },
     }).success,

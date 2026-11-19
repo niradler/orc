@@ -53,7 +53,6 @@ export function AgentRunEditor<T extends Run>({
     enabled: custom,
     staleTime: 60_000,
   });
-  const profiles = useQuery({ queryKey: ["agents"], queryFn: () => api.agents.list() });
   const settings = ChatSettingsSchema.parse({
     agent: custom ? value.agent : "codex",
     agentOptions: custom && value.options ? { [value.agent]: value.options } : {},
@@ -129,13 +128,37 @@ export function AgentRunEditor<T extends Run>({
           ))}
         </select>
       </Field>
+      <AgentRunAccessFields
+        value={value}
+        onChange={set}
+        testId={testId}
+        help="Read-only limits the agent to reading and searching. People matched only by “Any sender” never get more than read-only."
+      />
+    </div>
+  );
+}
+
+export function AgentRunAccessFields({
+  value,
+  onChange,
+  testId,
+  help,
+}: {
+  value: Pick<Run, "profile" | "permissions">;
+  onChange: (patch: Partial<Run>) => void;
+  testId: string;
+  help: string;
+}) {
+  const profiles = useQuery({ queryKey: ["agents"], queryFn: () => api.agents.list() });
+  return (
+    <>
       <Field label="Persona (agent profile)" id={`${testId}-profile`}>
         <select
           id={`${testId}-profile`}
           data-testid={`${testId}-profile`}
           className={control}
           value={value.profile ?? ""}
-          onChange={(e) => set({ profile: e.target.value || undefined })}
+          onChange={(e) => onChange({ profile: e.target.value || undefined })}
         >
           <option value="">None</option>
           {value.profile && !profiles.data?.agents.some((a) => a.id === value.profile) && (
@@ -152,8 +175,7 @@ export function AgentRunEditor<T extends Run>({
         <span className="flex items-center gap-1">
           <label htmlFor={`${testId}-permissions`}>Permissions</label>
           <HelpPopover label="Permissions" testId={`${testId}-permissions-help`}>
-            Read-only limits the agent to reading and searching. People matched only by “Any sender”
-            never get more than read-only.
+            {help}
           </HelpPopover>
         </span>
         <select
@@ -161,7 +183,7 @@ export function AgentRunEditor<T extends Run>({
           data-testid={`${testId}-permissions`}
           className={control}
           value={value.permissions}
-          onChange={(e) => set({ permissions: e.target.value as AgentPermission })}
+          onChange={(e) => onChange({ permissions: e.target.value as AgentPermission })}
         >
           {Object.entries(permissionLabels).map(([key, label]) => (
             <option key={key} value={key}>
@@ -170,6 +192,6 @@ export function AgentRunEditor<T extends Run>({
           ))}
         </select>
       </div>
-    </div>
+    </>
   );
 }

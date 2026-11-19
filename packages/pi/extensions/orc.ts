@@ -593,7 +593,7 @@ async function restAction(
         trigger_type: "cron",
         cron_expr: cron,
         enabled: true,
-        action: { type: "agent", prompt, backend: "pi" },
+        action: { type: "agent", prompt, agent: "pi" },
         working_dir: ctx.cwd,
         project_id: projectId ?? null,
       });

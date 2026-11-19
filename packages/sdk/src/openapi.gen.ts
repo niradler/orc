@@ -9827,19 +9827,73 @@ export interface paths {
                                     /** @enum {string} */
                                     type: "agent";
                                     agent: string;
-                                    profile?: string;
                                     model?: string;
+                                    profile?: string;
+                                    options?: {
+                                        /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                    /**
+                                     * @default ask
+                                     * @enum {string}
+                                     */
+                                    permissions: "ask" | "read_only" | "accept_edits" | "auto";
                                     project_id: string;
                                     /**
                                      * @default continue
                                      * @enum {string}
                                      */
                                     session: "continue" | "thread" | "message";
-                                    /**
-                                     * @default default
-                                     * @enum {string}
-                                     */
-                                    permission_mode: "default" | "plan" | "acceptEdits";
                                 } | {
                                     /** @enum {string} */
                                     type: "job";
@@ -9954,19 +10008,73 @@ export interface paths {
                                 /** @enum {string} */
                                 type: "agent";
                                 agent: string;
-                                profile?: string;
                                 model?: string;
+                                profile?: string;
+                                options?: {
+                                    /** @enum {string} */
+                                    runtime: "opencode";
+                                    options: {
+                                        effort?: string;
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "claude-sdk";
+                                    options: {
+                                        /** @enum {string} */
+                                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                                        maxTurns?: number;
+                                        maxBudgetUsd?: number;
+                                        /** @enum {string} */
+                                        effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                        thinking?: {
+                                            /** @enum {string} */
+                                            type: "adaptive";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "disabled";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "enabled";
+                                            budgetTokens: number;
+                                        };
+                                        fallbackModel?: string;
+                                        extraArgs?: {
+                                            [key: string]: string | null;
+                                        };
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "codex";
+                                    args: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "acpx";
+                                    args: string[];
+                                };
+                                /**
+                                 * @default ask
+                                 * @enum {string}
+                                 */
+                                permissions?: "ask" | "read_only" | "accept_edits" | "auto";
                                 project_id: string;
                                 /**
                                  * @default continue
                                  * @enum {string}
                                  */
                                 session?: "continue" | "thread" | "message";
-                                /**
-                                 * @default default
-                                 * @enum {string}
-                                 */
-                                permission_mode?: "default" | "plan" | "acceptEdits";
                             } | {
                                 /** @enum {string} */
                                 type: "job";
@@ -10036,19 +10144,73 @@ export interface paths {
                                     /** @enum {string} */
                                     type: "agent";
                                     agent: string;
-                                    profile?: string;
                                     model?: string;
+                                    profile?: string;
+                                    options?: {
+                                        /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                    /**
+                                     * @default ask
+                                     * @enum {string}
+                                     */
+                                    permissions: "ask" | "read_only" | "accept_edits" | "auto";
                                     project_id: string;
                                     /**
                                      * @default continue
                                      * @enum {string}
                                      */
                                     session: "continue" | "thread" | "message";
-                                    /**
-                                     * @default default
-                                     * @enum {string}
-                                     */
-                                    permission_mode: "default" | "plan" | "acceptEdits";
                                 } | {
                                     /** @enum {string} */
                                     type: "job";
@@ -24802,7 +24964,9 @@ export interface components {
                 /** @enum {string} */
                 type: "agent";
                 prompt: string;
-                backend: string;
+                agent: string;
+                model?: string;
+                profile?: string;
                 options?: {
                     /** @enum {string} */
                     runtime: "opencode";
@@ -24857,9 +25021,11 @@ export interface components {
                     runtime: "acpx";
                     args: string[];
                 };
-                model?: string;
-                /** @default false */
-                auto_approve: boolean;
+                /**
+                 * @default ask
+                 * @enum {string}
+                 */
+                permissions: "ask" | "read_only" | "accept_edits" | "auto";
             } | {
                 /** @enum {string} */
                 type: "task";
@@ -24931,7 +25097,9 @@ export interface components {
                 /** @enum {string} */
                 type: "agent";
                 prompt: string;
-                backend: string;
+                agent: string;
+                model?: string;
+                profile?: string;
                 options?: {
                     /** @enum {string} */
                     runtime: "opencode";
@@ -24986,9 +25154,11 @@ export interface components {
                     runtime: "acpx";
                     args: string[];
                 };
-                model?: string;
-                /** @default false */
-                auto_approve: boolean;
+                /**
+                 * @default ask
+                 * @enum {string}
+                 */
+                permissions: "ask" | "read_only" | "accept_edits" | "auto";
             } | {
                 /** @enum {string} */
                 type: "task";
@@ -25064,7 +25234,9 @@ export interface components {
                 /** @enum {string} */
                 type: "agent";
                 prompt: string;
-                backend: string;
+                agent: string;
+                model?: string;
+                profile?: string;
                 options?: {
                     /** @enum {string} */
                     runtime: "opencode";
@@ -25119,9 +25291,11 @@ export interface components {
                     runtime: "acpx";
                     args: string[];
                 };
-                model?: string;
-                /** @default false */
-                auto_approve: boolean;
+                /**
+                 * @default ask
+                 * @enum {string}
+                 */
+                permissions: "ask" | "read_only" | "accept_edits" | "auto";
             } | {
                 /** @enum {string} */
                 type: "task";
