@@ -286,6 +286,27 @@ test("Slack setup shows its own credentials and native onboarding", async ({ pag
 });
 
 for (const width of [1440, 390]) {
+  test(`Slack user session setup shows session credentials and self-pairing guidance at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await gotoView(page, "settings");
+    await settingsSection(page, "channels");
+    await page.getByRole("combobox", { name: "New channel provider" }).selectOption("slack-user");
+    await page.getByTestId("channel-add").click();
+    await expect(page.getByTestId("channel-credential-token")).toBeVisible();
+    await expect(page.getByTestId("channel-credential-cookie")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy Slack app manifest" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Pair my Slack" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Use ORC_SLACK_USER_TOKEN" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Use ORC_SLACK_USER_COOKIE" })).toBeVisible();
+    await page.screenshot({
+      path: `../../.claude/docs/channels-slack-user-setup-${width}.png`,
+    });
+  });
+}
+
+for (const width of [1440, 390]) {
   test(`Slack rules: time window, keywords, thread sessions, read-only strangers at ${width}px`, async ({
     page,
     request,

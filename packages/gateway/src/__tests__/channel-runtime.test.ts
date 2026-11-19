@@ -1063,6 +1063,70 @@ test("Slack thread policy opens one session per thread root and replies inside i
   expect(calls).toHaveLength(offset + 3);
 });
 
+test("Slack user session routes @orc mentions per thread and persists its own platform", async () => {
+  requirePermission = false;
+  await service.save({
+    id: "su-threads",
+    name: "Slack user threads",
+    provider: "slack-user",
+    enabled: true,
+    credentials: { token: "xoxc-fixture", cookie: "xoxd-fixture" },
+    targets: [{ id: "me", name: "Me", chat_id: "C1", user_ids: ["nir"], inbound: true }],
+    routes: [
+      {
+        id: "orc",
+        name: "@orc mentions",
+        condition: {
+          any: [
+            { field: "is_mention", op: "is", value: true },
+            { field: "is_followup", op: "is", value: true },
+          ],
+        },
+        action: { type: "agent", agent: "channels-fixture", project_id: "p1", session: "thread" },
+      },
+    ],
+  });
+  const base = { ...message, connection: "su-threads", chat: "C1", is_direct: false };
+  const offset = calls.length;
+  const sentOffset = sent.length;
+  await service.receive({
+    ...base,
+    message_id: "C1:1",
+    root: "1.0",
+    text: "@orc summarize",
+    is_mention: true,
+  });
+  expect(calls[offset]?.resume).toBe(false);
+  expect(calls[offset]?.sent).toContain("source: slack-user");
+  expect(calls[offset]?.prompt).toBe("@orc summarize");
+  expect(sent.at(-1)).toMatchObject({ channel: "C1", thread_ts: "1.0" });
+  // A user session receives no button events: controls stay typeable text.
+  expect(JSON.stringify(sent.slice(sentOffset))).not.toContain("orc_action:");
+  await service.receive({
+    ...base,
+    message_id: "C1:2",
+    thread: "1.0",
+    root: "2.0",
+    text: "follow up",
+  });
+  expect(calls[offset + 1]?.resume).toBe(true);
+  expect(sent.at(-1)).toMatchObject({ channel: "C1", thread_ts: "1.0" });
+  await service.receive({
+    ...base,
+    message_id: "C1:3",
+    root: "3.0",
+    text: "@orc new topic",
+    is_mention: true,
+  });
+  expect(calls[offset + 2]?.resume).toBe(false);
+  expect(sent.at(-1)).toMatchObject({ channel: "C1", thread_ts: "3.0" });
+  const platforms = getSqlite()
+    .query<{ platform: string }, []>("SELECT DISTINCT platform FROM bridge_chats")
+    .all()
+    .map((row) => row.platform);
+  expect(platforms).toContain("slack-user");
+});
+
 test("message policy starts fresh each time and read-only permissions restrict tools", async () => {
   await service.save({
     id: "fresh",

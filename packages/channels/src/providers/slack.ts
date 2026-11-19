@@ -28,7 +28,7 @@ const marks: MarkdownMarks = {
 const decodeEntities = (text: string) =>
   text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
 const label = (text: string) => Array.from(text).slice(0, 75).join("");
-const section = (text: string, plain: boolean) => ({
+export const slackSection = (text: string, plain: boolean) => ({
   type: "section",
   text: plain
     ? { type: "plain_text", text: decodeEntities(text).slice(0, 3000) || " " }
@@ -231,7 +231,7 @@ export const slack: ChannelProvider = {
     const last = payloads.at(-1);
     if (last && message.links.length)
       last.blocks = [
-        section(String(last.text), plain),
+        slackSection(String(last.text), plain),
         {
           type: "actions",
           elements: message.links.map((link, i) => ({
@@ -249,7 +249,7 @@ export const slack: ChannelProvider = {
     const rendered = slack.render({ text: text || " ", format, links: [] }).payloads[0];
     return {
       blocks: [
-        section(String(rendered?.text ?? text), format === "plain"),
+        slackSection(String(rendered?.text ?? text), format === "plain"),
         ...rows.map((row, i) => ({
           type: "actions",
           block_id: `orc-controls-${i}`,

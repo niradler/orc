@@ -236,3 +236,70 @@ notification menu on desktop and redirect to the phone page, which expands the
 linked request. `/notifications` is shareable at every viewport size.
 See [Human requests](./human-requests.md) for source request actions and timeouts,
 and [API reference](./api.md) for notification and audit routes.
+
+### Slack user session
+
+The `slack-user` provider connects ORC to Slack through **your own user session**
+instead of a Slack app, for workspaces where installing an app is not possible.
+It uses [earshot](https://github.com/niradler/earshot) to hold the same realtime
+socket your Slack web client uses. Replies post **as you**, in the same thread.
+
+| Provider | Needs | Posts as |
+| --- | --- | --- |
+| `slack` | Slack app: bot token + Socket Mode app token | the bot |
+| `slack-user` | your session: `xoxc` token + `d` cookie | you |
+
+Setup in **Settings → Connections → Channels**: add a **Slack (user session)**
+connection and paste the two session values:
+
+- **User token (`xoxc`)** — in the Slack web client (`app.slack.com`), DevTools →
+  Console → `TS.boot_data.api_token`.
+- **Session cookie (`d`)** — DevTools → Application → Cookies → the `d` cookie
+  value (starts `xoxd-`). On macOS, `bunx @niradler55/earshot token` prints both
+  from the installed Slack desktop app.
+
+The cookie is a full-access session secret — treat it like a password. Stored
+values are encrypted; `env:ORC_SLACK_USER_TOKEN` and `env:ORC_SLACK_USER_COOKIE`
+keep them out of the database entirely. Verify identity, then **Pair my Slack**:
+send the pairing text in a direct message to **yourself** (the “you”
+conversation) and confirm the recipient.
+
+Inbound rules work exactly as for the bot. There is no bot user to mention, so
+the trigger is the literal text `@orc`: ORC marks messages starting with `@orc`
+(or mentioning your own Slack user) as `is_mention`, and the text is kept intact
+for keyword rules. A typical route — one session per thread, replies in-thread:
+
+```json
+{
+  "id": "orc-trigger",
+  "name": "@orc mentions",
+  "enabled": true,
+  "condition": { "field": "is_mention", "op": "is", "value": true },
+  "action": { "type": "agent", "agent": "claude", "project_id": "PROJECT_ID", "session": "thread" }
+}
+```
+
+Type `@orc <message>` in any channel or thread you are a member of; the reply
+lands in the same thread as you, and follow-ups in that thread resume the same
+session. A new thread starts a new session. `text starts_with "@orc"` and
+keyword rules (`contains_any`) work too, so different keywords can route to
+different agents or projects.
+
+Differences from the bot provider:
+
+- **No button interactions.** A user session has no app to receive clicks, so
+  chat controls and approvals render as typeable commands (`/status`,
+  `/attention <id> approve`, …) instead of buttons.
+- **No file attachments.** Text messages only.
+- **Reconnect gap.** Messages sent while the socket reconnects are not
+  replayed; earshot is push-only.
+- **Session expiry.** When Slack rejects the session, the connection shows
+  `session_expired`. Log in to Slack again, paste a fresh token and cookie, and
+  save the connection to reconnect.
+- **Unofficial transport.** This rides Slack's internal client transport and
+  can break if Slack changes it; it is outside Slack's API terms of use. Use
+  the bot provider where an app is allowed.
+
+Advanced: the connection's provider configuration accepts
+`{"transport": "auto" | "rtm" | "gateway"}` (default `auto`) to force earshot's
+socket transport when `rtm.connect` is blocked on your workspace.

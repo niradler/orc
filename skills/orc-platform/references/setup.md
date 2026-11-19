@@ -45,7 +45,7 @@ Distinguish these credentials:
 | `ORC_API_SECRET` / `api.secret` | Clients calling ORC's API and HTTP MCP |
 | Agent/provider login or API key | The backend that runs Claude, Codex, ACPX, etc. |
 | Knowledge embedding API key | The external embedding provider; see knowledge.md |
-| Telegram/Slack token | A channel connection's bot credentials (Settings → Connections → Channels), entered directly or referenced as `env:ORC_TELEGRAM_TOKEN` / `env:ORC_SLACK_BOT_TOKEN` / `env:ORC_SLACK_APP_TOKEN` |
+| Telegram/Slack token | A channel connection's bot credentials (Settings → Connections → Channels), entered directly or referenced as `env:ORC_TELEGRAM_TOKEN` / `env:ORC_SLACK_BOT_TOKEN` / `env:ORC_SLACK_APP_TOKEN`; the Slack user-session provider uses `env:ORC_SLACK_USER_TOKEN` / `env:ORC_SLACK_USER_COOKIE` |
 
 Set the same ORC Bearer secret on server and clients when authentication is
 enabled. An empty API secret is open mode; check the actual bind address and

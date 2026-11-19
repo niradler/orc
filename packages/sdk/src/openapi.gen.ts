@@ -6984,7 +6984,7 @@ export interface paths {
                                 /** @default false */
                                 multi_select: boolean;
                                 /** @default [] */
-                                notify: ("telegram" | "slack")[];
+                                notify: ("telegram" | "slack" | "slack-user")[];
                                 action?: {
                                     tool: string;
                                     input: {
@@ -7107,7 +7107,7 @@ export interface paths {
                         /** @default false */
                         multi_select?: boolean;
                         /** @default [] */
-                        notify?: ("telegram" | "slack")[];
+                        notify?: ("telegram" | "slack" | "slack-user")[];
                         action?: {
                             tool: string;
                             input: {
@@ -7190,7 +7190,7 @@ export interface paths {
                                 /** @default false */
                                 multi_select: boolean;
                                 /** @default [] */
-                                notify: ("telegram" | "slack")[];
+                                notify: ("telegram" | "slack" | "slack-user")[];
                                 action?: {
                                     tool: string;
                                     input: {
@@ -7335,7 +7335,7 @@ export interface paths {
                                 /** @default false */
                                 multi_select: boolean;
                                 /** @default [] */
-                                notify: ("telegram" | "slack")[];
+                                notify: ("telegram" | "slack" | "slack-user")[];
                                 action?: {
                                     tool: string;
                                     input: {
@@ -7483,7 +7483,7 @@ export interface paths {
                                 /** @default false */
                                 multi_select: boolean;
                                 /** @default [] */
-                                notify: ("telegram" | "slack")[];
+                                notify: ("telegram" | "slack" | "slack-user")[];
                                 action?: {
                                     tool: string;
                                     input: {
@@ -7656,7 +7656,7 @@ export interface paths {
                                 /** @default false */
                                 multi_select: boolean;
                                 /** @default [] */
-                                notify: ("telegram" | "slack")[];
+                                notify: ("telegram" | "slack" | "slack-user")[];
                                 action?: {
                                     tool: string;
                                     input: {
@@ -7813,7 +7813,7 @@ export interface paths {
                                 /** @default false */
                                 multi_select: boolean;
                                 /** @default [] */
-                                notify: ("telegram" | "slack")[];
+                                notify: ("telegram" | "slack" | "slack-user")[];
                                 action?: {
                                     tool: string;
                                     input: {
@@ -7966,7 +7966,7 @@ export interface paths {
                                 /** @default false */
                                 multi_select: boolean;
                                 /** @default [] */
-                                notify: ("telegram" | "slack")[];
+                                notify: ("telegram" | "slack" | "slack-user")[];
                                 action?: {
                                     tool: string;
                                     input: {
@@ -8119,7 +8119,7 @@ export interface paths {
                                 /** @default false */
                                 multi_select: boolean;
                                 /** @default [] */
-                                notify: ("telegram" | "slack")[];
+                                notify: ("telegram" | "slack" | "slack-user")[];
                                 action?: {
                                     tool: string;
                                     input: {
@@ -9778,7 +9778,7 @@ export interface paths {
                             id: string;
                             name: string;
                             /** @enum {string} */
-                            provider: "telegram" | "slack";
+                            provider: "telegram" | "slack" | "slack-user";
                             enabled: boolean;
                             revision: number;
                             config: {
@@ -9950,7 +9950,7 @@ export interface paths {
                         id: string;
                         name: string;
                         /** @enum {string} */
-                        provider: "telegram" | "slack";
+                        provider: "telegram" | "slack" | "slack-user";
                         /** @default false */
                         enabled?: boolean;
                         /** @default 0 */
@@ -10095,7 +10095,7 @@ export interface paths {
                             id: string;
                             name: string;
                             /** @enum {string} */
-                            provider: "telegram" | "slack";
+                            provider: "telegram" | "slack" | "slack-user";
                             enabled: boolean;
                             revision: number;
                             config: {
@@ -13228,7 +13228,7 @@ export interface paths {
                                 /** @default false */
                                 multi_select: boolean;
                                 /** @default [] */
-                                notify: ("telegram" | "slack")[];
+                                notify: ("telegram" | "slack" | "slack-user")[];
                                 action?: {
                                     tool: string;
                                     input: {
@@ -13475,7 +13475,7 @@ export interface paths {
                                         /** @default 86400 */
                                         expires_in_seconds: number;
                                         /** @default [] */
-                                        notify: ("telegram" | "slack")[];
+                                        notify: ("telegram" | "slack" | "slack-user")[];
                                     };
                                 };
                             }[];
@@ -13622,7 +13622,7 @@ export interface paths {
                                             /** @default 86400 */
                                             expires_in_seconds: number;
                                             /** @default [] */
-                                            notify: ("telegram" | "slack")[];
+                                            notify: ("telegram" | "slack" | "slack-user")[];
                                         };
                                     }[];
                                 } | null;
@@ -13792,7 +13792,7 @@ export interface paths {
                                     /** @default 86400 */
                                     expires_in_seconds?: number;
                                     /** @default [] */
-                                    notify?: ("telegram" | "slack")[];
+                                    notify?: ("telegram" | "slack" | "slack-user")[];
                                 };
                             }[];
                         };
@@ -13911,7 +13911,7 @@ export interface paths {
                                         /** @default 86400 */
                                         expires_in_seconds: number;
                                         /** @default [] */
-                                        notify: ("telegram" | "slack")[];
+                                        notify: ("telegram" | "slack" | "slack-user")[];
                                     };
                                 }[];
                             } | null;
@@ -14064,7 +14064,7 @@ export interface paths {
                                         /** @default 86400 */
                                         expires_in_seconds: number;
                                         /** @default [] */
-                                        notify: ("telegram" | "slack")[];
+                                        notify: ("telegram" | "slack" | "slack-user")[];
                                     };
                                 }[];
                             } | null;
@@ -14143,7 +14143,7 @@ export interface paths {
                                     /** @default 86400 */
                                     expires_in_seconds: number;
                                     /** @default [] */
-                                    notify: ("telegram" | "slack")[];
+                                    notify: ("telegram" | "slack" | "slack-user")[];
                                 };
                             }[];
                             orc_actions?: {

@@ -259,7 +259,7 @@ export async function listReviewTargets() {
   return db.query.bridge_chats.findMany({
     where: and(
       eq(bridge_chats.authorized, true),
-      inArray(bridge_chats.platform, ["telegram", "slack"]),
+      inArray(bridge_chats.platform, ["telegram", "slack", "slack-user"]),
     ),
     orderBy: [desc(bridge_chats.updated_at)],
   });

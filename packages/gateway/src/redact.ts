@@ -2,6 +2,7 @@ const SENSITIVE_KEYS = new Set([
   "token",
   "bot_token",
   "app_token",
+  "cookie",
   "api_key",
   "secret",
   "password",
@@ -11,10 +12,12 @@ const SENSITIVE_KEYS = new Set([
   "ORC_TELEGRAM_TOKEN",
   "SLACK_BOT_TOKEN",
   "SLACK_APP_TOKEN",
+  "ORC_SLACK_USER_TOKEN",
+  "ORC_SLACK_USER_COOKIE",
 ]);
 
 const TOKEN_PREFIXES =
-  /\b(sk-[A-Za-z0-9\-_]{20,}|xox[bpoa]-[A-Za-z0-9-]+|ghp_[A-Za-z0-9]{36}|AIza[A-Za-z0-9\-_]{35}|[0-9]{8,10}:[A-Za-z0-9\-_]{35})\b/g;
+  /\b(sk-[A-Za-z0-9\-_]{20,}|xox[bpoacd]-[A-Za-z0-9-]+|ghp_[A-Za-z0-9]{36}|AIza[A-Za-z0-9\-_]{35}|[0-9]{8,10}:[A-Za-z0-9\-_]{35})\b/g;
 
 export function redactSecrets(text: string): string {
   return text.replace(

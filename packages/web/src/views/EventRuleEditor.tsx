@@ -95,7 +95,7 @@ export function EventRuleEditor({
   const [requestChoices, setRequestChoices] = useState(
     rule?.target.type === "ask_user" ? rule.target.choices.join("\n") : "",
   );
-  const [requestNotify, setRequestNotify] = useState<("telegram" | "slack")[]>(
+  const [requestNotify, setRequestNotify] = useState<("telegram" | "slack" | "slack-user")[]>(
     rule?.target.type === "ask_user" ? rule.target.notify : [],
   );
   const [requestExpiry, setRequestExpiry] = useState(
@@ -578,7 +578,7 @@ export function EventRuleEditor({
               Waits in Notifications. Approval lets the agent act with its existing permissions.
             </p>
             <div className="flex gap-4 text-sm">
-              {(["telegram", "slack"] as const).map((channel) => (
+              {(["telegram", "slack", "slack-user"] as const).map((channel) => (
                 <label key={channel} className="flex gap-2 items-center">
                   <input
                     type="checkbox"
@@ -592,7 +592,12 @@ export function EventRuleEditor({
                       )
                     }
                   />
-                  Notify {channel === "telegram" ? "Telegram" : "Slack"}
+                  Notify{" "}
+                  {channel === "telegram"
+                    ? "Telegram"
+                    : channel === "slack-user"
+                      ? "Slack (user session)"
+                      : "Slack"}
                 </label>
               ))}
             </div>

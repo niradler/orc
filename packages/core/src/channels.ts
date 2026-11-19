@@ -2,7 +2,7 @@ import { z } from "zod";
 import { AgentRunSchema, optionsExceedPermissions } from "./agent-run.js";
 import { NotificationFilterSchema } from "./notifications.js";
 
-export const ChannelProviderSchema = z.enum(["telegram", "slack"]);
+export const ChannelProviderSchema = z.enum(["telegram", "slack", "slack-user"]);
 export const ChannelBuiltinCommands = [
   { command: "help", description: "Chat controls and custom shortcuts" },
   { command: "status", description: "Current project, agent, model and session" },

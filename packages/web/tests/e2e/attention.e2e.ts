@@ -374,11 +374,15 @@ test("should preserve Ask user expiry and notification settings when editing its
   await saved.getByTestId("event-rule-edit").click();
   await expect(page.getByTestId("rule-request-expiry")).toHaveValue("1800");
   await expect(page.getByTestId("rule-notify-telegram")).toBeChecked();
+  await expect(page.getByTestId("rule-notify-slack-user")).toBeVisible();
+  await page.getByTestId("rule-notify-slack-user").check();
+  await page.screenshot({ path: "../../.claude/docs/attention-notify-slack-user.png" });
   await page.getByTestId("rule-request-prompt").fill("Updated question prompt");
   await page.getByTestId("event-rule-save").click();
   await page.reload();
   await saved.getByTestId("event-rule-edit").click();
   await expect(page.getByTestId("rule-request-expiry")).toHaveValue("1800");
   await expect(page.getByTestId("rule-notify-telegram")).toBeChecked();
+  await expect(page.getByTestId("rule-notify-slack-user")).toBeChecked();
   await expect(page.getByTestId("rule-request-prompt")).toHaveValue("Updated question prompt");
 });
