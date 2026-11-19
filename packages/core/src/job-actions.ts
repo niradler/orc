@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentRunSchema } from "./agent-run.js";
+import { AgentRunSchema, optionsExceedPermissions } from "./agent-run.js";
 
 export const JobActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("command"), command: z.string().trim().min(1) }).strict(),
@@ -35,18 +35,7 @@ export const JobActionSchema = z.discriminatedUnion("type", [
           path: ["options"],
           message: "Launch options do not match this agent",
         });
-      const bypass =
-        (action.options.runtime === "claude-sdk" &&
-          action.options.options.permissionMode === "bypassPermissions") ||
-        (action.options.runtime === "acpx" && action.options.args.includes("--approve-all"));
-      const edits =
-        (action.options.runtime === "claude-sdk" &&
-          action.options.options.permissionMode === "acceptEdits") ||
-        (action.options.runtime === "acpx" && action.options.args.includes("--approve-reads"));
-      if (
-        (bypass && action.permissions !== "auto") ||
-        (edits && !["accept_edits", "auto"].includes(action.permissions))
-      )
+      if (optionsExceedPermissions(action.options, action.permissions))
         context.addIssue({
           code: "custom",
           path: ["options"],

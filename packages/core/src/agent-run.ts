@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ChatAgentOptionsSchema } from "./chat-options.js";
+import { type ChatAgentOptions, ChatAgentOptionsSchema } from "./chat-options.js";
 
 export const AgentPermissions = ["ask", "read_only", "accept_edits", "auto"] as const;
 export type AgentPermission = (typeof AgentPermissions)[number];
@@ -25,6 +25,29 @@ export const AgentRunSchema = z.object({
 });
 export type AgentRun = z.infer<typeof AgentRunSchema>;
 
+const permissionRank: Record<AgentPermission, number> = {
+  read_only: 0,
+  ask: 1,
+  accept_edits: 2,
+  auto: 3,
+};
+
+export function optionsExceedPermissions(
+  options: ChatAgentOptions | undefined,
+  permissions: AgentPermission,
+): boolean {
+  if (!options) return false;
+  const granted: AgentPermission | null =
+    (options.runtime === "claude-sdk" && options.options.permissionMode === "bypassPermissions") ||
+    (options.runtime === "acpx" && options.args.includes("--approve-all"))
+      ? "auto"
+      : (options.runtime === "claude-sdk" && options.options.permissionMode === "acceptEdits") ||
+          (options.runtime === "acpx" && options.args.includes("--approve-reads"))
+        ? "accept_edits"
+        : null;
+  return granted !== null && permissionRank[granted] > permissionRank[permissions];
+}
+
 export function agentRunSessionOptions(
   run: Pick<AgentRun, "permissions" | "options">,
   trusted: boolean,
@@ -42,8 +65,10 @@ export function agentRunSessionOptions(
         : permissions === "auto"
           ? ("bypassPermissions" as const)
           : ("default" as const),
-    orcMcp: permissions !== "read_only",
+    orcMcp: trusted && permissions !== "read_only",
     ...(permissions === "read_only" ? { toolAllowlist: READ_ONLY_TOOLS } : {}),
-    ...(run.options ? { chatAgentOptions: run.options } : {}),
+    ...(run.options && !optionsExceedPermissions(run.options, permissions)
+      ? { chatAgentOptions: run.options }
+      : {}),
   };
 }

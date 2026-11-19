@@ -158,7 +158,7 @@ profile](./agent-packages.md) whose instructions, tool allowlist and model
 become that rule's persona. `session` picks `continue` (one rolling
 conversation per chat/thread/sender, the default), `thread` (one session per
 thread; a top-level Slack message starts a new thread and the reply lands in
-it) or `message` (a fresh session every message). `permissions` picks `ask` (approvals come to you), `read_only` (only Read, Grep, Glob, LS, WebFetch and WebSearch; ORC MCP is off; backends that cannot enforce a tool allowlist refuse to run), `accept_edits` or `auto` (no prompts); senders matched only through `*` never get more than `read_only`. `options` carries the same per-agent launch options as the chat composer, such as effort. A `job` action runs that job
+it) or `message` (a fresh session every message). `permissions` picks `ask` (approvals come to you), `read_only` (only Read, Grep, Glob, LS, WebFetch and WebSearch; ORC MCP is off; backends that cannot enforce a tool allowlist refuse to run), `accept_edits` or `auto` (no prompts); senders matched only through `*` never get more than `read_only`, never get ORC MCP, and cannot trigger a job whose agent runs with `accept_edits` or `auto`. `options` carries the same per-agent launch options as the chat composer, such as effort; options that approve more than `permissions` (Claude `bypassPermissions` or `acceptEdits`, ACPX `--approve-all` or `--approve-reads`) are rejected. A `job` action runs that job
 with the message text on stdin and `ORC_CHANNEL_CONNECTION`,
 `ORC_CHANNEL_PROVIDER`, `ORC_CHANNEL_CHAT`, `ORC_CHANNEL_THREAD`,
 `ORC_CHANNEL_SENDER`, `ORC_CHANNEL_SENDER_NAME` and `ORC_CHANNEL_ROUTE` in its

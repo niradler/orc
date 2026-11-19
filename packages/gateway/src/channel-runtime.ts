@@ -19,6 +19,7 @@ import { withOrcContext } from "@orc/core/chat-context";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
+import { upgradeJobAction } from "@orc/core/job-actions";
 import { createLogger } from "@orc/core/logger";
 import type { SessionFile } from "@orc/core/session-file-types";
 import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
@@ -198,13 +199,22 @@ export async function startChannelRuntime(
     target: ChannelTarget,
   ) => {
     const job = getSqlite()
-      .query<{ name: string; enabled: number }, [string]>(
-        "SELECT name,enabled FROM jobs WHERE id=?",
+      .query<{ name: string; enabled: number; action: string | null }, [string]>(
+        "SELECT name,enabled,action FROM jobs WHERE id=?",
       )
       .get(route.action.job_id);
     if (!job) throw new ValidationError("The job for this route no longer exists");
     if (!job.enabled) {
       await reply(message, target, `${job.name} is disabled.`, "plain");
+      return;
+    }
+    const action = job.action ? upgradeJobAction(JSON.parse(job.action)) : null;
+    if (
+      !target.user_ids.includes(message.sender) &&
+      action?.type === "agent" &&
+      (action.permissions === "auto" || action.permissions === "accept_edits")
+    ) {
+      await reply(message, target, `${job.name} only runs for named senders.`, "plain");
       return;
     }
     const runId = await executeJob({

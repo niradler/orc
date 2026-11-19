@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentRunSchema } from "./agent-run.js";
+import { AgentRunSchema, optionsExceedPermissions } from "./agent-run.js";
 import { NotificationFilterSchema } from "./notifications.js";
 
 export const ChannelProviderSchema = z.enum(["telegram", "slack"]);
@@ -237,7 +237,11 @@ export const ChannelRouteSchema = z
           project_id: z.string().min(1).max(100),
           session: z.enum(ChannelSessionPolicies).default("continue"),
         })
-        .strict(),
+        .strict()
+        .refine((action) => !optionsExceedPermissions(action.options, action.permissions), {
+          path: ["options"],
+          message: "Launch options approve more than the chosen permissions allow",
+        }),
       z.object({ type: z.literal("job"), job_id: z.string().min(1).max(100) }).strict(),
     ]),
   })

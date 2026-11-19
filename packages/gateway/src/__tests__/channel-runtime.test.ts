@@ -1160,3 +1160,46 @@ test("a job route runs the job with the message and replies with its output", as
   await service.receive({ ...message, connection: "jobs", message_id: "j-1", text: "ping" });
   expect(String(sent.at(-1)?.text)).toContain("ping from nir");
 });
+
+test("strangers cannot trigger a job whose agent may change files", async () => {
+  getSqlite()
+    .query(
+      "INSERT INTO jobs (id,name,trigger_type,command,action) VALUES ('j2','auto-agent','manual','',?)",
+    )
+    .run(
+      JSON.stringify({
+        type: "agent",
+        backend: "channels-fixture",
+        prompt: "x",
+        auto_approve: true,
+      }),
+    );
+  await service.save({
+    id: "open-jobs",
+    name: "Open jobs",
+    provider: "telegram",
+    enabled: true,
+    credentials: { token: "fixture" },
+    targets: [{ id: "anyone", name: "Any", chat_id: "*", user_ids: ["*"], inbound: true }],
+    routes: [
+      {
+        id: "run",
+        name: "Run",
+        condition: { always: true },
+        action: { type: "job", job_id: "j2" },
+      },
+    ],
+  });
+  const runs = () =>
+    getSqlite().query<{ n: number }, []>("SELECT count(*) n FROM job_runs").get()?.n;
+  const before = runs();
+  await service.receive({
+    ...message,
+    connection: "open-jobs",
+    sender: "U9",
+    chat: "D9",
+    message_id: "o-1",
+  });
+  expect(String(sent.at(-1)?.text)).toBe("auto-agent only runs for named senders.");
+  expect(runs()).toBe(before);
+});
