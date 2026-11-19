@@ -376,6 +376,11 @@ test("should preserve Ask user expiry and notification settings when editing its
   await expect(page.getByTestId("rule-notify-telegram")).toBeChecked();
   await expect(page.getByTestId("rule-notify-slack-user")).toBeVisible();
   await page.getByTestId("rule-notify-slack-user").check();
+  await page.getByTestId("rule-request-choice-add").click();
+  await page.getByTestId("rule-request-choice-0").fill("Blue");
+  await page.getByTestId("rule-request-choice-add").click();
+  await page.getByTestId("rule-request-choice-1").fill("Green");
+  await page.getByTestId("rule-request-choice-remove-1").click();
   await page.screenshot({ path: "../../.claude/docs/attention-notify-slack-user.png" });
   await page.getByTestId("rule-request-prompt").fill("Updated question prompt");
   await page.getByTestId("event-rule-save").click();
@@ -384,5 +389,7 @@ test("should preserve Ask user expiry and notification settings when editing its
   await expect(page.getByTestId("rule-request-expiry")).toHaveValue("1800");
   await expect(page.getByTestId("rule-notify-telegram")).toBeChecked();
   await expect(page.getByTestId("rule-notify-slack-user")).toBeChecked();
+  await expect(page.getByTestId("rule-request-choice-0")).toHaveValue("Blue");
+  await expect(page.getByTestId("rule-request-choice-1")).toHaveCount(0);
   await expect(page.getByTestId("rule-request-prompt")).toHaveValue("Updated question prompt");
 });

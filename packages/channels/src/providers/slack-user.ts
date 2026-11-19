@@ -1,10 +1,45 @@
 import { type InboundMessage, listen, type Transport } from "@niradler55/earshot";
+import { extractFromDesktop } from "@niradler55/earshot/session";
 import type { ChannelInbound } from "@orc/core/channels";
 import { ValidationError } from "@orc/core/errors";
 import { type ChannelProvider, type NativePayload, ProviderFailure, postJson } from "./base.js";
 import { slack, slackSection } from "./slack.js";
 
 const TRANSPORTS: string[] = ["auto", "rtm", "gateway"];
+
+/** Reads the user's Slack session from the local desktop app (macOS/Windows). */
+export function localSlackSession(): { token: string; cookie: string } {
+  try {
+    return extractFromDesktop();
+  } catch (error) {
+    throw new ValidationError(
+      `Could not read the local Slack session: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+export function slackUserTriggers(config: Record<string, unknown>): string[] {
+  const raw = config.triggers ?? ["@orc"];
+  const list = typeof raw === "string" ? [raw] : raw;
+  if (
+    !Array.isArray(list) ||
+    list.length === 0 ||
+    list.length > 20 ||
+    !list.every((t) => typeof t === "string" && t.trim().length > 0 && t.length <= 100)
+  )
+    throw new ValidationError("config.triggers must be 1-20 nonempty keywords (max 100 chars)");
+  return list.map((t) => (t as string).trim());
+}
+
+function matchesTrigger(text: string, triggers: string[]): boolean {
+  const lower = text.trim().toLowerCase();
+  return triggers.some((trigger) => {
+    const needle = trigger.toLowerCase();
+    if (!lower.startsWith(needle)) return false;
+    const next = lower[needle.length];
+    return next === undefined || !/[a-z0-9_]/.test(next);
+  });
+}
 
 async function call(
   token: string,
@@ -34,6 +69,7 @@ export function slackUserInbound(
   connection: string,
   selfId: string,
   selfName: string,
+  triggers: string[],
 ): ChannelInbound | null {
   if (!message.user || !message.channel || !message.ts) return null;
   const raw = message.text;
@@ -55,7 +91,7 @@ export function slackUserInbound(
     message_id: `${message.channel}:${message.ts}`,
     kind: "message",
     is_direct: direct,
-    is_mention: /^@orc\b/i.test(raw.trim()) || (!!mention && raw.includes(mention)),
+    is_mention: matchesTrigger(raw, triggers) || (!!mention && raw.includes(mention)),
   };
 }
 
@@ -80,9 +116,9 @@ export const slackUser: ChannelProvider = {
       native_overrides: true,
     },
     setup: [
-      "Sign in to Slack in your browser. Copy the xoxc token (DevTools console: TS.boot_data.api_token) and the d cookie (DevTools → Application → Cookies), or run `bunx @niradler55/earshot token` on macOS.",
-      "Paste both below. ORC connects as you over your own session — no Slack app or admin approval; replies post as you. Treat the cookie like a password.",
-      "Pair yourself from your own Slack DM, add an inbound route (for example text starts with @orc), then type @orc <message> in any thread.",
+      "Connects as you over your own Slack session — no app or admin approval; replies post as you.",
+      "Fill from the local Slack app, or paste the xoxc token and d cookie (see the info icon).",
+      "Pair from your own Slack DM, add a route, then type a trigger keyword (default @orc) in any thread.",
     ],
   },
   accountKey: "token",
@@ -112,6 +148,7 @@ export const slackUser: ChannelProvider = {
     if (typeof configured !== "string" || !TRANSPORTS.includes(configured))
       throw new ValidationError("config.transport must be auto, rtm or gateway");
     const transport = configured as Transport;
+    const triggers = slackUserTriggers(connection.config);
     let gateway: { stop: () => void } | undefined;
     let selfId = "";
     let selfName = "";
@@ -153,7 +190,7 @@ export const slackUser: ChannelProvider = {
             if (posted.has(message.ts)) return;
             const ts = Number(message.ts);
             if (ts && ts * 1000 < startedAt - 1000) return;
-            const inbound = slackUserInbound(message, connection.id, selfId, selfName);
+            const inbound = slackUserInbound(message, connection.id, selfId, selfName, triggers);
             if (inbound) receive(inbound);
           },
           onStatus: (status, detail) => {

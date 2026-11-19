@@ -585,7 +585,30 @@ function ConnectionEditor({
           />
         </Field>
       </div>
-      <p className="text-sm text-muted-foreground">{provider.setup.join(" ")}</p>
+      <div className="flex items-start gap-1">
+        <p className="text-sm text-muted-foreground">{provider.setup.join(" ")}</p>
+        {draft.provider === "slack-user" && (
+          <HelpPopover label="Slack session credentials" testId="channel-slack-user-help">
+            <div className="space-y-2">
+              <p>
+                The session cookie is full access to your Slack account — treat it like a password.
+                Stored values are encrypted; environment references keep them out of the database.
+              </p>
+              <p>
+                <strong>Fill from local Slack</strong> reads the installed desktop app
+                (macOS/Windows). Manually: open app.slack.com → DevTools → Console →{" "}
+                <code>TS.boot_data.api_token</code> (xoxc), and Application → Cookies → the{" "}
+                <code>d</code> value (xoxd).
+              </p>
+              <p>
+                Trigger keywords are configurable: set <code>config.triggers</code> (default{" "}
+                <code>["@orc"]</code>) under Provider configuration. Matching messages are marked as
+                mentions; keyword rules work on the full text.
+              </p>
+            </div>
+          </HelpPopover>
+        )}
+      </div>
       {provider.credentials.map((field) => (
         <div key={field.key} className="flex flex-wrap items-end gap-2">
           <div className="w-full min-w-0 sm:w-auto sm:flex-1">
@@ -619,6 +642,29 @@ function ConnectionEditor({
           </Button>
         </div>
       ))}
+      {draft.provider === "slack-user" && (
+        <Button
+          type="button"
+          variant="outline"
+          data-testid="channel-slack-user-fill"
+          onClick={() =>
+            void run(async () => {
+              const session = await api.channels.slackUserSession();
+              update({
+                ...draft,
+                credentials: {
+                  ...draft.credentials,
+                  token: session.token,
+                  cookie: session.cookie,
+                },
+              });
+              return "Filled the token and cookie from the local Slack app.";
+            })
+          }
+        >
+          Fill from local Slack
+        </Button>
+      )}
       {draft.provider === "slack" && (
         <Button
           type="button"

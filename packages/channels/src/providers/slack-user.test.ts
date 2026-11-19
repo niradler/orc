@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { ChannelConnectionSchema, type ChannelInbound } from "@orc/core/channels";
 import { createChannelTransport } from "./registry.js";
-import { slackUser, slackUserInbound } from "./slack-user.js";
+import { slackUser, slackUserInbound, slackUserTriggers } from "./slack-user.js";
 
 const originalFetch = globalThis.fetch;
 const OriginalSocket = globalThis.WebSocket;
@@ -204,11 +204,41 @@ test("credential and transport configuration are validated", () => {
       credentials,
     ),
   ).toThrow("transport");
+  expect(() =>
+    createChannelTransport(
+      ChannelConnectionSchema.parse({ ...connection, config: { triggers: [] } }),
+      credentials,
+    ),
+  ).toThrow("triggers");
   const dCookie = createChannelTransport(connection, {
     token: "xoxc-fixture",
     cookie: "d=xoxd-fixture",
   });
   expect(dCookie).toBeDefined();
+});
+
+test("configured triggers drive is_mention through the live transport", async () => {
+  mockSlack();
+  const received: ChannelInbound[] = [];
+  globalThis.WebSocket = FakeSocket as unknown as typeof WebSocket;
+  const transport = createChannelTransport(
+    ChannelConnectionSchema.parse({ ...connection, config: { triggers: ["jarvis"] } }),
+    credentials,
+  );
+  await transport.start(
+    (message) => received.push(message),
+    () => {},
+  );
+  const deadline = Date.now() + 2000;
+  while (!socket && Date.now() < deadline) await Bun.sleep(5);
+  try {
+    socket?.onmessage?.({ data: frame({ user: "U_SELF", text: "jarvis do it" }) });
+    socket?.onmessage?.({ data: frame({ user: "U_SELF", text: "@orc do it" }) });
+    expect(received[0]?.is_mention).toBe(true);
+    expect(received[1]?.is_mention).toBe(false);
+  } finally {
+    await transport.stop();
+  }
 });
 
 test("controls render typeable commands because a user session receives no button events", () => {
@@ -226,14 +256,39 @@ test("controls render typeable commands because a user session receives no butto
   expect(slackUser.info.capabilities.buttons).toBe(false);
 });
 
-test("inbound mapping drops incomplete frames and keeps the @orc trigger text for rules", () => {
+test("inbound mapping drops incomplete frames and keeps the trigger text for rules", () => {
   const base = { channel: "C1", user: "U1", text: "@orc help", ts: "1732000000.000100" };
-  expect(slackUserInbound({ ...base, channel: "" }, "su", "U_SELF", "nir")).toBeNull();
-  expect(slackUserInbound({ ...base, user: "" }, "su", "U_SELF", "nir")).toBeNull();
-  expect(slackUserInbound({ ...base, text: "  " }, "su", "U_SELF", "nir")).toBeNull();
-  expect(slackUserInbound(base, "su", "U_SELF", "nir")).toMatchObject({
+  const triggers = ["@orc"];
+  expect(slackUserInbound({ ...base, channel: "" }, "su", "U_SELF", "nir", triggers)).toBeNull();
+  expect(slackUserInbound({ ...base, user: "" }, "su", "U_SELF", "nir", triggers)).toBeNull();
+  expect(slackUserInbound({ ...base, text: "  " }, "su", "U_SELF", "nir", triggers)).toBeNull();
+  expect(slackUserInbound(base, "su", "U_SELF", "nir", triggers)).toMatchObject({
     text: "@orc help",
     is_mention: true,
     root: "1732000000.000100",
   });
+});
+
+test("trigger keywords are configurable and match whole words case-insensitively", () => {
+  const base = { channel: "C1", user: "U1", ts: "1732000000.000100" };
+  const triggers = ["jarvis", "/ask"];
+  expect(
+    slackUserInbound({ ...base, text: "JARVIS deploy status" }, "su", "U_SELF", "nir", triggers),
+  ).toMatchObject({ text: "JARVIS deploy status", is_mention: true });
+  expect(
+    slackUserInbound({ ...base, text: "/ask anything" }, "su", "U_SELF", "nir", triggers),
+  ).toMatchObject({ is_mention: true });
+  expect(
+    slackUserInbound({ ...base, text: "jarvisology is fake" }, "su", "U_SELF", "nir", triggers),
+  ).toMatchObject({ is_mention: false });
+  expect(
+    slackUserInbound({ ...base, text: "@orc help" }, "su", "U_SELF", "nir", triggers),
+  ).toMatchObject({ is_mention: false });
+  expect(slackUserTriggers({})).toEqual(["@orc"]);
+  expect(slackUserTriggers({ triggers: "hey orc" })).toEqual(["hey orc"]);
+  expect(slackUserTriggers({ triggers: ["a", "b"] })).toEqual(["a", "b"]);
+  expect(() => slackUserTriggers({ triggers: [] })).toThrow("triggers");
+  expect(() => slackUserTriggers({ triggers: [""] })).toThrow("triggers");
+  expect(() => slackUserTriggers({ triggers: [42] })).toThrow("triggers");
+  expect(() => slackUserTriggers({ triggers: "x".repeat(101) })).toThrow("triggers");
 });

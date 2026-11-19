@@ -250,13 +250,14 @@ socket your Slack web client uses. Replies post **as you**, in the same thread.
 | `slack-user` | your session: `xoxc` token + `d` cookie | you |
 
 Setup in **Settings → Connections → Channels**: add a **Slack (user session)**
-connection and paste the two session values:
+connection, then press **Fill from local Slack** — ORC reads the session from
+the installed Slack desktop app (macOS and Windows). To paste manually instead:
 
 - **User token (`xoxc`)** — in the Slack web client (`app.slack.com`), DevTools →
   Console → `TS.boot_data.api_token`.
 - **Session cookie (`d`)** — DevTools → Application → Cookies → the `d` cookie
-  value (starts `xoxd-`). On macOS, `bunx @niradler55/earshot token` prints both
-  from the installed Slack desktop app.
+  value (starts `xoxd-`). The info icon beside the setup summary repeats these
+  steps.
 
 The cookie is a full-access session secret — treat it like a password. Stored
 values are encrypted; `env:ORC_SLACK_USER_TOKEN` and `env:ORC_SLACK_USER_COOKIE`
@@ -265,9 +266,10 @@ send the pairing text in a direct message to **yourself** (the “you”
 conversation) and confirm the recipient.
 
 Inbound rules work exactly as for the bot. There is no bot user to mention, so
-the trigger is the literal text `@orc`: ORC marks messages starting with `@orc`
-(or mentioning your own Slack user) as `is_mention`, and the text is kept intact
-for keyword rules. A typical route — one session per thread, replies in-thread:
+the trigger is a configurable keyword: `config.triggers` (default `["@orc"]`,
+1–20 keywords). Messages starting with a trigger (or mentioning your own Slack
+user) are marked `is_mention`, and the text is kept intact for keyword rules.
+A typical route — one session per thread, replies in-thread:
 
 ```json
 {
@@ -279,11 +281,12 @@ for keyword rules. A typical route — one session per thread, replies in-thread
 }
 ```
 
-Type `@orc <message>` in any channel or thread you are a member of; the reply
-lands in the same thread as you, and follow-ups in that thread resume the same
-session. A new thread starts a new session. `text starts_with "@orc"` and
-keyword rules (`contains_any`) work too, so different keywords can route to
-different agents or projects.
+Type a trigger keyword followed by your message (default `@orc <message>`) in
+any channel or thread you are a member of; the reply lands in the same thread
+as you, and follow-ups in that thread resume the same session. A new thread
+starts a new session. `text starts_with "@orc"` and keyword rules
+(`contains_any`) work too, so different keywords can route to different agents
+or projects.
 
 Differences from the bot provider:
 
@@ -302,4 +305,5 @@ Differences from the bot provider:
 
 Advanced: the connection's provider configuration accepts
 `{"transport": "auto" | "rtm" | "gateway"}` (default `auto`) to force earshot's
-socket transport when `rtm.connect` is blocked on your workspace.
+socket transport when `rtm.connect` is blocked on your workspace, and
+`{"triggers": ["@orc", "jarvis"]}` to set the mention keywords.

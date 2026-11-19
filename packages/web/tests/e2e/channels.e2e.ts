@@ -296,6 +296,8 @@ for (const width of [1440, 390]) {
     await page.getByTestId("channel-add").click();
     await expect(page.getByTestId("channel-credential-token")).toBeVisible();
     await expect(page.getByTestId("channel-credential-cookie")).toBeVisible();
+    await expect(page.getByTestId("channel-slack-user-fill")).toBeVisible();
+    await expect(page.getByTestId("channel-slack-user-help")).toBeVisible();
     await expect(page.getByRole("button", { name: "Copy Slack app manifest" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Pair my Slack" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Use ORC_SLACK_USER_TOKEN" })).toBeVisible();

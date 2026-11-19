@@ -18,7 +18,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@niradler55/earshot": "^0.0.2",
+    "@niradler55/earshot": "^0.0.4",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "marked": "^18.0.11"

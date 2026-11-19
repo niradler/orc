@@ -101,23 +101,24 @@ live "Working…" progress with a Stop button while an agent turn runs, and
 support inbound/outbound file attachments (outbound Slack file reads need
 `files:read`).
 
-Slack user session (`slack-user`): no app and no admin approval. Paste the
-`xoxc` token (Slack web client DevTools console: `TS.boot_data.api_token`) and
-the `d` cookie (DevTools → Application → Cookies), directly or as
-`env:ORC_SLACK_USER_TOKEN` / `env:ORC_SLACK_USER_COOKIE`; on macOS
-`bunx @niradler55/earshot token` prints both from the desktop app. The cookie
-is a full-access session secret — treat it like a password. Verify identity,
-then pair by sending the pairing text in a DM to yourself. ORC listens on the
-same realtime socket as your web client and posts replies as you. There is no
-bot user: messages starting with `@orc` (or mentioning your own user id) are
-marked `is_mention` and keep their text for keyword rules; route them with
-`session: "thread"` for in-thread agent conversations. No button interactions
-(controls render as typeable commands), no file attachments, and messages sent
-during a socket reconnect are not replayed. A rejected session surfaces
-`session_expired`; paste a fresh token and cookie and save to reconnect.
-Connection config accepts `{"transport": "auto" | "rtm" | "gateway"}`. This is
-an unofficial transport outside Slack's API terms; prefer the bot provider
-where an app is allowed.
+Slack user session (`slack-user`): no app and no admin approval. Press **Fill
+from local Slack** in Settings to read the session from the installed desktop
+app (macOS and Windows), or paste the `xoxc` token (Slack web client DevTools
+console: `TS.boot_data.api_token`) and the `d` cookie (DevTools → Application →
+Cookies), directly or as `env:ORC_SLACK_USER_TOKEN` /
+`env:ORC_SLACK_USER_COOKIE`. The cookie is a full-access session secret —
+treat it like a password. Verify identity, then pair by sending the pairing
+text in a DM to yourself. ORC listens on the same realtime socket as your web
+client and posts replies as you. There is no bot user: messages starting with
+a configured trigger keyword (`config.triggers`, default `["@orc"]`) or
+mentioning your own user id are marked `is_mention` and keep their text for
+keyword rules; route them with `session: "thread"` for in-thread agent
+conversations. No button interactions (controls render as typeable commands),
+no file attachments, and messages sent during a socket reconnect are not
+replayed. A rejected session surfaces `session_expired`; paste a fresh token
+and cookie and save to reconnect. Connection config also accepts
+`{"transport": "auto" | "rtm" | "gateway"}`. This is an unofficial transport
+outside Slack's API terms; prefer the bot provider where an app is allowed.
 
 Pairing is short-lived, single-use and requires authenticated confirmation. Only one listener owns a provider account. Secrets are server-side encrypted or referenced through environment variables (`env:ORC_TELEGRAM_TOKEN`, `env:ORC_SLACK_BOT_TOKEN`, `env:ORC_SLACK_APP_TOKEN`, `env:ORC_SLACK_USER_TOKEN`, `env:ORC_SLACK_USER_COOKIE`) and are never returned to agents or the browser. Never paste bot credentials into an MCP message, scratchpad or job prompt.
 

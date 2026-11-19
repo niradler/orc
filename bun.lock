@@ -41,6 +41,7 @@
         "@hono/swagger-ui": "^0.6.1",
         "@hono/zod-openapi": "^1.6.3",
         "@modelcontextprotocol/sdk": "^1.32.2",
+        "@niradler55/earshot": "^0.0.4",
         "@orc/agent-runtime": "workspace:*",
         "@orc/channels": "workspace:*",
         "@orc/core": "workspace:*",
@@ -66,7 +67,7 @@
       "name": "@orc/channels",
       "version": "0.1.70",
       "dependencies": {
-        "@niradler55/earshot": "^0.0.2",
+        "@niradler55/earshot": "^0.0.4",
         "@orc/core": "workspace:*",
         "@orc/db": "workspace:*",
         "marked": "^18.0.11",
@@ -801,7 +802,7 @@
 
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@1.2.6", "", { "dependencies": { "@tybys/wasm-util": "^0.10.3" }, "peerDependencies": { "@emnapi/core": "^1.7.1 || 2.0.0-beta.2", "@emnapi/runtime": "^1.7.1 || 2.0.0-beta.2" } }, "sha512-mRyDmEw9/fCDXCGfL1sbgIw/GUK0PVxRW4YwgPN61F3LQ+fSyoBFarJVzgGyhF6kRzEQZ0FejDqm4WLXSeqQmw=="],
 
-    "@niradler55/earshot": ["@niradler55/earshot@0.0.2", "", { "bin": { "earshot": "dist/cli.js" } }, "sha512-mjvgUpvXpc9UlQmd4yYyyGRfad1lQ61iIZYnwq0WxKSiqqLBjV01RdJ7CtdKSxDvDxARzflh/1wT+A0QaMUJKw=="],
+    "@niradler55/earshot": ["@niradler55/earshot@0.0.4", "", { "bin": { "earshot": "dist/cli.js" } }, "sha512-tq1wof+IIFoP5M2QDxB297OFUnL2LWnUxkyAzcxU/SaxfluDyRDa//WBadRflD7kDqUdIIvBsFrNQQNwUC7tHQ=="],
 
     "@noble/hashes": ["@noble/hashes@1.8.0", "", {}, "sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A=="],
 
