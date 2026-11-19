@@ -132,6 +132,7 @@ beforeAll(async () => {
     .run(join(home, "second"));
   registerBackend("channels-fixture", () => ({
     name: "channels-fixture",
+    profileCapabilities: { model: true, toolAllowlist: true },
     startSession: async (opts) => fixture(opts, false),
     resumeSession: async (_id, opts) => fixture(opts, true),
     preflight: async () => ({ ok: true }),
@@ -225,7 +226,9 @@ test("authorized channel invokes selected agent and replies; follow-up resumes o
       humanRequestContext: { projectId: "p1", notify: ["telegram"] },
     },
   });
-  expect(sent.at(-1)).toMatchObject({ chat_id: "chat", text: "<b>Reply received</b>" });
+  expect(sent.at(-1)).toMatchObject({ chat_id: "chat", text: "Working…" });
+  expect(edited.at(-1)?.body).toMatchObject({ chat_id: "chat", text: "<b>Reply received</b>" });
+  expect(JSON.stringify(edited.at(-1)?.body.reply_markup)).toContain("New session");
   await service.receive({ ...message, message_id: "m2", text: "follow up" });
   expect(calls[1]?.resume).toBe(true);
   await service.receive({ ...message, message_id: "m3", thread: "123" });
@@ -832,7 +835,7 @@ test("native turn preview updates, clears Stop and cannot stop a later turn", as
     (progress.reply_markup as { inline_keyboard: Array<Array<{ callback_data: string }>> })
       .inline_keyboard[0]?.[0]?.callback_data ?? "";
   expect(edited.some((p) => String(p.body.text).includes("Reply received"))).toBe(true);
-  expect(edited.some((p) => p.body.text === "Completed. Reply below.")).toBe(true);
+  expect(edited.at(-1)?.body.text).toBe("<b>Reply received</b>");
   requirePermission = true;
   const count = calls.length;
   const pending = service.receive({ ...message, message_id: "preview-second", thread: "preview" });
@@ -903,10 +906,9 @@ test("long Telegram replies have one final control panel and Slack keeps its exi
     const [progress, ...slackReply] = sent.slice(slackOffset);
     expect(progress?.text).toBe("Working…");
     expect(JSON.stringify(progress?.blocks)).toContain('"text":"Stop"');
-    expect(slackReply).toHaveLength(1);
-    expect(slackReply[0]?.text).toBe(output.trim());
-    expect(slackReply[0]?.blocks).toBeUndefined();
-    expect(edited.at(-1)?.body.text).toBe("Completed. Reply below.");
+    expect(slackReply).toHaveLength(0);
+    expect(edited.at(-1)?.body.text).toBe(output.trim());
+    expect(edited.at(-1)?.body.blocks).toBeUndefined();
   } finally {
     fixtureOutput = "**Reply received**";
   }
@@ -1061,7 +1063,7 @@ test("Slack thread policy opens one session per thread root and replies inside i
   expect(calls).toHaveLength(offset + 3);
 });
 
-test("message policy starts fresh each time and a rule's permission mode and profile apply", async () => {
+test("message policy starts fresh each time and read-only permissions restrict tools", async () => {
   await service.save({
     id: "fresh",
     name: "Fresh",
@@ -1079,7 +1081,7 @@ test("message policy starts fresh each time and a rule's permission mode and pro
           agent: "channels-fixture",
           project_id: "p1",
           session: "message",
-          permission_mode: "plan",
+          permissions: "read_only",
         },
       },
     ],
@@ -1088,7 +1090,12 @@ test("message policy starts fresh each time and a rule's permission mode and pro
   await service.receive({ ...message, connection: "fresh", message_id: "f1" });
   await service.receive({ ...message, connection: "fresh", message_id: "f2" });
   expect(calls.slice(offset).map((c) => c.resume)).toEqual([false, false]);
-  expect(calls[offset]?.opts.permissionMode).toBe("plan");
+  expect(calls[offset]?.opts).toMatchObject({
+    permissionMode: "default",
+    autoApprove: false,
+    orcMcp: false,
+    toolAllowlist: ["Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch"],
+  });
 });
 
 test("strangers reach the agent through an any-DM destination but get no controls, commands or approvals", async () => {
@@ -1108,7 +1115,7 @@ test("strangers reach the agent through an any-DM destination but get no control
           type: "agent",
           agent: "channels-fixture",
           project_id: "p1",
-          permission_mode: "plan",
+          permissions: "auto",
         },
       },
     ],
@@ -1118,8 +1125,10 @@ test("strangers reach the agent through an any-DM destination but get no control
   await service.receive({ ...stranger, message_id: "D9:1", text: "/project p2" });
   expect(calls[offset]?.prompt).toBe("/project p2");
   expect(calls[offset]?.opts.humanRequestContext).toEqual({ projectId: "p1", notify: [] });
-  expect(sent.at(-1)).toMatchObject({ channel: "D9" });
-  expect(sent.at(-1)?.blocks).toBeUndefined();
+  expect(calls[offset]?.opts).toMatchObject({ autoApprove: false, permissionMode: "default" });
+  expect(calls[offset]?.opts.toolAllowlist).toContain("Read");
+  expect(edited.at(-1)?.body).toMatchObject({ channel: "D9", text: "*Reply received*" });
+  expect(edited.at(-1)?.body.blocks).toBeUndefined();
   await service.receive({ ...stranger, message_id: "D9:2", text: "/help" });
   expect(sent.at(-1)).toMatchObject({
     channel: "D9",

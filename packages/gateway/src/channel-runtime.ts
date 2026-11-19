@@ -5,6 +5,7 @@ import { forwardChannelNotifications } from "@orc/channels/notifications";
 import { channelProvider } from "@orc/channels/providers";
 import { ProviderFailure, safeProviderCode } from "@orc/channels/providers/base";
 import { previewTail } from "@orc/channels/providers/markdown";
+import { agentRunSessionOptions } from "@orc/core/agent-run";
 import {
   CHANNEL_ANY,
   type ChannelInbound,
@@ -332,7 +333,7 @@ export async function startChannelRuntime(
     const record = await ensureChannelSession({
       ...conversation,
       fresh: action.session === "message",
-      permissionMode: action.permission_mode,
+      permissionMode: action.permissions === "accept_edits" ? "acceptEdits" : "default",
     });
     let attachments: SessionFile[] = [];
     if (message.attachments?.length) {
@@ -446,6 +447,17 @@ export async function startChannelRuntime(
     };
     try {
       await updateGatewaySession(record.id, { status: "running", last_activity_at: new Date() });
+      const run = agentRunSessionOptions(
+        {
+          permissions: action.permissions,
+          options:
+            record.backend === defaultAgent
+              ? (action.options ??
+                (action.agent === "default" ? defaults.agentOptions[defaults.agent] : undefined))
+              : undefined,
+        },
+        named,
+      );
       session = await openAgentSession(
         record.backend,
         {
@@ -453,13 +465,10 @@ export async function startChannelRuntime(
           cwd: record.cwd || project.scope,
           model: record.model ?? undefined,
           interactive: true,
-          autoApprove: false,
-          permissionMode:
-            action.permission_mode !== "default"
-              ? action.permission_mode
-              : record.permission_mode === "plan" || record.permission_mode === "acceptEdits"
-                ? record.permission_mode
-                : "default",
+          autoApprove: run.autoApprove,
+          permissionMode: run.permissionMode,
+          ...(run.toolAllowlist ? { toolAllowlist: run.toolAllowlist } : {}),
+          ...(run.chatAgentOptions ? { chatAgentOptions: run.chatAgentOptions } : {}),
           humanRequestContext: {
             projectId,
             notify: named ? [provider] : [],
@@ -479,7 +488,7 @@ export async function startChannelRuntime(
             ? { agentProfile: action.profile }
             : {}),
           systemPromptAppend: chatSystemPrompt(defaults.system),
-          orcMcp: true,
+          orcMcp: run.orcMcp,
           orcMcpMode: loadConfig().mcp.default_mode,
           orcMcpProject: project.name,
           orcPreviewSessionId: record.id,
@@ -582,21 +591,50 @@ export async function startChannelRuntime(
       }
       runtimeId ??= session.getRuntimeSessionId?.();
       phase = "deliver";
+      let finalized = false;
       if (output) {
         const controls = named && adapter.replyControls;
         const chunked =
-          controls &&
           adapter.render({ text: output, format: "markdown", links: [] }).payloads.length > 1;
-        await reply(
-          message,
-          target,
-          output,
-          "markdown",
-          projectId,
-          controls && !chunked ? channelControls() : undefined,
-        );
-        if (chunked)
-          await reply(message, target, "Chat controls", "plain", projectId, channelControls());
+        if (progressId && !chunked) {
+          const rows = controls
+            ? channelControls().map((row) =>
+                row.map((button) => ({
+                  label: button.label,
+                  value: service.store.action(
+                    message.connection,
+                    target.id,
+                    message.chat,
+                    message.thread,
+                    [message.sender],
+                    button.value,
+                  ),
+                })),
+              )
+            : [];
+          try {
+            const receipt = await service.edit(progressId, {
+              project_id: projectId,
+              message: { text: output, format: "markdown", links: [] },
+              ...(rows.length ? { overrides: adapter.controls(output, "markdown", rows) } : {}),
+            });
+            finalized = receipt.status === "accepted";
+          } catch {
+            finalized = false;
+          }
+        }
+        if (!finalized) {
+          await reply(
+            message,
+            target,
+            output,
+            "markdown",
+            projectId,
+            controls && !chunked ? channelControls() : undefined,
+          );
+          if (controls && chunked)
+            await reply(message, target, "Chat controls", "plain", projectId, channelControls());
+        }
         await appendMessage({
           chatKey: chat.id,
           direction: "out",
@@ -606,9 +644,10 @@ export async function startChannelRuntime(
           gatewaySessionId: record.id,
         });
       }
-      await updateProgress(
-        output ? "Completed. Reply below." : "Turn completed without a text reply.",
-      );
+      if (!finalized)
+        await updateProgress(
+          output ? "Completed. Reply below." : "Turn completed without a text reply.",
+        );
       await updateGatewaySession(record.id, {
         status: "idle",
         runtime_session_id: runtimeId,

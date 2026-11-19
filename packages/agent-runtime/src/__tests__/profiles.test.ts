@@ -72,6 +72,13 @@ describe("portable shared profiles", () => {
     const opts = applyAgentProfile({ cwd: process.cwd(), autoApprove: true }, profile);
     expect(opts.model).toBe("pinned-model");
     expect(opts.toolAllowlist).toEqual(["Read"]);
+    expect(
+      applyAgentProfile({ cwd: process.cwd(), toolAllowlist: ["Grep", "Read"] }, profile)
+        .toolAllowlist,
+    ).toEqual(["Read"]);
+    expect(
+      applyAgentProfile({ cwd: process.cwd(), toolAllowlist: ["Grep"] }, profile).toolAllowlist,
+    ).toEqual([]);
     expect(() => validateProfileCapabilities(createBackend("claude"), opts, profile)).not.toThrow();
     expect(() => validateProfileCapabilities(createBackend("codex-cli"), opts, profile)).toThrow(
       "tool whitelist",

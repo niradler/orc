@@ -78,7 +78,7 @@ test("rule validation rejects regex, bad clocks, unknown zones and empty keyword
   });
   expect(route("defaults", { always: true }).action).toMatchObject({
     session: "continue",
-    permission_mode: "default",
+    permissions: "ask",
   });
 });
 
@@ -296,5 +296,23 @@ test("thread sessions queue a top-level message and its thread replies from anyo
     service.receive({ ...base, sender: "U2", message_id: "C1:2", thread: "1.0", root: "2.0" }),
   ]);
   expect(events).toEqual(["start C1:1", "end C1:1", "start C1:2", "end C1:2"]);
+  db.close();
+});
+
+test("a stored rule that no longer validates is skipped instead of breaking the connection", () => {
+  const db = new Database(":memory:");
+  const store = new ChannelStore(db);
+  store.saveConnection(
+    ChannelConnectionSchema.parse({
+      id: "c",
+      name: "c",
+      provider: "slack",
+      routes: [route("good", { always: true }, { type: "ignore" })],
+    }),
+  );
+  db.run(
+    `INSERT INTO channel_routes (channel_id,id,name,enabled,position,condition,action) VALUES ('c','stale','stale',1,0,'{"always":true}','{"type":"agent","agent":"x","project_id":"p","permission_mode":"plan"}')`,
+  );
+  expect(store.connections()[0]?.routes.map((r) => r.id)).toEqual(["good"]);
   db.close();
 });

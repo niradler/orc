@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AgentRunSchema } from "./agent-run.js";
 import { NotificationFilterSchema } from "./notifications.js";
 
 export const ChannelProviderSchema = z.enum(["telegram", "slack"]);
@@ -232,23 +233,9 @@ export const ChannelRouteSchema = z
       z
         .object({
           type: z.literal("agent"),
-          agent: z
-            .string()
-            .trim()
-            .min(1)
-            .max(100)
-            .regex(/^[a-z][a-z0-9_-]*$/),
-          profile: z.string().min(1).max(100).optional(),
-          model: z
-            .string()
-            .trim()
-            .min(1)
-            .max(200)
-            .regex(/^[a-z0-9][a-z0-9._:/@+-]*$/i)
-            .optional(),
+          ...AgentRunSchema.shape,
           project_id: z.string().min(1).max(100),
           session: z.enum(ChannelSessionPolicies).default("continue"),
-          permission_mode: z.enum(["default", "plan", "acceptEdits"]).default("default"),
         })
         .strict(),
       z.object({ type: z.literal("job"), job_id: z.string().min(1).max(100) }).strict(),

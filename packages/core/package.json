@@ -90,7 +90,8 @@
     "./rule-script": "./src/rule-script.ts",
     "./rule-command": "./src/rule-command.ts",
     "./rule-catalog": "./src/rule-catalog.ts",
-    "./rule-builtin": "./src/rule-builtin.ts"
+    "./rule-builtin": "./src/rule-builtin.ts",
+    "./agent-run": "./src/agent-run.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -158,8 +158,7 @@ profile](./agent-packages.md) whose instructions, tool allowlist and model
 become that rule's persona. `session` picks `continue` (one rolling
 conversation per chat/thread/sender, the default), `thread` (one session per
 thread; a top-level Slack message starts a new thread and the reply lands in
-it) or `message` (a fresh session every message). `permission_mode` picks
-`default`, `plan` (read-only) or `acceptEdits`. A `job` action runs that job
+it) or `message` (a fresh session every message). `permissions` picks `ask` (approvals come to you), `read_only` (only Read, Grep, Glob, LS, WebFetch and WebSearch; ORC MCP is off; backends that cannot enforce a tool allowlist refuse to run), `accept_edits` or `auto` (no prompts); senders matched only through `*` never get more than `read_only`. `options` carries the same per-agent launch options as the chat composer, such as effort. A `job` action runs that job
 with the message text on stdin and `ORC_CHANNEL_CONNECTION`,
 `ORC_CHANNEL_PROVIDER`, `ORC_CHANNEL_CHAT`, `ORC_CHANNEL_THREAD`,
 `ORC_CHANNEL_SENDER`, `ORC_CHANNEL_SENDER_NAME` and `ORC_CHANNEL_ROUTE` in its
@@ -182,7 +181,7 @@ ops project with one session per thread; everything else is ignored.
       "project_id": "PROJECT_ID",
       "profile": "read-only-assistant",
       "session": "continue",
-      "permission_mode": "plan"
+      "permissions": "read_only"
     }
   },
   {
@@ -210,7 +209,7 @@ controls, no `/project`, `/agent` or `/model`, and approvals or questions from
 their turns go to ORC Notifications, never to them. A `*` chat cannot carry
 notifications, Attention or a fixed thread, a `*` sender cannot carry
 Attention, and API or `channel_send` messages cannot target a `*` chat. Pair
-such a destination with `permission_mode: "plan"` and a profile with a limited
+such a destination with `permissions: "read_only"` and a profile with a limited
 tool allowlist.
 
 Preview which rule a message would hit without invoking an agent:

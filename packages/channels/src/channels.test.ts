@@ -133,7 +133,7 @@ test("Otherwise never grants an unapproved sender or a forbidden project access"
       project_id: "allowed",
       agent: "default",
       session: "continue",
-      permission_mode: "default",
+      permissions: "ask",
     },
   };
   await service.receive({ ...inbound, message_id: "allowed" });

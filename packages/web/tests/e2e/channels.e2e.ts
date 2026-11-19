@@ -344,7 +344,8 @@ for (const width of [1440, 390]) {
       await keywords.getByLabel("Condition comparison").selectOption("contains_any");
       await keywords.getByLabel("Condition value").fill("deploy, rollback");
       await editor.getByTestId("channel-route-session").selectOption("thread");
-      await editor.getByTestId("channel-route-permission").selectOption("plan");
+      await editor.getByTestId("channel-route-run-permissions").selectOption("read_only");
+      await expect(editor.getByTestId("channel-route-run-model")).toBeDisabled();
       await editor.getByTestId("channel-route-editor").scrollIntoViewIfNeeded();
       await page.screenshot({
         path: `../../.claude/docs/channels-slack-rule-${width}.png`,
@@ -367,7 +368,7 @@ for (const width of [1440, 390]) {
         type: "agent",
         project_id: project.id,
         session: "thread",
-        permission_mode: "plan",
+        permissions: "read_only",
       });
       expect(JSON.stringify(stored?.routes[0]?.condition)).toContain(
         '{"time":{"days":[1,2,3,4],"from":"08:30","to":"19:00","tz":"Asia/Jerusalem"}}',

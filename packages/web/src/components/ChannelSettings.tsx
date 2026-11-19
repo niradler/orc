@@ -18,6 +18,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Pencil } from "lucide-react";
 import { cloneElement, type ReactElement, useId, useState } from "react";
 import { api } from "@/api/client";
+import { AgentRunEditor, permissionLabels } from "@/components/AgentRunEditor";
 import {
   ChannelConditionBuilder,
   channelConditionSummary,
@@ -43,18 +44,13 @@ const sessionLabels = {
   thread: "New session per thread",
   message: "New session per message",
 } as const;
-const permissionLabels = {
-  default: "Ask for approvals",
-  plan: "Read-only (plan mode)",
-  acceptEdits: "Accept edits",
-} as const;
 type Project = { id: string; name: string };
 function routeActionLabel(route: Pick<ChannelRoute, "action">, projects: Project[]): string {
   const action = route.action;
   if (action.type === "ignore") return "Ignore silently · no agent starts";
   if (action.type === "job") return `Run job ${action.job_id} · reply with its output`;
   const project = projects.find((project) => project.id === action.project_id);
-  return `${action.profile ? `Profile: ${action.profile} · ` : ""}Agent: ${action.agent} · Project: ${project?.name ?? action.project_id} · ${sessionLabels[action.session]}${action.permission_mode !== "default" ? ` · ${permissionLabels[action.permission_mode]}` : ""}${action.model ? ` · Model: ${action.model}` : ""}`;
+  return `${action.profile ? `Profile: ${action.profile} · ` : ""}Agent: ${action.agent} · Project: ${project?.name ?? action.project_id} · ${sessionLabels[action.session]}${action.permissions !== "ask" ? ` · ${permissionLabels[action.permissions]}` : ""}${action.model ? ` · Model: ${action.model}` : ""}`;
 }
 
 function connectionDraft(view: ChannelView): ChannelConnection {
@@ -304,7 +300,6 @@ function RouteEditor({
   const [error, setError] = useState("");
   const [conditionValid, setConditionValid] = useState(validChannelCondition(value.condition));
   const jobs = useJobs();
-  const profiles = useQuery({ queryKey: ["agents"], queryFn: () => api.agents.list() });
   return (
     <div className="space-y-3 border-t border-border py-3" data-testid="channel-route-editor">
       <Field label="Rule name">
@@ -353,7 +348,7 @@ function RouteEditor({
                           agent: "default",
                           project_id: projects[0]?.id ?? "",
                           session: "continue",
-                          permission_mode: "default",
+                          permissions: "ask",
                         },
               })
             }
@@ -384,17 +379,6 @@ function RouteEditor({
         )}
         {route.action.type === "agent" && (
           <>
-            <Field label="Agent backend">
-              <Input
-                data-testid="channel-route-agent"
-                placeholder="default, codex-cli, claude, …"
-                value={route.action.agent}
-                onChange={(e) => {
-                  if (route.action.type === "agent")
-                    setRoute({ ...route, action: { ...route.action, agent: e.target.value } });
-                }}
-              />
-            </Field>
             <Field label="Project">
               <select
                 data-testid="channel-route-project"
@@ -412,22 +396,6 @@ function RouteEditor({
                   </option>
                 ))}
               </select>
-            </Field>
-            <Field label="Default model (optional)">
-              <Input
-                data-testid="channel-route-model"
-                placeholder="Use the agent default"
-                value={route.action.model ?? ""}
-                onChange={(e) => {
-                  if (route.action.type === "agent") {
-                    const { model: _model, ...action } = route.action;
-                    setRoute({
-                      ...route,
-                      action: e.target.value ? { ...action, model: e.target.value } : action,
-                    });
-                  }
-                }}
-              />
             </Field>
             <Field label="Session">
               <select
@@ -452,59 +420,16 @@ function RouteEditor({
                 ))}
               </select>
             </Field>
-            <Field label="Permissions">
-              <select
-                data-testid="channel-route-permission"
-                className={control}
-                value={route.action.permission_mode}
-                onChange={(e) => {
-                  if (route.action.type === "agent")
-                    setRoute({
-                      ...route,
-                      action: {
-                        ...route.action,
-                        permission_mode: e.target.value as keyof typeof permissionLabels,
-                      },
-                    });
-                }}
-              >
-                {Object.entries(permissionLabels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Agent profile (persona)">
-              <select
-                data-testid="channel-route-profile"
-                className={control}
-                value={route.action.profile ?? ""}
-                onChange={(e) => {
-                  if (route.action.type === "agent") {
-                    const { profile: _profile, ...action } = route.action;
-                    setRoute({
-                      ...route,
-                      action: e.target.value ? { ...action, profile: e.target.value } : action,
-                    });
-                  }
-                }}
-              >
-                <option value="">None</option>
-                {route.action.profile &&
-                  !profiles.data?.agents.some(
-                    (a) => route.action.type === "agent" && a.id === route.action.profile,
-                  ) && <option value={route.action.profile}>{route.action.profile}</option>}
-                {profiles.data?.agents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
           </>
         )}
       </div>
+      {route.action.type === "agent" && (
+        <AgentRunEditor
+          testId="channel-route-run"
+          value={route.action}
+          onChange={(action) => setRoute({ ...route, action })}
+        />
+      )}
       {error && (
         <p role="alert" className="text-sm text-error">
           {error}
@@ -1262,7 +1187,7 @@ function ConnectionEditor({
                 agent: "default",
                 project_id: projects[0]?.id ?? "",
                 session: "continue",
-                permission_mode: "default",
+                permissions: "ask",
               },
             })
           }
