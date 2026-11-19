@@ -44,7 +44,10 @@ beforeAll(async () => {
   app = setupTestApp();
   mkdirSync(root, { recursive: true });
   writeSession(process.pid, A, "native-a");
-  writeSession(1, B, "native-b");
+  // B has to look live: the live list hides stopped native-chat sessions that have no
+  // transcript (#472), and a dead pid counts as stopped. pid 1 only exists on Linux,
+  // so use the runner's parent, which is alive on every platform.
+  writeSession(process.ppid, B, "native-b");
   await runSync([claudeAdapter({ registry: root, desktop: null, projects: null })], {
     force: true,
   });
