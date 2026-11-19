@@ -27,7 +27,7 @@ Commands that take a project (`task`, `job`, `mem`, `kb`) default to the active 
 
 | Command | Purpose |
 | --- | --- |
-| `orc daemon start` | Run API, scheduler, file watchers and gateway as one process |
+| `orc daemon start` | Run API, scheduler, file watchers, channels and task loop as one process |
 | `orc daemon stop` | Stop the daemon |
 | `orc daemon status` | Scheduler state and next run times of active jobs |
 | `orc daemon install [--force]` | Register the daemon to start on login/boot and start it now |
@@ -239,12 +239,16 @@ See [Agent rules](./agent-rules.md).
 | `orc rules install-hook <backend>` | `--target <settings-file>`, `--events <list>`, `--legacy-hooks-dir <dir>`, `--timeout-seconds` (default 10) |
 | `orc rules hook <backend> <event>` | Native hook stdin/stdout entry point; called by the agent, not by hand |
 
-## Gateway
+## Channels
+
+Connections, recipients and inbound rules live in **Settings → Connections →
+Channels**; see [Notifications → Inbound rules](./notifications.md#inbound-rules).
 
 | Command | Main flags |
 | --- | --- |
-| `orc gateway status` | Enabled adapters and active sessions |
-| `orc gateway send` | `--platform telegram\|slack`, `--chat <id>`, `--text`, `--thread <id>` |
+| `orc channels list` | Connections with status, destination and rule counts |
+| `orc channels send` | `--connection <id>`, `--target <id>`, `--text <text>`, `--thread <id>` |
+| `orc channels test` | `--connection <id>`, `--sender <id>`, `--chat <id>`, `--text <text>`, `--thread <id>`, `--direct`, `--mention`, `--followup` — shows which rule would match, without running it |
 
 ## Examples
 

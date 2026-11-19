@@ -1,6 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { type ChannelService, getChannelService } from "@orc/channels";
-import { channelProviders, slackManifest } from "@orc/channels/providers";
+import { channelProvider, channelProviderInfo } from "@orc/channels/providers";
 import { routeMessage } from "@orc/channels/routing";
 import {
   ChannelReceiptSchema,
@@ -8,6 +8,7 @@ import {
   ChannelSendSchema,
   ChannelUpdateSchema,
   ChannelViewSchema,
+  targetAccepts,
 } from "@orc/core/channels";
 import { ValidationError } from "@orc/core/errors";
 import {
@@ -146,14 +147,7 @@ export function createChannelsRouter(service: () => ChannelService = getChannelS
         ),
       },
     }),
-    (c) =>
-      c.json(
-        channelProviders.map((p) => ({
-          ...p,
-          credentials: [...p.credentials],
-          setup: [...p.setup],
-        })),
-      ),
+    (c) => c.json(channelProviderInfo),
   );
   app.openapi(
     createRoute({
@@ -162,7 +156,7 @@ export function createChannelsRouter(service: () => ChannelService = getChannelS
       tags: ["Channels"],
       responses: { 200: json(z.record(z.string(), z.unknown())) },
     }),
-    (c) => c.json(slackManifest),
+    (c) => c.json(channelProvider("slack").manifest ?? {}),
   );
   app.openapi(
     createRoute({
@@ -300,6 +294,7 @@ export function createChannelsRouter(service: () => ChannelService = getChannelS
       text: z.string().max(100000),
       is_direct: z.boolean(),
       is_mention: z.boolean(),
+      is_followup: z.boolean().default(false),
       kind: z.enum(["message", "action"]).default("message"),
     })
     .strict();
@@ -324,11 +319,7 @@ export function createChannelsRouter(service: () => ChannelService = getChannelS
       const connection = service().connection(c.req.valid("param").id);
       const input = c.req.valid("json");
       const target = connection.targets.find(
-        (t) =>
-          t.inbound &&
-          t.chat_id === input.chat &&
-          (!t.thread_id || t.thread_id === input.thread) &&
-          t.user_ids.includes(input.sender),
+        (t) => t.inbound && targetAccepts(t, input.chat, input.thread, input.sender),
       );
       const route = target
         ? routeMessage(connection.routes, {

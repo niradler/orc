@@ -2,19 +2,30 @@ import { createHash } from "node:crypto";
 import { type AgentSession, openAgentSession } from "@orc/agent-runtime";
 import { type ChannelService, getChannelService } from "@orc/channels";
 import { forwardChannelNotifications } from "@orc/channels/notifications";
-import { ProviderFailure, safeProviderCode } from "@orc/channels/providers";
-import { renderMessage } from "@orc/channels/render";
-import { type ChannelInbound, type ChannelTarget, channelCommand } from "@orc/core/channels";
+import { channelProvider } from "@orc/channels/providers";
+import { ProviderFailure, safeProviderCode } from "@orc/channels/providers/base";
+import { previewTail } from "@orc/channels/providers/markdown";
+import { agentRunSessionOptions } from "@orc/core/agent-run";
+import {
+  CHANNEL_ANY,
+  type ChannelInbound,
+  type ChannelRoute,
+  type ChannelTarget,
+  channelCommand,
+  targetAccepts,
+} from "@orc/core/channels";
 import { ChatSettingsSchema, chatSystemPrompt } from "@orc/core/chat";
 import { withOrcContext } from "@orc/core/chat-context";
 import { loadConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostIsDirectory, resolveExecHost } from "@orc/core/exec-host";
+import { upgradeJobAction } from "@orc/core/job-actions";
 import { createLogger } from "@orc/core/logger";
 import type { SessionFile } from "@orc/core/session-file-types";
 import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
+import { executeJob } from "@orc/runner/executor";
 import {
   channelControls,
   channelDirectCommand,
@@ -23,25 +34,10 @@ import {
   ensureChannelSession,
 } from "./channel-commands.js";
 import { HumanRequestChannels } from "./human-requests.js";
-import { getGatewayManager } from "./manager.js";
 import { appendMessage, getOrCreateChat, updateGatewaySession } from "./store.js";
 import type { GatewayAdapter, IncomingMessage, SendOpts, SupportsInlineButtons } from "./types.js";
 
 const logger = createLogger("gateway:channel-runtime");
-
-function telegramPreview(text: string): string {
-  const chars = Array.from(text).slice(-2800);
-  let start = chars.length;
-  let length = 0;
-  while (start > 0) {
-    const char = chars[start - 1] ?? "";
-    const size = char === "&" ? 5 : char === "<" || char === ">" ? 4 : char.length;
-    if (length + size > 2800) break;
-    length += size;
-    start--;
-  }
-  return chars.slice(start).join("");
-}
 
 function incoming(service: ChannelService, message: ChannelInbound): IncomingMessage {
   return {
@@ -64,27 +60,31 @@ function channelAdapter(
     const current = service.connection(connection).targets.find((t) => t.id === target.id);
     if (
       !current ||
-      current.chat_id !== chatId ||
-      chatId !== target.chat_id ||
+      current.chat_id !== target.chat_id ||
+      (target.chat_id !== CHANNEL_ANY && chatId !== target.chat_id) ||
       current.thread_id !== target.thread_id ||
-      !target.user_ids.every((user) => current.user_ids.includes(user))
+      !(
+        current.user_ids.includes(CHANNEL_ANY) ||
+        target.user_ids.every((user) => current.user_ids.includes(user))
+      )
     )
       throw new ConflictError("Notification destination changed");
   };
   return {
     platform: service.connection(connection).provider,
-    start: async () => {},
-    stop: async () => {},
-    async send(_chatId: string, text: string, opts?: SendOpts) {
-      bindDestination(_chatId);
-      const receipt = await service.send({
-        connection,
-        target: target.id,
-        project_id: opts?.projectId,
-        message: { text, format: opts?.parseMode === "markdown" ? "markdown" : "plain" },
-        ...(opts?.threadId ? { thread_id: opts.threadId } : {}),
-        ...(opts?.parseMode === "html" ? { overrides: { text, parse_mode: "HTML" } } : {}),
-      });
+    async send(chatId: string, text: string, opts?: SendOpts) {
+      bindDestination(chatId);
+      const receipt = await service.send(
+        {
+          connection,
+          target: target.id,
+          chat_id: chatId,
+          project_id: opts?.projectId,
+          message: { text, format: opts?.parseMode === "markdown" ? "markdown" : "plain" },
+          ...(opts?.threadId ? { thread_id: opts.threadId } : {}),
+        },
+        true,
+      );
       if (receipt.status !== "accepted")
         throw new ConflictError(receipt.error ?? "Channel delivery not confirmed");
       return receipt.id;
@@ -96,8 +96,7 @@ function channelAdapter(
         .flat()
         .map((button) => button.value.match(/^\/attention (\S+)/)?.[1])
         .find(Boolean);
-      const stop =
-        provider === "telegram" && attentionId ? stopForRequest?.(attentionId) : undefined;
+      const stop = attentionId ? stopForRequest?.(attentionId) : undefined;
       const controls = stop ? [...buttons, [{ label: "Stop this turn", value: stop }]] : buttons;
       const mapped = controls.map((row) =>
         row.map((button) => {
@@ -119,50 +118,19 @@ function channelAdapter(
           };
         }),
       );
-      const overrides =
-        provider === "telegram"
-          ? {
-              reply_markup: {
-                inline_keyboard: mapped.map((row) =>
-                  row.map((b) => ({ text: b.label, callback_data: b.value })),
-                ),
-              },
-            }
-          : {
-              blocks: [
-                {
-                  type: "section",
-                  text: {
-                    type: opts?.parseMode === "markdown" ? "mrkdwn" : "plain_text",
-                    text: String(
-                      renderMessage("slack", {
-                        text,
-                        format: opts?.parseMode === "markdown" ? "markdown" : "plain",
-                        links: [],
-                      }).payloads[0]?.text ?? text,
-                    ),
-                  },
-                },
-                ...mapped.map((row, i) => ({
-                  type: "actions",
-                  block_id: `attention-${i}`,
-                  elements: row.map((b) => ({
-                    type: "button",
-                    action_id: b.value,
-                    text: { type: "plain_text", text: Array.from(b.label).slice(0, 75).join("") },
-                    value: b.value,
-                  })),
-                })),
-              ],
-            };
-      const receipt = await service.send({
-        connection,
-        target: target.id,
-        project_id: opts?.projectId,
-        message: { text, format: opts?.parseMode === "markdown" ? "markdown" : "plain" },
-        overrides,
-        ...(opts?.threadId ? { thread_id: opts.threadId } : {}),
-      });
+      const format = opts?.parseMode === "markdown" ? "markdown" : "plain";
+      const receipt = await service.send(
+        {
+          connection,
+          target: target.id,
+          chat_id: chatId,
+          project_id: opts?.projectId,
+          message: { text, format },
+          overrides: channelProvider(provider).controls(text, format, mapped),
+          ...(opts?.threadId ? { thread_id: opts.threadId } : {}),
+        },
+        true,
+      );
       if (receipt.status !== "accepted")
         throw new ConflictError(receipt.error ?? "Channel delivery not confirmed");
       return receipt.id;
@@ -194,11 +162,7 @@ export async function startChannelRuntime(
     if (stopping) return;
     const current = service.connection(message.connection);
     const recipient = current.targets.find(
-      (t) =>
-        t.id === target.id &&
-        t.chat_id === message.chat &&
-        (!t.thread_id || t.thread_id === message.thread) &&
-        t.user_ids.includes(message.sender),
+      (t) => t.id === target.id && targetAccepts(t, message.chat, message.thread, message.sender),
     );
     if (
       !current.enabled ||
@@ -215,19 +179,83 @@ export async function startChannelRuntime(
         projectId,
         threadId: message.thread,
       });
-    const result = await service.send({
-      connection: message.connection,
-      target: target.id,
-      message: { text, format },
-      ...(projectId ? { project_id: projectId } : {}),
-      ...(message.thread ? { thread_id: message.thread } : {}),
-    });
+    const result = await service.send(
+      {
+        connection: message.connection,
+        target: target.id,
+        chat_id: message.chat,
+        message: { text, format },
+        ...(projectId ? { project_id: projectId } : {}),
+        ...(message.thread ? { thread_id: message.thread } : {}),
+      },
+      true,
+    );
     if (result.status !== "accepted")
       throw new ConflictError(result.error ?? "Channel delivery not confirmed");
   };
-  const dispatch: NonNullable<ChannelService["handler"]> = async (route, message, target) => {
-    if (stopping || route.action.type !== "agent") return;
+  const runJob = async (
+    route: ChannelRoute & { action: { type: "job" } },
+    message: ChannelInbound,
+    target: ChannelTarget,
+  ) => {
+    const job = getSqlite()
+      .query<{ name: string; enabled: number; action: string | null }, [string]>(
+        "SELECT name,enabled,action FROM jobs WHERE id=?",
+      )
+      .get(route.action.job_id);
+    if (!job) throw new ValidationError("The job for this route no longer exists");
+    if (!job.enabled) {
+      await reply(message, target, `${job.name} is disabled.`, "plain");
+      return;
+    }
+    const action = job.action ? upgradeJobAction(JSON.parse(job.action)) : null;
+    if (
+      !target.user_ids.includes(message.sender) &&
+      action?.type === "agent" &&
+      (action.permissions === "auto" || action.permissions === "accept_edits")
+    ) {
+      await reply(message, target, `${job.name} only runs for named senders.`, "plain");
+      return;
+    }
+    const runId = await executeJob({
+      jobId: route.action.job_id,
+      triggerBy: `channel:${message.connection}`,
+      input: {
+        stdin: message.text,
+        env: {
+          ORC_CHANNEL_CONNECTION: message.connection,
+          ORC_CHANNEL_PROVIDER: service.connection(message.connection).provider,
+          ORC_CHANNEL_CHAT: message.chat,
+          ORC_CHANNEL_THREAD: message.thread ?? "",
+          ORC_CHANNEL_SENDER: message.sender,
+          ORC_CHANNEL_SENDER_NAME: message.sender_name ?? "",
+          ORC_CHANNEL_ROUTE: route.id,
+        },
+      },
+    });
+    const run = getSqlite()
+      .query<{ status: string; stdout: string | null; error_msg: string | null }, [string]>(
+        "SELECT status,stdout,error_msg FROM job_runs WHERE id=?",
+      )
+      .get(runId);
+    const output = run?.stdout?.trim();
+    await reply(
+      message,
+      target,
+      run?.status === "success" && output
+        ? output.slice(-30000)
+        : `${job.name}: ${run?.status ?? "unknown"}${run?.error_msg ? ` — ${run.error_msg.slice(0, 500)}` : ""} (run ${runId})`,
+      run?.status === "success" && output ? "markdown" : "plain",
+    );
+  };
+  const dispatch: NonNullable<ChannelService["handler"]> = async (route, inbound, target) => {
+    if (stopping || route.action.type === "ignore") return;
+    if (route.action.type === "job")
+      return runJob(route as ChannelRoute & { action: { type: "job" } }, inbound, target);
     const action = route.action;
+    const thread = inbound.thread ?? (action.session === "thread" ? inbound.root : undefined);
+    const message = thread === inbound.thread ? inbound : { ...inbound, thread };
+    const named = target.user_ids.includes(message.sender);
     const defaults = ChatSettingsSchema.parse(loadConfig().preferences.chat ?? {});
     const defaultAgent = action.agent === "default" ? defaults.agent : action.agent;
     const defaultModel =
@@ -238,7 +266,7 @@ export async function startChannelRuntime(
       message.connection,
       message.chat,
       message.thread ?? null,
-      message.sender,
+      action.session === "thread" && message.thread ? null : message.sender,
       route.id,
       action,
     ]);
@@ -274,7 +302,9 @@ export async function startChannelRuntime(
       getSqlite()
         .query("UPDATE bridge_chats SET project_id=?,working_dir=? WHERE id=?")
         .run(projectId, project.scope, chat.id);
-    const command = await channelDirectCommand({ ...conversation, text: message.text });
+    const command = named
+      ? await channelDirectCommand({ ...conversation, text: message.text })
+      : null;
     if (command) {
       const text = command.text ?? "";
       const replyProject = command.projectId ?? (permittedProject ? projectId : undefined);
@@ -310,7 +340,11 @@ export async function startChannelRuntime(
       );
     if (!(await hostIsDirectory(resolveExecHost(), project.scope)))
       throw new ValidationError("Project folder is unavailable on the execution host");
-    const record = await ensureChannelSession(conversation);
+    const record = await ensureChannelSession({
+      ...conversation,
+      fresh: action.session === "message",
+      permissionMode: action.permissions === "accept_edits" ? "acceptEdits" : "default",
+    });
     let attachments: SessionFile[] = [];
     if (message.attachments?.length) {
       try {
@@ -344,9 +378,7 @@ export async function startChannelRuntime(
               recipient.id === target.id &&
               recipient.inbound &&
               recipient.outbound &&
-              recipient.chat_id === message.chat &&
-              (!recipient.thread_id || recipient.thread_id === message.thread) &&
-              recipient.user_ids.includes(message.sender) &&
+              targetAccepts(recipient, message.chat, message.thread, message.sender) &&
               (!recipient.project_ids.length || recipient.project_ids.includes(projectId)),
           );
         if (authorized)
@@ -389,7 +421,8 @@ export async function startChannelRuntime(
     let session: AgentSession | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let progressId: string | undefined;
-    let progressMarkup: Record<string, unknown> | undefined;
+    let progressControls: Array<Array<{ label: string; value: string }>> = [];
+    const adapter = channelProvider(provider);
     let phase = "start";
     let failureCode = "agent_turn_failed";
     const updateProgress = async (text: string, running = false) => {
@@ -403,9 +436,7 @@ export async function startChannelRuntime(
               recipient.id === target.id &&
               recipient.inbound &&
               recipient.outbound &&
-              recipient.chat_id === message.chat &&
-              (!recipient.thread_id || recipient.thread_id === message.thread) &&
-              recipient.user_ids.includes(message.sender),
+              targetAccepts(recipient, message.chat, message.thread, message.sender),
           )
         ) {
           progressId = undefined;
@@ -414,7 +445,7 @@ export async function startChannelRuntime(
         await service.edit(progressId, {
           project_id: projectId,
           message: { text, format: "plain", links: [] },
-          ...(running ? { overrides: { reply_markup: progressMarkup } } : {}),
+          ...(running ? { overrides: adapter.controls(text, "plain", progressControls) } : {}),
         });
       } catch {
         logger.warn("Channel preview update failed", {
@@ -426,6 +457,17 @@ export async function startChannelRuntime(
     };
     try {
       await updateGatewaySession(record.id, { status: "running", last_activity_at: new Date() });
+      const run = agentRunSessionOptions(
+        {
+          permissions: action.permissions,
+          options:
+            record.backend === defaultAgent
+              ? (action.options ??
+                (action.agent === "default" ? defaults.agentOptions[defaults.agent] : undefined))
+              : undefined,
+        },
+        named,
+      );
       session = await openAgentSession(
         record.backend,
         {
@@ -433,27 +475,30 @@ export async function startChannelRuntime(
           cwd: record.cwd || project.scope,
           model: record.model ?? undefined,
           interactive: true,
-          autoApprove: false,
-          permissionMode:
-            record.permission_mode === "plan" || record.permission_mode === "acceptEdits"
-              ? record.permission_mode
-              : "default",
+          autoApprove: run.autoApprove,
+          permissionMode: run.permissionMode,
+          ...(run.toolAllowlist ? { toolAllowlist: run.toolAllowlist } : {}),
+          ...(run.chatAgentOptions ? { chatAgentOptions: run.chatAgentOptions } : {}),
           humanRequestContext: {
             projectId,
-            notify: [provider],
-            channel: {
-              connection: message.connection,
-              target: target.id,
-              chat_id: message.chat,
-              sender_id: message.sender,
-              ...(message.thread ? { thread_id: message.thread } : {}),
-            },
+            notify: named ? [provider] : [],
+            ...(named
+              ? {
+                  channel: {
+                    connection: message.connection,
+                    target: target.id,
+                    chat_id: message.chat,
+                    sender_id: message.sender,
+                    ...(message.thread ? { thread_id: message.thread } : {}),
+                  },
+                }
+              : {}),
           },
           ...(action.profile && record.backend === defaultAgent
             ? { agentProfile: action.profile }
             : {}),
           systemPromptAppend: chatSystemPrompt(defaults.system),
-          orcMcp: true,
+          orcMcp: run.orcMcp,
           orcMcpMode: loadConfig().mcp.default_mode,
           orcMcpProject: project.name,
           orcPreviewSessionId: record.id,
@@ -476,24 +521,36 @@ export async function startChannelRuntime(
         60 * 60 * 1000,
       );
       timer.unref();
-      if (provider === "telegram") {
-        const stopAction = service.store.action(
-          message.connection,
-          target.id,
-          message.chat,
-          message.thread,
-          [message.sender],
-          `/stop ${message.message_id}`,
+      if (adapter.info.capabilities.edit) {
+        progressControls = adapter.info.capabilities.buttons
+          ? [
+              [
+                {
+                  label: "Stop",
+                  value: service.store.action(
+                    message.connection,
+                    target.id,
+                    message.chat,
+                    message.thread,
+                    [message.sender],
+                    `/stop ${message.message_id}`,
+                  ),
+                },
+              ],
+            ]
+          : [];
+        const progress = await service.send(
+          {
+            connection: message.connection,
+            target: target.id,
+            chat_id: message.chat,
+            project_id: projectId,
+            message: { text: "Working…", format: "plain" },
+            overrides: adapter.controls("Working…", "plain", progressControls),
+            ...(message.thread ? { thread_id: message.thread } : {}),
+          },
+          true,
         );
-        progressMarkup = { inline_keyboard: [[{ text: "Stop", callback_data: stopAction }]] };
-        const progress = await service.send({
-          connection: message.connection,
-          target: target.id,
-          project_id: projectId,
-          message: { text: "Working…", format: "plain" },
-          overrides: { reply_markup: progressMarkup },
-          ...(message.thread ? { thread_id: message.thread } : {}),
-        });
         if (progress.status !== "accepted")
           throw new ConflictError("Progress delivery not confirmed");
         progressId = progress.id;
@@ -524,7 +581,7 @@ export async function startChannelRuntime(
             "Agent output exceeds the channel message limit; inspect the session in ORC",
           );
         if (event.type === "text" && progressId && Date.now() - previewAt >= 1500) {
-          await updateProgress(telegramPreview(output) || "Working…", true);
+          await updateProgress(previewTail(output) || "Working…", true);
           previewAt = Date.now();
         }
         if (event.type === "error") {
@@ -544,25 +601,50 @@ export async function startChannelRuntime(
       }
       runtimeId ??= session.getRuntimeSessionId?.();
       phase = "deliver";
+      let finalized = false;
       if (output) {
-        const telegram = provider === "telegram";
+        const controls = named && adapter.replyControls;
         const chunked =
-          telegram &&
-          renderMessage("telegram", {
-            text: output,
-            format: "markdown",
-            links: [],
-          }).payloads.length > 1;
-        await reply(
-          message,
-          target,
-          output,
-          "markdown",
-          projectId,
-          telegram && !chunked ? channelControls() : undefined,
-        );
-        if (chunked)
-          await reply(message, target, "Chat controls", "plain", projectId, channelControls());
+          adapter.render({ text: output, format: "markdown", links: [] }).payloads.length > 1;
+        if (progressId && !chunked) {
+          const rows = controls
+            ? channelControls().map((row) =>
+                row.map((button) => ({
+                  label: button.label,
+                  value: service.store.action(
+                    message.connection,
+                    target.id,
+                    message.chat,
+                    message.thread,
+                    [message.sender],
+                    button.value,
+                  ),
+                })),
+              )
+            : [];
+          try {
+            const receipt = await service.edit(progressId, {
+              project_id: projectId,
+              message: { text: output, format: "markdown", links: [] },
+              ...(rows.length ? { overrides: adapter.controls(output, "markdown", rows) } : {}),
+            });
+            finalized = receipt.status === "accepted";
+          } catch {
+            finalized = false;
+          }
+        }
+        if (!finalized) {
+          await reply(
+            message,
+            target,
+            output,
+            "markdown",
+            projectId,
+            controls && !chunked ? channelControls() : undefined,
+          );
+          if (controls && chunked)
+            await reply(message, target, "Chat controls", "plain", projectId, channelControls());
+        }
         await appendMessage({
           chatKey: chat.id,
           direction: "out",
@@ -572,9 +654,10 @@ export async function startChannelRuntime(
           gatewaySessionId: record.id,
         });
       }
-      await updateProgress(
-        output ? "Completed. Reply below." : "Turn completed without a text reply.",
-      );
+      if (!finalized)
+        await updateProgress(
+          output ? "Completed. Reply below." : "Turn completed without a text reply.",
+        );
       await updateGatewaySession(record.id, {
         status: "idle",
         runtime_session_id: runtimeId,
@@ -721,6 +804,7 @@ export async function startChannelRuntime(
   // Attention receipts are bound to connection + target as well as chat/thread.
   service.control = async (message, target) => {
     if (message.event === "reaction") return false;
+    const named = target.user_ids.includes(message.sender);
     let text = message.text;
     if (message.kind === "action" && text.startsWith("orc_action:")) {
       const value = service.store.consumeAction(
@@ -747,10 +831,12 @@ export async function startChannelRuntime(
       await reply(
         message,
         target,
-        channelHelp(service.connection(message.connection)),
-        "markdown",
+        named
+          ? channelHelp(service.connection(message.connection))
+          : "Send a message and the assistant will reply.",
+        named ? "markdown" : "plain",
         undefined,
-        channelControls(),
+        named ? channelControls() : undefined,
       );
       return true;
     }
@@ -768,7 +854,7 @@ export async function startChannelRuntime(
           "This turn is no longer running.",
           "plain",
           undefined,
-          channelControls(),
+          named ? channelControls() : undefined,
         );
         return true;
       }
@@ -786,19 +872,21 @@ export async function startChannelRuntime(
           : "No agent turn is running. Tap New session for a new conversation.",
         "plain",
         undefined,
-        channelControls(),
+        named ? channelControls() : undefined,
       );
       return true;
     }
     if (message.kind === "action" && text !== message.text) {
-      const answer = human.reply(
-        {
-          ...incoming(service, message),
-          text,
-          connectionId: `${message.connection}:${target.id}`,
-        },
-        target,
-      );
+      const answer =
+        named &&
+        human.reply(
+          {
+            ...incoming(service, message),
+            text,
+            connectionId: `${message.connection}:${target.id}`,
+          },
+          target,
+        );
       if (answer) await reply(message, target, answer, "plain");
       else {
         message.text = text;
@@ -811,6 +899,7 @@ export async function startChannelRuntime(
       text,
       connectionId: `${message.connection}:${target.id}`,
     };
+    if (!named) return false;
     const answer =
       human.reply(inbound, target) ??
       (target.attention && !message.event && !message.attachments?.length
@@ -820,6 +909,13 @@ export async function startChannelRuntime(
     await reply(message, target, answer, "plain");
     return true;
   };
+  service.followup = (message) => {
+    if (!message.thread) return false;
+    const prefix = `${JSON.stringify(["channel", message.connection, message.chat, message.thread]).slice(0, -1)},`;
+    return !!getSqlite()
+      .query("SELECT 1 FROM bridge_chats WHERE substr(id,1,?)=? LIMIT 1")
+      .get(prefix.length, prefix);
+  };
   service.unmatched = async (message, target) => {
     await reply(
       message,
@@ -827,9 +923,6 @@ export async function startChannelRuntime(
       "No inbound route matches this message. Choose a project and agent in Settings → Channels → Inbound routing. Use /help for channel commands.",
       "plain",
     );
-  };
-  service.beforeConnect = async () => {
-    await getGatewayManager()?.releaseManagedAccounts();
   };
   await service.start();
   let notificationForwarding: Promise<void> | undefined;
@@ -853,7 +946,7 @@ export async function startChannelRuntime(
     service.handler = undefined;
     service.control = undefined;
     service.unmatched = undefined;
-    service.beforeConnect = undefined;
+    service.followup = undefined;
     await Promise.allSettled([...sessions].map((s) => s.close()));
     await service.stop();
   };

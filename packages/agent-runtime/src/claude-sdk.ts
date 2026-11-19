@@ -565,14 +565,18 @@ class ClaudeSDKSession implements AgentSession {
             ? {
                 strictMcpConfig: true,
                 tools: this.opts.toolAllowlist.filter((name) => !name.startsWith("mcp__")),
-                mcpServers: buildOrcMcpServers(
-                  this.host,
-                  this.opts.mcpAlwaysLoad,
-                  this.opts.orcMcpMode,
-                  this.opts.orcMcpProject,
-                  this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
-                ),
-                allowedTools: [...this.opts.toolAllowlist, ORC_TOOLS_RULE],
+                ...(this.opts.orcMcp === false
+                  ? { mcpServers: {}, allowedTools: [...this.opts.toolAllowlist] }
+                  : {
+                      mcpServers: buildOrcMcpServers(
+                        this.host,
+                        this.opts.mcpAlwaysLoad,
+                        this.opts.orcMcpMode,
+                        this.opts.orcMcpProject,
+                        this.opts.orcPreviewSessionId ?? this.opts.attentionContext?.chatThreadId,
+                      ),
+                      allowedTools: [...this.opts.toolAllowlist, ORC_TOOLS_RULE],
+                    }),
               }
             : this.opts.ruleGuard || this.opts.orcMcp
               ? {
@@ -632,7 +636,11 @@ class ClaudeSDKSession implements AgentSession {
           },
           canUseTool: async (toolName, input, options) => {
             const signal = options?.signal ?? abortController.signal;
-            if (this.opts.toolAllowlist !== undefined && toolName.startsWith(ORC_TOOL_PREFIX)) {
+            if (
+              this.opts.toolAllowlist !== undefined &&
+              this.opts.orcMcp !== false &&
+              toolName.startsWith(ORC_TOOL_PREFIX)
+            ) {
               return { behavior: "allow", updatedInput: input };
             }
             if (

@@ -17,7 +17,7 @@ export function JobAgentPicker({
   host: string | null | undefined;
   cwd: string | undefined;
 }) {
-  const agent = value.backend === "codex-cli" ? "codex" : value.backend;
+  const agent = value.agent === "codex-cli" ? "codex" : value.agent;
   const { data: ssh } = useSsh();
   const agents = Array.from(new Set([...useEnabledAgents(), agent]));
   const catalog = useQuery({
@@ -55,7 +55,7 @@ export function JobAgentPicker({
         if (next !== agent)
           onChange({
             ...value,
-            backend: next === "codex" ? "codex-cli" : next,
+            agent: next === "codex" ? "codex-cli" : next,
             model: undefined,
             options: undefined,
           });

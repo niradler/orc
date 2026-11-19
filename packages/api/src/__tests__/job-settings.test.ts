@@ -75,7 +75,7 @@ test("should reject invalid settings and missing saved secrets before storing a 
     {
       action: {
         type: "agent",
-        backend: "codex-cli",
+        agent: "codex-cli",
         prompt: "Inspect",
         options: { runtime: "acpx", args: [] },
       },
@@ -83,7 +83,7 @@ test("should reject invalid settings and missing saved secrets before storing a 
     {
       action: {
         type: "agent",
-        backend: "claude",
+        agent: "claude",
         prompt: "Inspect",
         options: { runtime: "claude-sdk", options: { permissionMode: "bypassPermissions" } },
       },

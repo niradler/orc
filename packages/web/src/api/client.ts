@@ -1932,12 +1932,6 @@ export const api = {
       req<null>("POST", "/git/worktrees/remove", data),
   },
 
-  gateway: {
-    status: () => req<{ running: boolean; status: string }>("GET", "/gateway/status"),
-    send: (data: { platform: string; chat_id: string; text: string; thread_id?: string }) =>
-      req<null>("POST", "/gateway/send", data),
-  },
-
   speech: {
     status: () =>
       req<{ available: boolean; max_bytes: number; voice_mode: boolean }>("GET", "/speech/status"),

@@ -11,8 +11,8 @@ import {
 } from "@orc/core/channels";
 import { resetConfig } from "@orc/core/config";
 import { ChannelStore } from "@orc/db/channels";
-import type { ChannelTransport } from "./providers.js";
-import { renderMessage } from "./render.js";
+import type { ChannelTransport } from "./providers/base.js";
+import { channelProvider } from "./providers/registry.js";
 import { routeMessage } from "./routing.js";
 import { ChannelService } from "./service.js";
 
@@ -128,7 +128,13 @@ test("Otherwise never grants an unapproved sender or a forbidden project access"
   expect(calls).toBe(0);
   current.routes[0] = {
     ...route("otherwise", { always: true }),
-    action: { type: "agent", project_id: "allowed", agent: "default" },
+    action: {
+      type: "agent",
+      project_id: "allowed",
+      agent: "default",
+      session: "continue",
+      permissions: "ask",
+    },
   };
   await service.receive({ ...inbound, message_id: "allowed" });
   expect(calls).toBe(1);
@@ -139,18 +145,17 @@ test("Markdown renders natively, escapes HTML and preserves links/code", () => {
   const msg = ChannelMessageSchema.parse({
     text: "**Done** [Open](https://example.com)\n\n`<secret>` <script>",
   });
-  const telegram = renderMessage("telegram", msg).payloads[0];
+  const telegram = channelProvider("telegram").render(msg).payloads[0];
   expect(telegram?.text).toContain("<b>Done</b>");
   expect(telegram?.text).toContain('<a href="https://example.com">Open</a>');
   expect(telegram?.text).toContain("<code>&lt;secret&gt;</code>");
   expect(telegram?.text).not.toContain("<script>");
-  expect(renderMessage("slack", msg).payloads[0]?.text).toContain("*Done*");
+  expect(channelProvider("slack").render(msg).payloads[0]?.text).toContain("*Done*");
 });
 
 test("long text is split without losing content or Unicode", () => {
   const source = "😀<&>".repeat(2000);
-  const rendered = renderMessage(
-    "telegram",
+  const rendered = channelProvider("telegram").render(
     ChannelMessageSchema.parse({ text: source, format: "plain" }),
   );
   expect(rendered.payloads.length).toBeGreaterThan(1);
@@ -165,8 +170,7 @@ test("long Telegram replies use full bounded chunks and preserve line/word bound
     (_, i) =>
       `E2E_LINE_${String(i + 1).padStart(3, "0")} | Native Telegram chat continuity and controls verified.`,
   ).join("\n");
-  const result = renderMessage(
-    "telegram",
+  const result = channelProvider("telegram").render(
     ChannelMessageSchema.parse({ text: source, format: "plain" }),
   );
   const chunks = result.payloads.map((p) => String(p.text));
@@ -175,24 +179,21 @@ test("long Telegram replies use full bounded chunks and preserve line/word bound
   expect(chunks[0]).toEndWith("\n");
   expect(chunks.every((chunk) => chunk.length <= 4000)).toBe(true);
   const words = "Preserve every complete word across Telegram messages. ".repeat(150);
-  const split = renderMessage(
-    "telegram",
-    ChannelMessageSchema.parse({ text: words, format: "plain" }),
-  ).payloads.map((p) => String(p.text));
+  const split = channelProvider("telegram")
+    .render(ChannelMessageSchema.parse({ text: words, format: "plain" }))
+    .payloads.map((p) => String(p.text));
   expect(split.join("")).toBe(words);
   expect(split.slice(0, -1).every((chunk) => chunk.endsWith(" "))).toBe(true);
 });
 test("Slack common rendering preserves quotation marks and task-list state", () => {
-  const result = renderMessage(
-    "slack",
+  const result = channelProvider("slack").render(
     ChannelMessageSchema.parse({ text: 'A "quoted" summary\n\n- [x] Done\n- [ ] Pending' }),
   );
   expect(result.payloads[0]?.text).toContain('A "quoted" summary');
   expect(result.payloads[0]?.text).toContain("☑ Done");
   expect(result.payloads[0]?.text).toContain("☐ Pending");
   const links = [{ label: "Open task", url: "https://example.com/task" }];
-  const long = renderMessage(
-    "slack",
+  const long = channelProvider("slack").render(
     ChannelMessageSchema.parse({ text: "*<&>".repeat(1000), links }),
   );
   expect(long.payloads.length).toBeGreaterThan(1);
@@ -200,16 +201,14 @@ test("Slack common rendering preserves quotation marks and task-list state", () 
   const blocks = long.payloads.at(-1)?.blocks as { text?: { type: string; text: string } }[];
   expect(blocks[0]?.text?.type).toBe("plain_text");
   expect(blocks[0]?.text?.text.length).toBeLessThanOrEqual(3000);
-  const plain = renderMessage(
-    "slack",
+  const plain = channelProvider("slack").render(
     ChannelMessageSchema.parse({ text: "*literal* <tag>", format: "plain", links }),
   );
   expect(
     (plain.payloads[0]?.blocks as { text: { text: string; type: string } }[] | undefined)?.[0]
       ?.text,
   ).toEqual({ type: "plain_text", text: "*literal* <tag>" });
-  const labels = renderMessage(
-    "slack",
+  const labels = channelProvider("slack").render(
     ChannelMessageSchema.parse({
       text: "Task",
       links: [{ label: "a".repeat(100), url: "https://example.com/task" }],
@@ -423,22 +422,6 @@ test("unauthorized inbound and nonmatching event kinds never launch agents", asy
   await service.receive({ ...inbound, message_id: "m2" });
   await service.receive({ ...inbound, message_id: "m2" });
   expect(calls).toBe(1);
-  db.close();
-});
-
-test("an unreadable channel credential does not break legacy account selection", () => {
-  const db = new Database(":memory:");
-  const service = new ChannelService(new ChannelStore(db));
-  service.connections = () => [
-    ChannelConnectionSchema.parse({
-      id: "broken",
-      name: "broken",
-      provider: "telegram",
-      enabled: true,
-      credentials: { token: "enc:v1:broken" },
-    }),
-  ];
-  expect(service.managesAccount("telegram", "legacy-token")).toBe(false);
   db.close();
 });
 

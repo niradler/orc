@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { ChatModelSchema } from "./chat.js";
-import { ChatAgentOptionsSchema } from "./chat-options.js";
+import { AgentRunSchema, optionsExceedPermissions } from "./agent-run.js";
 
 export const JobActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("command"), command: z.string().trim().min(1) }).strict(),
@@ -8,50 +7,39 @@ export const JobActionSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("agent"),
       prompt: z.string().trim().min(1).max(100000),
-      backend: z.string().trim().min(1).max(64),
-      options: ChatAgentOptionsSchema.optional(),
-      model: ChatModelSchema.refine((value) => value.length > 0).optional(),
-      auto_approve: z.boolean().default(false),
+      ...AgentRunSchema.shape,
     })
     .strict()
     .superRefine((action, context) => {
       if (!action.options) return;
-      if (["claude-cli", "a2a", "agentapi"].includes(action.backend))
+      if (["claude-cli", "a2a", "agentapi"].includes(action.agent))
         context.addIssue({
           code: "custom",
           path: ["options"],
           message:
-            "This backend does not support job launch options. Choose Claude SDK, Codex CLI or ACPX.",
+            "This agent does not support job launch options. Choose Claude SDK, Codex CLI or ACPX.",
         });
       const runtime =
-        action.backend === "claude"
+        action.agent === "claude"
           ? "claude-sdk"
-          : action.backend === "pi"
+          : action.agent === "pi"
             ? "pi"
-            : action.backend === "codex-cli"
+            : action.agent === "codex-cli"
               ? "codex"
-              : "acpx";
+              : action.agent === "opencode"
+                ? "opencode"
+                : "acpx";
       if (action.options.runtime !== runtime)
         context.addIssue({
           code: "custom",
           path: ["options"],
-          message: "Launch options do not match this backend",
+          message: "Launch options do not match this agent",
         });
-      if (
-        !action.auto_approve &&
-        ((action.options.runtime === "claude-sdk" &&
-          ["acceptEdits", "bypassPermissions"].includes(
-            action.options.options.permissionMode ?? "",
-          )) ||
-          (action.options.runtime === "acpx" &&
-            action.options.args.some((argument) =>
-              ["--approve-all", "--approve-reads"].includes(argument),
-            )))
-      )
+      if (optionsExceedPermissions(action.options, action.permissions))
         context.addIssue({
           code: "custom",
           path: ["options"],
-          message: "Automatic tool approval must be enabled explicitly",
+          message: "Launch options approve more than the chosen permissions allow",
         });
     }),
   z
@@ -65,6 +53,19 @@ export const JobActionSchema = z.discriminatedUnion("type", [
     .strict(),
 ]);
 export type JobAction = z.infer<typeof JobActionSchema>;
+
+export function upgradeJobAction(raw: unknown): JobAction | null {
+  if (!raw || typeof raw !== "object") return null;
+  const record = raw as Record<string, unknown>;
+  if (record.type !== "agent" || !("backend" in record || "auto_approve" in record))
+    return raw as JobAction;
+  const { backend, auto_approve, ...rest } = record;
+  return {
+    ...rest,
+    agent: rest.agent ?? backend,
+    permissions: rest.permissions ?? (auto_approve === true ? "auto" : "ask"),
+  } as JobAction;
+}
 export const WebhookSubscriptionSchema = z
   .object({
     webhook_id: z.string().min(1).max(128),

@@ -340,6 +340,24 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<ChannelPairingView>("GET", `/channels/pairings/${encodeURIComponent(id)}`),
       confirmPairing: (id: string) =>
         c<unknown>("POST", `/channels/pairings/${encodeURIComponent(id)}/confirm`),
+      routeTest: (
+        id: string,
+        input: {
+          sender: string;
+          chat: string;
+          thread?: string;
+          text: string;
+          is_direct: boolean;
+          is_mention: boolean;
+          is_followup?: boolean;
+          kind?: "message" | "action";
+        },
+      ) =>
+        c<{ authorized: boolean; route_id: string | null; action: unknown }>(
+          "POST",
+          `/channels/${encodeURIComponent(id)}/route-test`,
+          input,
+        ),
     },
     humanRequests: {
       view: (id: string) => c<HumanRequest>("GET", `/human-requests/${e(id)}/view`),
@@ -987,13 +1005,6 @@ export function createOrcClient(options?: OrcClientOptions) {
     system: {
       about: () => c<SystemAbout>("GET", "/system/about"),
       restart: () => c<RestartResponse>("POST", "/system/restart", {}),
-    },
-
-    gateway: {
-      status: () => c<{ running: boolean; status: string }>("GET", "/gateway/status"),
-
-      send: (input: { platform: string; chat_id: string; text: string; thread_id?: string }) =>
-        c<null>("POST", "/gateway/send", input),
     },
 
     audit: {

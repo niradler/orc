@@ -15,7 +15,7 @@ import { NotificationDeliveryStore } from "@orc/db/notification-deliveries";
 import { publishJobNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
 import { forwardChannelNotifications } from "./notifications.js";
-import { type ChannelTransport, ProviderFailure } from "./providers.js";
+import { type ChannelTransport, ProviderFailure } from "./providers/base.js";
 import { ChannelService } from "./service.js";
 
 const databases: Database[] = [];

@@ -74,21 +74,56 @@ Native references: [Telegram sendMessage](https://core.telegram.org/bots/api#sen
 
 ## Setup
 
-Telegram: use BotFather to obtain a bot token or select `ORC_TELEGRAM_TOKEN` in Settings. Save and verify the bot, enable the connection, then use Pair my Telegram. Open the expiring link, start the bot and confirm the candidate user/chat in authenticated Settings. This creates `me` for outbound messaging; inbound and Attention are separate opt-ins. ORC uses long polling. A webhook or another active poller is an ownership conflict; do not delete a webhook or steal the bot automatically.
+Telegram: use BotFather to obtain a bot token, enter it directly or reference
+`env:ORC_TELEGRAM_TOKEN` in Settings. Save and verify the bot, enable the
+connection, then use Pair my Telegram. Open the expiring link, start the bot
+and confirm the candidate user/chat in authenticated Settings. This creates
+`me` for outbound messaging; inbound and Attention are separate opt-ins. ORC
+uses long polling. A webhook or another active poller is an ownership
+conflict; do not delete a webhook or steal the bot automatically.
 
-Slack: copy the manifest in Settings, create/install a Slack app in the intended workspace, enable Socket Mode, and configure the bot token and app token (`connections:write`). `ORC_SLACK_BOT_TOKEN` and `ORC_SLACK_APP_TOKEN` are supported. Verify the workspace. Pair a private DM through Pair my Slack, or configure an approved channel ID and sender IDs manually. Invite the bot to channel destinations. Permissions and event subscriptions must cover the selected conversation types; inspect provider errors such as `missing_scope`, `not_in_channel`, or `channel_not_found`.
+Slack: copy the manifest in Settings, create/install a Slack app in the
+intended workspace, enable Socket Mode, and configure the bot token and app
+token, entered directly or as `env:ORC_SLACK_BOT_TOKEN` /
+`env:ORC_SLACK_APP_TOKEN`. The manifest (`GET /api/channels/slack-manifest`)
+requests scopes `commands`, `chat:write`, `im:write`, `im:history`,
+`mpim:history`, `channels:history`, `groups:history`, `app_mentions:read`,
+`files:read`, `users:read` and events `message.im`, `message.mpim`,
+`message.channels`, `message.groups`, `app_mention`; an existing Slack app
+must be reinstalled from the current manifest to pick up `mpim:history`,
+`files:read` and `users:read`. Verify the workspace. Pair a private DM through
+Pair my Slack, or configure an approved channel ID and sender IDs manually
+(DMs, group DMs/mpim and channels with an app mention are all supported).
+Invite the bot to channel destinations. Permissions and event subscriptions
+must cover the selected conversation types; inspect provider errors such as
+`missing_scope`, `not_in_channel`, or `channel_not_found`. Slack replies show
+live "Working…" progress with a Stop button while an agent turn runs, and
+support inbound/outbound file attachments (outbound Slack file reads need
+`files:read`).
 
-Pairing is short-lived, single-use and requires authenticated confirmation. Only one listener owns a provider account. Secrets are server-side encrypted or referenced through environment variables and are never returned to agents or the browser. Never paste bot credentials into an MCP message, scratchpad or job prompt.
+Pairing is short-lived, single-use and requires authenticated confirmation. Only one listener owns a provider account. Secrets are server-side encrypted or referenced through environment variables (`env:ORC_TELEGRAM_TOKEN`, `env:ORC_SLACK_BOT_TOKEN`, `env:ORC_SLACK_APP_TOKEN`) and are never returned to agents or the browser. Never paste bot credentials into an MCP message, scratchpad or job prompt.
 
 ## Ordered inbound routing
 
-Enable inbound on an approved destination and list allowed sender IDs. Authorization precedes routing. Rules run in saved order; the first enabled matching rule wins. No match launches no agent. An ignore rule stops routing. No implicit fallthrough into a general-purpose agent handler is allowed.
+Enable inbound on an approved destination and list allowed sender IDs. A
+destination's `chat_id` can be `*` (any chat) and/or `user_ids` can include
+`*` (any sender), shown in Settings as the "Any chat"/"Any sender" checkboxes.
+A sender matched only through a `*` entry gets replies only: no chat controls,
+no `/project`/`/agent`/`/model` commands, and approvals/questions never reach
+them (they go to ORC Notifications instead) — pair that with
+`permissions: "read_only"` and a restricted profile. A `*` chat cannot have
+Attention, notifications or a thread, and a `*` sender cannot have Attention.
+`POST /api/channels/messages` and `channel_send` refuse `*` chat destinations:
+they only carry replies to their senders. Authorization
+precedes routing. Rules run in saved order; the first enabled matching rule
+wins. No match launches no agent. An ignore rule stops routing. No implicit
+fallthrough into a general-purpose agent handler is allowed.
 
 Settings provides a visual builder for nested **Match all (AND)**, **Match any (OR)** and **Exclude matches (NOT)** groups. Conditions use named fields, comparisons and typed values; no JSON editing is needed. Numbered rules show their conditions and destination. Move rules up/down to set priority; disabled rules are skipped. Apply a rule, then save the connection. Preview uses saved rules and never invokes an agent.
 
 The separate **Otherwise** rule is optional, fixed last, and runs only after every enabled condition rule fails. It can route to an agent or ignore silently; recipient/project authorization still applies. With no enabled default, authorized unmatched messages get setup guidance and no agent starts. Reply setup and newly added rules insert before Otherwise. HTTP configuration represents this final fallback with `condition: {"always":true}`; the API rejects multiple defaults, a default before other rules, or a nested `always` predicate.
 
-API condition trees support `all`, `any` and `not`, with at most five levels and 100 condition nodes. Predicates have `field`, `op`, and `value`. Fields: `sender`, `chat`, `thread`, `text`, `command`, `is_direct`, `is_mention`, `kind`. Operators: `is`, `in`, `contains`, `starts_with`. `in` uses a string array; boolean comparisons use JSON booleans. Comparisons are case-sensitive. No arbitrary scripts or unbounded regular expressions.
+API condition trees support `all`, `any` and `not`, with at most five levels and 100 condition nodes. Predicates have `field`, `op`, and `value`. Fields: `sender`, `chat`, `thread`, `text`, `command`, `is_direct`, `is_mention`, `is_followup` (the message continues a thread an agent already answered on this connection), `kind`. Operators: `is`, `in`, `contains`, `contains_any` (case-insensitive keyword list), `starts_with`. `in`/`contains_any` use a string array; boolean comparisons use JSON booleans. Comparisons are otherwise case-sensitive. A `{"time": {...}}` condition instead of `field`/`op`/`value` restricts a rule to a window: `days` (0=Sun..6=Sat, omit for every day), `from`, `to` (`HH:MM`, overnight ranges allowed when `from` > `to`), `tz` (IANA zone); wrap it in `not` for "outside hours". No arbitrary scripts or unbounded regular expressions — regex is deliberately unsupported on inbound text.
 
 ```json
 {
@@ -109,7 +144,9 @@ API condition trees support `all`, `any` and `not`, with at most five levels and
 }
 ```
 
-An agent action names its backend and project; optional `profile` selects an existing agent profile. The project needs an active scope directory available on the configured execution host. Sessions are separated by connection, chat/thread, sender and route/action. Agent replies return through the original destination. Pairing and Attention commands are handled before ordinary routing. Native button callbacks have `kind: "action"`; their value (or Slack action ID when no value exists) is untrusted input that can reach an agent only through an authorized matching route. New rules default to `kind: "message"`; use an action rule to handle custom buttons. A rule without a kind condition can match either kind. A callback never directly executes a command or bypasses native permissions.
+An agent action names its backend and project; optional `model` pins a model and `profile` selects an existing agent profile, whose instructions, tool allowlist and model become that rule's persona. `session` picks `continue` (one rolling conversation per chat/thread/sender, the default), `thread` (one session per thread; a top-level Slack message starts a new thread and the reply lands in it, and everyone in the thread shares the session) or `message` (a fresh session every message). `permissions` picks `ask` (approvals come to you), `read_only` (only Read, Grep, Glob, LS, WebFetch and WebSearch; ORC MCP is off; backends that cannot enforce a tool allowlist refuse to run), `accept_edits` or `auto` (no prompts); senders matched only through `*` never get more than `read_only`, never get ORC MCP, and cannot trigger a job whose agent runs with `accept_edits` or `auto`. `options` carries the same per-agent launch options as the chat composer, such as effort; options that approve more than `permissions` (Claude `bypassPermissions` or `acceptEdits`, ACPX `--approve-all` or `--approve-reads`) are rejected. The project needs an active scope directory available on the configured execution host. Agent replies return through the original destination. Pairing and Attention commands are handled before ordinary routing. Native button callbacks have `kind: "action"`; their value (or Slack action ID when no value exists) is untrusted input that can reach an agent only through an authorized matching route. New rules default to `kind: "message"`; use an action rule to handle custom buttons. A rule without a kind condition can match either kind. A callback never directly executes a command or bypasses native permissions.
+
+A `job` action (`{"type": "job", "job_id": "..."}`) runs that job with the message text on stdin and `ORC_CHANNEL_CONNECTION`, `ORC_CHANNEL_PROVIDER`, `ORC_CHANNEL_CHAT`, `ORC_CHANNEL_THREAD`, `ORC_CHANNEL_SENDER`, `ORC_CHANNEL_SENDER_NAME` and `ORC_CHANNEL_ROUTE` in its environment; the job's stdout is the reply, and a nonzero exit reports a status line instead.
 
 Use the saved-rule preview in Settings, or `POST /api/channels/{id}/route-test`, to test authorization and rule matching without invoking an agent.
 

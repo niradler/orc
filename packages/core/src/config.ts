@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { ChannelConnectionSchema } from "./channels.js";
 import { ChatSettingsSchema, ComposerProfilesSchema, FavoriteModelsSchema } from "./chat.js";
 import { AGENT_ID_PATTERN, ProviderPathsSchema } from "./coding-agents.js";
 import { orcHome, userHome } from "./home.js";
@@ -16,36 +15,6 @@ export function localAgentBinary(name: string): string | null {
     target = join(userHome(), target.slice(2));
   return Bun.which(target, { PATH: process.env.PATH ?? "" });
 }
-
-const ChannelDefaultModeSchema = z
-  .enum(["direct", "multi"])
-  .or(z.string().regex(/^agent:/))
-  .or(z.string().regex(/^job:/))
-  .default("direct");
-
-export const GatewayPlatformConfigSchema = z.object({
-  enabled: z.boolean().default(false),
-  token: z.string().optional(),
-  bot_token: z.string().optional(),
-  app_token: z.string().optional(),
-  authorized_users: z.array(z.union([z.string(), z.number()])).default([]),
-  default_chat_id: z.string().optional(),
-  mode: ChannelDefaultModeSchema,
-  allow_channel_mentions: z.boolean().default(true),
-  share_session_in_channel: z.boolean().default(false),
-  streaming_preview: z.boolean().default(true),
-});
-
-// Zod v4: .default(val) returns val as-is without running it through the inner schema,
-// so nested defaults are not applied. All default objects must be fully explicit.
-const DEFAULT_GATEWAY_PLATFORM = {
-  enabled: false,
-  authorized_users: [] as (string | number)[],
-  mode: "direct" as const,
-  allow_channel_mentions: true,
-  share_session_in_channel: false,
-  streaming_preview: true,
-};
 
 const ShellArgumentSchema = z.string().refine((value) => !value.includes("\0"), {
   message: "Shell arguments cannot contain NUL",
@@ -209,17 +178,6 @@ export const OrcConfigSchema = z.object({
       ...McpSettingsSchema.shape,
     })
     .prefault({}),
-
-  channels: z.array(ChannelConnectionSchema).default([]),
-  gateway: z
-    .object({
-      telegram: GatewayPlatformConfigSchema.default(DEFAULT_GATEWAY_PLATFORM),
-      slack: GatewayPlatformConfigSchema.default(DEFAULT_GATEWAY_PLATFORM),
-    })
-    .default({
-      telegram: DEFAULT_GATEWAY_PLATFORM,
-      slack: DEFAULT_GATEWAY_PLATFORM,
-    }),
 
   runner: z
     .object({
@@ -406,7 +364,6 @@ export const OrcConfigSchema = z.object({
 });
 
 export type OrcConfig = z.infer<typeof OrcConfigSchema>;
-export type GatewayPlatformConfig = z.infer<typeof GatewayPlatformConfigSchema>;
 
 function resolvePath(p: string): string {
   if (p.startsWith("~/")) return join(userHome(), p.slice(2));
@@ -536,19 +493,6 @@ function fromEnv(): Record<string, unknown> {
     agent_loop.max_flow_runs_per_task = Number(process.env.ORC_AGENT_LOOP_MAX_FLOW_RUNS);
   if (Object.keys(agent_loop).length) env.agent_loop = agent_loop;
 
-  const gateway: Record<string, unknown> = {};
-  if (process.env.ORC_TELEGRAM_TOKEN) {
-    gateway.telegram = { token: process.env.ORC_TELEGRAM_TOKEN, enabled: true };
-  }
-  if (process.env.ORC_SLACK_BOT_TOKEN || process.env.ORC_SLACK_APP_TOKEN) {
-    gateway.slack = {
-      bot_token: process.env.ORC_SLACK_BOT_TOKEN,
-      app_token: process.env.ORC_SLACK_APP_TOKEN,
-      enabled: true,
-    };
-  }
-  if (Object.keys(gateway).length) env.gateway = gateway;
-
   const speech: Record<string, unknown> = {};
   if (process.env.ORC_SPEECH_PROVIDER) speech.provider = process.env.ORC_SPEECH_PROVIDER;
   if (process.env.ORC_SPEECH_LANGUAGE) speech.language = process.env.ORC_SPEECH_LANGUAGE;
@@ -605,12 +549,6 @@ export function loadConfig(overrides?: Partial<OrcConfig>): OrcConfig {
   if (existsSync(localConfigPath)) raw = deepMerge(raw, loadJsonFile(localConfigPath));
   raw = deepMerge(raw, fromEnv());
   if (overrides) raw = deepMerge(raw, overrides as Record<string, unknown>);
-
-  // Backwards compatibility: bridge: key was renamed to gateway: in v0.1.0
-  if (raw.bridge && !raw.gateway) {
-    raw.gateway = raw.bridge;
-  }
-  delete raw.bridge;
 
   const parsed = OrcConfigSchema.safeParse(raw);
   if (!parsed.success) {

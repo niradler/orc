@@ -84,7 +84,7 @@ export function JobDetailSheet({
                 <DetailField label="Action">
                   <pre className="font-mono text-xs bg-background p-2 rounded-lg border border-surface-highest overflow-x-auto whitespace-pre-wrap break-all">
                     {job.action?.type === "agent"
-                      ? `Run agent (${job.action.backend}): ${job.action.prompt}`
+                      ? `Run agent (${job.action.agent}): ${job.action.prompt}`
                       : job.action?.type === "task"
                         ? `Create task: ${job.action.title}`
                         : job.command}

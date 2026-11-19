@@ -35,6 +35,7 @@ beforeAll(() => {
   app = setupTestApp();
   registerBackend("job-fixture", () => ({
     name: "job-fixture",
+    profileCapabilities: { model: true, toolAllowlist: true },
     preflight: async () => ({ ok: true }),
     stop: async () => {},
     resumeSession: async () => {
@@ -273,7 +274,7 @@ test("should run an agent through the backend registry, link its session and bou
     name: "agent-action",
     trigger_type: "manual",
     timeout_secs: 1,
-    action: { type: "agent", backend: "job-fixture", prompt: "Follow configured instructions" },
+    action: { type: "agent", agent: "job-fixture", prompt: "Follow configured instructions" },
   });
   expect(response.status).toBe(201);
   const job = await response.json();
@@ -294,6 +295,69 @@ test("should run an agent through the backend registry, link its session and bou
   expect((await waitRun(timeout.run_id)).error_msg).toContain("timed out");
   mode = "success";
   expect(await getDb().select().from(tasks)).toHaveLength(1);
+});
+
+test("should map agent permissions into the job session and upgrade stored legacy actions", async () => {
+  mode = "success";
+  const readOnly = await (
+    await req(app, "POST", "/jobs", {
+      name: "read-only-agent",
+      trigger_type: "manual",
+      action: {
+        type: "agent",
+        agent: "job-fixture",
+        prompt: "Look only",
+        permissions: "read_only",
+      },
+    })
+  ).json();
+  let trigger = await (await req(app, "POST", `/jobs/${readOnly.id}/trigger`)).json();
+  expect((await waitRun(trigger.run_id)).status).toBe("success");
+  expect(lastOptions).toMatchObject({
+    autoApprove: false,
+    permissionMode: "default",
+    orcMcp: false,
+    toolAllowlist: ["Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch"],
+  });
+  expect(permission).toBe("denied");
+  expect(
+    (
+      await req(app, "POST", "/jobs", {
+        name: "bypass-without-auto",
+        trigger_type: "manual",
+        action: {
+          type: "agent",
+          agent: "claude",
+          prompt: "x",
+          permissions: "accept_edits",
+          options: { runtime: "claude-sdk", options: { permissionMode: "bypassPermissions" } },
+        },
+      })
+    ).status,
+  ).toBe(400);
+  getSqlite()
+    .query("UPDATE jobs SET action=? WHERE id=?")
+    .run(
+      JSON.stringify({
+        type: "agent",
+        backend: "job-fixture",
+        prompt: "Legacy",
+        auto_approve: true,
+      }),
+      readOnly.id,
+    );
+  const legacy = await (await req(app, "GET", `/jobs/${readOnly.id}`)).json();
+  expect(legacy.action).toEqual({
+    type: "agent",
+    agent: "job-fixture",
+    prompt: "Legacy",
+    permissions: "auto",
+  });
+  trigger = await (await req(app, "POST", `/jobs/${readOnly.id}/trigger`)).json();
+  expect((await waitRun(trigger.run_id)).status).toBe("success");
+  expect(lastOptions).toMatchObject({ autoApprove: true, permissionMode: "bypassPermissions" });
+  expect(lastOptions?.toolAllowlist).toBeUndefined();
+  expect(permission).toBe("approved");
 });
 
 test("should keep generated backlog tasks out of the loop and start only explicitly opted-in flows", async () => {
@@ -392,7 +456,7 @@ test("should execute an agent in an isolated worktree with pinned host, environm
     name: "isolated-agent",
     action: {
       type: "agent",
-      backend: "job-fixture",
+      agent: "job-fixture",
       prompt: "Inspect only",
       model: "fixture-model",
       options,
@@ -441,7 +505,7 @@ test("should run scheduled agent actions and signed HTTP webhook agent actions e
     await startScheduler();
     const scheduled = await send<{ id: string }>("/jobs", {
       name: "scheduled-agent-e2e",
-      action: { type: "agent", backend: "job-fixture", prompt: "Scheduled instructions" },
+      action: { type: "agent", agent: "job-fixture", prompt: "Scheduled instructions" },
       trigger_type: "cron",
       cron_expr: "* * * * * *",
       enabled: true,
@@ -471,7 +535,7 @@ test("should run scheduled agent actions and signed HTTP webhook agent actions e
     });
     const job = await send<{ id: string }>("/jobs", {
       name: "http-agent-e2e",
-      action: { type: "agent", backend: "job-fixture", prompt: "Webhook instructions" },
+      action: { type: "agent", agent: "job-fixture", prompt: "Webhook instructions" },
       trigger_type: "webhook",
       enabled: true,
       webhooks: [{ webhook_id: source.id, events: ["push"] }],
@@ -539,7 +603,7 @@ test("agent output redacts split secrets before rolling trace retention and audi
   const created = await req(app, "POST", "/jobs", {
     name: "redaction-rolling-regression",
     trigger_type: "manual",
-    action: { type: "agent", backend: "job-fixture", prompt: "Inspect fixture" },
+    action: { type: "agent", agent: "job-fixture", prompt: "Inspect fixture" },
     environment: [
       { name: "FIXTURE_SECRET", value: secret, secret: true },
       { name: "REDACTION_REGRESSION", value: "true", secret: false },

@@ -286,6 +286,243 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/remote-hosts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Remote ORC servers this server can run agents on */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Saved remote hosts */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            hosts: components["schemas"]["RemoteHost"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /**
+         * Add or update a remote ORC host in ~/.orc/config.json
+         * @description A blank token keeps the saved one while the address is unchanged. Omitted headers keep the saved ones.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        id?: string;
+                        label: string;
+                        url: string;
+                        token?: string;
+                        clear_token?: boolean;
+                        headers?: {
+                            name: string;
+                            value: string;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Saved remote hosts */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            hosts: components["schemas"]["RemoteHost"][];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/remote-hosts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove a remote ORC host */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Saved remote hosts */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            hosts: components["schemas"]["RemoteHost"][];
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/remote-hosts/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Check that a remote ORC answers and accepts the saved credentials */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Test result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RemoteHostTest"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/remote-hosts/{id}/hosts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Execution hosts configured on a remote ORC: its own machine and its SSH aliases */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Remote targets */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RemoteHostTargets"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/remote-hosts/{id}/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Projects on a remote ORC, for choosing where a sent session lands */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Remote projects */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            projects: {
+                                name: string;
+                                git_remote_url: string | null;
+                                scope: string | null;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/waiting": {
         parameters: {
             query?: never;
@@ -9590,9 +9827,77 @@ export interface paths {
                                     /** @enum {string} */
                                     type: "agent";
                                     agent: string;
-                                    profile?: string;
                                     model?: string;
+                                    profile?: string;
+                                    options?: {
+                                        /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                    /**
+                                     * @default ask
+                                     * @enum {string}
+                                     */
+                                    permissions: "ask" | "read_only" | "accept_edits" | "auto";
                                     project_id: string;
+                                    /**
+                                     * @default continue
+                                     * @enum {string}
+                                     */
+                                    session: "continue" | "thread" | "message";
+                                } | {
+                                    /** @enum {string} */
+                                    type: "job";
+                                    job_id: string;
                                 };
                             }[];
                             credentials: {
@@ -9703,9 +10008,77 @@ export interface paths {
                                 /** @enum {string} */
                                 type: "agent";
                                 agent: string;
-                                profile?: string;
                                 model?: string;
+                                profile?: string;
+                                options?: {
+                                    /** @enum {string} */
+                                    runtime: "opencode";
+                                    options: {
+                                        effort?: string;
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "pi";
+                                    options: {
+                                        /** @enum {string} */
+                                        thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                        /** @enum {string} */
+                                        steeringMode?: "all" | "one-at-a-time";
+                                        /** @enum {string} */
+                                        followUpMode?: "all" | "one-at-a-time";
+                                        autoCompaction?: boolean;
+                                        autoRetry?: boolean;
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "claude-sdk";
+                                    options: {
+                                        /** @enum {string} */
+                                        permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                                        maxTurns?: number;
+                                        maxBudgetUsd?: number;
+                                        /** @enum {string} */
+                                        effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                        thinking?: {
+                                            /** @enum {string} */
+                                            type: "adaptive";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "disabled";
+                                        } | {
+                                            /** @enum {string} */
+                                            type: "enabled";
+                                            budgetTokens: number;
+                                        };
+                                        fallbackModel?: string;
+                                        extraArgs?: {
+                                            [key: string]: string | null;
+                                        };
+                                    };
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "codex";
+                                    args: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    runtime: "acpx";
+                                    args: string[];
+                                };
+                                /**
+                                 * @default ask
+                                 * @enum {string}
+                                 */
+                                permissions?: "ask" | "read_only" | "accept_edits" | "auto";
                                 project_id: string;
+                                /**
+                                 * @default continue
+                                 * @enum {string}
+                                 */
+                                session?: "continue" | "thread" | "message";
+                            } | {
+                                /** @enum {string} */
+                                type: "job";
+                                job_id: string;
                             };
                         }[];
                     };
@@ -9771,9 +10144,77 @@ export interface paths {
                                     /** @enum {string} */
                                     type: "agent";
                                     agent: string;
-                                    profile?: string;
                                     model?: string;
+                                    profile?: string;
+                                    options?: {
+                                        /** @enum {string} */
+                                        runtime: "opencode";
+                                        options: {
+                                            effort?: string;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "pi";
+                                        options: {
+                                            /** @enum {string} */
+                                            thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+                                            /** @enum {string} */
+                                            steeringMode?: "all" | "one-at-a-time";
+                                            /** @enum {string} */
+                                            followUpMode?: "all" | "one-at-a-time";
+                                            autoCompaction?: boolean;
+                                            autoRetry?: boolean;
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "claude-sdk";
+                                        options: {
+                                            /** @enum {string} */
+                                            permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                                            maxTurns?: number;
+                                            maxBudgetUsd?: number;
+                                            /** @enum {string} */
+                                            effort?: "low" | "medium" | "high" | "xhigh" | "max";
+                                            thinking?: {
+                                                /** @enum {string} */
+                                                type: "adaptive";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "disabled";
+                                            } | {
+                                                /** @enum {string} */
+                                                type: "enabled";
+                                                budgetTokens: number;
+                                            };
+                                            fallbackModel?: string;
+                                            extraArgs?: {
+                                                [key: string]: string | null;
+                                            };
+                                        };
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "codex";
+                                        args: string[];
+                                    } | {
+                                        /** @enum {string} */
+                                        runtime: "acpx";
+                                        args: string[];
+                                    };
+                                    /**
+                                     * @default ask
+                                     * @enum {string}
+                                     */
+                                    permissions: "ask" | "read_only" | "accept_edits" | "auto";
                                     project_id: string;
+                                    /**
+                                     * @default continue
+                                     * @enum {string}
+                                     */
+                                    session: "continue" | "thread" | "message";
+                                } | {
+                                    /** @enum {string} */
+                                    type: "job";
+                                    job_id: string;
                                 };
                             }[];
                             credentials: {
@@ -10105,6 +10546,7 @@ export interface paths {
                         };
                         project_id?: string | null;
                         idempotency_key?: string;
+                        chat_id?: string;
                         thread_id?: string;
                     };
                 };
@@ -10282,6 +10724,8 @@ export interface paths {
                         text: string;
                         is_direct: boolean;
                         is_mention: boolean;
+                        /** @default false */
+                        is_followup?: boolean;
                         /**
                          * @default message
                          * @enum {string}
@@ -19961,6 +20405,11 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
+                        remote_host: string;
+                        project: string;
+                        /** @default  */
+                        note?: string;
+                    } | {
                         host_label: string;
                         url: string;
                         /** @default  */
@@ -21379,91 +21828,6 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/gateway/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get gateway status */
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Gateway status */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["GatewayStatus"];
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/gateway/send": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Send a message via the gateway */
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: {
-                content: {
-                    "application/json": components["schemas"]["GatewaySend"];
-                };
-            };
-            responses: {
-                /** @description Message sent */
-                204: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-                /** @description Gateway not running */
-                503: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: string;
-                        };
-                    };
-                };
-            };
-        };
         delete?: never;
         options?: never;
         head?: never;
@@ -23420,6 +23784,24 @@ export interface components {
             /** @description ANTHROPIC_API_KEY is set where orc runs and will be forwarded */
             api_key_forwarded: boolean;
         };
+        RemoteHost: {
+            id: string;
+            label: string;
+            url: string;
+            has_token: boolean;
+            header_names: string[];
+        };
+        RemoteHostTest: {
+            ok: boolean;
+            version: string | null;
+            error: string | null;
+        };
+        RemoteHostTargets: {
+            /** @description The remote's default execution host */
+            host: string | null;
+            /** @description SSH aliases configured on the remote */
+            hosts: string[];
+        };
         HealthResponse: {
             /** @enum {string} */
             status: "ok";
@@ -24582,7 +24964,9 @@ export interface components {
                 /** @enum {string} */
                 type: "agent";
                 prompt: string;
-                backend: string;
+                agent: string;
+                model?: string;
+                profile?: string;
                 options?: {
                     /** @enum {string} */
                     runtime: "opencode";
@@ -24637,9 +25021,11 @@ export interface components {
                     runtime: "acpx";
                     args: string[];
                 };
-                model?: string;
-                /** @default false */
-                auto_approve: boolean;
+                /**
+                 * @default ask
+                 * @enum {string}
+                 */
+                permissions: "ask" | "read_only" | "accept_edits" | "auto";
             } | {
                 /** @enum {string} */
                 type: "task";
@@ -24711,7 +25097,9 @@ export interface components {
                 /** @enum {string} */
                 type: "agent";
                 prompt: string;
-                backend: string;
+                agent: string;
+                model?: string;
+                profile?: string;
                 options?: {
                     /** @enum {string} */
                     runtime: "opencode";
@@ -24766,9 +25154,11 @@ export interface components {
                     runtime: "acpx";
                     args: string[];
                 };
-                model?: string;
-                /** @default false */
-                auto_approve: boolean;
+                /**
+                 * @default ask
+                 * @enum {string}
+                 */
+                permissions: "ask" | "read_only" | "accept_edits" | "auto";
             } | {
                 /** @enum {string} */
                 type: "task";
@@ -24844,7 +25234,9 @@ export interface components {
                 /** @enum {string} */
                 type: "agent";
                 prompt: string;
-                backend: string;
+                agent: string;
+                model?: string;
+                profile?: string;
                 options?: {
                     /** @enum {string} */
                     runtime: "opencode";
@@ -24899,9 +25291,11 @@ export interface components {
                     runtime: "acpx";
                     args: string[];
                 };
-                model?: string;
-                /** @default false */
-                auto_approve: boolean;
+                /**
+                 * @default ask
+                 * @enum {string}
+                 */
+                permissions: "ask" | "read_only" | "accept_edits" | "auto";
             } | {
                 /** @enum {string} */
                 type: "task";
@@ -24974,16 +25368,6 @@ export interface components {
             /** @enum {string} */
             stream: "stdout" | "stderr";
             line: string;
-        };
-        GatewayStatus: {
-            running: boolean;
-            status: string;
-        };
-        GatewaySend: {
-            platform: string;
-            chat_id: string;
-            text: string;
-            thread_id?: string;
         };
         SpeechStatus: {
             available: boolean;

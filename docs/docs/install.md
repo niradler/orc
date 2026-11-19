@@ -154,7 +154,7 @@ Mount your repositories into the container and use the container path as the pro
 | `ANTHROPIC_API_KEY` | Claude backend |
 | `OPENAI_API_KEY` | Codex backend |
 | `ORC_API_SECRET` | API bearer secret |
-| `ORC_TELEGRAM_TOKEN` | Telegram gateway |
+| `ORC_TELEGRAM_TOKEN` | Telegram bot token, referenced from a channel connection as `env:ORC_TELEGRAM_TOKEN` in Settings → Connections → Channels |
 | `ORC_AGENT_LOOP_DEFAULT_BACKEND` | Default backend (default `claude`) |
 | `AGENTAPI_URL` | agentapi server (default `http://host.docker.internal:3284`) |
 | `ORC_SSH_HOST` | `~/.ssh/config` host alias to run agents, terminals and git on |

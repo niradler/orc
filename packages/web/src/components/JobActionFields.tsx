@@ -1,5 +1,6 @@
 import type { JobAction } from "@orc/core/job-actions";
 import { type ReactElement, useId } from "react";
+import { AgentRunAccessFields } from "@/components/AgentRunEditor";
 import { HelpPopover } from "@/components/HelpPopover";
 import { JobAgentPicker } from "@/components/JobAgentPicker";
 import { MarkdownField } from "@/components/MarkdownField";
@@ -9,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 export function jobActionValid(action: JobAction): boolean {
   if (action.type === "command") return Boolean(action.command.trim());
-  if (action.type === "agent") return Boolean(action.prompt.trim() && action.backend.trim());
+  if (action.type === "agent") return Boolean(action.prompt.trim() && action.agent.trim());
   return Boolean(action.title.trim());
 }
 
@@ -37,7 +38,7 @@ export function JobActionFields({
           onChange={(event) => {
             if (event.target.value === "command") onChange({ type: "command", command: "" });
             if (event.target.value === "agent")
-              onChange({ type: "agent", backend: "codex-cli", prompt: "", auto_approve: false });
+              onChange({ type: "agent", agent: "codex-cli", prompt: "", permissions: "ask" });
             if (event.target.value === "task")
               onChange({ type: "task", title: "", body: "", start_automatically: false });
           }}
@@ -79,19 +80,13 @@ export function JobActionFields({
               rows={4}
             />
           </div>
-          <div className="flex items-center gap-1">
-            <label className="flex min-h-11 items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={value.auto_approve}
-                onChange={(event) => onChange({ ...value, auto_approve: event.target.checked })}
-              />
-              Allow agent tools automatically
-            </label>
-            <HelpPopover label="Agent tool approval" testId="job-agent-approval-help">
-              Starts a tracked agent session. When automatic tool approval is off, permission
-              requests are denied.
-            </HelpPopover>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <AgentRunAccessFields
+              value={value}
+              onChange={(patch) => onChange({ ...value, ...patch })}
+              testId="job-agent"
+              help="Jobs run unattended: tool requests the permission level does not cover are denied. Read-only limits the agent to reading and searching."
+            />
           </div>
         </>
       )}

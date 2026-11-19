@@ -16,7 +16,7 @@ describe("createOrcClient", () => {
     expect(typeof client.sessions.list).toBe("function");
     expect(typeof client.tags.list).toBe("function");
     expect(typeof client.health.check).toBe("function");
-    expect(typeof client.gateway.status).toBe("function");
+    expect(typeof client.channels.routeTest).toBe("function");
     expect(typeof client.kb.search).toBe("function");
   });
 

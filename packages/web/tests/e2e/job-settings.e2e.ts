@@ -144,6 +144,11 @@ for (const width of [1440, 390]) {
     await expect(page.getByTestId("job-model-current")).toContainText("claude fixture model");
     expect(queriedHosts).toContain("__local__");
     await page.getByTestId("job-agent-prompt").fill("Inspect the incoming event");
+    await page.getByTestId("job-agent-permissions").selectOption("read_only");
+    await page.getByTestId("job-agent-permissions").scrollIntoViewIfNeeded();
+    await page
+      .getByTestId("form-dialog")
+      .screenshot({ path: info.outputPath("job-agent-run.png") });
     await page.getByTestId("job-agent-model-button").click();
     await page.screenshot({ path: info.outputPath("job-agent-picker.png") });
     await page.keyboard.press("Escape");
@@ -151,11 +156,19 @@ for (const width of [1440, 390]) {
     await page.getByTestId("job-submit").click();
     await expect(page.getByTestId("form-dialog")).toHaveCount(0);
     const { jobs } = await apiGet<{
-      jobs: { id: string; name: string; action: { backend: string; model: string } }[];
+      jobs: {
+        id: string;
+        name: string;
+        action: { agent: string; model: string; permissions: string };
+      }[];
     }>(request, "/jobs");
     const saved = jobs.find((job) => job.name === name);
     if (!saved) throw new Error("Saved job missing");
-    expect(saved.action).toMatchObject({ backend: "claude", model: "claude-fixture" });
+    expect(saved.action).toMatchObject({
+      agent: "claude",
+      model: "claude-fixture",
+      permissions: "read_only",
+    });
     await page.reload();
     await page
       .locator(`[data-testid="job-row"][data-job-id="${saved.id}"]`)
@@ -164,5 +177,6 @@ for (const width of [1440, 390]) {
     await page.getByTestId("form-step-destination").click();
     await expect(page.getByTestId("job-agent-current")).toHaveText("Claude Code");
     await expect(page.getByTestId("job-model-current")).toHaveText("claude fixture model");
+    await expect(page.getByTestId("job-agent-permissions")).toHaveValue("read_only");
   });
 }

@@ -11,8 +11,6 @@ test("Codex MCP approval previews deduplicate arguments without bypassing secret
     const sent: string[] = [];
     const adapter: GatewayAdapter = {
       platform: "telegram",
-      start: async () => {},
-      stop: async () => {},
       send: async (_id, text) => {
         sent.push(text);
         return "sent";
@@ -86,8 +84,6 @@ test("sensitive approvals send only an ORC review notice and cannot be approved 
     const sent: string[] = [];
     const adapter: GatewayAdapter = {
       platform: "telegram",
-      start: async () => {},
-      stop: async () => {},
       send: async (_id, text) => {
         sent.push(text);
         return "sent";
@@ -128,8 +124,6 @@ test("should persist channel bindings, route only matching projects, and reject 
     const sent: string[] = [];
     const adapter: GatewayAdapter = {
       platform: "telegram",
-      start: async () => {},
-      stop: async () => {},
       send: async (id, text) => {
         sent.push(`${id}:${text}`);
         return "message";
@@ -193,8 +187,6 @@ test("should retry failed sends, bind Slack threads, and require full review for
     let attempts = 0;
     const adapter: GatewayAdapter = {
       platform: "slack",
-      start: async () => {},
-      stop: async () => {},
       send: async () => {
         if (++attempts === 1) throw new Error("offline");
         return "sent";

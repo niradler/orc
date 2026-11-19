@@ -150,10 +150,14 @@ export function applyAgentProfile(opts: SessionOpts, profile: AgentFull | null):
     toolAllowlist = Object.entries(tools)
       .filter(([, allowed]) => allowed)
       .map(([name]) => name);
+  const allowed =
+    toolAllowlist !== undefined && opts.toolAllowlist !== undefined
+      ? toolAllowlist.filter((tool) => opts.toolAllowlist?.includes(tool))
+      : (toolAllowlist ?? opts.toolAllowlist);
   return {
     ...opts,
     model: opts.model ?? profile.fields.model,
-    ...(toolAllowlist !== undefined ? { toolAllowlist } : {}),
+    ...(allowed !== undefined ? { toolAllowlist: allowed } : {}),
   };
 }
 

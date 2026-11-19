@@ -6,7 +6,12 @@ export type OrcJobInput = {
   trigger_type: "cron";
   cron_expr: string;
   enabled: boolean;
-  action: { type: "agent"; prompt: string; backend: string; auto_approve?: boolean };
+  action: {
+    type: "agent";
+    prompt: string;
+    agent: string;
+    permissions?: "ask" | "read_only" | "accept_edits" | "auto";
+  };
   working_dir?: string;
   project_id?: string | null;
 };

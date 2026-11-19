@@ -118,7 +118,7 @@ The model picker discovers configured models without an inference turn. Use
 
 Thinking levels are `off`, `minimal`, `low`, `medium`, `high`, `xhigh` and `max`;
 Pi applies the selected model's limits. Queue modes are `all` or `one-at-a-time`.
-These controls also work as native Pi options for agent jobs using backend `pi`.
+These controls also work as native Pi options for agent jobs using agent `pi`.
 Queue mode, auto-retry and auto-compaction changes are saved to Pi's own settings
 on the execution host, so external Pi sessions use them too. Thinking level is
 scoped to the ORC session. ORC owns transport, session identity, working folder
@@ -502,14 +502,15 @@ Pick the execution host from the SSH row under **Settings → Hosts**: **Change*
 | `mcp.default_mode` | `meta`  | none                | MCP tool surface: `meta` or `full`                    |
 | `github.token`     | none    | `ORC_GITHUB_TOKEN`  | Token for ORC's GitHub calls (pull requests, reviews) |
 
-### `gateway` (Telegram, Slack)
+### Channels (Telegram, Slack)
 
-| Env                                          | Effect                                           |
-| -------------------------------------------- | ------------------------------------------------ |
-| `ORC_TELEGRAM_TOKEN`                         | Enables the Telegram gateway with this bot token |
-| `ORC_SLACK_BOT_TOKEN`, `ORC_SLACK_APP_TOKEN` | Enables the Slack gateway (Socket Mode)          |
-
-Channels are configured under **Settings → Connections → Channels**.
+Channels are configured only under **Settings → Connections → Channels**;
+there is no config-file `channels` or `gateway` section. `ORC_TELEGRAM_TOKEN`,
+`ORC_SLACK_BOT_TOKEN` and `ORC_SLACK_APP_TOKEN` set up nothing by themselves —
+reference one as a connection's credential (`env:ORC_TELEGRAM_TOKEN`,
+`env:ORC_SLACK_BOT_TOKEN`, `env:ORC_SLACK_APP_TOKEN`) when saving the
+connection, so the token stays out of the database. See
+[Notifications → Inbound rules](./notifications.md#inbound-rules) for routing.
 
 ### `speech`, `tts`
 
@@ -686,7 +687,7 @@ systemctl --user status orc-daemon    # Linux
 
 If a daemon already answers on the port, the desktop app uses it instead of starting its own.
 
-`orc api` starts only the API server, without the scheduler, watchers, gateway or task loop.
+`orc api` starts only the API server, without the scheduler, watchers, channels or task loop.
 
 ## Authentication
 

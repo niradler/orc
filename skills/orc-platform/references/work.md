@@ -1,6 +1,6 @@
 # Projects, tasks and operations
 
-Contents: projects/tasks/flows/status; jobs/gateway; tags/audit/monitoring.
+Contents: projects/tasks/flows/status; jobs/channels; tags/audit/monitoring.
 Sources: [Task flows](https://github.com/niradler/orc/blob/master/docs/docs/task-flows.md),
 [Usage guide](https://niradler.github.io/orc/docs/usage-guide).
 
@@ -65,7 +65,7 @@ Inspect last activity and compare to the report's time window; distinguish agent
 review from waiting for a human. Include counts, completed-since-last-report changes,
 blocker causes and the next decision/action. Avoid an arbitrary universal stall timer.
 
-## Jobs and gateway
+## Jobs and channels
 
 Jobs execute configured commands: inspect command, cwd, environment, trigger and
 timeout before running. `job_list`, `job_run`, `job_status` (pass `logs: true` for output) cover agent operations;
@@ -82,34 +82,44 @@ is wanted. Pausing a schedule uses job update/disabled; inspect whether an alrea
 running job still needs an explicit stop. Check retries, timeout and scheduler logs
 on failure instead of endlessly triggering duplicate work.
 
-Gateway setup uses `gateway.telegram` / `gateway.slack` settings and channel
-credentials. Configure authorized user IDs and intended project/backend routing;
-keep tokens private. Check connection logs, message routing and the actual approval
-path. Do not send messages to other people unless the user requested it. Existing
-session routing, remote approval and new-session launch have different effects;
-inspect the selected chat/session before acting. See the README Gateway section
-for the channel's current config rather than copying a stale command list.
+Channels are configured only in Settings → Connections → Channels (DB-backed;
+there is no `gateway.telegram` / `gateway.slack` config section and no
+`channels:` config-file list). Each connection has recipients (destinations:
+`chat_id`, `user_ids`, inbound/outbound/attention opt-ins) and ordered inbound
+rules; the first enabled matching rule routes the message to `ignore`, an
+`agent` (agent, project, optional model/profile persona, session policy,
+permission mode) or a `job` (runs with the message on stdin and
+`ORC_CHANNEL_*` env vars, replies with its stdout). Check connection logs,
+message routing and the actual rule that matched. Do not send messages to
+other people unless the user requested it. Inspect the selected chat/session
+before acting; use `orc channels test` or `POST /api/channels/{id}/route-test`
+to preview a rule match without invoking an agent.
 
-After authorized setup, `orc gateway status` verifies adapters/sessions; the full
-daemon runs the gateway, while an API-only process does not. On Telegram/Slack use
-`/help` to discover current commands. `/mode direct` handles ORC commands;
-`/agent <backend>` or `/mode agent:<backend>` selects a live agent; `job:<name>`
-routes messages to that configured job. Inspect `/project`, `/cwd` and `/sessions`
-before sending work. A wrong mode can explain apparently ignored messages.
+After authorized setup, `orc channels list` shows connection status,
+destination and rule counts; the full daemon runs channels, an API-only
+process does not. On Telegram/Slack use `/help` to discover current chat
+commands: `/status`, `/project [name|default]`, `/agent [name|default]`,
+`/model [id|default]`, `/session new|list|switch <id>|stop`, `/send <session
+id> <text>`. There is no `/mode`, `job:` prefix or free-form
+`/approve`/`/reject`; inspect `/project` and `/session` before sending work. A
+wrong project/agent/session can explain apparently ignored or misrouted
+messages.
 
 Live agent permission prompts require the human's Allow/Deny decision. Managed
-human gates send notifications; an independent agent review round is not itself a
-human signoff. Inspect the task/gate before `/approve` or `/reject`; do not assume
-every approval command means the same transition. Missing notifications: inspect
-authorized_users, adapter health, chosen chat and actual human-gate state.
+human gates send notifications with Approve/Deny buttons, or take the reply
+`/attention REQUEST_ID VERSION approve` / `deny`; an independent agent review
+round is not itself a human signoff. Inspect the task/gate before approving;
+do not assume every approval means the same transition. Missing notifications:
+inspect the connection's recipients, connection status, chosen chat and actual
+human-gate state.
 
-Telegram voice input uses configured `speech` (openai/groq/qwen); voice replies use
-`tts` (openai/qwen). In a chat, talk to the user with the `speak` tool: it is
-posted to the transcript and spoken when voice mode is on. Keep it to short plain
-sentences, never code. Inspect enabled/provider/credentials and provider
-connectivity. `voice_only` versus `always` controls
-reply behavior. Configure within scope and verify a user-authorized voice exchange;
-do not send messages to other people as a test or expose provider keys in logs.
+Chat voice input/output use configured `speech` (openai/groq/qwen) and `tts`
+(openai/qwen) for the dashboard's voice mode; talk to the user with the
+`speak` tool, posted to the transcript and spoken when voice mode is on. Keep
+it to short plain sentences, never code. `voice_only` versus `always` controls
+reply behavior. Configure within scope and verify a user-authorized voice
+exchange; do not send messages to other people as a test or expose provider
+keys in logs.
 
 ## Tags, audit and monitoring
 

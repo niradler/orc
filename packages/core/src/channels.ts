@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AgentRunSchema, optionsExceedPermissions } from "./agent-run.js";
 import { NotificationFilterSchema } from "./notifications.js";
 
 export const ChannelProviderSchema = z.enum(["telegram", "slack"]);
@@ -56,12 +57,22 @@ export function channelCommand(text: string): { name: string; args: string } | n
     return { name: "session", args: name === "session_new" ? "new" : "list" };
   return { name, args };
 }
+export type ChannelProviderId = z.infer<typeof ChannelProviderSchema>;
+export const ChannelCapabilities = [
+  "markdown",
+  "links",
+  "buttons",
+  "edit",
+  "threads",
+  "files",
+  "native_overrides",
+] as const;
 export type ChannelProviderInfo = {
-  id: "telegram" | "slack";
+  id: ChannelProviderId;
   name: string;
   credentials: { key: string; label: string; env: string }[];
   documentation: string;
-  capabilities: Record<string, boolean>;
+  capabilities: Record<(typeof ChannelCapabilities)[number], boolean>;
   setup: string[];
 };
 export type ChannelPairingView = {
@@ -105,9 +116,12 @@ export const ChannelFields = [
   "command",
   "is_direct",
   "is_mention",
+  "is_followup",
   "kind",
 ] as const;
-export const ChannelOperators = ["is", "in", "contains", "starts_with"] as const;
+export const ChannelOperators = ["is", "in", "contains", "contains_any", "starts_with"] as const;
+export type ChannelTimeWindow = { days?: number[]; from: string; to: string; tz?: string };
+export const ChannelSessionPolicies = ["continue", "thread", "message"] as const;
 export type ChannelCondition =
   | { always: true }
   | {
@@ -115,6 +129,7 @@ export type ChannelCondition =
       op: (typeof ChannelOperators)[number];
       value: string | boolean | string[];
     }
+  | { time: ChannelTimeWindow }
   | { all: ChannelCondition[] }
   | { any: ChannelCondition[] }
   | { not: ChannelCondition };
@@ -130,6 +145,31 @@ export function isChannelCatchAll(input: unknown): input is { always: true } {
   );
 }
 
+const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
+function validTimeWindow(input: unknown): input is ChannelTimeWindow {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return false;
+  const w = input as Record<string, unknown>;
+  if (Object.keys(w).some((k) => !["days", "from", "to", "tz"].includes(k))) return false;
+  if (typeof w.from !== "string" || typeof w.to !== "string") return false;
+  if (!clock.test(w.from) || !clock.test(w.to) || w.from === w.to) return false;
+  if (
+    w.days !== undefined &&
+    !(
+      Array.isArray(w.days) &&
+      w.days.length > 0 &&
+      w.days.every((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+    )
+  )
+    return false;
+  if (w.tz === undefined) return true;
+  if (typeof w.tz !== "string") return false;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: w.tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
 export function validChannelCondition(
   input: unknown,
   depth = 0,
@@ -148,6 +188,7 @@ export function validChannelCondition(
   if (keys.length === 1) {
     if ("always" in item) return depth === 0 && item.always === true;
     if ("not" in item) return validChannelCondition(item.not, depth + 1, budget);
+    if ("time" in item) return validTimeWindow(item.time);
     const children = item.all ?? item.any;
     return (
       ("all" in item || "any" in item) &&
@@ -162,7 +203,7 @@ export function validChannelCondition(
     !(ChannelOperators as readonly unknown[]).includes(item.op)
   )
     return false;
-  if (item.op === "in")
+  if (item.op === "in" || item.op === "contains_any")
     return (
       Array.isArray(item.value) &&
       item.value.length > 0 &&
@@ -185,33 +226,40 @@ export const ChannelRouteSchema = z
       .unknown()
       .refine(
         (value): boolean => validChannelCondition(value),
-        "Use field/op/value, nonempty all/any/not groups (maximum depth 5 and 100 conditions), or a top-level always:true fallback",
+        "Use field/op/value, a time window, nonempty all/any/not groups (maximum depth 5 and 100 conditions), or a top-level always:true fallback",
       ),
     action: z.discriminatedUnion("type", [
       z.object({ type: z.literal("ignore") }).strict(),
       z
         .object({
           type: z.literal("agent"),
-          agent: z
-            .string()
-            .trim()
-            .min(1)
-            .max(100)
-            .regex(/^[a-z][a-z0-9_-]*$/),
-          profile: z.string().min(1).max(100).optional(),
-          model: z
-            .string()
-            .trim()
-            .min(1)
-            .max(200)
-            .regex(/^[a-z0-9][a-z0-9._:/@+-]*$/i)
-            .optional(),
+          ...AgentRunSchema.shape,
           project_id: z.string().min(1).max(100),
+          session: z.enum(ChannelSessionPolicies).default("continue"),
         })
-        .strict(),
+        .strict()
+        .refine((action) => !optionsExceedPermissions(action.options, action.permissions), {
+          path: ["options"],
+          message: "Launch options approve more than the chosen permissions allow",
+        }),
+      z.object({ type: z.literal("job"), job_id: z.string().min(1).max(100) }).strict(),
     ]),
   })
   .strict();
+
+export const CHANNEL_ANY = "*";
+export function targetAccepts(
+  target: Pick<ChannelTarget, "chat_id" | "thread_id" | "user_ids">,
+  chat: string,
+  thread: string | undefined,
+  sender: string,
+): boolean {
+  return (
+    (target.chat_id === CHANNEL_ANY || target.chat_id === chat) &&
+    (!target.thread_id || target.thread_id === thread) &&
+    (target.user_ids.includes(CHANNEL_ANY) || target.user_ids.includes(sender))
+  );
+}
 
 export const ChannelTargetSchema = z
   .object({
@@ -249,6 +297,24 @@ export const ChannelConnectionSchema = z
         message: commands.error.message,
         path: ["config", "commands"],
       });
+    for (const [index, target] of v.targets.entries()) {
+      if (target.attention && target.user_ids.includes(CHANNEL_ANY))
+        ctx.addIssue({
+          code: "custom",
+          message: "Approvals and questions need named senders, not any sender",
+          path: ["targets", index],
+        });
+      if (
+        target.chat_id === CHANNEL_ANY &&
+        (target.attention || target.notifications?.enabled || target.thread_id)
+      )
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "A destination for any chat receives replies only; notifications and threads need a fixed chat",
+          path: ["targets", index],
+        });
+    }
     for (const field of ["targets", "routes"] as const) {
       if (new Set(v[field].map((x) => x.id)).size !== v[field].length)
         ctx.addIssue({ code: "custom", message: `Duplicate ${field} IDs`, path: [field] });
@@ -292,6 +358,7 @@ export const ChannelSendSchema = z
       ),
     project_id: z.string().min(1).max(100).nullable().optional(),
     idempotency_key: z.string().min(1).max(200).optional(),
+    chat_id: z.string().trim().min(1).max(200).optional(),
     thread_id: z.string().min(1).max(200).optional(),
   })
   .strict();
@@ -299,6 +366,7 @@ export const ChannelUpdateSchema = ChannelSendSchema.omit({
   connection: true,
   target: true,
   idempotency_key: true,
+  chat_id: true,
 });
 export const ChannelViewSchema = z.object({
   id: key,
@@ -352,9 +420,11 @@ export type ChannelInbound = {
   sender_name?: string | undefined;
   chat: string;
   thread?: string | undefined;
+  root?: string | undefined;
   text: string;
   message_id: string;
   kind: "message" | "action";
   is_direct: boolean;
   is_mention: boolean;
+  is_followup?: boolean;
 };

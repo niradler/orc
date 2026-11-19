@@ -284,3 +284,108 @@ test("Slack setup shows its own credentials and native onboarding", async ({ pag
   await expect(page.getByRole("button", { name: "Pair my Telegram" })).toHaveCount(0);
   await page.screenshot({ path: "../../.claude/docs/channels-slack-setup.png" });
 });
+
+for (const width of [1440, 390]) {
+  test(`Slack rules: time window, keywords, thread sessions, read-only strangers at ${width}px`, async ({
+    page,
+    request,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const failures: string[] = [];
+    page.on("pageerror", (error) => failures.push(error.message));
+    const project = await apiPost<{ id: string }>(request, "/projects", {
+      name: tid("slack-rules-project"),
+    });
+    const id = tid("slack");
+    try {
+      await gotoView(page, "settings");
+      await settingsSection(page, "channels");
+      await page.getByLabel("New channel provider").selectOption("slack");
+      await page.getByTestId("channel-add").click();
+      await page.getByTestId("channel-id").fill(id);
+      await page.getByTestId("channel-name").fill(`Slack ${width}`);
+      await page.getByTestId("channel-credential-bot_token").fill("xoxb-private-test");
+      await page.getByTestId("channel-credential-app_token").fill("xapp-private-test");
+      await page.getByTestId("channel-save").click();
+      await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
+      const editor = page.getByTestId("channel-editor").filter({ visible: true });
+      await editor
+        .locator("summary")
+        .filter({ hasText: /^Recipients/ })
+        .click();
+      await editor.getByRole("button", { name: "Add recipient", exact: true }).click();
+      await page.getByTestId("channel-target-id").fill("anyone");
+      await page.getByTestId("channel-target-name").fill("Any DM");
+      await editor.getByLabel("Any chat", { exact: true }).check();
+      await editor.getByLabel("Any sender", { exact: true }).check();
+      await editor.getByLabel("Allow inbound", { exact: true }).check();
+      await expect(page.getByTestId("channel-target-chat")).toBeDisabled();
+      await page.getByTestId("channel-target-editor").scrollIntoViewIfNeeded();
+      await page.screenshot({ path: `../../.claude/docs/channels-any-dm-${width}.png` });
+      await editor.getByTestId("channel-target-apply").click();
+      await editor
+        .locator("summary")
+        .filter({ hasText: /^Inbound routing/ })
+        .press("Enter");
+      await editor.getByRole("button", { name: "Add routing rule", exact: true }).click();
+      await editor.getByTestId("channel-route-name").fill("Ops deploys in work hours");
+      await editor.getByTestId("channel-route-project").selectOption(project.id);
+      const builder = editor.getByTestId("channel-condition-builder");
+      await builder.getByRole("button", { name: "Add group", exact: true }).click();
+      const group = builder.getByTestId("channel-condition-group").nth(1);
+      await group.getByLabel("Condition field", { exact: true }).selectOption("time");
+      const time = group.getByTestId("channel-condition-time");
+      await time.getByLabel("From").fill("08:30");
+      await time.getByLabel("To").fill("19:00");
+      await time.getByRole("button", { name: "Fri", exact: true }).click();
+      await time.getByLabel("Time zone").fill("Asia/Jerusalem");
+      await group.getByRole("button", { name: "Add condition", exact: true }).click();
+      const keywords = group.getByTestId("channel-condition-row").last();
+      await keywords.getByLabel("Condition comparison").selectOption("contains_any");
+      await keywords.getByLabel("Condition value").fill("deploy, rollback");
+      await editor.getByTestId("channel-route-session").selectOption("thread");
+      await editor.getByTestId("channel-route-run-permissions").selectOption("read_only");
+      await expect(editor.getByTestId("channel-route-run-model")).toBeDisabled();
+      await editor.getByTestId("channel-route-editor").scrollIntoViewIfNeeded();
+      await page.screenshot({
+        path: `../../.claude/docs/channels-slack-rule-${width}.png`,
+        fullPage: true,
+      });
+      await editor.getByTestId("channel-route-apply").click();
+      await editor.getByTestId("channel-save").click();
+      await expect(page.getByRole("status").filter({ hasText: "Connection saved" })).toBeVisible();
+      const stored = (
+        await apiGet<
+          Array<{
+            id: string;
+            targets: Array<{ chat_id: string; user_ids: string[]; inbound: boolean }>;
+            routes: Array<{ condition: unknown; action: Record<string, unknown> }>;
+          }>
+        >(request, "/channels")
+      ).find((c) => c.id === id);
+      expect(stored?.targets[0]).toMatchObject({ chat_id: "*", user_ids: ["*"], inbound: true });
+      expect(stored?.routes[0]?.action).toMatchObject({
+        type: "agent",
+        project_id: project.id,
+        session: "thread",
+        permissions: "read_only",
+      });
+      expect(JSON.stringify(stored?.routes[0]?.condition)).toContain(
+        '{"time":{"days":[1,2,3,4],"from":"08:30","to":"19:00","tz":"Asia/Jerusalem"}}',
+      );
+      expect(JSON.stringify(stored?.routes[0]?.condition)).toContain(
+        '{"field":"text","op":"contains_any","value":["deploy","rollback"]}',
+      );
+      await expect(editor.getByTestId("channel-route-row").first()).toContainText(
+        "New session per thread",
+      );
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      expect(failures).toEqual([]);
+    } finally {
+      await apiDelete(request, `/channels/${id}`).catch(() => {});
+      await apiDelete(request, `/projects/${project.id}`).catch(() => {});
+    }
+  });
+}

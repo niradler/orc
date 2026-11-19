@@ -5,10 +5,14 @@ import {
   type ChannelConnection,
   ChannelConnectionSchema,
   type ChannelReceipt,
+  ChannelRouteSchema,
 } from "@orc/core/channels";
 import { ConflictError, NotFoundError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
+import { createLogger } from "@orc/core/logger";
 import { installNotificationReceiptPins } from "./notification-deliveries.js";
+
+const logger = createLogger("db:channels");
 
 type ReceiptRow = { payload: string; request_hash: string; updated_at: number };
 export type ChannelPairing = {
@@ -114,13 +118,21 @@ export class ChannelStore {
             [string]
           >("SELECT * FROM channel_routes WHERE channel_id=? ORDER BY position")
           .all(row.id)
-          .map((r) => ({
-            id: r.id,
-            name: r.name,
-            enabled: !!r.enabled,
-            condition: JSON.parse(r.condition),
-            action: JSON.parse(r.action),
-          })),
+          .flatMap((r) => {
+            const route = ChannelRouteSchema.safeParse({
+              id: r.id,
+              name: r.name,
+              enabled: !!r.enabled,
+              condition: JSON.parse(r.condition),
+              action: JSON.parse(r.action),
+            });
+            if (route.success) return [route.data];
+            logger.warn("Skipping a stored channel rule that no longer validates", {
+              connection: row.id,
+              route: r.id,
+            });
+            return [];
+          }),
       }),
     );
   }

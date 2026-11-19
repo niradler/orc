@@ -203,10 +203,10 @@ the request service; it does not approve the requested action.
 
 ## Telegram and Slack
 
-Enable either notification checkbox on the Ask user action. The existing gateway
-sends requests to authorized chats on that platform whose selected project
-matches the request. Select the intended project in the gateway chat first.
-Notifications are off by default.
+Enable either notification checkbox on the Ask user action. A channel
+connection's authorized recipients get the request on that platform when its
+selected project matches the request. Select the intended project in the
+channel chat first with `/project`. Notifications are off by default.
 
 The notification supplies an explicit response command:
 

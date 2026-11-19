@@ -14,7 +14,7 @@ CLI install:
 orc daemon start
 ```
 
-This runs in the foreground: the REST API and dashboard on `http://127.0.0.1:7700`, the job scheduler, session watchers, the gateway and the task loop. Leave it running and use a second terminal, or register it as a service with `orc daemon install`.
+This runs in the foreground: the REST API and dashboard on `http://127.0.0.1:7700`, the job scheduler, session watchers, channels and the task loop. Leave it running and use a second terminal, or register it as a service with `orc daemon install`.
 
 Check it:
 

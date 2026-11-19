@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { changes } from "@orc/core/changes";
 import {
+  CHANNEL_ANY,
   type ChannelConnection,
   ChannelConnectionSchema,
   type ChannelInbound,
@@ -10,8 +11,8 @@ import {
   ChannelSendSchema,
   type ChannelTarget,
   type ChannelView,
+  targetAccepts,
 } from "@orc/core/channels";
-import { loadConfig } from "@orc/core/config";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "@orc/core/secrets";
@@ -21,14 +22,12 @@ import { getSqlite } from "@orc/db/client";
 import { NotificationDeliveryStore } from "@orc/db/notification-deliveries";
 import {
   type ChannelTransport,
-  channelProviders,
-  createChannelTransport,
   ProviderFailure,
   type ProviderIdentity,
   safeProviderCode,
   type TransportFactory,
-} from "./providers.js";
-import { renderMessage } from "./render.js";
+} from "./providers/base.js";
+import { channelProvider, createChannelTransport } from "./providers/registry.js";
 import { routeMessage } from "./routing.js";
 
 const logger = createLogger("channels");
@@ -56,6 +55,17 @@ const forbiddenKeys = new Set([
   "constructor",
 ]);
 
+function destinationChat(target: ChannelTarget, chat: string | undefined): string {
+  if (target.chat_id === CHANNEL_ANY) {
+    if (!chat || chat === CHANNEL_ANY)
+      throw new ValidationError("This destination accepts any chat; supply chat_id");
+    return chat;
+  }
+  if (chat && chat !== target.chat_id)
+    throw new ForbiddenError("Chat is outside the configured destination");
+  return target.chat_id;
+}
+
 export class ChannelService {
   async downloadAttachments(message: ChannelInbound, target: ChannelTarget): Promise<UploadFile[]> {
     const attachments = message.attachments ?? [];
@@ -68,9 +78,7 @@ export class ChannelService {
           (recipient) =>
             recipient.id === target.id &&
             recipient.inbound &&
-            recipient.chat_id === message.chat &&
-            (!recipient.thread_id || recipient.thread_id === message.thread) &&
-            recipient.user_ids.includes(message.sender),
+            targetAccepts(recipient, message.chat, message.thread, message.sender),
         )
       )
         throw new ForbiddenError("Upload sender is no longer authorized");
@@ -110,9 +118,9 @@ export class ChannelService {
   private timer: ReturnType<typeof setInterval> | undefined;
   private reconciling: Promise<void> | undefined;
   handler: ChannelHandler | undefined;
-  beforeConnect: ((connection: ChannelConnection) => Promise<void>) | undefined;
   control: ((message: ChannelInbound, target: ChannelTarget) => Promise<boolean>) | undefined;
   unmatched: ((message: ChannelInbound, target: ChannelTarget) => Promise<void>) | undefined;
+  followup: ((message: ChannelInbound) => boolean) | undefined;
 
   constructor(
     readonly store: ChannelStore,
@@ -120,71 +128,12 @@ export class ChannelService {
   ) {}
 
   connections(): ChannelConnection[] {
-    const config = loadConfig();
-    const configured = this.store.connections();
-    for (const old of config.channels)
-      if (!configured.some((c) => c.id === old.id)) {
-        const migrated = {
-          ...old,
-          revision: 0,
-          credentials: Object.fromEntries(
-            Object.entries(old.credentials).map(([k, value]) => [
-              k,
-              value.startsWith("env:") ? value : encryptSecret(decryptSecret(value)),
-            ]),
-          ),
-        };
-        this.store.saveConnection(migrated);
-        configured.push({ ...migrated, revision: 1 });
-      }
-    for (const provider of channelProviders) {
-      if (configured.some((c) => c.id === `legacy-${provider.id}`)) continue;
-      const legacy = config.gateway[provider.id];
-      if (!provider.credentials.some((field) => !!legacy[field.key as keyof typeof legacy]))
-        continue;
-      configured.push(
-        ChannelConnectionSchema.parse({
-          id: `legacy-${provider.id}`,
-          name: provider.name,
-          provider: provider.id,
-          enabled: false,
-          credentials: Object.fromEntries(
-            provider.credentials.map((field) => [
-              field.key,
-              process.env[field.env]
-                ? `env:${field.env}`
-                : String(legacy[field.key as keyof typeof legacy] ?? ""),
-            ]),
-          ),
-          targets: legacy.default_chat_id
-            ? [
-                {
-                  id: "me",
-                  name: "Default recipient",
-                  chat_id: legacy.default_chat_id,
-                  user_ids: legacy.authorized_users.map(String),
-                },
-              ]
-            : [],
-        }),
-      );
-    }
-    return configured;
+    return this.store.connections();
   }
   connection(id: string) {
     const c = this.connections().find((v) => v.id === id);
     if (!c) throw new NotFoundError("Channel connection", id);
     return c;
-  }
-  managesAccount(provider: string, token: string): boolean {
-    return this.connections().some((c) => {
-      if (!c.enabled || c.provider !== provider) return false;
-      try {
-        return this.credentials(c)[provider === "telegram" ? "token" : "bot_token"] === token;
-      } catch {
-        return false;
-      }
-    });
   }
   credentials(connection: ChannelConnection): Record<string, string> {
     return Object.fromEntries(
@@ -198,18 +147,16 @@ export class ChannelService {
     return this.connections().map((c) => {
       const live = this.live.get(c.id);
       const credentials = Object.fromEntries(
-        channelProviders
-          .find((p) => p.id === c.provider)
-          ?.credentials.map((field) => {
-            const value = c.credentials[field.key];
-            return [
-              field.key,
-              {
-                configured: !!value && (!value.startsWith("env:") || !!process.env[value.slice(4)]),
-                source: !value ? "missing" : value.startsWith("env:") ? "environment" : "stored",
-              },
-            ];
-          }) ?? [],
+        channelProvider(c.provider).info.credentials.map((field) => {
+          const value = c.credentials[field.key];
+          return [
+            field.key,
+            {
+              configured: !!value && (!value.startsWith("env:") || !!process.env[value.slice(4)]),
+              source: !value ? "missing" : value.startsWith("env:") ? "environment" : "stored",
+            },
+          ];
+        }),
       );
       const error = this.errors.get(c.id) ?? live?.error ?? null;
       return {
@@ -241,8 +188,8 @@ export class ChannelService {
     const previous = this.connections().find((c) => c.id === parsed.id);
     if (previous && previous.provider !== parsed.provider)
       throw new ValidationError("A connection's provider cannot change");
-    const keys: string[] =
-      channelProviders.find((p) => p.id === parsed.provider)?.credentials.map((c) => c.key) ?? [];
+    const fields = channelProvider(parsed.provider).info.credentials;
+    const keys = fields.map((c) => c.key);
     for (const k of Object.keys(parsed.credentials))
       if (!keys.includes(k)) throw new ValidationError(`Unknown credential field: ${k}`);
     parsed.credentials = {
@@ -253,12 +200,7 @@ export class ChannelService {
           .map(([k, v]) => {
             if (v.startsWith("env:") && !/^env:ORC_[A-Z0-9_]+$/.test(v))
               throw new ValidationError("Use an ORC environment variable reference");
-            if (
-              v.startsWith("env:") &&
-              !channelProviders
-                .find((p) => p.id === parsed.provider)
-                ?.credentials.some((f) => f.key === k && `env:${f.env}` === v)
-            )
+            if (v.startsWith("env:") && !fields.some((f) => f.key === k && `env:${f.env}` === v))
               throw new ValidationError(
                 "Use the documented channel credential environment variable",
               );
@@ -278,6 +220,11 @@ export class ChannelService {
         !this.store.db.query("SELECT id FROM projects WHERE id=?").get(route.action.project_id)
       )
         throw new ValidationError("Route project does not exist");
+      else if (
+        route.action.type === "job" &&
+        !this.store.db.query("SELECT id FROM jobs WHERE id=?").get(route.action.job_id)
+      )
+        throw new ValidationError("Route job does not exist");
     for (const target of parsed.targets)
       for (const id of target.project_ids)
         if (!this.store.db.query("SELECT id FROM projects WHERE id=?").get(id))
@@ -383,11 +330,10 @@ export class ChannelService {
       if (this.stopped) return;
       if (this.live.has(c.id) || this.conflicts.has(c.id)) continue;
       try {
-        await this.beforeConnect?.(c);
         const credentials = this.credentials(c);
         const resource = fingerprint([
           c.provider,
-          credentials[c.provider === "telegram" ? "token" : "bot_token"],
+          credentials[channelProvider(c.provider).accountKey],
         ]);
         if ([...this.live.values()].some((live) => live.resource === resource))
           throw new ConflictError("This provider account is already connected");
@@ -522,16 +468,15 @@ export class ChannelService {
   private payloads(
     c: ChannelConnection,
     target: ChannelTarget,
+    chat: string,
     input: Pick<ChannelSend, "message" | "overrides" | "thread_id">,
   ) {
     if (target.thread_id && input.thread_id && target.thread_id !== input.thread_id)
       throw new ForbiddenError("Thread is outside the configured destination");
     const thread = input.thread_id ?? target.thread_id;
-    const rendered = renderMessage(c.provider, input.message);
-    const routing =
-      c.provider === "telegram"
-        ? { chat_id: target.chat_id, ...(thread ? { message_thread_id: Number(thread) } : {}) }
-        : { channel: target.chat_id, ...(thread ? { thread_ts: thread } : {}) };
+    const provider = channelProvider(c.provider);
+    const rendered = provider.render(input.message);
+    const routing = provider.destination(chat, thread);
     const defaults = c.config.message_defaults;
     if (
       defaults !== undefined &&
@@ -558,13 +503,25 @@ export class ChannelService {
       warnings: nativeContent ? [] : rendered.warnings,
     };
   }
-  async send(raw: unknown): Promise<ChannelReceipt & { warnings: string[] }> {
+  private routeProject(route: ChannelRoute): string | undefined {
+    if (route.action.type === "agent") return route.action.project_id;
+    if (route.action.type !== "job") return undefined;
+    return (
+      this.store.db
+        .query<{ project_id: string | null }, [string]>("SELECT project_id FROM jobs WHERE id=?")
+        .get(route.action.job_id)?.project_id ?? undefined
+    );
+  }
+  async send(raw: unknown, reply = false): Promise<ChannelReceipt & { warnings: string[] }> {
     if (this.stopped) throw new ConflictError("Channel runtime is stopping");
     const input = ChannelSendSchema.parse(raw);
     const c = this.connection(input.connection);
     const target = this.authorizedTarget(c, input.target, input.project_id);
     if (!c.enabled || !target.outbound) throw new ForbiddenError("Outbound messaging is disabled");
-    const { payloads, warnings } = this.payloads(c, target, input);
+    if (target.chat_id === CHANNEL_ANY && !reply)
+      throw new ForbiddenError("A destination for any chat only carries replies to its senders");
+    const chat = destinationChat(target, input.chat_id);
+    const { payloads, warnings } = this.payloads(c, target, chat, input);
     const { receipt, fresh } = this.store.reserve(
       c.id,
       target.id,
@@ -572,7 +529,7 @@ export class ChannelService {
       input,
       input.idempotency_key,
       {
-        chat_id: target.chat_id,
+        chat_id: chat,
         ...((input.thread_id ?? target.thread_id)
           ? { thread_id: input.thread_id ?? target.thread_id }
           : {}),
@@ -629,14 +586,14 @@ export class ChannelService {
     const destination = receipt.destination;
     if (
       !destination ||
-      destination.chat_id !== target.chat_id ||
+      (target.chat_id !== CHANNEL_ANY && destination.chat_id !== target.chat_id) ||
       (target.thread_id && target.thread_id !== destination.thread_id) ||
       (input.thread_id && input.thread_id !== destination.thread_id)
     )
       throw new ConflictError(
         "Message destination changed; this receipt cannot edit another destination",
       );
-    const { payloads } = this.payloads(c, target, {
+    const { payloads } = this.payloads(c, target, destination.chat_id, {
       ...input,
       ...(destination.thread_id ? { thread_id: destination.thread_id } : {}),
     });
@@ -681,12 +638,7 @@ export class ChannelService {
     return {
       id: pairing.id,
       expires_at: pairing.expires_at,
-      url:
-        c.provider === "telegram"
-          ? `https://t.me/${encodeURIComponent(identity.name)}?start=orc_${pairing.token}`
-          : `https://app.slack.com/client/${encodeURIComponent(identity.id)}`,
-      message:
-        c.provider === "telegram" ? `/start orc_${pairing.token}` : `orc-pair ${pairing.token}`,
+      ...channelProvider(c.provider).pairing(identity, pairing.token),
     };
   }
   async confirmPairing(id: string) {
@@ -732,13 +684,10 @@ export class ChannelService {
       return;
     }
     const target = c.targets.find(
-      (t) =>
-        t.inbound &&
-        t.chat_id === message.chat &&
-        (!t.thread_id || t.thread_id === message.thread) &&
-        t.user_ids.includes(message.sender),
+      (t) => t.inbound && targetAccepts(t, message.chat, message.thread, message.sender),
     );
     if (!target || !message.message_id || !this.store.claim(c.id, message.message_id)) return;
+    message.is_followup = this.followup?.(message) ?? false;
     const conversation = JSON.stringify([c.id, message.chat, message.thread, message.sender]);
     const epoch = this.turnEpoch.get(conversation) ?? 0;
     if (await this.control?.(message, target)) return;
@@ -748,12 +697,17 @@ export class ChannelService {
       if (message.kind === "message") await this.unmatched?.(message, target);
       return;
     }
+    const project = this.routeProject(route);
     if (
-      route.action.type !== "agent" ||
-      (target.project_ids.length && !target.project_ids.includes(route.action.project_id))
+      route.action.type === "ignore" ||
+      (project && target.project_ids.length && !target.project_ids.includes(project))
     )
       return;
-    const key = JSON.stringify([c.id, message.chat, message.thread, message.sender]);
+    const shared = message.thread ?? message.root;
+    const key =
+      route.action.type === "agent" && route.action.session === "thread" && shared
+        ? JSON.stringify([c.id, message.chat, shared])
+        : JSON.stringify([c.id, message.chat, message.thread, message.sender]);
     const quotaKey = JSON.stringify([c.id, message.chat, message.sender]);
     let quota = this.quotas.get(quotaKey);
     if (!quota || quota.until <= Date.now()) {
@@ -783,21 +737,20 @@ export class ChannelService {
           (t) =>
             t.id === target.id &&
             t.inbound &&
-            t.chat_id === message.chat &&
-            (!t.thread_id || t.thread_id === message.thread) &&
-            t.user_ids.includes(message.sender),
+            targetAccepts(t, message.chat, message.thread, message.sender),
         );
-        const selected = routeMessage(current.routes, message);
+        const selected = current.routes.find((r) => r.id === route.id);
+        const selectedProject = selected && this.routeProject(selected);
         if (
           this.stopped ||
           epoch !== (this.turnEpoch.get(conversation) ?? 0) ||
           !current.enabled ||
           !recipient ||
-          selected?.id !== route.id ||
-          selected.action.type !== "agent" ||
-          fingerprint(selected.action) !== fingerprint(route.action) ||
-          (recipient.project_ids.length &&
-            !recipient.project_ids.includes(selected.action.project_id))
+          !selected?.enabled ||
+          fingerprint(selected) !== fingerprint(route) ||
+          (selectedProject &&
+            recipient.project_ids.length &&
+            !recipient.project_ids.includes(selectedProject))
         )
           return;
         await this.handler?.(selected, message, recipient);

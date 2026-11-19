@@ -208,26 +208,25 @@ React to code changes:
 orc job add lint-on-save --command "bun run lint" --trigger watch --watch "./src"
 ```
 
-## Gateway tips
+## Channel tips
 
-### Telegram workflow
+Connections, recipients and inbound rules live in **Settings → Connections →
+Channels**; see [Notifications → Inbound rules](./notifications.md#inbound-rules).
 
-The most productive Telegram workflow is async review:
+### Review loop from your phone
 
-1. Agents work and submit for review
-2. You get Telegram notifications with task summaries
-3. `/approve <id>` or `/reject <id> Missing tests` from your phone
-4. Loop continues without you touching a terminal
+The most productive async review loop:
 
-### Live agent sessions
+1. Agents work and submit for review.
+2. You get a Telegram or Slack notification with a task summary and Approve/Deny
+   buttons, or reply `/attention REQUEST_ID VERSION approve` (or `deny`).
+3. Loop continues without you touching a terminal.
 
-Start a live agent session from Telegram:
+### Switching agent, model or project mid-conversation
 
-```
-/agent claude
-```
-
-This spawns a Claude Code session you can chat with directly from Telegram. Useful for quick investigations or ad-hoc tasks.
+In a routed conversation, `/agent [name|default]` switches which agent answers
+and `/model [id|default]` switches its model; `/project [name|default]`
+switches which project it runs in. Each choice persists with that session.
 
 Send a note to another live session without leaving the chat:
 
@@ -261,16 +260,12 @@ position. Use the session viewer's **Messages** section to review, reorder or ca
     "default_backend": "claude",
     "session_idle_timeout_minutes": 20,
     "worker_auto_approve": true
-  },
-  "gateway": {
-    "telegram": {
-      "enabled": true,
-      "token": "...",
-      "authorized_users": [123456789]
-    }
   }
 }
 ```
+
+Channel connections are not part of this file; configure them in **Settings →
+Connections → Channels**.
 
 ### Config resolution
 

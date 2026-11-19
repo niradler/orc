@@ -11,7 +11,7 @@ for (const width of [1440, 390, 320]) {
     const job = await apiPost<{ id: string }>(request, "/jobs", {
       name: tid("job-results"),
       trigger_type: "manual",
-      action: { type: "agent", backend: "codex-cli", prompt: "Inspect the change" },
+      action: { type: "agent", agent: "codex-cli", prompt: "Inspect the change" },
     });
     const now = new Date().toISOString();
     await page.route(`**/api/jobs/${job.id}/runs**`, async (route) => {

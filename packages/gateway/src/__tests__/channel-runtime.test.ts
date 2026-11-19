@@ -9,7 +9,7 @@ import {
   type SessionOpts,
 } from "@orc/agent-runtime";
 import { ChannelService } from "@orc/channels";
-import type { ChannelTransport } from "@orc/channels/providers";
+import type { ChannelTransport } from "@orc/channels/providers/base";
 import { resetConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { getLogDir } from "@orc/core/logger";
@@ -132,6 +132,7 @@ beforeAll(async () => {
     .run(join(home, "second"));
   registerBackend("channels-fixture", () => ({
     name: "channels-fixture",
+    profileCapabilities: { model: true, toolAllowlist: true },
     startSession: async (opts) => fixture(opts, false),
     resumeSession: async (_id, opts) => fixture(opts, true),
     preflight: async () => ({ ok: true }),
@@ -225,7 +226,9 @@ test("authorized channel invokes selected agent and replies; follow-up resumes o
       humanRequestContext: { projectId: "p1", notify: ["telegram"] },
     },
   });
-  expect(sent.at(-1)).toMatchObject({ chat_id: "chat", text: "<b>Reply received</b>" });
+  expect(sent.at(-1)).toMatchObject({ chat_id: "chat", text: "Working…" });
+  expect(edited.at(-1)?.body).toMatchObject({ chat_id: "chat", text: "<b>Reply received</b>" });
+  expect(JSON.stringify(edited.at(-1)?.body.reply_markup)).toContain("New session");
   await service.receive({ ...message, message_id: "m2", text: "follow up" });
   expect(calls[1]?.resume).toBe(true);
   await service.receive({ ...message, message_id: "m3", thread: "123" });
@@ -832,7 +835,7 @@ test("native turn preview updates, clears Stop and cannot stop a later turn", as
     (progress.reply_markup as { inline_keyboard: Array<Array<{ callback_data: string }>> })
       .inline_keyboard[0]?.[0]?.callback_data ?? "";
   expect(edited.some((p) => String(p.body.text).includes("Reply received"))).toBe(true);
-  expect(edited.some((p) => p.body.text === "Completed. Reply below.")).toBe(true);
+  expect(edited.at(-1)?.body.text).toBe("<b>Reply received</b>");
   requirePermission = true;
   const count = calls.length;
   const pending = service.receive({ ...message, message_id: "preview-second", thread: "preview" });
@@ -900,10 +903,12 @@ test("long Telegram replies have one final control panel and Slack keeps its exi
       message_id: "slack-answer",
       thread: "slack",
     });
-    const slackReply = sent.slice(slackOffset);
-    expect(slackReply).toHaveLength(1);
-    expect(slackReply[0]?.text).toBe(output.trim());
-    expect(slackReply[0]?.blocks).toBeUndefined();
+    const [progress, ...slackReply] = sent.slice(slackOffset);
+    expect(progress?.text).toBe("Working…");
+    expect(JSON.stringify(progress?.blocks)).toContain('"text":"Stop"');
+    expect(slackReply).toHaveLength(0);
+    expect(edited.at(-1)?.body.text).toBe(output.trim());
+    expect(edited.at(-1)?.body.blocks).toBeUndefined();
   } finally {
     fixtureOutput = "**Reply received**";
   }
@@ -1011,4 +1016,190 @@ test("editing a recipient during a running turn cannot redirect its reply", asyn
   await pending;
   expect(sent.some((p) => p.chat_id === "replacement")).toBe(false);
   expect(sent.filter((p) => String(p.text).includes("Reply received"))).toHaveLength(repliesBefore);
+});
+
+test("Slack thread policy opens one session per thread root and replies inside it", async () => {
+  requirePermission = false;
+  await service.save({
+    id: "slack-threads",
+    name: "Slack threads",
+    provider: "slack",
+    enabled: true,
+    credentials: { bot_token: "fixture", app_token: "fixture" },
+    targets: [
+      { id: "team", name: "Team", chat_id: "C1", user_ids: ["nir", "dana"], inbound: true },
+    ],
+    routes: [
+      {
+        id: "mentions",
+        name: "Mentions",
+        condition: {
+          any: [
+            { field: "is_mention", op: "is", value: true },
+            { field: "is_followup", op: "is", value: true },
+          ],
+        },
+        action: { type: "agent", agent: "channels-fixture", project_id: "p1", session: "thread" },
+      },
+    ],
+  });
+  const base = { ...message, connection: "slack-threads", chat: "C1", is_direct: false };
+  const offset = calls.length;
+  await service.receive({ ...base, message_id: "C1:1", root: "1.0", is_mention: true });
+  expect(calls[offset]?.resume).toBe(false);
+  expect(sent.at(-1)).toMatchObject({ channel: "C1", thread_ts: "1.0" });
+  await service.receive({
+    ...base,
+    sender: "dana",
+    message_id: "C1:2",
+    thread: "1.0",
+    root: "2.0",
+  });
+  expect(calls[offset + 1]?.resume).toBe(true);
+  expect(sent.at(-1)).toMatchObject({ channel: "C1", thread_ts: "1.0" });
+  await service.receive({ ...base, message_id: "C1:3", root: "3.0", is_mention: true });
+  expect(calls[offset + 2]?.resume).toBe(false);
+  await service.receive({ ...base, message_id: "C1:4", root: "4.0", text: "no mention" });
+  expect(calls).toHaveLength(offset + 3);
+});
+
+test("message policy starts fresh each time and read-only permissions restrict tools", async () => {
+  await service.save({
+    id: "fresh",
+    name: "Fresh",
+    provider: "telegram",
+    enabled: true,
+    credentials: { token: "fixture" },
+    targets: [{ id: "me", name: "Me", chat_id: "chat", user_ids: ["nir"], inbound: true }],
+    routes: [
+      {
+        id: "ask",
+        name: "Ask",
+        condition: { always: true },
+        action: {
+          type: "agent",
+          agent: "channels-fixture",
+          project_id: "p1",
+          session: "message",
+          permissions: "read_only",
+        },
+      },
+    ],
+  });
+  const offset = calls.length;
+  await service.receive({ ...message, connection: "fresh", message_id: "f1" });
+  await service.receive({ ...message, connection: "fresh", message_id: "f2" });
+  expect(calls.slice(offset).map((c) => c.resume)).toEqual([false, false]);
+  expect(calls[offset]?.opts).toMatchObject({
+    permissionMode: "default",
+    autoApprove: false,
+    orcMcp: false,
+    toolAllowlist: ["Read", "Grep", "Glob", "LS", "WebFetch", "WebSearch"],
+  });
+});
+
+test("strangers reach the agent through an any-DM destination but get no controls, commands or approvals", async () => {
+  await service.save({
+    id: "inbox",
+    name: "Inbox",
+    provider: "slack",
+    enabled: true,
+    credentials: { bot_token: "fixture", app_token: "fixture" },
+    targets: [{ id: "anyone", name: "Any DM", chat_id: "*", user_ids: ["*"], inbound: true }],
+    routes: [
+      {
+        id: "assistant",
+        name: "Assistant",
+        condition: { field: "is_direct", op: "is", value: true },
+        action: {
+          type: "agent",
+          agent: "channels-fixture",
+          project_id: "p1",
+          permissions: "auto",
+        },
+      },
+    ],
+  });
+  const stranger = { ...message, connection: "inbox", sender: "U9", chat: "D9" };
+  const offset = calls.length;
+  await service.receive({ ...stranger, message_id: "D9:1", text: "/project p2" });
+  expect(calls[offset]?.prompt).toBe("/project p2");
+  expect(calls[offset]?.opts.humanRequestContext).toEqual({ projectId: "p1", notify: [] });
+  expect(calls[offset]?.opts).toMatchObject({ autoApprove: false, permissionMode: "default" });
+  expect(calls[offset]?.opts.toolAllowlist).toContain("Read");
+  expect(edited.at(-1)?.body).toMatchObject({ channel: "D9", text: "*Reply received*" });
+  expect(edited.at(-1)?.body.blocks).toBeUndefined();
+  await service.receive({ ...stranger, message_id: "D9:2", text: "/help" });
+  expect(sent.at(-1)).toMatchObject({
+    channel: "D9",
+    text: "Send a message and the assistant will reply.",
+  });
+  expect(sent.at(-1)?.blocks).toBeUndefined();
+});
+
+test("a job route runs the job with the message and replies with its output", async () => {
+  getSqlite()
+    .query("INSERT INTO jobs (id,name,trigger_type,command) VALUES ('j1','echo-job','manual',?)")
+    .run("cat; printf ' from %s' \"$ORC_CHANNEL_SENDER\"");
+  await service.save({
+    id: "jobs",
+    name: "Jobs",
+    provider: "telegram",
+    enabled: true,
+    credentials: { token: "fixture" },
+    targets: [{ id: "me", name: "Me", chat_id: "chat", user_ids: ["nir"], inbound: true }],
+    routes: [
+      {
+        id: "run",
+        name: "Run",
+        condition: { always: true },
+        action: { type: "job", job_id: "j1" },
+      },
+    ],
+  });
+  await service.receive({ ...message, connection: "jobs", message_id: "j-1", text: "ping" });
+  expect(String(sent.at(-1)?.text)).toContain("ping from nir");
+});
+
+test("strangers cannot trigger a job whose agent may change files", async () => {
+  getSqlite()
+    .query(
+      "INSERT INTO jobs (id,name,trigger_type,command,action) VALUES ('j2','auto-agent','manual','',?)",
+    )
+    .run(
+      JSON.stringify({
+        type: "agent",
+        backend: "channels-fixture",
+        prompt: "x",
+        auto_approve: true,
+      }),
+    );
+  await service.save({
+    id: "open-jobs",
+    name: "Open jobs",
+    provider: "telegram",
+    enabled: true,
+    credentials: { token: "fixture" },
+    targets: [{ id: "anyone", name: "Any", chat_id: "*", user_ids: ["*"], inbound: true }],
+    routes: [
+      {
+        id: "run",
+        name: "Run",
+        condition: { always: true },
+        action: { type: "job", job_id: "j2" },
+      },
+    ],
+  });
+  const runs = () =>
+    getSqlite().query<{ n: number }, []>("SELECT count(*) n FROM job_runs").get()?.n;
+  const before = runs();
+  await service.receive({
+    ...message,
+    connection: "open-jobs",
+    sender: "U9",
+    chat: "D9",
+    message_id: "o-1",
+  });
+  expect(String(sent.at(-1)?.text)).toBe("auto-agent only runs for named senders.");
+  expect(runs()).toBe(before);
 });
