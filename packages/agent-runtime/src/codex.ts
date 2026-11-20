@@ -124,6 +124,7 @@ export class CodexSession implements AgentSession {
     hasReceivedResult: false,
   };
   private runtimeSessionId: string | undefined;
+  private systemPromptPending = true;
   private stderrLines: string[] = [];
   private readonly cwd: string;
   private readonly host: ExecHost;
@@ -196,9 +197,10 @@ export class CodexSession implements AgentSession {
     this.proc = handle.proc;
     this.killProc = handle.kill;
     // Codex exec has no system slot: the instructions ride in the first prompt
-    // of a new thread only. A resumed thread already carries them in its
-    // rollout history, so later turns send the user's text alone.
-    const append = opts.runtimeSessionId ? undefined : opts.systemPromptAppend;
+    // of this session object. Callers offer them only while the thread still
+    // lacks a confirmed delivery, so a failed first turn is offered again.
+    const append = this.systemPromptPending ? opts.systemPromptAppend : undefined;
+    if (append) this.systemPromptPending = false;
     writeToStdin(
       this.proc.stdin,
       new TextEncoder().encode([append, prompt].filter(Boolean).join("\n\n")),

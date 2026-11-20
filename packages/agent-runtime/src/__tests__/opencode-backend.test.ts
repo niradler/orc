@@ -251,7 +251,7 @@ test("opencode receives the ORC context once, and /compact as a bare native comm
   }
 });
 
-test("opencode resume never re-sends the ORC context prefix", async () => {
+test("opencode resume delivers an offered preamble once, then sends bare turns", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-resume-prefix-"));
   const { argvFile, session } = await startPeer(cwd, { systemPromptAppend: "ORC CONTEXT" });
   try {
@@ -270,13 +270,15 @@ test("opencode resume never re-sends the ORC context prefix", async () => {
     try {
       await resumed.send("continue");
       for await (const event of resumed.events()) if (event.type === "result") break;
+      await resumed.send("and then?");
+      for await (const event of resumed.events()) if (event.type === "result") break;
       const prompts = readFileSync(`${argvFile}.wire`, "utf8")
         .trim()
         .split("\n")
         .map((line) => JSON.parse(line))
         .filter((request) => request.method === "session/prompt")
         .map((request) => request.params.prompt[0].text);
-      expect(prompts).toEqual(["ORC CONTEXT\n\nhello", "continue"]);
+      expect(prompts).toEqual(["ORC CONTEXT\n\nhello", "ORC CONTEXT\n\ncontinue", "and then?"]);
     } finally {
       await resumed.close();
     }

@@ -2308,6 +2308,8 @@ async function openChat(
       thread.runtimeId = null;
       thread.sourceId = null;
       delete thread.transcriptMark;
+      // The new account's session starts without the instructions in history.
+      delete thread.systemPromptDelivered;
       thread.providerSwitch = { from: previous ?? thread.config.agent };
     }
   }
@@ -2566,6 +2568,13 @@ async function beginTurn(
     // Activity watchdog: a quiet turn is stopped, but a turn waiting for a
     // human answer or a running tool call is re-checked instead of killed.
     let timedOut = false;
+    let receivedResult = false;
+    let commandTurn = false;
+    // Offer the instructions until a turn confirms the agent received them:
+    // a first turn that failed before delivery must not lose them forever.
+    const instructions = thread.systemPromptDelivered
+      ? undefined
+      : chatSystemPrompt(thread.config.system, { webchat: true });
     let toolsPending = 0;
     const subagents = new Map<string, string>();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -2689,7 +2698,7 @@ async function beginTurn(
             ? thread.config.permissionMode
             : undefined,
           model: thread.config.model,
-          systemPromptAppend: chatSystemPrompt(thread.config.system, { webchat: true }),
+          systemPromptAppend: instructions,
           orcMcp: thread.config.mcp === "orc",
           orcPreviewSessionId: thread.id,
           orcMcpMode: loadConfig().mcp.default_mode,
@@ -2809,11 +2818,11 @@ async function beginTurn(
           setup.continuation && input.trim() !== "/compact"
             ? `${setup.continuation}\n\n${message}`
             : message;
+        commandTurn = AGENT_COMMAND_PATTERN.test(sent.trim());
         thread.capabilities = run.session.capabilities ??
           backend.capabilities ?? { ...UNKNOWN_CAPABILITIES };
         await emit({ type: "capabilities", capabilities: thread.capabilities });
         await run.session.send(sent);
-        let receivedResult = false;
         let outputBytes = 0;
         for await (const event of run.session.events()) {
           if (held && event.type !== "text") await settleHeld();
@@ -2995,6 +3004,11 @@ async function beginTurn(
       const nativeId = noResumableSession ? undefined : run.session?.getRuntimeSessionId?.();
       if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
         thread.runtimeId = nativeId;
+      // A confirmed non-command turn owns the instructions in the agent's
+      // history, so later turns stop offering them. A turn that never reached
+      // the agent (no result) or ran only a slash command keeps the offer alive.
+      if (receivedResult && !noResumableSession && instructions && !commandTurn)
+        thread.systemPromptDelivered = true;
       if (thread.forkedFrom?.mode === "native" && !thread.runtimeId && !thread.forkPending) {
         // The provider accepted the fork request but never returned an identity.
         // Do not silently start a context-free chat next turn: record the

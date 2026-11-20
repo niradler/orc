@@ -204,12 +204,12 @@ export class AcpSession implements AgentSession {
   /** OpenCode 2.x steers through `_session/steering`; a second prompt is rejected. */
   private steeringExtension = false;
   /**
-   * ACP has no system slot, so the instructions ride in the first prompt of a
-   * new session only; the agent keeps them in its history. A loaded or forked
-   * session already carries them, and re-sending them every turn would spam
-   * the transcript with user-role system instructions.
+   * ACP has no system slot, so the instructions ride in the first prompt of
+   * this session object. Callers offer them only while the native session
+   * still lacks a confirmed delivery, so a resumed session whose history
+   * carries them gets none and a failed first delivery is offered again.
    */
-  private systemPromptPending = false;
+  private systemPromptPending = true;
   private closed = false;
   private done = true;
   private busy = false;
@@ -749,7 +749,6 @@ export class AcpSession implements AgentSession {
           if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(created.sessionId))
             throw new Error("ACP returned an invalid session identity.");
           this.runtimeId = created.sessionId;
-          this.systemPromptPending = true;
           configOptions = created.configOptions ?? [];
         }
       } finally {
@@ -855,8 +854,9 @@ export class AcpSession implements AgentSession {
     }
     const command = AGENT_COMMAND_PATTERN.test(prompt.trim());
     const append = !command && this.systemPromptPending ? this.opts.systemPromptAppend : undefined;
-    // Once submitted, the agent's history owns the instructions. A prompt the
-    // agent rejects fails this session; the next turn opens a fresh one.
+    // Once submitted, the agent's history owns the instructions. The caller
+    // stops offering them after a turn confirms delivery; a first turn that
+    // never reached the agent keeps the offer alive for the next turn.
     if (append) this.systemPromptPending = false;
     const text = command ? prompt.trim() : [append, prompt].filter(Boolean).join("\n\n");
     const { agent } = this.connection;

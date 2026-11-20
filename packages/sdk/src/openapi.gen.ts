@@ -1129,6 +1129,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
@@ -1522,6 +1523,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
@@ -1853,6 +1855,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
@@ -2187,6 +2190,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
@@ -2722,6 +2726,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
@@ -3122,6 +3127,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
@@ -3603,6 +3609,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;
@@ -3992,6 +3999,7 @@ export interface paths {
                             providerSwitch?: {
                                 from: string;
                             };
+                            systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
                             spawnedBy?: {
                                 sessionId: string;

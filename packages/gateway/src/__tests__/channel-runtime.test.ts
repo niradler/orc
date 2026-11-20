@@ -231,6 +231,8 @@ test("authorized channel invokes selected agent and replies; follow-up resumes o
   expect(JSON.stringify(edited.at(-1)?.body.reply_markup)).toContain("New session");
   await service.receive({ ...message, message_id: "m2", text: "follow up" });
   expect(calls[1]?.resume).toBe(true);
+  // The confirmed first turn owns the instructions; resume turns get none.
+  expect(calls[1]?.opts.systemPromptAppend).toBeUndefined();
   await service.receive({ ...message, message_id: "m3", thread: "123" });
   expect(calls[2]?.resume).toBe(false);
   expect(sent.at(-1)?.message_thread_id).toBe(123);

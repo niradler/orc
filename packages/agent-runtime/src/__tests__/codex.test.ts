@@ -133,3 +133,31 @@ test("should honor native MCP configuration, deliver operator instructions once 
   expect(resumed.prompt).toBe("Follow-up");
   await session.close();
 });
+
+test("should deliver offered instructions once on a resumed codex thread", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-codex-resume-preamble-"));
+  const script = join(cwd, "cli.ts");
+  writeFileSync(
+    script,
+    `const prompt=await Bun.stdin.text(); console.log(JSON.stringify({type:'thread.started',thread_id:'resume-fixture'})); console.log(JSON.stringify({type:'item.completed',item:{id:'answer-1',type:'agent_message',text:JSON.stringify({prompt,args:process.argv.slice(2)})}})); console.log(JSON.stringify({type:'turn.completed'}));`,
+  );
+  const session = new CodexSession(
+    {
+      cwd,
+      orcMcp: false,
+      runtimeSessionId: "resume-fixture",
+      systemPromptAppend: "Operator instructions",
+    },
+    { kind: "local" },
+    async () => [process.execPath, script],
+  );
+  await session.send("Question");
+  const events: AgentEvent[] = [];
+  for await (const event of session.events()) events.push(event);
+  const text = events.find((event) => event.type === "text");
+  if (text?.type !== "text") throw new Error("No text");
+  const output = JSON.parse(text.data) as { args: string[]; prompt: string };
+  expect(output.args).toContain("resume");
+  expect(output.prompt).toBe("Operator instructions\n\nQuestion");
+  await session.close();
+});

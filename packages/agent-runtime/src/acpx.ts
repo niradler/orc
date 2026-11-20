@@ -350,18 +350,17 @@ export class AcpxSession implements AgentSession {
   private parse = createAcpxParser();
   private gotError = false;
   /**
-   * ACPX has no system slot, so the instructions ride in the first prompt of a
-   * new session only; the warm session keeps them in its history. A resumed
-   * session already carries them, and re-sending them every turn would spam
-   * the transcript with user-role system instructions.
+   * ACPX has no system slot, so the instructions ride in the first prompt of
+   * this session object. Callers offer them only while the native session
+   * still lacks a confirmed delivery, so a resumed session whose history
+   * carries them gets none and a failed first delivery is offered again.
    */
-  private systemPromptPending: boolean;
+  private systemPromptPending = true;
 
   constructor(opts: SessionOpts, acpxCmd: string[], host: ExecHost) {
     this.id = ulid();
     this.host = host;
     this.opts = opts;
-    this.systemPromptPending = !opts.runtimeSessionId;
     this.agent = opts.acpxAgent ?? "claude";
     this.sessionName = opts.runtimeSessionId ?? `orc-${this.id}`;
     this.cwd = opts.cwd;
@@ -531,8 +530,9 @@ export class AcpxSession implements AgentSession {
 
     const command = AGENT_COMMAND_PATTERN.test(prompt.trim());
     const append = !command && this.systemPromptPending ? this.opts.systemPromptAppend : undefined;
-    // Once submitted, the session's history owns the instructions; a later
-    // send() on this session must not repeat them.
+    // Once submitted, the session's history owns the instructions. The caller
+    // stops offering them after a turn confirms delivery; a first turn that
+    // never reached the agent keeps the offer alive for the next turn.
     if (append) this.systemPromptPending = false;
     const text = command ? prompt.trim() : [append, prompt].filter(Boolean).join("\n\n");
     const args = [

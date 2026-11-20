@@ -5,6 +5,67 @@ import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
 import { AcpxSession } from "../acpx";
 
+test("should deliver offered instructions once per session object and keep slash commands bare", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-preamble-"));
+  const wire = join(cwd, "wire.ndjson");
+  const script = join(cwd, "cli.ts");
+  writeFileSync(
+    script,
+    `import {appendFileSync} from 'node:fs';
+const args=process.argv.slice(2);
+appendFileSync(${JSON.stringify(wire)},JSON.stringify(args)+'\\n');
+if(args.includes('ensure')){console.log('{}');process.exit(0);}
+console.log(JSON.stringify({id:1,result:{stopReason:'end_turn'}}));`,
+  );
+  const prompts = () =>
+    readFileSync(wire, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as string[])
+      .filter((args) => args.includes("prompt"))
+      .map((args) => args[args.length - 1]);
+  const session = new AcpxSession(
+    { cwd, acpxAgent: "cursor", orcMcp: false, systemPromptAppend: "ORC PREAMBLE" },
+    [process.execPath, script],
+    { kind: "local" },
+  );
+  const drain = async (target: AcpxSession) => {
+    for await (const event of target.events()) expect(event.type).toBe("result");
+  };
+  try {
+    for (const prompt of ["first", "/compact", "follow-up"]) {
+      await session.send(prompt);
+      await drain(session);
+    }
+    expect(prompts()).toEqual(["ORC PREAMBLE\n\nfirst", "/compact", "follow-up"]);
+    await session.close();
+    // A resume retry (first turn never confirmed delivery) is offered again, once.
+    const resumed = new AcpxSession(
+      {
+        cwd,
+        acpxAgent: "cursor",
+        orcMcp: false,
+        runtimeSessionId: session.getRuntimeSessionId(),
+        systemPromptAppend: "ORC PREAMBLE",
+      },
+      [process.execPath, script],
+      { kind: "local" },
+    );
+    try {
+      await resumed.send("retry");
+      await drain(resumed);
+      await resumed.send("again");
+      await drain(resumed);
+      expect(prompts().slice(3)).toEqual(["ORC PREAMBLE\n\nretry", "again"]);
+    } finally {
+      await resumed.close();
+    }
+  } finally {
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("should inject private ACPX MCP config for prepare, send and resume and clean it after exit", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-mcp-"));
   const capture = join(cwd, "capture.json");

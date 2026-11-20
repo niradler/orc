@@ -66,6 +66,7 @@ let completeHungTool = false;
 let parallelRequests = false;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
+let identityWithoutResult = false;
 let failedTurn = false;
 let resultIdentity: string | undefined;
 let resultDurationMs: number | undefined;
@@ -112,7 +113,12 @@ function session(call: (typeof calls)[number]): AgentSession {
       if (steerAfterClose) await new Promise<void>((done) => (closeGate = done));
       call.prompt = prompt;
     },
-    getRuntimeSessionId: () => (waitPermission || noResumable ? "early-native-fixture" : undefined),
+    getRuntimeSessionId: () =>
+      waitPermission || noResumable
+        ? "early-native-fixture"
+        : identityWithoutResult
+          ? "pinned-native-fixture"
+          : undefined,
     send: async (prompt) => {
       call.prompt = prompt;
     },
@@ -724,6 +730,61 @@ describe("native chat runtime", () => {
       ).status,
     ).toBe(409);
     expect(calls).toHaveLength(count);
+    calls.length = 0;
+  });
+  test("a first turn that failed before delivery keeps offering the chat instructions", async () => {
+    identityWithoutResult = true;
+    failBeforeResult = true;
+    try {
+      const failed = await turn({
+        messages: [{ role: "user", content: "first turn dies before delivery" }],
+      });
+      failBeforeResult = false;
+      const opened = failed.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing thread");
+      // The identity is pinned for continuity even though no result arrived,
+      // so the retry resumes; the instructions must still be offered.
+      const stored = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(stored.runtimeId).toBe("pinned-native-fixture");
+      expect(stored.systemPromptDelivered).toBeUndefined();
+      const retry = await turn({
+        threadId: stored.id,
+        messages: [{ role: "user", content: "retry after the agent was fixed" }],
+      });
+      expect(retry.response.status).toBe(200);
+      expect(calls.at(-1)?.id).toBe("pinned-native-fixture");
+      expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+      const confirmed = (await (await request(`/chat/threads/${stored.id}`)).json()) as ChatThread;
+      expect(confirmed.systemPromptDelivered).toBe(true);
+      await turn({
+        threadId: stored.id,
+        messages: [{ role: "user", content: "third turn" }],
+      });
+      expect(calls.at(-1)?.opts.systemPromptAppend).toBeUndefined();
+    } finally {
+      identityWithoutResult = false;
+      failBeforeResult = false;
+      calls.length = 0;
+    }
+  });
+  test("a command-only first turn does not consume the instruction delivery", async () => {
+    const first = await turn({ messages: [{ role: "user", content: "/code-review high" }] });
+    expect(first.response.status).toBe(200);
+    const opened = first.events.find((event) => event.type === "thread");
+    if (opened?.type !== "thread") throw new Error("Missing thread");
+    const stored = (await (
+      await request(`/chat/threads/${opened.thread.id}`)
+    ).json()) as ChatThread;
+    expect(stored.systemPromptDelivered).toBeUndefined();
+    await turn({
+      threadId: stored.id,
+      messages: [{ role: "user", content: "now a real question" }],
+    });
+    expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+    const confirmed = (await (await request(`/chat/threads/${stored.id}`)).json()) as ChatThread;
+    expect(confirmed.systemPromptDelivered).toBe(true);
     calls.length = 0;
   });
   test("streams structured activity, applies server settings and persists a resumable conversation", async () => {

@@ -497,7 +497,11 @@ export async function startChannelRuntime(
           ...(action.profile && record.backend === defaultAgent
             ? { agentProfile: action.profile }
             : {}),
-          systemPromptAppend: chatSystemPrompt(defaults.system),
+          // The record's native id is only pinned by a turn that confirmed
+          // delivery, so a failed first turn offers the instructions again.
+          systemPromptAppend: record.runtime_session_id
+            ? undefined
+            : chatSystemPrompt(defaults.system),
           orcMcp: run.orcMcp,
           orcMcpMode: loadConfig().mcp.default_mode,
           orcMcpProject: project.name,
