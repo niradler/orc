@@ -73,8 +73,9 @@ export const codeToolListing = {
   name: "tool_execute",
   description:
     "Run an isolated JavaScript async function body. Use await and return directly. " +
-    'Discover tools with await tools.search("list active tasks") or tools.search("", { limit: 20, offset: 0 }). ' +
-    "Use await tools.describe(name) for inputSchema and effect, then await tools.call(name, args). " +
+    'Discover tools with const { tools: hits } = await tools.search("list active tasks"). ' +
+    'An empty query pages through the catalog with tools.search("", { limit: 20, offset: 0 }). ' +
+    "Use await tools.describe(name) for inputSchema, effect and any output hint, then await tools.call(name, args). " +
     "Independent reads can use Promise.all; calls with writes are serialized. " +
     "Call results are JSON or plain text (for example, task_list returns lines); failures reject. Return only the fields or summary you need. " +
     "Executions are fresh and can commit writes before failing. Avoid automatic retries of writes. " +
