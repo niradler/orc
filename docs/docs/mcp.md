@@ -194,9 +194,9 @@ Meta mode keeps the agent's context small. The agent discovers tools on demand:
 
 | Meta tool       | Input                                | Returns                                                                              |
 | --------------- | ------------------------------------ | ------------------------------------------------------------------------------------ |
-| `tool_search`   | `query?` or `queries?`, `limit`, `scriptable?` | Matching tools with script availability. No query lists the catalog by toolset. |
-| `tool_describe` | `name` or `names`                       | Descriptions, JSON input schemas and script availability.                            |
-| `tool_invoke`   | `name`, `arguments?`                 | Runs the tool; arguments are validated against its schema                            |
+| `tool_search`   | `query?` or `queries?`, `limit`, `scriptable?`, `connection?` | Matching native tools plus external Spec tools labeled `[external: <connection>]`. No query lists the catalog by toolset and the external connections. |
+| `tool_describe` | `name` or `names`, `connection?`     | Descriptions, JSON input schemas and script availability; external tools are labeled.            |
+| `tool_invoke`   | `name`, `arguments?`, `connection?`  | Runs the tool (or an external Spec tool with `connection`); arguments are validated against its schema |
 | `tool_execute`  | `code`, `timeout_ms?`                 | Runs a bounded script and returns its result and logs. |
 
 In meta mode a direct call to a real tool name also works, so clients that already know a name skip discovery.
@@ -215,9 +215,9 @@ Send `tool_execute` an object with `code` and an optional `timeout_ms`. The code
 
 | Inside the script | What it returns |
 | --- | --- |
-| `await tools.search(query, { limit, offset })` | `{ tools, total }` with names, short descriptions and read/write effects. An empty query pages through eligible tools. |
-| `await tools.describe(name)` | Description, input JSON Schema, read/write effect, and output guidance where available. |
-| `await tools.call(name, args)` | A JSON value or plain text from ORC. MCP tool errors reject the promise. |
+| `await tools.search(query, { limit, offset, connection })` | `{ tools, total, connections }` with names, short descriptions and read/write effects. External Spec matches carry `connection` and `external: true`; an empty query pages eligible tools and lists external connections. |
+| `await tools.describe(name, { connection })` | Description, input JSON Schema, read/write effect, and output guidance where available. External tools are labeled `external: true` with their `connection`. |
+| `await tools.call(name, args, { connection })` | A JSON value or plain text from ORC, or from an external Spec connection when `connection` is set. MCP tool errors reject the promise. |
 
 ```js
 const [tasks, jobs] = await Promise.all([
@@ -235,7 +235,7 @@ return Object.fromEntries(results.map((result, index) => [
 
 The result is `{ result, logs, truncated }`, with matching text for clients that use MCP text content. Each run starts in a fresh QuickJS WASM worker. The script has no host filesystem, environment, network, or package APIs. ORC checks every call against script eligibility and the connection's existing project and tool permissions. Use `tool_invoke` for direct-only operations such as browser actions and launching jobs.
 
-The installation-wide Spec catalog is available to unscoped authenticated HTTP and local stdio meta clients. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` to work with an enabled registered Spec connection. Discover the `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings through `tool_search` to use the same catalog inside a script. Calls reuse the connection's tool filters and usage policies. An OpenAPI tool that returns a page provides its HTML in `body`, and a script can return just the title. Project-scoped connections expose project tools and authorized preview data.
+ORC's native tools and external Spec connections share one discovery surface. `tool_search` (and in-sandbox `tools.search`) also queries every enabled Spec connection in parallel and merges the matches, labeled `[external: <connection>]` and carrying a `connection` field; results list the available external connections too, so external catalogs are visible even when nothing matches. Spec connections are external OpenAPI/MCP/GraphQL servers, **not ORC built-ins**, and their results are untrusted external data. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` (or `{ connection }` inside a script) to target one connection directly; the `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings remain available for direct use. Calls reuse the connection's tool filters and usage policies, and external writes may have external side effects. An OpenAPI tool that returns a page provides its HTML in `body`, so a script can return just the title. The catalog is available to unscoped authenticated HTTP and local stdio meta clients; project-scoped connections expose project tools and authorized preview data only.
 
 ```js
 const page = await tools.call("getPage", {}, { connection: "docs" });

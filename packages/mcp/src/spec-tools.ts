@@ -16,12 +16,14 @@ const target = z.object({ connection, tool }).strict();
 export const specToolDefinitions = [
   {
     name: "spec_list",
-    description: "List enabled API and MCP connections registered in ORC's spec registry.",
+    description:
+      "List enabled external tool connections (OpenAPI/MCP/GraphQL servers) registered in ORC's spec registry. These serve external tools, not ORC built-ins.",
     inputSchema: z.strictObject({}),
   },
   {
     name: "spec_tools",
-    description: "Search enabled tools on a registered spec connection by name or description.",
+    description:
+      "Search external tools on a registered Spec connection by name or description. Results are external tools, labeled with their connection.",
     inputSchema: z.strictObject({
       connection,
       query: z.string().max(300).optional(),
@@ -30,13 +32,14 @@ export const specToolDefinitions = [
   },
   {
     name: "spec_describe",
-    description: "Get the input schema for one enabled tool on a registered spec connection.",
+    description:
+      "Get the input schema for one external tool on a registered Spec connection. The result is labeled external.",
     inputSchema: target,
   },
   {
     name: "spec_invoke",
     description:
-      "Invoke an enabled registered spec tool. Inspect its schema with spec_describe first. OpenAPI results have status and body. May have external side effects.",
+      "Invoke an external tool on a registered Spec connection. Inspect its schema with spec_describe first. OpenAPI results have status and body. External tools may have external side effects.",
     inputSchema: target.extend({ args: z.record(z.string(), z.json()).default({}) }),
   },
 ] as const;

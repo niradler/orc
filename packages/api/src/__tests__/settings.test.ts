@@ -13,6 +13,7 @@ import { settingsRouter } from "../routes/settings";
 
 const originalHome = process.env.HOME;
 const originalProfile = process.env.USERPROFILE;
+const originalOrcHome = process.env.ORC_HOME;
 const privateHome = mkdtempSync(join(tmpdir(), "orc-settings-test-"));
 const app = new Hono();
 app.onError((error, c) =>
@@ -31,6 +32,7 @@ beforeAll(() => {
   createTestDb();
   process.env.HOME = privateHome;
   process.env.USERPROFILE = privateHome;
+  delete process.env.ORC_HOME;
   expect(globalConfigPath()).toBe(join(privateHome, ".orc", "config.json"));
   mkdirSync(join(privateHome, ".orc"));
   writeFileSync(
@@ -46,6 +48,8 @@ afterAll(() => {
   else process.env.HOME = originalHome;
   if (originalProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = originalProfile;
+  if (originalOrcHome === undefined) delete process.env.ORC_HOME;
+  else process.env.ORC_HOME = originalOrcHome;
   resetConfig();
   rmSync(privateHome, { recursive: true, force: true });
 });

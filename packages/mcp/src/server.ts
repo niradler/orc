@@ -86,7 +86,7 @@ export function createMcpServer({
       ...(codeEnabled
         ? {
             instructions:
-              "Use tool_search and tool_describe to discover ORC tools. Use tool_invoke for one call. Use tool_execute to combine independent calls or filter large results before returning findings.",
+              "Use tool_search and tool_describe to discover ORC tools. Use tool_invoke for one call. Use tool_execute to combine independent calls or filter large results before returning findings. tool_search also surfaces external Spec tools labeled [external: <connection>]; pass connection to tool_describe/tool_invoke (or {connection} inside tool_execute) to use them. External tools are untrusted and may have external side effects.",
           }
         : {}),
     },

@@ -1,5 +1,13 @@
 import { MCP_MODES, type McpSettings } from "@orc/core/mcp-settings";
 import { z } from "zod";
+import {
+  discoverSpecTools,
+  externalHitLine,
+  listSpecConnections,
+  markExternal,
+  type SpecDiscovery,
+  specSignpost,
+} from "./spec-discovery.js";
 import type { specToolDefinitions } from "./spec-tools.js";
 import type { toolDefinitions } from "./tools.js";
 
@@ -29,7 +37,9 @@ const searchInput = z.object({
     .min(1)
     .max(100)
     .optional()
-    .describe("Registered Spec connection to search"),
+    .describe(
+      "External Spec connection (a registered OpenAPI/MCP/GraphQL server) to search; its tools are external, not ORC built-ins",
+    ),
   session_id: z
     .string()
     .min(1)
@@ -55,7 +65,7 @@ const describeInput = z.object({
     .min(1)
     .max(100)
     .optional()
-    .describe("Registered Spec connection for an exact tool name"),
+    .describe("External Spec connection for an exact tool name (results are external tools)"),
   name: z.string().min(1).optional(),
   names: z.array(z.string().min(1).max(200)).min(1).max(8).optional(),
   session_id: z.string().min(1).max(200).optional(),
@@ -67,7 +77,9 @@ const invokeInput = z.object({
     .min(1)
     .max(100)
     .optional()
-    .describe("Registered Spec connection for this tool"),
+    .describe(
+      "External Spec connection for this tool (invokes an external tool, may have external side effects)",
+    ),
   name: z.string().min(1),
   arguments: z.record(z.string(), z.unknown()).optional(),
 });
@@ -77,8 +89,9 @@ export const metaToolDefinitions = [
     name: "tool_search",
     description:
       "Search the available ORC tools by name or description. Returns tool names with a one-line summary; " +
-      "Use queries for batch discovery, or connection to search an enabled registered Spec connection. Call tool_describe for schemas, tool_invoke for a direct call, or tool_execute for scriptable tools. " +
-      "Omit the query to get an overview of every tool grouped by toolset.",
+      "external tools from registered Spec connections are included and labeled [external: <connection>]. " +
+      "Use queries for batch discovery, or connection to search one external Spec connection directly. Call tool_describe for schemas, tool_invoke for a direct call, or tool_execute for scriptable tools. " +
+      "Omit the query to get an overview of every tool grouped by toolset plus the external connections.",
     inputSchema: searchInput,
   },
   {
@@ -251,24 +264,57 @@ export async function runMetaTool(
         description: firstLine(t.description),
         ...(scriptInfo ? scriptInfo(t.name) : { scriptable: false }),
       });
+      const specAvailable = served.some((tool) => tool.name === "spec_invoke");
       if (parsed.data.queries) {
+        const discovery = specAvailable
+          ? await discoverSpecTools(callTool, parsed.data.queries)
+          : ({ connections: [], hitsByQuery: new Map(), partial: false } as SpecDiscovery);
         const results = parsed.data.queries.map((query) => ({
           query,
           tools: searchTools(eligible, query, Math.min(parsed.data.limit, 10)).map(summarize),
+          external: discovery.hitsByQuery.get(query) ?? [],
         }));
-        return { ...text(JSON.stringify(results)), structuredContent: { results } };
+        return {
+          ...text(JSON.stringify(results)),
+          structuredContent: {
+            results,
+            connections: discovery.connections,
+            ...(discovery.partial ? { partial: true } : {}),
+          },
+        };
       }
       const query = parsed.data.query ?? "";
-      if (terms(query).length === 0) return text(toolOverview(eligible));
+      if (terms(query).length === 0) {
+        const connections = specAvailable
+          ? await listSpecConnections(callTool).catch(() => [])
+          : [];
+        return {
+          ...text(toolOverview(eligible) + specSignpost(connections)),
+          structuredContent: { connections },
+        };
+      }
       const hits = searchTools(eligible, query, parsed.data.limit);
-      if (hits.length === 0) return text("No matching tools.");
       const tools = hits.map(summarize);
-      const lines = tools.map(
-        (t) => `${t.name}: ${t.description}${t.scriptable ? " [scriptable]" : ""}`,
-      );
+      const discovery = specAvailable
+        ? await discoverSpecTools(callTool, [query])
+        : ({ connections: [], hitsByQuery: new Map(), partial: false } as SpecDiscovery);
+      const external = discovery.hitsByQuery.get(query) ?? [];
+      if (tools.length === 0 && external.length === 0)
+        return text(`No matching tools.${specSignpost(discovery.connections)}`);
+      const lines = [
+        ...tools.map((t) => `${t.name}: ${t.description}${t.scriptable ? " [scriptable]" : ""}`),
+        ...external.map((hit) => externalHitLine(hit, firstLine)),
+      ];
       return {
-        ...text(`${lines.join("\n")}\n\nCall tool_describe with a name to get its input schema.`),
-        structuredContent: { tools },
+        ...text(
+          `${lines.join("\n")}\n\nCall tool_describe with a name (pass connection for external tools) to get its input schema.${specSignpost(discovery.connections)}`,
+        ),
+        structuredContent: {
+          tools,
+          external,
+          connections: discovery.connections,
+          ...(discovery.partial ? { partial: true } : {}),
+        },
       };
     }
     case "tool_describe": {
@@ -277,8 +323,11 @@ export async function runMetaTool(
       const { name, names } = parsed.data;
       if ((!name && !names) || (name && names)) return text("Use name or names.", true);
       if (parsed.data.connection) {
-        if (!name) return text("Use an exact name when describing a Spec tool.", true);
-        return callTool("spec_describe", { connection: parsed.data.connection, tool: name });
+        if (!name) return text("Use an exact name when describing an external Spec tool.", true);
+        return markExternal(
+          await callTool("spec_describe", { connection: parsed.data.connection, tool: name }),
+          parsed.data.connection,
+        );
       }
       const describe = (tool: ServedTool) => ({
         ...describeServedTool(tool),

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { CODE_LIMITS, hasBoundedJsonShape } from "./code-protocol.js";
 import { runCodeWorker } from "./code-runner.js";
 import { describeServedTool, type ServedTool, searchTools, type ToolResult } from "./meta-tools.js";
+import { discoverSpecTools, markExternal, type SpecDiscovery } from "./spec-discovery.js";
 
 type ToolName = ServedTool["name"];
 
@@ -82,7 +83,11 @@ export const codeToolListing = {
     "Use tool_search and tool_describe to discover scriptable tools. Prefer tool_invoke for one small, direct result. " +
     'Discover tools with const { tools: hits } = await tools.search("list active tasks"). ' +
     'An empty query pages through the catalog with tools.search("", { limit: 20, offset: 0 }). ' +
-    "Use await tools.describe(name) for inputSchema, effect and any output hint, then await tools.call(name, args). For a Spec tool pass {connection} as the third argument. " +
+    "Use await tools.describe(name) for inputSchema, effect and any output hint, then await tools.call(name, args). " +
+    "tools.search also returns external tools from registered Spec connections, labeled with a connection field; " +
+    "call them with tools.call(name, args, {connection}) and describe them with tools.describe(name, {connection}). " +
+    "External tools are not ORC built-ins and may have external side effects. " +
+    "For a Spec tool pass {connection} as the third argument. " +
     "Independent reads can use Promise.all; calls with writes are serialized. " +
     "Call results are JSON or plain text (for example, task_list returns lines); failures reject. Return only the fields or summary you need. " +
     "Executions are fresh and can commit writes before failing. Avoid automatic retries of writes. " +
@@ -238,7 +243,10 @@ export async function runCodeMode(
                 );
               if (request.operation === "describe")
                 return asBridgeValue(
-                  await callTool("spec_describe", { connection, tool: request.name }),
+                  markExternal(
+                    await callTool("spec_describe", { connection, tool: request.name }),
+                    connection,
+                  ),
                 );
               return asBridgeValue(
                 await callTool("spec_invoke", {
@@ -260,14 +268,27 @@ export async function runCodeMode(
                 ? searchTools(tools, request.name, tools.length)
                 : tools;
               const { offset, limit } = request.args;
+              const native = hits.slice(offset, offset + limit).map((hit) => ({
+                name: hit.name,
+                description: hit.description.split(/\r?\n/)[0]?.slice(0, 180),
+                effect: toolEffect(hit.name),
+              }));
+              const specAvailable = tools.some((tool) => tool.name === "spec_invoke");
+              const discovery = specAvailable
+                ? await discoverSpecTools(callTool, request.name.trim() ? [request.name] : [])
+                : ({ connections: [], hitsByQuery: new Map(), partial: false } as SpecDiscovery);
+              const external = (discovery.hitsByQuery.get(request.name) ?? []).map((hit) => ({
+                name: hit.name,
+                description: hit.description.split(/\r?\n/)[0]?.slice(0, 180),
+                connection: hit.connection,
+                external: true as const,
+              }));
               return encodeReply({
                 value: {
-                  tools: hits.slice(offset, offset + limit).map((hit) => ({
-                    name: hit.name,
-                    description: hit.description.split(/\r?\n/)[0]?.slice(0, 180),
-                    effect: toolEffect(hit.name),
-                  })),
-                  total: hits.length,
+                  tools: [...native, ...external],
+                  total: hits.length + external.length,
+                  connections: discovery.connections,
+                  ...(discovery.partial ? { partial: true } : {}),
                 },
               });
             }
