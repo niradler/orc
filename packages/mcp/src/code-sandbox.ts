@@ -23,8 +23,8 @@ const bootstrap = `
     const freeze = Object.freeze;
     const Text = String;
     const Type = Error;
-    const request = async (operation, name, args) => {
-      const payload = stringify({ operation, name, args });
+    const request = async (operation, name, args, connection) => {
+      const payload = stringify({ operation, name, args, connection });
       if (payload.length > ${CODE_LIMITS.requestChars}) throw new Type("Tool arguments are too large");
       const reply = parse(await rpc(payload));
       if (reply.error !== undefined) throw new Type(reply.error);
@@ -42,9 +42,9 @@ const bootstrap = `
     };
     return {
       tools: freeze({
-        search: (query = "", options = {}) => request("search", query, options),
-        describe: name => request("describe", name),
-        call: (name, args = {}) => request("call", name, args),
+        search: (query = "", options = {}) => request("search", query, options, options.connection),
+        describe: (name, options = {}) => request("describe", name, undefined, options.connection),
+        call: (name, args = {}, options = {}) => request("call", name, args, options.connection),
       }),
       console: freeze({ log: print, info: print, warn: print, error: print, debug: print }),
       errorMessage: error => slice(typeof error === "string" ? error : Text(error?.message ?? ""), 0, 512),

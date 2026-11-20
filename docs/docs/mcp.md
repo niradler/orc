@@ -238,7 +238,7 @@ The result is `{ result, logs, truncated }`, with matching text for clients that
 The installation-wide Spec catalog is available to unscoped authenticated HTTP and local stdio meta clients. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` to work with an enabled registered Spec connection. Discover the `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings through `tool_search` to use the same catalog inside a script. Calls reuse the connection's tool filters and usage policies. An OpenAPI tool that returns a page provides its HTML in `body`, and a script can return just the title. Project-scoped connections expose project tools and authorized preview data.
 
 ```js
-const page = await tools.call("spec_invoke", { connection: "docs", tool: "getPage" });
+const page = await tools.call("getPage", {}, { connection: "docs" });
 return page.body.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? null;
 ```
 

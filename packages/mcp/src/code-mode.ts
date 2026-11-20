@@ -82,7 +82,7 @@ export const codeToolListing = {
     "Use tool_search and tool_describe to discover scriptable tools. Prefer tool_invoke for one small, direct result. " +
     'Discover tools with const { tools: hits } = await tools.search("list active tasks"). ' +
     'An empty query pages through the catalog with tools.search("", { limit: 20, offset: 0 }). ' +
-    "Use await tools.describe(name) for inputSchema, effect and any output hint, then await tools.call(name, args). " +
+    "Use await tools.describe(name) for inputSchema, effect and any output hint, then await tools.call(name, args). For a Spec tool pass {connection} as the third argument. " +
     "Independent reads can use Promise.all; calls with writes are serialized. " +
     "Call results are JSON or plain text (for example, task_list returns lines); failures reject. Return only the fields or summary you need. " +
     "Executions are fresh and can commit writes before failing. Avoid automatic retries of writes. " +
@@ -97,19 +97,26 @@ export const codeToolListing = {
   },
 };
 
-const nameSchema = z.string().min(1).max(100);
+const nameSchema = z.string().min(1).max(200);
+const connectionSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]+$/)
+  .max(100)
+  .optional();
 const requestSchema = z.discriminatedUnion("operation", [
   z.object({
     operation: z.literal("search"),
+    connection: connectionSchema,
     name: z.string().max(300),
     args: z.object({
       limit: z.number().int().min(1).max(25).default(8),
       offset: z.number().int().min(0).max(100).default(0),
     }),
   }),
-  z.object({ operation: z.literal("describe"), name: nameSchema }),
+  z.object({ operation: z.literal("describe"), name: nameSchema, connection: connectionSchema }),
   z.object({
     operation: z.literal("call"),
+    connection: connectionSchema,
     name: nameSchema,
     args: z.record(z.string(), z.json()),
   }),
@@ -155,6 +162,32 @@ function asBridgeValue(result: ToolResult): string {
   }
 }
 
+async function searchSpec(
+  call: (name: string, args: unknown) => Promise<ToolResult>,
+  connection: string,
+  query: string,
+  limit: number,
+  offset: number,
+): Promise<string> {
+  const result = await call("spec_tools", {
+    connection,
+    query,
+    limit: Math.min(50, limit + offset),
+  });
+  if (result.isError) return asBridgeValue(result);
+  const hits = z
+    .array(z.object({ id: z.string(), description: z.string() }))
+    .parse(JSON.parse(result.content[0]?.text ?? "[]"));
+  return encodeReply({
+    value: {
+      tools: hits
+        .slice(offset, offset + limit)
+        .map((hit) => ({ name: hit.id, description: hit.description })),
+      total: hits.length,
+    },
+  });
+}
+
 function toolError(message: string): ToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
 }
@@ -181,6 +214,42 @@ export async function runCodeMode(
         if (payload.length > CODE_LIMITS.requestChars || !hasBoundedJsonShape(payload))
           throw new Error("Tool request exceeded its size or complexity limit");
         const request = requestSchema.parse(JSON.parse(payload));
+        const connection = request.connection;
+        if (connection) {
+          if (!tools.some((tool) => tool.name === "spec_invoke")) {
+            return {
+              serial: false,
+              async dispatch() {
+                return encodeReply({ error: "Spec tools are unavailable on this connection" });
+              },
+            };
+          }
+          return {
+            serial: request.operation === "call",
+            ...(request.operation === "call" ? { toolName: "spec_invoke" } : {}),
+            async dispatch() {
+              if (request.operation === "search")
+                return searchSpec(
+                  callTool,
+                  connection,
+                  request.name,
+                  request.args.limit,
+                  request.args.offset,
+                );
+              if (request.operation === "describe")
+                return asBridgeValue(
+                  await callTool("spec_describe", { connection, tool: request.name }),
+                );
+              return asBridgeValue(
+                await callTool("spec_invoke", {
+                  connection,
+                  tool: request.name,
+                  args: request.args,
+                }),
+              );
+            },
+          };
+        }
         const tool = tools.find((candidate) => candidate.name === request.name);
         return {
           serial: request.operation === "call" && !!tool && toolEffect(tool.name) === "write",

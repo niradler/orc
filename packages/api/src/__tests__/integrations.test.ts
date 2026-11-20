@@ -523,14 +523,16 @@ test("should use the same meta discovery and enabled Spec bindings for direct ca
     const described = await call("tool_describe", { connection: "page-fixture", name: "getPage" });
     expect(described.content[0].text).toContain("inputSchema");
     const scripted = await call("tool_execute", {
-      code: `const target = {connection: "page-fixture", tool: "getPage"};
-        const page = await tools.call("spec_invoke", target);
+      code: `const target = {connection: "page-fixture"};
+        const hits = await tools.search("getPage", target);
+        const tool = await tools.describe(hits.tools[0].name, target);
+        const page = await tools.call(tool.id, {}, target);
         return page.body.match(/<title>([^<]*)<\\/title>/)?.[1];`,
     });
     expect(scripted.structuredContent.result).toBe("Fixture release notes");
     expect(JSON.stringify(scripted)).not.toContain("omit this page body");
     const denied = await call("tool_execute", {
-      code: 'return await tools.call("spec_invoke", {connection:"page-fixture",tool:"disabledPage"});',
+      code: 'return await tools.call("disabledPage", {}, {connection:"page-fixture"});',
     });
     expect(denied.isError).toBe(true);
   } finally {
