@@ -33,7 +33,9 @@ and after the question; a secret answer is recorded as hidden, never as its
 value. **Dismiss** skips the question without inventing an answer and lets the
 agent continue, keeping the conversation open;
 [Connect agents](./connect-agents.md#capabilities-and-direct-acp)
-lists what each agent receives. Cancelling a pending request from
+lists what each agent receives. Answering from the inbox instead delivers the
+response to the agent but does not add a message to the chat transcript; the
+inbox keeps its own record of the answer. Cancelling a pending request from
 the inbox instead withdraws it, and a managed agent waiting on that request stops.
 
 ![Chat question card with suggestions, a custom answer field and Dismiss](/screens/chat-question-card-desktop.png)

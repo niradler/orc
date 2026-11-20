@@ -6,7 +6,7 @@ import type {
   ChannelSend,
   ChannelView,
 } from "@orc/core/channels";
-import type { ChatHistoryPage, ChatModels, ChatThread } from "@orc/core/chat";
+import type { ChatHistoryPage, ChatMessage, ChatModels, ChatThread } from "@orc/core/chat";
 import type { ChatAnalytics } from "@orc/core/chat-analytics";
 import type { TerminalLaunchOptions } from "@orc/core/chat-options";
 import type { PreviewFile, PreviewRequest } from "@orc/core/desktop-preview";
@@ -943,7 +943,7 @@ export const api = {
         ...(feedback ? { feedback } : {}),
       }),
     answer: (runId: string, requestId: string, answers: Record<string, string[]>) =>
-      req<{ ok: boolean; message: import("@orc/core/chat").ChatMessage }>(
+      req<{ ok: boolean; message: ChatMessage }>(
         "POST",
         `/chat/runs/${encodeURIComponent(runId)}/answer`,
         {

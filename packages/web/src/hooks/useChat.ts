@@ -14,6 +14,7 @@ import {
   type ChatThread,
   type ChatTurn,
   type ChatWorkspace,
+  ownsChatActivity,
 } from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
 import { projectForFolder } from "@orc/core/project-path";
@@ -442,12 +443,17 @@ function useChatController() {
         }));
       else if (event.type === "permission_request")
         update(key, (tab) => ({
-          permissions: [...tab.permissions, event.data],
+          // A reattach re-emits still-pending prompts; never stack duplicate cards.
+          permissions: tab.permissions.some((request) => request.requestId === event.data.requestId)
+            ? tab.permissions
+            : [...tab.permissions, event.data],
           attention: tab.attention || background,
         }));
       else if (event.type === "question_request")
         update(key, (tab) => ({
-          questions: [...tab.questions, event.data],
+          questions: tab.questions.some((request) => request.requestId === event.data.requestId)
+            ? tab.questions
+            : [...tab.questions, event.data],
           attention: tab.attention || background,
         }));
       else if (event.type === "request_resolved")
@@ -458,7 +464,28 @@ function useChatController() {
       else if (event.type === "interjection")
         update(key, (tab) => withInterjection(tab, event.message));
       else if (event.type !== "done")
-        update(key, (tab) => ({ activity: appendChatActivity(tab.activity, event) }));
+        update(key, (tab) => {
+          // A stateful update (tool result, plan, subagent) belongs to the segment
+          // that owns the entry — a sealed segment above an interjection, not a
+          // nameless stub in the live continuation.
+          if (!ownsChatActivity(tab.activity, event)) {
+            const owner = [...tab.messages]
+              .reverse()
+              .find(
+                (message) =>
+                  message.role === "assistant" && ownsChatActivity(message.activity, event),
+              );
+            if (owner)
+              return {
+                messages: tab.messages.map((message) =>
+                  message.id === owner.id
+                    ? { ...message, activity: appendChatActivity(message.activity ?? [], event) }
+                    : message,
+                ),
+              };
+          }
+          return { activity: appendChatActivity(tab.activity, event) };
+        });
     },
     [update],
   );
@@ -671,6 +698,19 @@ function useChatController() {
             retried = true;
             failures++;
             update(key, () => ({ reconnecting: true }));
+            // A replay cutoff hides pre-interjection prose: refresh the stored
+            // snapshot so a missed seal or human message is restored before the
+            // live continuation reattaches.
+            const snapshot = await api.chat.get(threadId).catch(() => null);
+            if (!current() || stream.controller.signal.aborted) return true;
+            if (snapshot)
+              update(key, (tab) => ({
+                thread: snapshot,
+                messages: mergeLoadedHistory(tab.messages, snapshot.messages),
+                historyBefore: snapshot.historyBefore ?? null,
+                streamText: "",
+                activity: [],
+              }));
             // Never repeat POST /chat/stream: it may already have started a turn.
             connect = (signal) =>
               fetch(`${getApiUrl()}/chat/threads/${encodeURIComponent(threadId)}/live`, {
@@ -1335,7 +1375,8 @@ function useChatController() {
             ? previous.requestId
             : crypto.randomUUID();
         steeringRequest.current = { key, runId: current.runId, input, requestId };
-        const thread = await api.chat.steer(current.runId, input, requestId);
+        const runId = current.runId;
+        const thread = await api.chat.steer(runId, input, requestId);
         steeringRequest.current = null;
         const delivered = thread.messages.find((message) => message.id === requestId) ?? {
           id: requestId,
@@ -1343,21 +1384,30 @@ function useChatController() {
           content: input,
           timestamp: Date.now(),
         };
-        update(key, (tab) =>
-          tab.thread?.id === thread.id
-            ? {
-                thread,
-                error: null,
-                draft: tab.draft === input ? "" : tab.draft,
-                ...withInterjection(tab, delivered),
-              }
-            : { error: null, draft: tab.draft === input ? "" : tab.draft },
-        );
+        const tab = find(key);
+        if (tab?.thread?.id === thread.id && tab.runId === runId && tab.streaming)
+          update(key, (fresh) => ({
+            thread,
+            error: null,
+            draft: fresh.draft === input ? "" : fresh.draft,
+            ...withInterjection(fresh, delivered),
+          }));
+        else {
+          // The turn ended (or another started) while delivery was in flight: the
+          // stored thread owns the order now, and splitting the live buffer would
+          // misplace the message. Reconcile from storage instead.
+          update(key, (fresh) => ({
+            error: null,
+            draft: fresh.draft === input ? "" : fresh.draft,
+          }));
+          void syncThread(key);
+        }
         return "steered";
       } catch (cause) {
         // A plain conflict means the turn cannot take the message: queueing is safe.
         // An unconfirmed steer may already be in the conversation, so resending it
-        // would duplicate both the text and the turn.
+        // would duplicate both the text and the turn. A refused steer's local split
+        // (the dispatch event arrived before the refusal) reconciles at turn end.
         if (cause instanceof ApiError && cause.status === 409 && cause.code !== STEER_UNCONFIRMED)
           return "unavailable";
         update(key, () => ({
@@ -1368,7 +1418,7 @@ function useChatController() {
         setResponding(false);
       }
     },
-    [find, update],
+    [find, update, syncThread],
   );
   /** Enter/Send: steer the live turn or queue, following the chat's send preference. */
   const deliver = useCallback(
@@ -1432,22 +1482,24 @@ function useChatController() {
       if (!current || !pending || responding) return;
       setResponding(true);
       try {
-        const { message: recorded } = await api.chat.answer(
-          current.runId,
-          pending.requestId,
-          answers,
-        );
-        update(key, (tab) => ({
-          questions: tab.questions.filter((request) => request.requestId !== pending.requestId),
-          ...withInterjection(tab, recorded),
+        const runId = current.runId;
+        const { message: recorded } = await api.chat.answer(runId, pending.requestId, answers);
+        const tab = find(key);
+        const live = tab?.runId === runId && tab.streaming;
+        update(key, (fresh) => ({
+          questions: fresh.questions.filter((request) => request.requestId !== pending.requestId),
+          ...(live ? withInterjection(fresh, recorded) : {}),
         }));
+        // A response processed after the turn ended must not split the finished
+        // transcript (or the next turn's buffer); the stored thread owns the order.
+        if (!live) void syncThread(key);
       } catch (cause) {
         update(key, () => ({ error: message(cause, "Answer could not be sent.") }));
       } finally {
         setResponding(false);
       }
     },
-    [responding, update, find],
+    [responding, update, find, syncThread],
   );
   // While the agent is responding the change goes to the live run, which approves prompts
   // the new mode would not ask for; otherwise it applies to the next message.

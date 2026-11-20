@@ -46,6 +46,41 @@ describe("chatAnswerText", () => {
     expect(chatAnswerText(question, { color: [CHAT_QUESTION_DISMISS_ANSWER] })).toBe(
       "Choose a color: (dismissed)",
     );
+    // Dismissing is the user's own action, so it reads even for a secret question.
+    expect(
+      chatAnswerText(
+        {
+          requestId: "question-5",
+          questions: [{ id: "token", header: "Token", question: "API token", isSecret: true }],
+        },
+        { token: [CHAT_QUESTION_DISMISS_ANSWER] },
+      ),
+    ).toBe("API token: (dismissed)");
+    // Alongside real values the sentinel is dropped, not hiding the selection.
+    expect(
+      chatAnswerText(
+        {
+          requestId: "question-6",
+          questions: [
+            { id: "colors", header: "Colors", question: "Choose colors", multiSelect: true },
+          ],
+        },
+        { colors: [CHAT_QUESTION_DISMISS_ANSWER, "Red"] },
+      ),
+    ).toBe("Choose colors: Red");
+  });
+
+  test("clipping a long label never splits a surrogate pair", () => {
+    const label = `${"a".repeat(196)}🎨${"b".repeat(10)}`;
+    const text = chatAnswerText(
+      { requestId: "question-7", questions: [{ id: "q", header: "Q", question: label }] },
+      { q: ["yes"] },
+    );
+    expect(text).toContain("🎨");
+    expect(text.endsWith(": yes")).toBe(true);
+    expect(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(text),
+    ).toBe(false);
   });
 
   test("long or multiline questions stay a single clipped line", () => {

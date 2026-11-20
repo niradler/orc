@@ -77,22 +77,31 @@ export const ChatAnswersSchema = z
 /**
  * The transcript record of a question answer: one readable line per question.
  * Secret answers never enter the stored conversation, and a dismissal reads as
- * the user's choice, not the instruction the agent receives.
+ * the user's choice, not the instruction the agent receives. Dismissing is the
+ * user's own action, so a sole dismissal reads "(dismissed)" even for a secret
+ * question; alongside real values the sentinel is dropped and the values show.
+ * Question labels are agent-controlled text stored under the user's role; the
+ * whitespace collapse keeps them from forging extra transcript lines.
  */
 export function chatAnswerText(question: ChatQuestion, answers: Record<string, string[]>): string {
   return question.questions
     .map((entry) => {
       const label = (entry.question || entry.header).replace(/\s+/g, " ").trim();
       const values = answers[entry.id] ?? [];
-      const text = entry.isSecret
-        ? "(hidden)"
-        : values.includes(CHAT_QUESTION_DISMISS_ANSWER)
+      const text =
+        values.length === 1 && values[0] === CHAT_QUESTION_DISMISS_ANSWER
           ? "(dismissed)"
-          : values
-              .map((value) => value.replace(/\s+/g, " ").trim())
-              .filter(Boolean)
-              .join(", ");
-      return `${label.length > 200 ? `${label.slice(0, 197)}…` : label}: ${text || "(no answer)"}`;
+          : entry.isSecret
+            ? "(hidden)"
+            : values
+                .filter((value) => value !== CHAT_QUESTION_DISMISS_ANSWER)
+                .map((value) => value.replace(/\s+/g, " ").trim())
+                .filter(Boolean)
+                .join(", ");
+      // Clip by code point so a label never ends in half a surrogate pair.
+      const chars = Array.from(label);
+      const clipped = chars.length > 200 ? `${chars.slice(0, 197).join("")}…` : label;
+      return `${clipped}: ${text || "(no answer)"}`;
     })
     .join("\n");
 }
@@ -788,6 +797,22 @@ function mergeChatPlan(activity: ChatActivity[], incoming: ChatPlanPayload): Cha
   const next = [...activity];
   next[at] = { type: "plan", id: current.id, ...(title ? { title } : {}), entries: merged };
   return next;
+}
+
+/**
+ * Whether an activity list holds the entry a stateful event updates. A seal splits
+ * the turn's activity across segments; results, plan snapshots and subagent status
+ * must route to the segment that owns the entry instead of orphaning it above the
+ * interjection and synthesizing a nameless stub below.
+ */
+export function ownsChatActivity(activity: ChatActivity[] | undefined, event: ChatEvent): boolean {
+  if (!activity?.length) return false;
+  if (event.type === "tool_result")
+    return activity.some((item) => item.type === "tool" && item.id === event.data.toolUseId);
+  if (event.type === "subagent")
+    return activity.some((item) => item.type === "subagent" && item.id === event.data.id);
+  if (event.type === "plan") return activity.some((item) => item.type === "plan");
+  return false;
 }
 
 export function appendChatActivity(activity: ChatActivity[], event: ChatEvent): ChatActivity[] {

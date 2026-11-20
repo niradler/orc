@@ -44,6 +44,15 @@ describe("withInterjection", () => {
     expect(empty.messages.map((message) => message.role)).toEqual(["user", "user"]);
   });
 
+  test("the sealed segment carries the turn's agent and model", () => {
+    const change = withInterjection(
+      state({ streamText: "Part one.", thread: { config: { model: "gpt-fixture" } } }),
+      answer,
+    );
+    expect(change.messages[1]?.agent).toBe("codex");
+    expect(change.messages[1]?.model).toBe("gpt-fixture");
+  });
+
   test("the event and the HTTP response split only once, whichever arrives first", () => {
     const first = withInterjection(state({ streamText: "Part one." }), answer);
     const next = state({

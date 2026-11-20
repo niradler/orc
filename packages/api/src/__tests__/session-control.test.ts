@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -180,6 +180,22 @@ afterAll(() => {
 });
 
 describe("agent session control", () => {
+  afterEach(async () => {
+    for (const turn of turns) turn.release();
+    // An outcome notification whose steer target was already ending is refused and
+    // queues behind the finalizer, then arrives as its own turn. Sweep until a pass
+    // starts nothing, releasing every turn, so no gated turn leaks into the next test.
+    for (let pass = 0; pass < 10; pass++) {
+      const before = turns.length;
+      const swept = deliverIdleSessionMessages();
+      const releaser = setInterval(() => {
+        for (const turn of turns.slice(before)) turn.release();
+      }, 10);
+      await swept;
+      clearInterval(releaser);
+      if (turns.length === before) break;
+    }
+  });
   test("should spawn a child in the parent's folder, steer it, and push its result back into the busy parent", async () => {
     const parent = await startParent("parent: coordinate the work", repo);
     const parentTurn = await turnFor("parent: coordinate");

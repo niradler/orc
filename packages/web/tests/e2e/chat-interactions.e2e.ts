@@ -26,7 +26,7 @@ for (const width of [390, 1440]) {
       updatedAt: Date.now(),
     };
     await page.addInitScript(
-      ({ thread }) => {
+      ({ thread, dismissAnswer }) => {
         const original = window.fetch.bind(window);
         const encoder = new TextEncoder();
         let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -96,21 +96,48 @@ for (const width of [390, 1440]) {
           }
           if (url.pathname.endsWith("/answer")) {
             state.answer = JSON.parse(String(init?.body));
+            const answers = (state.answer.answers ?? {}) as Record<string, string[]>;
+            const line = (id: string, label: string) => {
+              const values = answers[id] ?? [];
+              const text = values.includes(dismissAnswer)
+                ? "(dismissed)"
+                : values.join(", ") || "(no answer)";
+              return `${label}: ${text}`;
+            };
+            const message = {
+              id: "answer-message",
+              role: "user" as const,
+              content: [line("color", "Choose a color"), line("colors", "Choose colors")].join(
+                "\n",
+              ),
+              timestamp: Date.now(),
+            };
+            thread.messages.push(message);
+            emit({ type: "interjection", message });
+            emit({
+              type: "thread",
+              thread: { ...thread, messages: thread.messages.slice(-1) },
+              runId: "10000000-0000-4000-8000-000000000002",
+            });
+            emit({ type: "turn", turn: { startedAt: Date.now() } });
             emit({ type: "request_resolved", requestId: "question-1" });
             emit({ type: "text", text: "Blue accepted" });
             emit({ type: "session", runtimeId: thread.runtimeId });
             emit({ type: "done" });
             stream?.close();
-            thread.messages = [
-              { id: "answer", role: "assistant", content: "Blue accepted", timestamp: Date.now() },
-            ];
-            return Response.json({ ok: true });
+            thread.messages.push({
+              id: "answer",
+              role: "assistant",
+              content: "Blue accepted",
+              timestamp: Date.now(),
+            });
+            return Response.json({ ok: true, message });
           }
           if (url.pathname === `/api/chat/threads/${thread.id}`) return Response.json(thread);
           return original(input, init);
         };
       },
-      { thread },
+      { thread, dismissAnswer: CHAT_QUESTION_DISMISS_ANSWER },
     );
     await page.route("**/api/chat/models?**", (route) =>
       route.fulfill({ json: { models: [], warning: null } }),
@@ -205,6 +232,8 @@ for (const width of [390, 1440]) {
       requestId: "question-1",
       answers: { color: ["Blue"], colors: ["Red", "Blue"] },
     });
+    // The answer recorded cleanly: no error banner behind the vanished form.
+    await expect(page.getByTestId("chat-error")).toHaveCount(0);
     await openChatActions(page);
     const toTerminal = page.getByTestId("chat-continue-terminal").filter({ visible: true });
     await expect(toTerminal).toHaveAttribute("aria-label", "Continue in terminal");
@@ -341,7 +370,7 @@ for (const width of [390, 1440]) {
           return original(input, init);
         };
       },
-      { thread },
+      { thread, dismissAnswer: CHAT_QUESTION_DISMISS_ANSWER },
     );
     await page.route("**/api/chat/models?**", (route) =>
       route.fulfill({ json: { models: [], warning: null } }),
@@ -401,7 +430,7 @@ for (const width of [390, 1440]) {
       updatedAt: Date.now(),
     };
     await page.addInitScript(
-      ({ thread }) => {
+      ({ thread, dismissAnswer }) => {
         const original = window.fetch.bind(window);
         const encoder = new TextEncoder();
         let stream: ReadableStreamDefaultController<Uint8Array> | undefined;
@@ -455,26 +484,48 @@ for (const width of [390, 1440]) {
           }
           if (url.pathname.endsWith("/answer")) {
             state.answer = JSON.parse(String(init?.body));
+            const answers = (state.answer.answers ?? {}) as Record<string, string[]>;
+            const line = (id: string, label: string) => {
+              const values = answers[id] ?? [];
+              const text = values.includes(dismissAnswer)
+                ? "(dismissed)"
+                : values.join(", ") || "(no answer)";
+              return `${label}: ${text}`;
+            };
+            const message = {
+              id: "dismiss-message",
+              role: "user" as const,
+              content: [line("color", "Choose a color"), line("colors", "Choose colors")].join(
+                "\n",
+              ),
+              timestamp: Date.now(),
+            };
+            thread.messages.push(message);
+            emit({ type: "interjection", message });
+            emit({
+              type: "thread",
+              thread: { ...thread, messages: thread.messages.slice(-1) },
+              runId: "10000000-0000-4000-8000-000000000012",
+            });
+            emit({ type: "turn", turn: { startedAt: Date.now() } });
             emit({ type: "request_resolved", requestId: "question-dismiss-1" });
             emit({ type: "text", text: "Continuing without an answer" });
             emit({ type: "session", runtimeId: thread.runtimeId });
             emit({ type: "done" });
             stream?.close();
-            thread.messages = [
-              {
-                id: "dismissed",
-                role: "assistant",
-                content: "Continuing without an answer",
-                timestamp: Date.now(),
-              },
-            ];
-            return Response.json({ ok: true });
+            thread.messages.push({
+              id: "dismissed",
+              role: "assistant",
+              content: "Continuing without an answer",
+              timestamp: Date.now(),
+            });
+            return Response.json({ ok: true, message });
           }
           if (url.pathname === `/api/chat/threads/${thread.id}`) return Response.json(thread);
           return original(input, init);
         };
       },
-      { thread },
+      { thread, dismissAnswer: CHAT_QUESTION_DISMISS_ANSWER },
     );
     await page.route("**/api/chat/models?**", (route) =>
       route.fulfill({ json: { models: [], warning: null } }),
@@ -507,6 +558,7 @@ for (const width of [390, 1440]) {
         colors: [CHAT_QUESTION_DISMISS_ANSWER],
       },
     });
+    await expect(page.getByTestId("chat-error")).toHaveCount(0);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );

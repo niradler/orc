@@ -7,6 +7,7 @@ export interface InterjectionState {
   activity: ChatActivity[];
   assistantId: string;
   respondingAgent: string;
+  thread?: { config: { model?: ChatMessage["model"] } } | null;
 }
 
 export interface InterjectionChange {
@@ -38,6 +39,7 @@ export function withInterjection(tab: InterjectionState, message: ChatMessage): 
             activity: tab.activity,
             timestamp: Date.now(),
             agent: tab.respondingAgent,
+            ...(tab.thread?.config.model ? { model: tab.thread.config.model } : {}),
           },
         ]
       : [];

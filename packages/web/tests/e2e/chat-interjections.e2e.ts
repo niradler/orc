@@ -42,7 +42,7 @@ async function transcript(page: Page): Promise<{ role: string; text: string }[]>
 async function installInterjectionFixture(
   page: Page,
   thread: ChatThread,
-  kind: "steer" | "question",
+  kind: "steer" | "question" | "late-answer",
 ) {
   await page.addInitScript(
     ({ thread, kind }) => {
@@ -57,12 +57,15 @@ async function installInterjectionFixture(
       const persist = () =>
         localStorage.setItem("interjection-fixture-thread", JSON.stringify(thread));
       const runId = "30000000-0000-4000-8000-000000000002";
-      const record = (message: {
-        id: string;
-        role: "user";
-        content: string;
-        timestamp: number;
-      }) => {
+      const record = (
+        message: {
+          id: string;
+          role: "user";
+          content: string;
+          timestamp: number;
+        },
+        announce = true,
+      ) => {
         // The server freezes the prose streamed so far before the human message.
         thread.messages.push({
           id: "segment-1",
@@ -72,12 +75,13 @@ async function installInterjectionFixture(
         });
         thread.messages.push(message);
         persist();
-        emit({ type: "interjection", message });
+        if (announce) emit({ type: "interjection", message });
         emit({
           type: "thread",
           thread: { ...thread, messages: thread.messages.slice(-1) },
           runId,
         });
+        emit({ type: "turn", turn: { startedAt: Date.now() - 1000 } });
       };
       const finishTurn = (reply: string) => {
         emit({ type: "text", text: reply });
@@ -116,7 +120,7 @@ async function installInterjectionFixture(
                 emit({ type: "thread", thread, runId });
                 emit({ type: "capabilities", capabilities: thread.capabilities });
                 emit({ type: "text", text: "Part one." });
-                if (kind === "question") {
+                if (kind !== "steer") {
                   emit({
                     type: "question_request",
                     data: {
@@ -155,6 +159,17 @@ async function installInterjectionFixture(
             content: "Choose a color: Blue",
             timestamp: Date.now(),
           };
+          if (kind === "late-answer") {
+            // The client misses the interjection event (a reconnect raced it) and
+            // the turn ends before the HTTP response lands: only the stored thread
+            // can restore the order, so the response must not split the finished
+            // transcript on its own.
+            record(message, false);
+            emit({ type: "request_resolved", requestId: "question-1" });
+            finishTurn("Blue accepted.");
+            await new Promise((resolve) => setTimeout(resolve, 400));
+            return Response.json({ ok: true, message });
+          }
           record(message);
           emit({ type: "request_resolved", requestId: "question-1" });
           setTimeout(() => finishTurn("Blue accepted."), 300);
@@ -189,7 +204,7 @@ function fixtureThread(id: string, title: string): ChatThread {
 }
 
 for (const width of [390, 1440]) {
-  test(`a steered message keeps its place in the stream at ${width}px`, async ({
+  test(`a steered message keeps its place in the stream at ${width}px @sanity`, async ({
     page,
     request,
   }, testInfo) => {
@@ -235,7 +250,7 @@ for (const width of [390, 1440]) {
       .toBe("Implement the change | Part one. | Focus on tests | Part two.");
   });
 
-  test(`a question answer stays visible in the chat at ${width}px`, async ({
+  test(`a question answer stays visible in the chat at ${width}px @sanity`, async ({
     page,
     request,
   }, testInfo) => {
@@ -274,3 +289,40 @@ for (const width of [390, 1440]) {
       .toBe("Pick a color | Part one. | Choose a color: Blue | Blue accepted.");
   });
 }
+
+test("a late answer response reconciles from the stored transcript @sanity", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({ agent: "codex", model: "" }) },
+  });
+  const thread = fixtureThread("30000000-0000-4000-8000-000000000005", "Late answer");
+  await installInterjectionFixture(page, thread, "late-answer");
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [], warning: null } }),
+  );
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoView(page, "tasks");
+  await page.goto("/tasks?chat=open");
+  const input = page.getByTestId("chat-input").filter({ visible: true });
+  await input.fill("Pick a color");
+  await page.getByTestId("chat-send-button").filter({ visible: true }).click();
+  await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeVisible();
+  await page.getByTestId("chat-question-answer").filter({ visible: true }).first().fill("Blue");
+  await page.getByTestId("chat-question-submit").filter({ visible: true }).click();
+  await expect(page.getByTestId("chat-question")).toHaveCount(0);
+  await expect(page.getByTestId("chat-panel")).toHaveAttribute("data-streaming", "false");
+  // The HTTP response lands after the turn ended and its split event was missed:
+  // the stored order must win over appending the answer below the finished reply.
+  await expect
+    .poll(async () => (await transcript(page)).map((entry) => `${entry.role}: ${entry.text}`))
+    .toEqual([
+      "user: Pick a color",
+      "assistant: Part one.",
+      "user: Choose a color: Blue",
+      "assistant: Blue accepted.",
+    ]);
+  await expect(page.getByTestId("chat-error")).toHaveCount(0);
+});
