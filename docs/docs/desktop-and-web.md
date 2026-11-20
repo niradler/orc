@@ -649,6 +649,14 @@ Finished turns fold tool calls and intermediate narration into one expandable li
 your message and the final reply remain visible. Expand it to inspect file diffs,
 commands and output, reads, and searches. Failed tools stay marked.
 
+A turn can contain several assistant messages: steering a running reply or
+answering its question keeps the response so far as its own message above your
+input, and the agent's continuation streams below it. The turn's duration,
+outcome and token figure belong to its final message; earlier segments carry
+only the work they streamed. Transcripts therefore read in the order things
+happened, and a consumer parsing them must not assume one assistant message
+per user message.
+
 A turn with more than 80 activities expands to its newest 80 and offers
 **Show all N activities**; the folded line still counts every item, failures
 beyond that window included. An activity kind this build does not know appears
