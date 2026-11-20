@@ -18,10 +18,13 @@ import {
   createBackend,
   registerBackend,
   type SessionOpts,
+  SteerNotConsumedError,
 } from "@orc/agent-runtime";
 import {
+  CHAT_QUESTION_DISMISS_ANSWER,
   type ChatEvent,
   ChatHistoryPageSchema,
+  type ChatMessage,
   type ChatThread,
   ChatThreadSchema,
 } from "@orc/core/chat";
@@ -54,6 +57,13 @@ let manyOptions = false;
 const nativeSteers: string[] = [];
 let steeringFailure = false;
 let steeringDelay = 0;
+const steerDelayByPrompt = new Map<string, number>();
+let steerRefused = false;
+let steerAfterClose = false;
+let answerAfterClose = false;
+let closeGate: (() => void) | undefined;
+let completeHungTool = false;
+let parallelRequests = false;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
 let failedTurn = false;
@@ -77,6 +87,14 @@ function session(call: (typeof calls)[number]): AgentSession {
   const permission = new Promise<void>((done) => {
     resolve = done;
   });
+  let resolveQuestion: (() => void) | undefined;
+  const questionPermission = new Promise<void>((done) => {
+    resolveQuestion = done;
+  });
+  let resolveSteerSeen: (() => void) | undefined;
+  const steerSeen = new Promise<void>((done) => {
+    resolveSteerSeen = done;
+  });
   const s: AgentSession = {
     id: "fixture",
     capabilities:
@@ -85,8 +103,13 @@ function session(call: (typeof calls)[number]): AgentSession {
         : CODEX_CAPABILITIES,
     steer: async (prompt) => {
       nativeSteers.push(prompt);
-      if (steeringDelay) await Bun.sleep(steeringDelay);
+      resolveSteerSeen?.();
+      const delay = steerDelayByPrompt.get(prompt) ?? steeringDelay;
+      if (delay) await Bun.sleep(delay);
+      if (steerRefused) throw new SteerNotConsumedError();
       if (steeringFailure) throw new Error("fixture uncertain delivery");
+      // A late acknowledgement: the turn may already have ended when this resolves.
+      if (steerAfterClose) await new Promise<void>((done) => (closeGate = done));
       call.prompt = prompt;
     },
     getRuntimeSessionId: () => (waitPermission || noResumable ? "early-native-fixture" : undefined),
@@ -105,14 +128,18 @@ function session(call: (typeof calls)[number]): AgentSession {
         resolve?.();
       }
     },
-    respondQuestion: (_id, answers) => {
+    respondQuestion: async (_id, answers) => {
       questionAnswers = answers;
+      if (answerAfterClose) await new Promise<void>((done) => (closeGate = done));
       resolve?.();
+      resolveQuestion?.();
     },
     alive: () => true,
     close: async () => {
       closed++;
       resolve?.();
+      resolveQuestion?.();
+      closeGate?.();
     },
     async *events(): AsyncIterable<AgentEvent> {
       if (hangTurn === "silent") {
@@ -133,10 +160,29 @@ function session(call: (typeof calls)[number]): AgentSession {
         return;
       }
       if (hangTurn === "tool") {
+        yield { type: "thinking", data: "Visible provider reasoning summary" };
+        if (narrateBeforeTool) yield { type: "text", data: "First I will inspect the workspace." };
         yield {
           type: "tool_use",
           data: { id: "tool-hang", name: "shell", input: '{"command":"ci"}' },
         };
+        if (completeHungTool) {
+          // The tool finishes while the turn is live: a Stop would drain the
+          // remaining events without emitting them.
+          await steerSeen;
+          yield {
+            type: "permission_request",
+            data: { requestId: "permission-tool", tool: "shell", command: "ci" },
+          };
+          await permission;
+          yield {
+            type: "tool_result",
+            data: { toolUseId: "tool-hang", content: "build ok", isError: false },
+          };
+          yield { type: "text", data: "Build finished." };
+          yield { type: "result", data: { runtimeSessionId: call.id ?? "native-fixture" } };
+          return;
+        }
         await permission;
         return;
       }
@@ -160,6 +206,27 @@ function session(call: (typeof calls)[number]): AgentSession {
         type: "tool_use",
         data: { id: "tool-1", name: "context", input: '{"project":"orc"}' },
       };
+      if (parallelRequests) {
+        yield {
+          type: "permission_request",
+          data: { requestId: "permission-1", tool: "context", command: "Read context" },
+        };
+        yield {
+          type: "question_request",
+          data: {
+            requestId: "question-1",
+            questions: [
+              {
+                id: "choice",
+                header: "Choose",
+                question: "Choose a color",
+                options: [{ label: "Blue", description: "Blue color" }],
+              },
+            ],
+          },
+        };
+        await Promise.all([permission, questionPermission]);
+      }
       if (waitPermission) {
         yield {
           type: "permission_request",
@@ -2636,6 +2703,16 @@ test("steering enters the active native session and persists the message without
     expect(saved.messages.some((m: { content: string }) => m.content === "focus on tests")).toBe(
       true,
     );
+    // The unconfirmed steer keeps its place after the prose streamed before it.
+    const uncertainAt = saved.messages.findIndex((message) => message.id === uncertainId);
+    expect(uncertainAt).toBeGreaterThan(1);
+    expect(saved.messages.filter((message) => message.id === uncertainId)).toHaveLength(1);
+    expect(saved.messages[1]?.role).toBe("assistant");
+    expect(
+      saved.messages[uncertainAt]?.activity?.some(
+        (item) => item.type === "status" && item.text.includes("Delivery unconfirmed"),
+      ),
+    ).toBe(true);
     await request(`/chat/runs/${started.runId}/cancel`, {});
     while (!(await reader.read()).done) {}
     expect(
@@ -2650,6 +2727,521 @@ test("steering enters the active native session and persists the message without
     hangTurn = undefined;
     steeringFailure = false;
     steeringDelay = 0;
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    await reader.cancel();
+    await Bun.sleep(10);
+  }
+});
+
+for (const scenario of ["plain", "secret", "dismissed"] as const) {
+  test(`a ${scenario} question answer stays in the transcript in order`, async () => {
+    waitQuestion = true;
+    secretQuestion = scenario === "secret";
+    const response = await request("/chat/stream", {
+      messages: [{ role: "user", content: `answer ${scenario}` }],
+    });
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No stream");
+    const decoder = new TextDecoder();
+    let text = "";
+    try {
+      while (!text.includes('"question_request"')) {
+        const part = await reader.read();
+        if (part.done) throw new Error("Ended before question");
+        text += decoder.decode(part.value);
+      }
+      const opened = text
+        .split("\n")
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => JSON.parse(line.slice(5)))
+        .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+      const answers = {
+        choice: [scenario === "dismissed" ? CHAT_QUESTION_DISMISS_ANSWER : "Blue"],
+      };
+      const answered = await request(`/chat/runs/${opened.runId}/answer`, {
+        requestId: "question-1",
+        answers,
+      });
+      expect(answered.status).toBe(200);
+      const body = (await answered.json()) as { ok: boolean; message: ChatMessage };
+      expect(body.ok).toBe(true);
+      expect(body.message.role).toBe("user");
+      expect(body.message.content).toBe(
+        scenario === "secret"
+          ? "Choose a color: (hidden)"
+          : scenario === "dismissed"
+            ? "Choose a color: (dismissed)"
+            : "Choose a color: Blue",
+      );
+      // Redaction applies to the transcript only: the agent receives the raw answer.
+      // Native delivery may run as an inbox background task, so assert after the drain.
+      while (true) {
+        const part = await reader.read();
+        if (part.done) break;
+        text += decoder.decode(part.value);
+      }
+      expect(questionAnswers).toEqual({
+        choice: [scenario === "dismissed" ? CHAT_QUESTION_DISMISS_ANSWER : "Blue"],
+      });
+      expect(text).toContain('"type":"interjection"');
+      const saved = ChatThreadSchema.parse(
+        await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+      );
+      const at = saved.messages.findIndex((message) => message.id === body.message.id);
+      expect(at).toBeGreaterThan(0);
+      // The work before the question is sealed above the answer; the reply follows it.
+      expect(saved.messages[at - 1]?.role).toBe("assistant");
+      expect(saved.messages[at]?.content).toBe(body.message.content);
+      const last = saved.messages.at(-1);
+      expect(last?.role).toBe("assistant");
+      expect(last?.content).toBe("Hello from the native session");
+      expect(last?.turn?.outcome).toBe("completed");
+      if (scenario === "secret") {
+        expect(JSON.stringify(saved.messages)).not.toContain("Blue");
+        const interjection = text
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => JSON.parse(line.slice(5)))
+          .find((event) => event.type === "interjection");
+        expect(interjection?.message.content).toBe("Choose a color: (hidden)");
+      }
+    } finally {
+      waitQuestion = false;
+      secretQuestion = false;
+      reader.releaseLock();
+    }
+  });
+}
+
+test("a steer splits the turn so the transcript keeps chronological order", async () => {
+  hangTurn = "tool";
+  narrateBeforeTool = true;
+  const response = await request("/chat/stream", {
+    agent: "codex",
+    messages: [{ role: "user", content: "working" }],
+  });
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes("tool_use")) {
+    const part = await reader.read();
+    if (part.done) throw new Error("stream ended");
+    text += decoder.decode(part.value);
+  }
+  const started = text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)))
+    .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+  const steeringId = crypto.randomUUID();
+  try {
+    const steered = await request(`/chat/runs/${started.runId}/steer`, {
+      input: "focus on tests",
+      requestId: steeringId,
+    });
+    expect(steered.status).toBe(200);
+    // A reattach replays only the live segment: the sealed prose is already stored.
+    const live = await request(`/chat/threads/${started.thread.id}/live`);
+    expect(live.status).toBe(200);
+    const liveReader = live.body?.getReader();
+    if (!liveReader) throw new Error("No live stream");
+    let replay = "";
+    while (!replay.includes('"type":"thread"')) {
+      const part = await liveReader.read();
+      if (part.done) throw new Error("Live stream ended early");
+      replay += decoder.decode(part.value);
+    }
+    expect(replay).toContain(started.runId);
+    expect(replay).not.toContain("First I will inspect the workspace.");
+    expect(replay).not.toContain('"type":"interjection"');
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    while (!(await reader.read()).done) {}
+    await liveReader.cancel();
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${started.thread.id}`)).json(),
+    );
+    expect(saved.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(saved.messages[1]?.content).toBe("First I will inspect the workspace.");
+    expect(saved.messages[2]?.id).toBe(steeringId);
+    expect(saved.messages[2]?.content).toBe("focus on tests");
+    expect(saved.messages.at(-1)?.turn?.outcome).toBe("stopped");
+  } finally {
+    hangTurn = undefined;
+    narrateBeforeTool = false;
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    await reader.cancel();
+    await Bun.sleep(10);
+  }
+});
+
+test("a steer confirming after the turn ended never duplicates the reply", async () => {
+  hangTurn = "tool";
+  narrateBeforeTool = true;
+  steerAfterClose = true;
+  const response = await request("/chat/stream", {
+    agent: "codex",
+    messages: [{ role: "user", content: "late ack" }],
+  });
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes("tool_use")) {
+    const part = await reader.read();
+    if (part.done) throw new Error("stream ended");
+    text += decoder.decode(part.value);
+  }
+  const started = text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)))
+    .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+  const steeringId = crypto.randomUUID();
+  try {
+    const steered = request(`/chat/runs/${started.runId}/steer`, {
+      input: "late ack steer",
+      requestId: steeringId,
+    });
+    // The dispatch is recorded; the acknowledgement waits until the turn closes.
+    await Bun.sleep(20);
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    expect((await steered).status).toBe(200);
+    while (!(await reader.read()).done) {}
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${started.thread.id}`)).json(),
+    );
+    const ids = saved.messages.map((message) => message.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(saved.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    expect(saved.messages[1]?.content).toBe("First I will inspect the workspace.");
+    expect(saved.messages[2]?.id).toBe(steeringId);
+    expect(saved.messages[2]?.activity).toBeUndefined();
+    expect(saved.messages.at(-1)?.turn?.outcome).toBe("stopped");
+  } finally {
+    hangTurn = undefined;
+    narrateBeforeTool = false;
+    steerAfterClose = false;
+    closeGate = undefined;
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    await reader.cancel();
+    await Bun.sleep(10);
+  }
+});
+
+test("an answer confirming while the turn ends is recorded exactly once", async () => {
+  waitQuestion = true;
+  answerAfterClose = true;
+  const response = await request("/chat/stream", {
+    agent: "codex",
+    messages: [{ role: "user", content: "late answer" }],
+  });
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes('"question_request"')) {
+    const part = await reader.read();
+    if (part.done) throw new Error("Ended before question");
+    text += decoder.decode(part.value);
+  }
+  const opened = text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)))
+    .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+  try {
+    const answered = request(`/chat/runs/${opened.runId}/answer`, {
+      requestId: "question-1",
+      answers: { choice: ["Blue"] },
+    });
+    await Bun.sleep(20);
+    await request(`/chat/runs/${opened.runId}/cancel`, {});
+    const result = await answered;
+    expect(result.status).toBe(200);
+    const body = (await result.json()) as { ok: boolean; message: ChatMessage };
+    expect(body.message.content).toBe("Choose a color: Blue");
+    while (!(await reader.read()).done) {}
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${opened.thread.id}`)).json(),
+    );
+    const ids = saved.messages.map((message) => message.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const recorded = saved.messages.filter((message) => message.id === body.message.id);
+    expect(recorded).toHaveLength(1);
+    const at = saved.messages.findIndex((message) => message.id === body.message.id);
+    // The work streamed before the answer stays above it, never duplicated below.
+    expect(saved.messages[at - 1]?.role).toBe("assistant");
+    const toolOwners = saved.messages.filter((message) =>
+      message.activity?.some((item) => item.type === "tool" && item.id === "tool-1"),
+    );
+    expect(toolOwners).toHaveLength(1);
+    expect(saved.messages.some((message) => message.turn?.outcome)).toBe(true);
+  } finally {
+    waitQuestion = false;
+    answerAfterClose = false;
+    closeGate = undefined;
+    await request(`/chat/runs/${opened.runId}/cancel`, {});
+    await reader.cancel();
+    await Bun.sleep(10);
+  }
+});
+
+test("a tool result after a steer updates the sealed segment instead of a nameless stub", async () => {
+  hangTurn = "tool";
+  narrateBeforeTool = true;
+  completeHungTool = true;
+  const response = await request("/chat/stream", {
+    agent: "codex",
+    messages: [{ role: "user", content: "long build" }],
+  });
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes("tool_use")) {
+    const part = await reader.read();
+    if (part.done) throw new Error("stream ended");
+    text += decoder.decode(part.value);
+  }
+  const started = text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)))
+    .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+  try {
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/steer`, {
+          input: "keep going",
+          requestId: crypto.randomUUID(),
+        })
+      ).status,
+    ).toBe(200);
+    // The running tool asks for approval; approving it delivers the result while
+    // the turn is still live, after the seal.
+    while (!text.includes('"permission_request"')) {
+      const part = await reader.read();
+      if (part.done) throw new Error("stream ended before the tool approval");
+      text += decoder.decode(part.value);
+    }
+    expect(
+      (
+        await request(`/chat/runs/${started.runId}/permission`, {
+          requestId: "permission-tool",
+          decision: "approved",
+        })
+      ).status,
+    ).toBe(200);
+    while (!(await reader.read()).done) {}
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${started.thread.id}`)).json(),
+    );
+    expect(saved.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+    ]);
+    const sealedTool = saved.messages[1]?.activity?.find(
+      (item) => item.type === "tool" && item.id === "tool-hang",
+    );
+    expect(sealedTool && "result" in sealedTool ? sealedTool.result : undefined).toBe("build ok");
+    expect(saved.messages.at(-1)?.content).toBe("Build finished.");
+    expect(saved.messages.at(-1)?.turn?.outcome).toBe("completed");
+    expect(JSON.stringify(saved.messages)).not.toContain('"name":"Tool"');
+  } finally {
+    hangTurn = undefined;
+    narrateBeforeTool = false;
+    completeHungTool = false;
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    await reader.cancel();
+    await Bun.sleep(10);
+  }
+});
+
+test("parallel steers keep dispatch order when acknowledgements resolve out of order", async () => {
+  hangTurn = "tool";
+  narrateBeforeTool = true;
+  steerDelayByPrompt.set("first steer", 40);
+  steerDelayByPrompt.set("second steer", 5);
+  const response = await request("/chat/stream", {
+    agent: "codex",
+    messages: [{ role: "user", content: "parallel order" }],
+  });
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes("tool_use")) {
+    const part = await reader.read();
+    if (part.done) throw new Error("stream ended");
+    text += decoder.decode(part.value);
+  }
+  const started = text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)))
+    .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+  const firstId = crypto.randomUUID();
+  const secondId = crypto.randomUUID();
+  try {
+    const first = request(`/chat/runs/${started.runId}/steer`, {
+      input: "first steer",
+      requestId: firstId,
+    });
+    await Bun.sleep(10);
+    const second = request(`/chat/runs/${started.runId}/steer`, {
+      input: "second steer",
+      requestId: secondId,
+    });
+    // The second acknowledgement resolves first; the transcript must not reorder.
+    expect((await Promise.all([first, second])).map((response) => response.status)).toEqual([
+      200, 200,
+    ]);
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    while (!(await reader.read()).done) {}
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${started.thread.id}`)).json(),
+    );
+    expect(saved.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "user",
+      "user",
+      "assistant",
+    ]);
+    expect(saved.messages[1]?.content).toBe("First I will inspect the workspace.");
+    expect(saved.messages[2]?.id).toBe(firstId);
+    expect(saved.messages[3]?.id).toBe(secondId);
+  } finally {
+    hangTurn = undefined;
+    narrateBeforeTool = false;
+    steerDelayByPrompt.clear();
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    await reader.cancel();
+    await Bun.sleep(10);
+  }
+});
+
+test("a reattach re-emits a permission still pending after an interjection", async () => {
+  parallelRequests = true;
+  const response = await request("/chat/stream", {
+    agent: "codex",
+    messages: [{ role: "user", content: "two prompts" }],
+  });
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes('"question_request"')) {
+    const part = await reader.read();
+    if (part.done) throw new Error("Ended before prompts");
+    text += decoder.decode(part.value);
+  }
+  const opened = text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)))
+    .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+  try {
+    expect(
+      (
+        await request(`/chat/runs/${opened.runId}/answer`, {
+          requestId: "question-1",
+          answers: { choice: ["Blue"] },
+        })
+      ).status,
+    ).toBe(200);
+    // The interjection advanced the replay cutoff past both prompt events; the
+    // permission is still pending and must reach a reattaching client.
+    const live = await request(`/chat/threads/${opened.thread.id}/live`);
+    expect(live.status).toBe(200);
+    const liveReader = live.body?.getReader();
+    if (!liveReader) throw new Error("No live stream");
+    let replay = "";
+    while (!replay.includes('"permission_request"')) {
+      const part = await liveReader.read();
+      if (part.done) throw new Error("Live stream ended before the pending permission");
+      replay += decoder.decode(part.value);
+    }
+    expect(replay).toContain("permission-1");
+    expect(replay).not.toContain('"question_request"');
+    await liveReader.cancel();
+    expect(
+      (
+        await request(`/chat/runs/${opened.runId}/permission`, {
+          requestId: "permission-1",
+          decision: "approved",
+        })
+      ).status,
+    ).toBe(200);
+    while (!(await reader.read()).done) {}
+  } finally {
+    parallelRequests = false;
+    await request(`/chat/runs/${opened.runId}/cancel`, {});
+    await reader.cancel();
+    await Bun.sleep(10);
+  }
+});
+
+test("a refused steer leaves no trace in the transcript", async () => {
+  hangTurn = "tool";
+  narrateBeforeTool = true;
+  steerRefused = true;
+  const response = await request("/chat/stream", {
+    agent: "codex",
+    messages: [{ role: "user", content: "refused steer" }],
+  });
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes("tool_use")) {
+    const part = await reader.read();
+    if (part.done) throw new Error("stream ended");
+    text += decoder.decode(part.value);
+  }
+  const started = text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)))
+    .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+  const steeringId = crypto.randomUUID();
+  try {
+    const refused = await request(`/chat/runs/${started.runId}/steer`, {
+      input: "refused text",
+      requestId: steeringId,
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code?: string }).code).not.toBe("STEER_UNCONFIRMED");
+    // The dispatch split is undone: no phantom message, no orphaned segment.
+    const midTurn = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${started.thread.id}`)).json(),
+    );
+    expect(midTurn.messages.map((message) => message.role)).toEqual(["user"]);
+    await request(`/chat/runs/${started.runId}/cancel`, {});
+    while (!(await reader.read()).done) {}
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${started.thread.id}`)).json(),
+    );
+    expect(saved.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(saved.messages[1]?.content).toBe("First I will inspect the workspace.");
+    expect(saved.messages.some((message) => message.id === steeringId)).toBe(false);
+  } finally {
+    hangTurn = undefined;
+    narrateBeforeTool = false;
+    steerRefused = false;
     await request(`/chat/runs/${started.runId}/cancel`, {});
     await reader.cancel();
     await Bun.sleep(10);

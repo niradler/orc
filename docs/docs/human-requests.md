@@ -27,10 +27,15 @@ Private questions and prompts that cannot be represented in the inbox show a
 generic notice linking to the original chat. Their contents remain in that chat.
 
 In chat, the question card lists the agent's suggestions plus a field for your
-own answer; **Send answer** needs an answer for every question. **Dismiss** skips
-the question without inventing an answer and lets the agent continue, keeping the
-conversation open; [Connect agents](./connect-agents.md#capabilities-and-direct-acp)
-lists what each agent receives. Cancelling a pending request from
+own answer; **Send answer** needs an answer for every question. The answer stays
+in the conversation as your message, in place between the agent's work before
+and after the question; a secret answer is recorded as hidden, never as its
+value. **Dismiss** skips the question without inventing an answer and lets the
+agent continue, keeping the conversation open;
+[Connect agents](./connect-agents.md#capabilities-and-direct-acp)
+lists what each agent receives. Answering from the inbox instead delivers the
+response to the agent but does not add a message to the chat transcript; the
+inbox keeps its own record of the answer. Cancelling a pending request from
 the inbox instead withdraws it, and a managed agent waiting on that request stops.
 
 ![Chat question card with suggestions, a custom answer field and Dismiss](/screens/chat-question-card-desktop.png)

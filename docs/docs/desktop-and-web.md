@@ -649,6 +649,14 @@ Finished turns fold tool calls and intermediate narration into one expandable li
 your message and the final reply remain visible. Expand it to inspect file diffs,
 commands and output, reads, and searches. Failed tools stay marked.
 
+A turn can contain several assistant messages: steering a running reply or
+answering its question keeps the response so far as its own message above your
+input, and the agent's continuation streams below it. The turn's duration,
+outcome and token figure belong to its final message; earlier segments carry
+only the work they streamed. Transcripts therefore read in the order things
+happened, and a consumer parsing them must not assume one assistant message
+per user message.
+
 A turn with more than 80 activities expands to its newest 80 and offers
 **Show all N activities**; the folded line still counts every item, failures
 beyond that window included. An activity kind this build does not know appears
@@ -677,8 +685,11 @@ The composer groups folder, branch, agent/model and permissions into compact
 controls. Phones and narrow desktop panels use icons; wide composers show labels.
 While a reply is running, **Send** joins that turn when the backend accepts
 steering (Codex, Claude, Pi and OpenCode), so the agent reads the message before
-its next step. **While responding** in Session settings → Customize switches the
-conversation to **Queue for the next turn**; new chats take that default from
+its next step. A steered message keeps its place in the chat: the reply streamed
+up to that point stays above it, and the agent's continuing work streams below,
+in the order things actually happened. **While responding** in Session settings
+→ Customize switches the conversation to **Queue for the next turn**; new chats
+take that default from
 Settings → Chat. The companion control beside Stop performs the other action
 either way, so both stay one press away. Attachments always queue, because
 steering carries text only.
