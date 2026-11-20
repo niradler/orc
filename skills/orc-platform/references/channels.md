@@ -1,6 +1,6 @@
 # Channels: messages, setup and inbound routing
 
-Channels are bidirectional: an approved inbound message can invoke an agent through an ordered route; an authorized agent can send independently through MCP or HTTP API. Settings > Channels manages connections, recipients and rules. Telegram and Slack are initially supported.
+Channels are bidirectional: an approved inbound message can invoke an agent through an ordered route; an authorized agent can send independently through MCP or HTTP API. Settings > Channels manages connections, recipients and rules. Telegram and Slack are supported; Slack has two providers — `slack` (a Slack app, posts as the bot) and `slack-user` (your own Slack session via earshot, posts as you, for workspaces where an app cannot be installed).
 
 ## Discover before sending
 
@@ -101,7 +101,26 @@ live "Working…" progress with a Stop button while an agent turn runs, and
 support inbound/outbound file attachments (outbound Slack file reads need
 `files:read`).
 
-Pairing is short-lived, single-use and requires authenticated confirmation. Only one listener owns a provider account. Secrets are server-side encrypted or referenced through environment variables (`env:ORC_TELEGRAM_TOKEN`, `env:ORC_SLACK_BOT_TOKEN`, `env:ORC_SLACK_APP_TOKEN`) and are never returned to agents or the browser. Never paste bot credentials into an MCP message, scratchpad or job prompt.
+Slack user session (`slack-user`): no app and no admin approval. Press **Fill
+from local Slack** in Settings to read the session from the installed desktop
+app (macOS and Windows), or paste the `xoxc` token (Slack web client DevTools
+console: `TS.boot_data.api_token`) and the `d` cookie (DevTools → Application →
+Cookies), directly or as `env:ORC_SLACK_USER_TOKEN` /
+`env:ORC_SLACK_USER_COOKIE`. The cookie is a full-access session secret —
+treat it like a password. Verify identity, then pair by sending the pairing
+text in a DM to yourself. ORC listens on the same realtime socket as your web
+client and posts replies as you. There is no bot user: messages starting with
+a configured trigger keyword (`config.triggers`, default `["@orc"]`) or
+mentioning your own user id are marked `is_mention` and keep their text for
+keyword rules; route them with `session: "thread"` for in-thread agent
+conversations. No button interactions (controls render as typeable commands),
+no file attachments, and messages sent during a socket reconnect are not
+replayed. A rejected session surfaces `session_expired`; paste a fresh token
+and cookie and save to reconnect. Connection config also accepts
+`{"transport": "auto" | "rtm" | "gateway"}`. This is an unofficial transport
+outside Slack's API terms; prefer the bot provider where an app is allowed.
+
+Pairing is short-lived, single-use and requires authenticated confirmation. Only one listener owns a provider account. Secrets are server-side encrypted or referenced through environment variables (`env:ORC_TELEGRAM_TOKEN`, `env:ORC_SLACK_BOT_TOKEN`, `env:ORC_SLACK_APP_TOKEN`, `env:ORC_SLACK_USER_TOKEN`, `env:ORC_SLACK_USER_COOKIE`) and are never returned to agents or the browser. Never paste bot credentials into an MCP message, scratchpad or job prompt.
 
 ## Ordered inbound routing
 
@@ -179,7 +198,7 @@ The intentionally small control menu manages chat:
 
 Tasks, jobs and other ORC operations belong to the agent's tools. Unknown slash input goes to the backend's native command vocabulary. Sensitive operations still use existing human approvals.
 
-Slack uses the app's `/orc` entry point: `/orc help`, `/orc project my-project`, `/orc session new`, `/orc summary task-123`. The Slack manifest registers `/orc` with the `commands` scope. Plain messages and mentions use the same routing pipeline. Telegram registers the chat controls and configured shortcuts in its command menu.
+Slack uses the app's `/orc` entry point: `/orc help`, `/orc project my-project`, `/orc session new`, `/orc summary task-123`. The Slack manifest registers `/orc` with the `commands` scope. Plain messages and mentions use the same routing pipeline. The `slack-user` provider has no app entry point; type `@orc <message>` (or any routed keyword) instead. Telegram registers the chat controls and configured shortcuts in its command menu.
 
 Configure shortcuts in Settings → Custom commands, or connection config JSON:
 

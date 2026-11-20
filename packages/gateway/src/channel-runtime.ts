@@ -92,6 +92,9 @@ function channelAdapter(
     async sendWithButtons(chatId, text, buttons, opts) {
       bindDestination(chatId);
       const provider = service.connection(connection).provider;
+      // Without interactive buttons the provider renders commands as typeable
+      // text, so one-time action tokens would be dead ends; keep the commands.
+      const interactive = channelProvider(provider).info.capabilities.buttons;
       const attentionId = buttons
         .flat()
         .map((button) => button.value.match(/^\/attention (\S+)/)?.[1])
@@ -107,14 +110,16 @@ function channelAdapter(
             : target.user_ids;
           return {
             label: button.label,
-            value: service.store.action(
-              connection,
-              target.id,
-              chatId,
-              opts?.threadId,
-              users,
-              button.value,
-            ),
+            value: interactive
+              ? service.store.action(
+                  connection,
+                  target.id,
+                  chatId,
+                  opts?.threadId,
+                  users,
+                  button.value,
+                )
+              : button.value,
           };
         }),
       );

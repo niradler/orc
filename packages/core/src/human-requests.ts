@@ -91,7 +91,7 @@ export const HumanRequestInputSchema = z
       .refine((value) => Object.keys(value).length <= 20, "Too many choice descriptions"),
     multi_select: z.boolean().default(false),
     notify: z
-      .array(z.enum(["telegram", "slack"]))
+      .array(z.enum(["telegram", "slack", "slack-user"]))
       .max(2)
       .default([]),
     action: z

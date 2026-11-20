@@ -12,7 +12,7 @@ export const RuleAskUserSchema = z
     choices: z.array(z.string().trim().min(1).max(1000)).max(20).default([]),
     expires_in_seconds: z.number().int().min(1).max(604800).default(86400),
     notify: z
-      .array(z.enum(["telegram", "slack"]))
+      .array(z.enum(["telegram", "slack", "slack-user"]))
       .max(2)
       .default([]),
   })

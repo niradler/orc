@@ -4,6 +4,7 @@ import {
   type ChannelCondition,
   type ChannelConnection,
   ChannelConnectionSchema,
+  type ChannelProviderId,
   type ChannelProviderInfo,
   type ChannelRoute,
   ChannelRouteSchema,
@@ -584,7 +585,30 @@ function ConnectionEditor({
           />
         </Field>
       </div>
-      <p className="text-sm text-muted-foreground">{provider.setup.join(" ")}</p>
+      <div className="flex items-start gap-1">
+        <p className="text-sm text-muted-foreground">{provider.setup.join(" ")}</p>
+        {draft.provider === "slack-user" && (
+          <HelpPopover label="Slack session credentials" testId="channel-slack-user-help">
+            <div className="space-y-2">
+              <p>
+                The session cookie is full access to your Slack account — treat it like a password.
+                Stored values are encrypted; environment references keep them out of the database.
+              </p>
+              <p>
+                <strong>Fill from local Slack</strong> reads the installed desktop app
+                (macOS/Windows). Manually: open app.slack.com → DevTools → Console →{" "}
+                <code>TS.boot_data.api_token</code> (xoxc), and Application → Cookies → the{" "}
+                <code>d</code> value (xoxd).
+              </p>
+              <p>
+                Trigger keywords are configurable: set <code>config.triggers</code> (default{" "}
+                <code>["@orc"]</code>) under Provider configuration. Matching messages are marked as
+                mentions; keyword rules work on the full text.
+              </p>
+            </div>
+          </HelpPopover>
+        )}
+      </div>
       {provider.credentials.map((field) => (
         <div key={field.key} className="flex flex-wrap items-end gap-2">
           <div className="w-full min-w-0 sm:w-auto sm:flex-1">
@@ -618,6 +642,29 @@ function ConnectionEditor({
           </Button>
         </div>
       ))}
+      {draft.provider === "slack-user" && (
+        <Button
+          type="button"
+          variant="outline"
+          data-testid="channel-slack-user-fill"
+          onClick={() =>
+            void run(async () => {
+              const session = await api.channels.slackUserSession();
+              update({
+                ...draft,
+                credentials: {
+                  ...draft.credentials,
+                  token: session.token,
+                  cookie: session.cookie,
+                },
+              });
+              return "Filled the token and cookie from the local Slack app.";
+            })
+          }
+        >
+          Fill from local Slack
+        </Button>
+      )}
       {draft.provider === "slack" && (
         <Button
           type="button"
@@ -707,7 +754,9 @@ function ConnectionEditor({
                 setPair(result);
                 return draft.provider === "telegram"
                   ? "Open the pairing link, start the bot, then confirm the recipient here."
-                  : "Open your workspace, message the ORC app with the pairing text below, then confirm the recipient here.";
+                  : draft.provider === "slack-user"
+                    ? "Open your workspace, send the pairing text below in a direct message to yourself, then confirm the recipient here."
+                    : "Open your workspace, message the ORC app with the pairing text below, then confirm the recipient here.";
               })
             }
           >
@@ -725,9 +774,13 @@ function ConnectionEditor({
           >
             {draft.provider === "telegram" ? "Open Telegram pairing link" : "Open Slack workspace"}
           </a>
-          {draft.provider === "slack" && (
+          {draft.provider !== "telegram" && (
             <div>
-              <p className="text-sm">Send this text in a direct message to the ORC app:</p>
+              <p className="text-sm">
+                {draft.provider === "slack-user"
+                  ? "Send this text in a direct message to yourself (the “you” conversation):"
+                  : "Send this text in a direct message to the ORC app:"}
+              </p>
               <code className="break-all text-xs">{pair.message}</code>
               <Button
                 variant="ghost"
@@ -1313,7 +1366,7 @@ export function ChannelSettings({ active }: { active: boolean }) {
   });
   const [selected, setSelected] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, ChannelConnection>>({});
-  const [provider, setProvider] = useState<"telegram" | "slack">("telegram");
+  const [provider, setProvider] = useState<ChannelProviderId>("telegram");
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [pending, setPending] = useState(false);
@@ -1354,7 +1407,7 @@ export function ChannelSettings({ active }: { active: boolean }) {
         <h2 className="text-base font-medium">Channels</h2>
         <div className="flex items-center gap-2">
           <select
-            className="form-control form-control-single w-32 min-w-0"
+            className="form-control form-control-single w-44 min-w-0"
             aria-label="New channel provider"
             value={provider}
             onChange={(e) => setProvider(e.target.value as typeof provider)}
@@ -1374,7 +1427,12 @@ export function ChannelSettings({ active }: { active: boolean }) {
                 ...prev,
                 [id]: ChannelConnectionSchema.parse({
                   id: `${provider}-${Date.now()}`,
-                  name: provider === "telegram" ? "Personal Telegram" : "Work Slack",
+                  name:
+                    provider === "telegram"
+                      ? "Personal Telegram"
+                      : provider === "slack-user"
+                        ? "My Slack session"
+                        : "Work Slack",
                   provider,
                 }),
               }));

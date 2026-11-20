@@ -259,7 +259,7 @@ export const bridge_chats = sqliteTable(
   {
     id: text("id").primaryKey(),
     platform: text("platform", {
-      enum: ["telegram", "slack", "discord", "feishu"],
+      enum: ["telegram", "slack", "slack-user", "discord", "feishu"],
     }).notNull(),
     chat_id: text("chat_id").notNull(),
     username: text("username"),

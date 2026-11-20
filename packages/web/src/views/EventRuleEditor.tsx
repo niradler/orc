@@ -9,6 +9,7 @@ import {
   ORC_RULE_ACTIONS,
   type RuleOrcAction,
 } from "@orc/core/rule-types";
+import { X } from "lucide-react";
 import { useState } from "react";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
@@ -92,10 +93,13 @@ export function EventRuleEditor({
   const [requestPrompt, setRequestPrompt] = useState(
     rule?.target.type === "ask_user" ? rule.target.prompt : "May this agent continue?",
   );
-  const [requestChoices, setRequestChoices] = useState(
-    rule?.target.type === "ask_user" ? rule.target.choices.join("\n") : "",
+  const [requestChoices, setRequestChoices] = useState<Array<{ id: string; value: string }>>(() =>
+    (rule?.target.type === "ask_user" ? rule.target.choices : []).map((value) => ({
+      id: crypto.randomUUID(),
+      value,
+    })),
   );
-  const [requestNotify, setRequestNotify] = useState<("telegram" | "slack")[]>(
+  const [requestNotify, setRequestNotify] = useState<("telegram" | "slack" | "slack-user")[]>(
     rule?.target.type === "ask_user" ? rule.target.notify : [],
   );
   const [requestExpiry, setRequestExpiry] = useState(
@@ -215,10 +219,7 @@ export function EventRuleEditor({
                 expires_in_seconds: requestExpiry,
                 choices:
                   requestKind === "question"
-                    ? requestChoices
-                        .split("\n")
-                        .map((value) => value.trim())
-                        .filter(Boolean)
+                    ? requestChoices.map((choice) => choice.value.trim()).filter(Boolean)
                     : [],
               }
             : type === "block"
@@ -563,22 +564,56 @@ export function EventRuleEditor({
               than this limit.
             </p>
             {requestKind === "question" && (
-              <>
-                <Label htmlFor="rule-request-choices">Choices (one per line, optional)</Label>
-                <textarea
-                  id="rule-request-choices"
-                  data-testid="rule-request-choices"
-                  className={selectClass}
-                  value={requestChoices}
-                  onChange={(event) => setRequestChoices(event.target.value)}
-                />
-              </>
+              <div className="space-y-2">
+                <Label>Choices (optional)</Label>
+                {requestChoices.map((choice, index) => (
+                  <div key={choice.id} className="flex items-center gap-2">
+                    <Input
+                      aria-label={`Choice ${index + 1}`}
+                      data-testid={`rule-request-choice-${index}`}
+                      className="min-w-0 flex-1"
+                      value={choice.value}
+                      placeholder={`Choice ${index + 1}`}
+                      onChange={(event) =>
+                        setRequestChoices(
+                          requestChoices.map((item) =>
+                            item.id === choice.id ? { ...item, value: event.target.value } : item,
+                          ),
+                        )
+                      }
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-11 shrink-0 lg:size-9"
+                      aria-label={`Remove choice ${index + 1}`}
+                      data-testid={`rule-request-choice-remove-${index}`}
+                      onClick={() =>
+                        setRequestChoices(requestChoices.filter((item) => item.id !== choice.id))
+                      }
+                    >
+                      <X aria-hidden />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  data-testid="rule-request-choice-add"
+                  onClick={() =>
+                    setRequestChoices([...requestChoices, { id: crypto.randomUUID(), value: "" }])
+                  }
+                >
+                  Add choice
+                </Button>
+              </div>
             )}
             <p className="text-xs text-outline">
               Waits in Notifications. Approval lets the agent act with its existing permissions.
             </p>
             <div className="flex gap-4 text-sm">
-              {(["telegram", "slack"] as const).map((channel) => (
+              {(["telegram", "slack", "slack-user"] as const).map((channel) => (
                 <label key={channel} className="flex gap-2 items-center">
                   <input
                     type="checkbox"
@@ -592,7 +627,12 @@ export function EventRuleEditor({
                       )
                     }
                   />
-                  Notify {channel === "telegram" ? "Telegram" : "Slack"}
+                  Notify{" "}
+                  {channel === "telegram"
+                    ? "Telegram"
+                    : channel === "slack-user"
+                      ? "Slack (user session)"
+                      : "Slack"}
                 </label>
               ))}
             </div>

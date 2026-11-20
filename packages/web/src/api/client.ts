@@ -771,6 +771,8 @@ export const api = {
     pairing: (id: string) => req<ChannelPairingView>("GET", `/channels/pairings/${enc(id)}`),
     confirmPairing: (id: string) => req<unknown>("POST", `/channels/pairings/${enc(id)}/confirm`),
     manifest: () => req<Record<string, unknown>>("GET", "/channels/slack-manifest"),
+    slackUserSession: () =>
+      req<{ token: string; cookie: string }>("POST", "/channels/slack-user/session"),
     routeTest: (id: string, input: Record<string, unknown>) =>
       req<{ authorized: boolean; route_id: string | null; action: unknown }>(
         "POST",

@@ -18,7 +18,7 @@ export type SessionOpts = {
   humanRequestContext?:
     | {
         projectId: string;
-        notify: ("telegram" | "slack")[];
+        notify: ("telegram" | "slack" | "slack-user")[];
         channel?: {
           connection: string;
           target: string;
