@@ -44,12 +44,21 @@ describe("ownsChatActivity", () => {
     expect(ownsChatActivity([{ ...subagent, id: "other" }], subagentEvent)).toBe(false);
   });
 
+  test("a same-id tool re-announcement belongs to the segment holding the call", () => {
+    const update: ChatEvent = {
+      type: "tool_use",
+      data: { id: "tool-1", name: "shell", input: '{"command":"ci --fix"}' },
+    };
+    expect(ownsChatActivity([tool], update)).toBe(true);
+    expect(ownsChatActivity([{ ...tool, id: "other" }], update)).toBe(false);
+  });
+
   test("append-only events never claim an owner", () => {
     expect(ownsChatActivity([tool], { type: "text", text: "hello" })).toBe(false);
     expect(
       ownsChatActivity([tool], {
         type: "tool_use",
-        data: { id: "tool-1", name: "shell", input: "{}" },
+        data: { id: "tool-2", name: "shell", input: "{}" },
       }),
     ).toBe(false);
   });

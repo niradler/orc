@@ -807,6 +807,10 @@ function mergeChatPlan(activity: ChatActivity[], incoming: ChatPlanPayload): Cha
  */
 export function ownsChatActivity(activity: ChatActivity[] | undefined, event: ChatEvent): boolean {
   if (!activity?.length) return false;
+  // ACP/ACPX re-announce a tool_use with the same id on every update; the claim
+  // keeps the update (and its later result) in the segment that started the call.
+  if (event.type === "tool_use")
+    return activity.some((item) => item.type === "tool" && item.id === event.data.id);
   if (event.type === "tool_result")
     return activity.some((item) => item.type === "tool" && item.id === event.data.toolUseId);
   if (event.type === "subagent")

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import type { ChatMessage } from "@orc/core/chat";
-import { type InterjectionState, withInterjection } from "../../src/lib/chat-interjection";
+import type { ChatEvent, ChatMessage } from "@orc/core/chat";
+import {
+  activityUpdateTarget,
+  type InterjectionState,
+  withInterjection,
+} from "../../src/lib/chat-interjection";
 
 const user = (id: string, content: string): ChatMessage => ({
   id,
@@ -51,6 +55,45 @@ describe("withInterjection", () => {
     );
     expect(change.messages[1]?.agent).toBe("codex");
     expect(change.messages[1]?.model).toBe("gpt-fixture");
+    expect(change.sealedId).toBe("live-1");
+    // An empty stream freezes nothing, so there is no segment to track.
+    expect(withInterjection(state(), answer).sealedId).toBeUndefined();
+  });
+
+  test("activity updates route only to segments sealed in the current run", () => {
+    const planEvent: ChatEvent = { type: "plan", data: { id: "todos", entries: [] } };
+    const previousTurnPlan: ChatMessage = {
+      id: "old-plan",
+      role: "assistant",
+      content: "",
+      timestamp: 1,
+      activity: [{ type: "plan", id: "todos", entries: [] }],
+    };
+    const sealedPlan: ChatMessage = {
+      id: "sealed-plan",
+      role: "assistant",
+      content: "",
+      timestamp: 2,
+      activity: [{ type: "plan", id: "todos", entries: [] }],
+    };
+    const messages = [user("first", "Pick a color"), previousTurnPlan, sealedPlan];
+    // Plan ids are constant across turns: the previous turn's plan must not be
+    // rewritten by the live turn's first plan event.
+    expect(activityUpdateTarget(messages, ["sealed-plan"], planEvent)?.id).toBe("sealed-plan");
+    expect(activityUpdateTarget(messages, [], planEvent)).toBeUndefined();
+    const toolResult: ChatEvent = {
+      type: "tool_result",
+      data: { toolUseId: "tool-1", content: "ok", isError: false },
+    };
+    const sealedTool: ChatMessage = {
+      id: "sealed-tool",
+      role: "assistant",
+      content: "",
+      timestamp: 3,
+      activity: [{ type: "tool", id: "tool-1", name: "shell", input: "{}", startedAt: 1 }],
+    };
+    expect(activityUpdateTarget([sealedTool], ["sealed-tool"], toolResult)?.id).toBe("sealed-tool");
+    expect(activityUpdateTarget([sealedTool], [], toolResult)).toBeUndefined();
   });
 
   test("the event and the HTTP response split only once, whichever arrives first", () => {
