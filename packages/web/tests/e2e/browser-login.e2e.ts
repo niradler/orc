@@ -146,7 +146,7 @@ test("changing the API address does not forward credentials from the previous se
   await page.goto("/settings");
   await page.getByTestId("api-login-secret").fill(API_SECRET);
   await page.getByTestId("api-login-submit").click();
-  await settingsSection(page, "hosts");
+  await settingsSection(page, "servers");
   let forwardedSecret: string | undefined;
   await page.route("**/other-api/settings", (route) => {
     forwardedSecret = route.request().headers().authorization;

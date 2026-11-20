@@ -62,12 +62,34 @@ async function startRemote(root: string) {
     if (Date.now() > deadline) throw new Error("The remote ORC did not become healthy");
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  const stop = () =>
-    new Promise<void>((resolve) => {
-      child.once("exit", () => resolve());
+  const stop = async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+    if (process.platform === "win32" && child.pid !== undefined) {
+      // Grandchildren keep handles into the temp root; kill the whole tree.
+      spawn("taskkill", ["/T", "/F", "/PID", String(child.pid)], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+    } else {
       child.kill("SIGKILL");
-    });
+    }
+    await exited;
+  };
   return { url, home, stop };
+}
+
+async function removeTempRoot(root: string): Promise<void> {
+  // Bun's rmSync ignores maxRetries on Windows; retry until handles release.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if (attempt >= 20) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+  }
 }
 
 async function addRemote(page: Page, url: string) {
@@ -147,7 +169,7 @@ for (const [name, viewport] of [
     } finally {
       if (id) await apiDelete(page.request, `/remote-hosts/${id}`).catch(() => {});
       await remote.stop();
-      rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 200 });
+      await removeTempRoot(root);
     }
   });
 }
