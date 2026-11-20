@@ -13,11 +13,12 @@
     "dev": "bun --env-file ../../.env --watch src/index.ts",
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun build src/index.ts src/code-worker.ts --outdir dist --target bun --define ORC_NPM_BUNDLE:true",
     "test": "bun test",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
@@ -25,6 +26,7 @@
     "@orc/runner": "workspace:*",
     "@orc/task-service": "workspace:*",
     "drizzle-orm": "^0.45.4",
+    "quickjs-emscripten-core": "^0.32.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

@@ -515,7 +515,8 @@ Pick the execution host from the SSH row under **Settings → Hosts**: **Change*
 | Key                | Default | Env                 | Purpose                                               |
 | ------------------ | ------- | ------------------- | ----------------------------------------------------- |
 | `rules.enabled`    | `false` | `ORC_RULES_ENABLED` | Enforce [agent rules](./agent-rules.md)               |
-| `mcp.default_mode` | `meta`  | none                | MCP tool surface: `meta` or `full`                    |
+| `mcp.default_mode` | `meta`  | none                | MCP tool surface: `meta` or `full` |
+| `mcp.code_execution` | `true` | none | Make `tool_execute` available in meta mode on local stdio and authenticated HTTP connections. |
 | `github.token`     | none    | `ORC_GITHUB_TOKEN`  | Token for ORC's GitHub calls (pull requests, reviews) |
 
 ### Channels (Telegram, Slack)

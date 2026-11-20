@@ -38,7 +38,11 @@ import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useProjects } from "@/hooks/useProjects";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { activeApiHeaders } from "@/lib/api-hosts";
-import { withInterjection } from "@/lib/chat-interjection";
+import {
+  activityUpdateTarget,
+  type InterjectionChange,
+  withInterjection,
+} from "@/lib/chat-interjection";
 import { groupChatMessages } from "@/lib/chat-message-groups";
 import { permissionModes } from "@/lib/composer-chips";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
@@ -130,7 +134,13 @@ export interface ChatTab {
   questions: ChatQuestion[];
   runId: string;
   assistantId: string;
+  /** Segments sealed by interjections in the current run; only they own routed activity. */
+  interjectionSegments: string[];
   respondingAgent: string;
+  /** Child sessions and native subagents with a turn in flight, from the session poll. */
+  workingChildren?: number;
+  /** Child sessions parked on a human question or approval. */
+  waitingChildren?: number;
   /** A background turn finished or is waiting for a reply since the tab was last viewed. */
   attention: boolean;
 }
@@ -173,6 +183,7 @@ function blankTab(config: ChatConfig, projectId?: string | null): ChatTab {
     questions: [],
     runId: "",
     assistantId: "",
+    interjectionSegments: [],
     respondingAgent: config.agent,
     attention: false,
   };
@@ -462,19 +473,20 @@ function useChatController() {
           questions: tab.questions.filter((request) => request.requestId !== event.requestId),
         }));
       else if (event.type === "interjection")
-        update(key, (tab) => withInterjection(tab, event.message));
+        update(key, (tab) => {
+          const change = withInterjection(tab, event.message);
+          return change.sealedId
+            ? { ...change, interjectionSegments: [...tab.interjectionSegments, change.sealedId] }
+            : change;
+        });
       else if (event.type !== "done")
         update(key, (tab) => {
           // A stateful update (tool result, plan, subagent) belongs to the segment
-          // that owns the entry — a sealed segment above an interjection, not a
-          // nameless stub in the live continuation.
+          // that owns the entry — but only segments sealed in THIS run: plan ids are
+          // constant across turns, so scanning older history would rewrite the
+          // previous turn's plan in place.
           if (!ownsChatActivity(tab.activity, event)) {
-            const owner = [...tab.messages]
-              .reverse()
-              .find(
-                (message) =>
-                  message.role === "assistant" && ownsChatActivity(message.activity, event),
-              );
+            const owner = activityUpdateTarget(tab.messages, tab.interjectionSegments, event);
             if (owner)
               return {
                 messages: tab.messages.map((message) =>
@@ -511,6 +523,7 @@ function useChatController() {
         reconnecting: false,
         streamText: "",
         activity: [],
+        interjectionSegments: [],
         turn: undefined,
         permissions: [],
         questions: [],
@@ -682,6 +695,7 @@ function useChatController() {
                 messages: adopted.messages,
                 config: adopted.config,
                 historyBefore: adopted.historyBefore ?? null,
+                interjectionSegments: [],
                 error: null,
               }));
               onOpen?.();
@@ -708,6 +722,7 @@ function useChatController() {
                 thread: snapshot,
                 messages: mergeLoadedHistory(tab.messages, snapshot.messages),
                 historyBefore: snapshot.historyBefore ?? null,
+                interjectionSegments: [],
                 streamText: "",
                 activity: [],
               }));
@@ -772,6 +787,7 @@ function useChatController() {
           update(key, (tab) => ({
             streaming: true,
             assistantId: crypto.randomUUID(),
+            interjectionSegments: [],
             respondingAgent: tab.config.agent,
             streamText: "",
             activity: [],
@@ -1073,6 +1089,7 @@ function useChatController() {
         error: null,
         runId: "",
         assistantId: crypto.randomUUID(),
+        interjectionSegments: [],
         respondingAgent: config.agent,
         turn: undefined,
       }));
@@ -1267,6 +1284,17 @@ function useChatController() {
     stop(key);
   }, [stop, update]);
 
+  /** Keep the open tab's row honest while its children work after the turn ends. */
+  const setChildWork = useCallback(
+    (workingChildren: number, waitingChildren: number) =>
+      update(activeRef.current, (current) =>
+        current.workingChildren === workingChildren && current.waitingChildren === waitingChildren
+          ? {}
+          : { workingChildren, waitingChildren },
+      ),
+    [update],
+  );
+
   const editQueued = useCallback(
     (id: string | null, content?: string) => {
       const key = activeRef.current;
@@ -1386,12 +1414,18 @@ function useChatController() {
         };
         const tab = find(key);
         if (tab?.thread?.id === thread.id && tab.runId === runId && tab.streaming)
-          update(key, (fresh) => ({
-            thread,
-            error: null,
-            draft: fresh.draft === input ? "" : fresh.draft,
-            ...withInterjection(fresh, delivered),
-          }));
+          update(key, (fresh) => {
+            const change = withInterjection(fresh, delivered);
+            return {
+              thread,
+              error: null,
+              draft: fresh.draft === input ? "" : fresh.draft,
+              ...change,
+              ...(change.sealedId
+                ? { interjectionSegments: [...fresh.interjectionSegments, change.sealedId] }
+                : {}),
+            };
+          });
         else {
           // The turn ended (or another started) while delivery was in flight: the
           // stored thread owns the order now, and splitting the live buffer would
@@ -1486,10 +1520,16 @@ function useChatController() {
         const { message: recorded } = await api.chat.answer(runId, pending.requestId, answers);
         const tab = find(key);
         const live = tab?.runId === runId && tab.streaming;
-        update(key, (fresh) => ({
-          questions: fresh.questions.filter((request) => request.requestId !== pending.requestId),
-          ...(live ? withInterjection(fresh, recorded) : {}),
-        }));
+        update(key, (fresh) => {
+          const change: Partial<InterjectionChange> = live ? withInterjection(fresh, recorded) : {};
+          return {
+            questions: fresh.questions.filter((request) => request.requestId !== pending.requestId),
+            ...change,
+            ...(change.sealedId
+              ? { interjectionSegments: [...fresh.interjectionSegments, change.sealedId] }
+              : {}),
+          };
+        });
         // A response processed after the turn ended must not split the finished
         // transcript (or the next turn's buffer); the stored thread owns the order.
         if (!live) void syncThread(key);
@@ -1614,6 +1654,7 @@ function useChatController() {
     reconnecting: tab.reconnecting,
     refreshing: tab.refreshing,
     refresh,
+    setChildWork,
     streamText: tab.streamText,
     activity: tab.activity,
     error: tab.error,

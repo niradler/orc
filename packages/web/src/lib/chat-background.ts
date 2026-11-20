@@ -1,5 +1,5 @@
 import type { ChatActivity, ChatBackgroundKind } from "@orc/core/chat";
-import type { SessionStatus } from "@orc/core/session-messages";
+import type { SessionStatus, SessionSubagents } from "@orc/core/session-messages";
 import { toolView } from "./chat-tools";
 import { liveSubagentTree, subagentState } from "./subagent-links";
 
@@ -13,6 +13,8 @@ export type ChatBackgroundItem = {
   status: "running" | "waiting" | "queued";
   /** The child chat session to open, when this is a session this chat started. */
   sessionId?: string;
+  /** A discovered native session rather than a chat thread; opened via resume. */
+  native?: boolean;
 };
 
 const SESSION_WORK_STATUS = new Set(["running", "waiting", "queued"]);
@@ -98,12 +100,44 @@ export function backgroundSessions(sessions: SessionStatus[]): ChatBackgroundIte
   });
 }
 
+/** Native subagents the provider started, from the live subagent query. */
+export function backgroundSubagents(
+  subagents: SessionSubagents["subagents"],
+): ChatBackgroundItem[] {
+  return subagents.flatMap((subagent): ChatBackgroundItem[] => {
+    if (subagent.status !== "running") return [];
+    return [
+      {
+        id: subagent.id,
+        kind: "subagent",
+        label: subagent.title || "Subagent",
+        startedAt: subagent.created_at ? subagent.created_at * 1000 : null,
+        status: "running",
+        sessionId: subagent.id,
+        native: true,
+      },
+    ];
+  });
+}
+
 export function chatBackgroundWork(
   activity: ChatActivity[],
   sessions: SessionStatus[],
+  subagents: SessionSubagents["subagents"] = [],
+  streaming = true,
 ): ChatBackgroundItem[] {
+  // Once the turn ends, its transcript is a frozen snapshot: subagent rows must come
+  // from the live queries instead, or a finished subagent keeps reading as running.
+  // Detached commands have no live query here and keep the transcript source.
+  const fromActivity = backgroundActivity(activity).filter(
+    (item) => streaming || item.kind === "command",
+  );
   const seen = new Set<string>();
-  return [...backgroundActivity(activity), ...backgroundSessions(sessions)].filter((item) => {
+  return [
+    ...fromActivity,
+    ...backgroundSessions(sessions),
+    ...backgroundSubagents(subagents),
+  ].filter((item) => {
     if (seen.has(item.id)) return false;
     seen.add(item.id);
     return true;

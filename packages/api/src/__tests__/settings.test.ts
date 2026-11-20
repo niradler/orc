@@ -13,6 +13,7 @@ import { settingsRouter } from "../routes/settings";
 
 const originalHome = process.env.HOME;
 const originalProfile = process.env.USERPROFILE;
+const originalOrcHome = process.env.ORC_HOME;
 const privateHome = mkdtempSync(join(tmpdir(), "orc-settings-test-"));
 const app = new Hono();
 app.onError((error, c) =>
@@ -31,6 +32,7 @@ beforeAll(() => {
   createTestDb();
   process.env.HOME = privateHome;
   process.env.USERPROFILE = privateHome;
+  delete process.env.ORC_HOME;
   expect(globalConfigPath()).toBe(join(privateHome, ".orc", "config.json"));
   mkdirSync(join(privateHome, ".orc"));
   writeFileSync(
@@ -46,6 +48,8 @@ afterAll(() => {
   else process.env.HOME = originalHome;
   if (originalProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = originalProfile;
+  if (originalOrcHome === undefined) delete process.env.ORC_HOME;
+  else process.env.ORC_HOME = originalOrcHome;
   resetConfig();
   rmSync(privateHome, { recursive: true, force: true });
 });
@@ -164,7 +168,8 @@ test("should require authentication for reading and writing preferences", async 
 
 test("should persist MCP defaults and serve DB prompts over HTTP and MCP", async () => {
   const settings = {
-    default_mode: "full",
+    default_mode: "meta",
+    code_execution: false,
     prompts: [
       {
         name: "render-ui",
@@ -184,7 +189,8 @@ test("should persist MCP defaults and serve DB prompts over HTTP and MCP", async
   expect(await (await app.request("/api/settings/mcp", { headers })).json()).toEqual(settings);
   const raw = JSON.parse(readFileSync(globalConfigPath(), "utf8"));
   expect(raw.api.secret).toBe("private-server-secret");
-  expect(raw.mcp.default_mode).toBe("full");
+  expect(raw.mcp.default_mode).toBe("meta");
+  expect(raw.mcp.code_execution).toBe(false);
   expect(raw.mcp.prompts).toBeUndefined();
   async function rpc(method: string, params = {}, query = "") {
     const response = await app.request(`/mcp${query}`, {
@@ -204,6 +210,13 @@ test("should persist MCP defaults and serve DB prompts over HTTP and MCP", async
     (tool: { name: string }) => tool.name,
   );
   expect(tools).not.toContain("ui_catalog");
+  expect((await rpc("tools/list")).result.tools.map((tool: { name: string }) => tool.name)).toEqual(
+    ["tool_search", "tool_describe", "tool_invoke"],
+  );
+  expect(
+    (await rpc("tools/call", { name: "tool_execute", arguments: { code: "return 42;" } })).result
+      .isError,
+  ).toBe(true);
   expect(
     (await rpc("tools/list", {}, "?mode=meta")).result.tools.map(
       (tool: { name: string }) => tool.name,

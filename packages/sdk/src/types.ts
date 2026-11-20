@@ -269,6 +269,10 @@ export type LiveSession = {
     tool: string | null;
   } | null;
   background_work?: boolean;
+  /** Child sessions and native subagents with a turn in flight. */
+  working_children?: number;
+  /** Child sessions parked on a human question or approval. */
+  waiting_children?: number;
   hidden?: boolean;
   renamed?: boolean;
   project_id: string | null;

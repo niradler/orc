@@ -1183,6 +1183,8 @@ export interface paths {
                                 title: string;
                                 updatedAt: number;
                                 running: boolean;
+                                workingChildren: number;
+                                waitingChildren: number;
                                 agent?: string | null;
                                 runtimeId?: string | null;
                                 sourceId?: string | null;
@@ -2239,6 +2241,9 @@ export interface paths {
                         "application/json": {
                             changed: boolean;
                             running: boolean;
+                            workingChildren: number;
+                            waitingChildren: number;
+                            stopping: boolean;
                             live: {
                                 id: string;
                                 agent: string;
@@ -8773,7 +8778,9 @@ export interface paths {
                              * @default meta
                              * @enum {string}
                              */
-                            default_mode: "meta" | "full";
+                            default_mode: "full" | "meta";
+                            /** @default true */
+                            code_execution: boolean;
                             prompts: {
                                 name: string;
                                 title: string;
@@ -8802,11 +8809,9 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        /**
-                         * @default meta
-                         * @enum {string}
-                         */
-                        default_mode?: "meta" | "full";
+                        /** @enum {string} */
+                        default_mode?: "full" | "meta";
+                        code_execution?: boolean;
                         prompts?: {
                             name: string;
                             title: string;
@@ -8829,7 +8834,9 @@ export interface paths {
                              * @default meta
                              * @enum {string}
                              */
-                            default_mode: "meta" | "full";
+                            default_mode: "full" | "meta";
+                            /** @default true */
+                            code_execution: boolean;
                             prompts: {
                                 name: string;
                                 title: string;
@@ -21312,6 +21319,12 @@ export interface paths {
                             }[];
                             parent_session_id: string | null;
                             children: string[];
+                            /** @default 0 */
+                            working_children: number;
+                            /** @default 0 */
+                            waiting_children: number;
+                            /** @default false */
+                            stopping: boolean;
                             project_id: string | null;
                             cwd: string;
                             started_at: number | null;
@@ -21390,6 +21403,12 @@ export interface paths {
                             }[];
                             parent_session_id: string | null;
                             children: string[];
+                            /** @default 0 */
+                            working_children: number;
+                            /** @default 0 */
+                            waiting_children: number;
+                            /** @default false */
+                            stopping: boolean;
                             project_id: string | null;
                             cwd: string;
                             started_at: number | null;
@@ -21457,6 +21476,12 @@ export interface paths {
                                 }[];
                                 parent_session_id: string | null;
                                 children: string[];
+                                /** @default 0 */
+                                working_children: number;
+                                /** @default 0 */
+                                waiting_children: number;
+                                /** @default false */
+                                stopping: boolean;
                                 project_id: string | null;
                                 cwd: string;
                                 started_at: number | null;
@@ -21634,6 +21659,12 @@ export interface paths {
                             }[];
                             parent_session_id: string | null;
                             children: string[];
+                            /** @default 0 */
+                            working_children: number;
+                            /** @default 0 */
+                            waiting_children: number;
+                            /** @default false */
+                            stopping: boolean;
                             project_id: string | null;
                             cwd: string;
                             started_at: number | null;
@@ -21718,6 +21749,12 @@ export interface paths {
                                 }[];
                                 parent_session_id: string | null;
                                 children: string[];
+                                /** @default 0 */
+                                working_children: number;
+                                /** @default 0 */
+                                waiting_children: number;
+                                /** @default false */
+                                stopping: boolean;
                                 project_id: string | null;
                                 cwd: string;
                                 started_at: number | null;
@@ -21788,6 +21825,12 @@ export interface paths {
                             }[];
                             parent_session_id: string | null;
                             children: string[];
+                            /** @default 0 */
+                            working_children: number;
+                            /** @default 0 */
+                            waiting_children: number;
+                            /** @default false */
+                            stopping: boolean;
                             project_id: string | null;
                             cwd: string;
                             started_at: number | null;
@@ -25250,6 +25293,16 @@ export interface components {
              * @default false
              */
             background_work: boolean;
+            /**
+             * @description Child sessions and native subagents with a turn in flight
+             * @default 0
+             */
+            working_children: number;
+            /**
+             * @description Child sessions parked on a human question or approval
+             * @default 0
+             */
+            waiting_children: number;
             /** @default false */
             hidden: boolean;
             /** @default false */

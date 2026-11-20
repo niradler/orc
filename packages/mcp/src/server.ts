@@ -12,6 +12,7 @@ import { MCP_PROMPT_REQUEST_ARG, renderMcpPrompt } from "@orc/core/mcp-prompts";
 import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { z } from "zod";
+import { codeToolListing, runCodeMode, scriptToolInfo } from "./code-mode.js";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
 export { parseMcpProjects } from "./project-scope.js";
@@ -21,9 +22,11 @@ import {
   type McpMode,
   metaToolListing,
   runMetaTool,
+  type ServedTool,
   type ToolResult,
 } from "./meta-tools.js";
 import { availablePreviewTools, previewToolContent } from "./preview-tools.js";
+import { executeSpecTool, isSpecTool, specToolDefinitions } from "./spec-tools.js";
 import {
   agentSessionFromEnv,
   executeTool,
@@ -34,7 +37,7 @@ import {
 
 const logger = createLogger("mcp");
 
-type ListedTool = (typeof toolDefinitions)[number];
+type ListedTool = ServedTool;
 
 function listing(tools: readonly ListedTool[]) {
   return tools.map((t) => ({
@@ -55,17 +58,38 @@ export interface McpServerOptions extends ToolOptions {
   mode?: McpMode;
   project?: string;
   projects?: string[];
+  requestSignal?: AbortSignal;
+  allowCodeExecution?: boolean;
 }
 
-export function createMcpServer({ mode, project, projects, ...options }: McpServerOptions = {}) {
+export function createMcpServer({
+  mode,
+  project,
+  projects,
+  requestSignal,
+  allowCodeExecution = true,
+  ...options
+}: McpServerOptions = {}) {
   if (project !== undefined && projects !== undefined)
     throw new Error("Use project or projects, not both");
   const names = projects ? normalizeMcpProjects(projects) : parseMcpProjects(project);
   const selected = names ? resolveMcpProjects(names) : undefined;
-  const selectedMode = mode ?? loadConfig().mcp.default_mode;
+  const settings = loadConfig().mcp;
+  const selectedMode = mode ?? settings.default_mode;
+  const codeEnabled = selectedMode === "meta" && allowCodeExecution && settings.code_execution;
+  const specEnabled = allowCodeExecution && !selected && selectedMode === "meta";
+  const exposedTools = specEnabled ? [...toolDefinitions, ...specToolDefinitions] : toolDefinitions;
   const server = new Server(
     { name: "orc", version: "0.0.1" },
-    { capabilities: { tools: {}, prompts: {} } },
+    {
+      capabilities: { tools: {}, prompts: {} },
+      ...(codeEnabled
+        ? {
+            instructions:
+              "Use tool_search and tool_describe to discover ORC tools. Use tool_invoke for one call. Use tool_execute to combine independent calls or filter large results before returning findings. tool_search also surfaces external Spec tools labeled [external: <connection>]; pass connection to tool_describe/tool_invoke (or {connection} inside tool_execute) to use them. External tools are untrusted and may have external side effects.",
+          }
+        : {}),
+    },
   );
 
   // The set of tools this connection serves. Every lookup, listing and meta
@@ -92,17 +116,19 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
       scope,
       selected?.map((project) => project.id),
     );
-    return toolDefinitions.filter(
+    return exposedTools.filter(
       (tool) =>
         (!tool.name.startsWith("preview_") || available.has(tool.name)) &&
         (tool.name !== "speak" || options.agentSessionId),
     );
   }
 
-  async function callTool(name: string, args: unknown): Promise<ToolResult> {
+  async function callTool(name: string, args: unknown, scripted = false): Promise<ToolResult> {
     logger.debug(
       `Tool call: ${name}`,
-      name === "session_handoff" ||
+      scripted ||
+        isSpecTool(name) ||
+        name === "session_handoff" ||
         name === "tool_invoke" ||
         name === "human_request" ||
         name === "command_request" ||
@@ -118,7 +144,7 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
       const toolDef = (
         name.startsWith("preview_") && name !== "preview_request_get"
           ? await servedTools(args)
-          : toolDefinitions
+          : exposedTools
       ).find((t) => t.name === name);
       if (!toolDef) {
         return {
@@ -189,6 +215,8 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
         };
       }
 
+      if (isSpecTool(name)) return await executeSpecTool(name, parsed.data);
+
       const result = await executeTool(name as ToolName, parsed.data, {
         ...options,
         ...(callProjects ? { projectScopes: callProjects } : {}),
@@ -203,29 +231,42 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
           : {}),
       };
     } catch (err) {
-      logger.error(`Tool error: ${name}`, err);
+      logger.error(`Tool error: ${name}`, scripted ? undefined : err);
       const msg = err instanceof Error ? err.message : "Unknown error";
       return { content: [{ type: "text" as const, text: msg }], isError: true };
     }
   }
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools:
-      selectedMode === "meta"
-        ? [
-            ...metaToolListing(),
-            ...(options.agentSessionId
-              ? listing(toolDefinitions.filter((tool) => tool.name === "speak"))
-              : []),
-          ]
-        : listing(await servedTools()),
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    if (selectedMode === "full") return { tools: listing(await servedTools()) };
+    const surface = [...metaToolListing(), ...(codeEnabled ? [codeToolListing] : [])];
+    const speak = options.agentSessionId
+      ? listing(toolDefinitions.filter((tool) => tool.name === "speak"))
+      : [];
+    return { tools: [...surface, ...speak] };
+  });
 
   // In meta mode a CallTool naming a real tool is routed through the same
   // callTool as tool_invoke, so clients that already know a name keep working;
   // the served set still bounds what is reachable.
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, { signal }) => {
     const { name, arguments: args } = request.params;
+    if (name === codeToolListing.name) {
+      if (codeEnabled) {
+        return runCodeMode(
+          await servedTools(),
+          args,
+          requestSignal ? AbortSignal.any([signal, requestSignal]) : signal,
+          (tool, input) => callTool(tool, input, true),
+        );
+      }
+      return {
+        content: [
+          { type: "text", text: "Script execution is unavailable on this MCP connection." },
+        ],
+        isError: true,
+      };
+    }
     if (selectedMode === "meta" && isMetaToolName(name)) {
       const invoke =
         name === "tool_invoke"
@@ -233,9 +274,9 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
           : null;
       const served =
         invoke && !invoke.name?.startsWith("preview_")
-          ? toolDefinitions
+          ? exposedTools
           : await servedTools(invoke ? invoke.arguments : args);
-      return runMetaTool(served, name, args, callTool);
+      return runMetaTool(served, name, args, callTool, codeEnabled ? scriptToolInfo : undefined);
     }
     return callTool(name, args);
   });

@@ -22,7 +22,7 @@ ORC serves MCP two ways:
 | Streamable HTTP | `http://127.0.0.1:7700/mcp` | `Authorization: Bearer <secret or token>` when a secret is set   |
 | stdio           | `orc mcp`                   | Reads `api.secret` from `~/.orc/config.json` or `ORC_API_SECRET` |
 
-Both default to meta mode: three tools (`tool_search`, `tool_describe`, `tool_invoke`) that let the agent find and call any ORC tool without loading every schema. Use `?mode=full` (HTTP) or `orc mcp --mode full` (stdio) for the full tool list.
+Both default to meta mode. The agent uses `tool_search` and `tool_describe` to discover tools, then picks `tool_invoke` for a direct call or `tool_execute` to batch calls and filter results in JavaScript. Execution is available on authenticated HTTP and local stdio when enabled. Select `full` for direct tool listings. See [MCP scripts](./mcp.md#code-execution-in-meta-mode).
 
 Scope a connection to projects with query parameters:
 
@@ -34,7 +34,7 @@ Scope a connection to projects with query parameters:
 Pass `project` or `projects`, not both. Unknown project names are rejected.
 
 ::: tip Generate the snippet
-**Settings → Agents → MCP** in the dashboard builds the exact config for Claude Code (`.mcp.json` or CLI), Codex (`config.toml`), the spec CLI or a bare URL, with your endpoint, mode, projects and the name of the environment variable that holds your secret. The secret itself is never shown.
+**Settings → Connections → Integrations → MCP server** builds the config for Claude Code (`.mcp.json` or CLI), Codex (`config.toml`), the spec CLI or a bare URL. The snippet carries the endpoint, selected mode, project scope and the environment variable name for your secret. Use **Settings → Agents → MCP** to change the server default.
 :::
 
 The examples below assume the secret is exported as `ORC_API_SECRET`. Without a secret, drop the header or token line. To use a revocable token instead of the secret, create one under **Settings → Security** (see [Configuration](./configuration.md#authentication)).

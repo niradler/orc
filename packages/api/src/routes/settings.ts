@@ -78,6 +78,7 @@ const mcpResponse = {
 const mcpSettings = () =>
   McpServerSettingsSchema.parse({
     default_mode: loadConfig().mcp.default_mode,
+    code_execution: loadConfig().mcp.code_execution,
     prompts: new McpPromptStore(getSqlite()).list(),
   });
 
@@ -99,13 +100,23 @@ app.openapi(
     tags: ["System"],
     summary: "Persist MCP connection defaults and prompts",
     request: {
-      body: { content: { "application/json": { schema: McpServerSettingsSchema.partial() } } },
+      body: {
+        content: {
+          "application/json": {
+            schema: McpServerSettingsSchema.partial().extend({
+              default_mode: McpServerSettingsSchema.shape.default_mode.unwrap().optional(),
+              code_execution: z.boolean().optional(),
+            }),
+          },
+        },
+      },
     },
     responses: mcpResponse,
   }),
   (c) => {
     const { prompts, ...settings } = c.req.valid("json");
     const previousMode = loadConfig().mcp.default_mode;
+    const previousCodeExecution = loadConfig().mcp.code_execution;
     const previousPrompts = prompts ? JSON.stringify(new McpPromptStore(getSqlite()).list()) : null;
     if (Object.keys(settings).length)
       updateGlobalConfig((raw) => {
@@ -113,15 +124,19 @@ app.openapi(
       });
     if (prompts) new McpPromptStore(getSqlite()).replace(prompts);
     const mode = loadConfig().mcp.default_mode;
+    const codeExecution = loadConfig().mcp.code_execution;
     const promptsChanged =
       prompts !== undefined &&
       previousPrompts !== JSON.stringify(new McpPromptStore(getSqlite()).list());
-    if (mode !== previousMode || promptsChanged)
+    if (mode !== previousMode || codeExecution !== previousCodeExecution || promptsChanged)
       recordAudit(c, {
         action: "settings.mcp_changed",
         subject_ids: [],
         snapshot: {
           ...(mode !== previousMode ? { default_mode: { before: previousMode, after: mode } } : {}),
+          ...(codeExecution !== previousCodeExecution
+            ? { code_execution: { before: previousCodeExecution, after: codeExecution } }
+            : {}),
           ...(promptsChanged ? { prompts: prompts?.length } : {}),
         },
       });

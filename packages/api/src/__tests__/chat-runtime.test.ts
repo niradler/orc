@@ -64,6 +64,7 @@ let answerAfterClose = false;
 let closeGate: (() => void) | undefined;
 let completeHungTool = false;
 let parallelRequests = false;
+let slowClose = false;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
 let failedTurn = false;
@@ -137,6 +138,8 @@ function session(call: (typeof calls)[number]): AgentSession {
     alive: () => true,
     close: async () => {
       closed++;
+      // Hold the finalizer open so a steer can land in the turn-end window.
+      if (slowClose) await Bun.sleep(150);
       resolve?.();
       resolveQuestion?.();
       closeGate?.();
@@ -170,6 +173,11 @@ function session(call: (typeof calls)[number]): AgentSession {
           // The tool finishes while the turn is live: a Stop would drain the
           // remaining events without emitting them.
           await steerSeen;
+          // ACP/ACPX re-announce the same tool id when its input changes.
+          yield {
+            type: "tool_use",
+            data: { id: "tool-hang", name: "shell", input: '{"command":"ci --fix"}' },
+          };
           yield {
             type: "permission_request",
             data: { requestId: "permission-tool", tool: "shell", command: "ci" },
@@ -2939,6 +2947,49 @@ test("a steer confirming after the turn ended never duplicates the reply", async
   }
 });
 
+test("a steer sent as the reply completes is refused, not sealed into the finished turn", async () => {
+  slowClose = true;
+  const response = await request("/chat/stream", {
+    agent: "codex",
+    messages: [{ role: "user", content: "finishing" }],
+  });
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes("Hello from the native session")) {
+    const part = await reader.read();
+    if (part.done) throw new Error("stream ended");
+    text += decoder.decode(part.value);
+  }
+  const started = text
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => JSON.parse(line.slice(5)))
+    .find((event) => event.type === "thread") as Extract<ChatEvent, { type: "thread" }>;
+  try {
+    // The reply is complete; the finalizer is still capturing usage and closing.
+    const refused = await request(`/chat/runs/${started.runId}/steer`, {
+      input: "too late",
+      requestId: crypto.randomUUID(),
+    });
+    expect(refused.status).toBe(409);
+    expect(((await refused.json()) as { code?: string }).code).not.toBe("STEER_UNCONFIRMED");
+    while (!(await reader.read()).done) {}
+    const saved = ChatThreadSchema.parse(
+      await (await request(`/chat/threads/${started.thread.id}`)).json(),
+    );
+    expect(saved.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(saved.messages[1]?.content).toBe("Hello from the native session");
+    expect(saved.messages[1]?.turn?.outcome).toBe("completed");
+    expect(saved.messages.some((message) => message.content === "too late")).toBe(false);
+  } finally {
+    slowClose = false;
+    await reader.cancel();
+    await Bun.sleep(10);
+  }
+});
+
 test("an answer confirming while the turn ends is recorded exactly once", async () => {
   waitQuestion = true;
   answerAfterClose = true;
@@ -3057,6 +3108,14 @@ test("a tool result after a steer updates the sealed segment instead of a namele
       (item) => item.type === "tool" && item.id === "tool-hang",
     );
     expect(sealedTool && "result" in sealedTool ? sealedTool.result : undefined).toBe("build ok");
+    expect(sealedTool && "input" in sealedTool ? sealedTool.input : undefined).toBe(
+      '{"command":"ci --fix"}',
+    );
+    // The same-id re-announcement updated the sealed entry; no duplicate was created.
+    const toolEntries = saved.messages.flatMap((message) =>
+      (message.activity ?? []).filter((item) => item.type === "tool" && item.id === "tool-hang"),
+    );
+    expect(toolEntries).toHaveLength(1);
     expect(saved.messages.at(-1)?.content).toBe("Build finished.");
     expect(saved.messages.at(-1)?.turn?.outcome).toBe("completed");
     expect(JSON.stringify(saved.messages)).not.toContain('"name":"Tool"');

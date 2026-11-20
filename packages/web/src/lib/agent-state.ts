@@ -86,9 +86,17 @@ const LIVE_STATES: Record<LiveSession["status"], AgentState> = {
 };
 
 export function liveSessionState(
-  session: Pick<LiveSession, "status" | "waiting_for_human">,
+  session: Pick<
+    LiveSession,
+    "status" | "waiting_for_human" | "working_children" | "waiting_children"
+  >,
 ): AgentState {
-  return session.waiting_for_human ? "needs-you" : (LIVE_STATES[session.status] ?? "unknown");
+  // A child parked on a question or approval needs the human through its parent too.
+  if (session.waiting_for_human || (session.waiting_children ?? 0) > 0) return "needs-you";
+  const base = LIVE_STATES[session.status] ?? "unknown";
+  // An idle parent whose children still hold turns is working, not idle.
+  if (base === "idle" && (session.working_children ?? 0) > 0) return "working";
+  return base;
 }
 
 export function chatSessionState(input: {
@@ -100,14 +108,17 @@ export function chatSessionState(input: {
   turnElsewhere: boolean;
   runClaim: boolean;
   hasThread: boolean;
+  workingChildren?: number;
+  waitingChildren?: number;
 }): AgentState | null {
-  if (input.needsYou) return "needs-you";
+  if (input.needsYou || (input.waitingChildren ?? 0) > 0) return "needs-you";
   if (input.failed) return "failed";
   if (
     input.streaming ||
     input.reconnecting ||
     input.turnElsewhere ||
-    (input.refreshing && input.runClaim)
+    (input.refreshing && input.runClaim) ||
+    (input.workingChildren ?? 0) > 0
   )
     return "working";
   return input.hasThread ? "idle" : null;

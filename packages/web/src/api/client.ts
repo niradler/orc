@@ -883,6 +883,8 @@ export const api = {
           title: string;
           updatedAt: number;
           running: boolean;
+          workingChildren: number;
+          waitingChildren: number;
           agent?: string | null;
           runtimeId?: string | null;
           sourceId?: string | null;
@@ -909,6 +911,9 @@ export const api = {
       req<{
         changed: boolean;
         running: boolean;
+        workingChildren: number;
+        waitingChildren: number;
+        stopping: boolean;
         live: {
           id: string;
           agent: string;

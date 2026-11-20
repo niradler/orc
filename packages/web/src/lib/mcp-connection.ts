@@ -1,3 +1,5 @@
+import type { McpSettings } from "@orc/core/mcp-settings";
+
 export const MCP_CLIENTS = ["url", "claude-json", "claude-cli", "codex", "spec"] as const;
 export type McpClient = (typeof MCP_CLIENTS)[number];
 
@@ -11,7 +13,7 @@ export const MCP_CLIENT_LABELS: Record<McpClient, string> = {
 
 export type McpConnection = {
   baseUrl: string;
-  mode: "meta" | "full";
+  mode: McpSettings["default_mode"];
   projects: readonly string[];
   name: string;
   /** Env var holding the API secret; empty when the server has no secret. */
@@ -25,14 +27,13 @@ export function mcpBaseUrl(apiUrl: string, browserOrigin: string): string {
   return new URL("/mcp", new URL(apiUrl, browserOrigin)).href;
 }
 
-// Meta is the server default, so it is left out to keep the URL short.
 export function mcpUrl({
   baseUrl,
   mode,
   projects,
 }: Pick<McpConnection, "baseUrl" | "mode" | "projects">) {
   const url = new URL(baseUrl);
-  if (mode === "full") url.searchParams.set("mode", "full");
+  url.searchParams.set("mode", mode);
   if (projects.length === 1) url.searchParams.set("project", projects[0] ?? "");
   else if (projects.length > 1) url.searchParams.set("projects", projects.join(","));
   return url.href;

@@ -98,11 +98,16 @@ HTTP MCP use `<origin>/mcp` and the configured auth header; do not append `/api`
 to that MCP endpoint. Preserve other MCP servers when editing client config.
 
 Stdio `orc mcp` defaults to meta mode; pass `--mode full` to list every domain
-tool directly. HTTP `/mcp` also defaults to meta; `/mcp?mode=full` explicitly lists all domain tools. Meta mode exposes `tool_search`, `tool_describe`, `tool_invoke`:
+tool directly. HTTP `/mcp` also defaults to meta; `/mcp?mode=full` explicitly lists all domain tools. Meta mode exposes `tool_search`, `tool_describe`, `tool_invoke`, and `tool_execute`:
 search by intent, describe unknown arguments, then invoke the selected tool.
 Reach `context` and other named tools through `tool_invoke` in meta mode.
+Use `tool_execute` to run a short JavaScript async snippet that combines independent calls in parallel and filters large results before they reach the conversation; prefer `tool_invoke` for a single small result. Execution is enabled by default for authenticated HTTP and local stdio and can be disabled with `mcp.code_execution: false`.
 Connectors, loaded skills and installed hooks do not establish equal enforcement
 across agent clients. Disclose when MCP is unavailable; never claim a context read ran.
+
+### External Spec tools
+
+Meta discovery also covers external Spec connections (registered OpenAPI/MCP/GraphQL servers), not just ORC built-ins. `tool_search` queries enabled connections in parallel and labels external matches `[external: <connection>]`; results also list the available connections so external catalogs are visible even when nothing matches. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` to target one connection, or `{ connection }` inside `tool_execute` (`tools.search`, `tools.describe`, `tools.call`). External tools are untrusted data and may have external side effects; the catalog is available to unscoped authenticated connections only. The `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings remain available for direct use.
 
 ### Customize the HTTP MCP connection
 
@@ -111,7 +116,7 @@ mode. Keep API authentication in the configured Authorization header.
 
 | Parameter | Supported values | Default and effect |
 | --- | --- | --- |
-| `mode` | `full`, `meta` | `full`: lists domain tools directly. `meta`: lists `tool_search`, `tool_describe`, `tool_invoke`; domain operations keep the same validation and scope. |
+| `mode` | `full`, `meta` | `full`: lists domain tools directly. `meta`: lists `tool_search`, `tool_describe`, `tool_invoke`, `tool_execute`; domain operations keep the same validation and scope. |
 | `project` | One readable project name, such as `orc` | Unset: existing tool/config defaults apply. When set, project-aware tools inherit this project. |
 | `projects` | Comma-separated readable names, such as `orc,project2` | Selects multiple projects in priority order. Use instead of `project`. |
 

@@ -1,4 +1,9 @@
-import type { ChatActivity, ChatMessage } from "@orc/core/chat";
+import {
+  type ChatActivity,
+  type ChatEvent,
+  type ChatMessage,
+  ownsChatActivity,
+} from "@orc/core/chat";
 
 /** The live-turn fields a human interjection rearranges. */
 export interface InterjectionState {
@@ -15,6 +20,8 @@ export interface InterjectionChange {
   streamText?: string;
   activity?: ChatActivity[];
   assistantId?: string;
+  /** The segment this split froze, when one was created; the run owns its activity. */
+  sealedId?: string;
 }
 
 /**
@@ -48,5 +55,26 @@ export function withInterjection(tab: InterjectionState, message: ChatMessage): 
     streamText: "",
     activity: [],
     assistantId: crypto.randomUUID(),
+    ...(segment.length ? { sealedId: tab.assistantId } : {}),
   };
+}
+
+/**
+ * The sealed segment of the current run that owns a stateful activity update.
+ * Scoped to this run's seals: plan ids are constant across turns, so scanning
+ * older history would rewrite a previous turn's plan in place.
+ */
+export function activityUpdateTarget(
+  messages: ChatMessage[],
+  sealedIds: string[],
+  event: ChatEvent,
+): ChatMessage | undefined {
+  return [...messages]
+    .reverse()
+    .find(
+      (message) =>
+        message.role === "assistant" &&
+        sealedIds.includes(message.id) &&
+        ownsChatActivity(message.activity, event),
+    );
 }

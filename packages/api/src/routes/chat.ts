@@ -126,7 +126,12 @@ import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { isClaudeProcessName } from "../sessions/claude.js";
 import { projectIdFor } from "../sessions/common.js";
-import { notifySpawner, spawnChain } from "../sessions/control.js";
+import {
+  childWorkCounts,
+  childWorkCountsMany,
+  notifySpawner,
+  spawnChain,
+} from "../sessions/control.js";
 import { opencodeSessionUpdated } from "../sessions/opencode.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { readTranscriptBytes, type TranscriptTurn } from "../sessions/transcript.js";
@@ -184,9 +189,15 @@ interface ChatRun {
   pending: Map<string, ChatEvent>;
   listeners: Set<(data: string | null) => void>;
   stop: () => void;
+  /** Stop was requested; the turn stays in `runs` until it drains. */
+  stopping?: boolean;
   say?: (text: string) => Promise<void>;
-  /** Set once the final segment is pushed: later interjections append, never seal. */
+  /** Set once the event stream is over: later interjections append, never seal. */
   ended: boolean;
+  /** Messages recorded after the boundary; the final segment is inserted before them. */
+  lateMessages: string[];
+  /** Request ids the agent or a successful respond already resolved. */
+  resolved: Set<string>;
   /** Freeze the prose streamed so far as its own assistant message, before `beforeId`. */
   sealAssistant?: (beforeId?: string) => ChatMessage | undefined;
   /** Undo a seal whose human message was refused, when no later interjection owns it. */
@@ -616,8 +627,10 @@ async function recordInterjection(
   // Voice holds prose for a settle pass; it belongs to the segment being sealed.
   await run.settleHeld?.();
   const sealed = run.ended ? undefined : run.sealAssistant?.(message.id);
-  if (!run.thread.messages.some((entry) => entry.id === message.id))
+  if (!run.thread.messages.some((entry) => entry.id === message.id)) {
     run.thread.messages.push(message);
+    if (run.ended) run.lateMessages.push(message.id);
+  }
   run.thread.updatedAt = Date.now();
   publish(run, { type: "interjection", message });
   publishThreadSnapshot(run);
@@ -1219,6 +1232,8 @@ app.openapi(
                   title: z.string(),
                   updatedAt: z.number(),
                   running: z.boolean(),
+                  workingChildren: z.number().int(),
+                  waitingChildren: z.number().int(),
                   agent: z.string().nullable().optional(),
                   runtimeId: z.string().nullable().optional(),
                   sourceId: z.string().nullable().optional(),
@@ -1242,27 +1257,53 @@ app.openapi(
     const sources = sourceIds.length
       ? await getDb().query.gateway_sessions.findMany({
           where: inArray(gateway_sessions.id, sourceIds),
-          columns: { id: true, title: true, display_title: true, cwd: true, hidden_at: true },
+          columns: {
+            id: true,
+            title: true,
+            display_title: true,
+            cwd: true,
+            hidden_at: true,
+            backend: true,
+            runtime_session_id: true,
+            execution_host: true,
+          },
         })
       : [];
     const sourceById = new Map(sources.map((row) => [row.id, row]));
-    const sourceTitle = (thread: (typeof threads)[number]) => {
+    const sourceTitle = (thread: { title: string; sourceId: string | null; resumed: number }) => {
       const source = thread.sourceId ? sourceById.get(thread.sourceId) : undefined;
       const title = source && (source.display_title ?? source.title);
       if (!title) return null;
       return thread.resumed || isClaudeProcessName(thread.title, source.cwd) ? title : null;
     };
+    const visible = threads.filter(
+      (thread) =>
+        include_hidden || !(thread.sourceId && sourceById.get(thread.sourceId)?.hidden_at),
+    );
+    // One batched rollup for the whole list; summaries carry no strict thread parse,
+    // so legacy and corrupt rows keep listing with zero counts.
+    const counts = childWorkCountsMany(
+      visible.map((thread) => {
+        const source = thread.sourceId ? sourceById.get(thread.sourceId) : undefined;
+        return {
+          id: thread.id,
+          nativeId: thread.runtimeId ?? source?.runtime_session_id ?? null,
+          backend: thread.backend ?? source?.backend ?? null,
+          host: thread.host ?? source?.execution_host ?? null,
+        };
+      }),
+    );
     return c.json({
-      threads: threads
-        .filter(
-          (thread) =>
-            include_hidden || !(thread.sourceId && sourceById.get(thread.sourceId)?.hidden_at),
-        )
-        .map(({ resumed, ...thread }) => ({
+      threads: visible.map(({ resumed, backend, ...thread }) => {
+        const count = counts.get(thread.id);
+        return {
           ...thread,
           title: sourceTitle({ ...thread, resumed }) || thread.title,
           running: !!threadRun(thread.id),
-        })),
+          workingChildren: count?.working ?? 0,
+          waitingChildren: count?.waiting ?? 0,
+        };
+      }),
     });
   },
 );
@@ -1309,6 +1350,9 @@ app.openapi(
             schema: z.object({
               changed: z.boolean(),
               running: z.boolean(),
+              workingChildren: z.number().int(),
+              waitingChildren: z.number().int(),
+              stopping: z.boolean(),
               live: z
                 .object({
                   id: z.string(),
@@ -1354,9 +1398,13 @@ app.openapi(
     // A stale watcher "running" claim must not pop the working panel on an idle
     // session: verify it against the native store before the chat trusts it.
     const liveStatus = source && !running ? await settleStaleRun(source) : source?.status;
+    const childWork = childWorkCounts(thread.id);
     return c.json({
       changed,
       running,
+      workingChildren: childWork.working,
+      waitingChildren: childWork.waiting,
+      stopping: threadRun(thread.id)?.[1]?.stopping === true,
       live: source
         ? {
             id: source.id,
@@ -1917,6 +1965,7 @@ app.openapi(
       sessionGrants.set(run.threadId, (sessionGrants.get(run.threadId) ?? new Set()).add(grant));
     run.permissions.delete(requestId);
     run.pending.delete(requestId);
+    run.resolved.add(requestId);
     resolveChatNotification(run.thread.id, `${c.req.valid("param").id}:${requestId}`);
     changes.publish("human-requests");
     return c.json({ ok: true });
@@ -2018,10 +2067,15 @@ app.openapi(
     try {
       await run.session.respondQuestion(requestId, answers);
     } catch (error) {
-      run.questions.set(requestId, question);
-      run.pending.set(requestId, { type: "question_request", data: question });
+      // A request the agent already withdrew (or a turn that ended mid-delivery)
+      // must not resurrect as a phantom pending card.
+      if (!run.resolved.has(requestId) && !run.ended) {
+        run.questions.set(requestId, question);
+        run.pending.set(requestId, { type: "question_request", data: question });
+      }
       throw error;
     }
+    run.resolved.add(requestId);
     // The answer belongs to the conversation, not just the vanished form. Recording
     // means accepted for delivery: inbox-backed questions resolve on the inbox write,
     // and a later native delivery failure surfaces in the inbox, not here.
@@ -2449,8 +2503,11 @@ async function beginTurn(
     pending: new Map(),
     listeners: new Set(),
     ended: false,
+    lateMessages: [],
+    resolved: new Set(),
     stop: () => {
       stopped = true;
+      run.stopping = true;
       halt();
       const session = run.session;
       // Interrupt-capable backends end the turn cooperatively and keep the native
@@ -2921,6 +2978,7 @@ async function beginTurn(
             run.permissions.delete(event.data.requestId);
             run.questions.delete(event.data.requestId);
             run.pending.delete(event.data.requestId);
+            run.resolved.add(event.data.requestId);
             changes.publish("human-requests");
             await emit({ type: "request_resolved", requestId: event.data.requestId });
           } else if (event.type === "error") await emit({ type: "error", message: event.data });
@@ -2953,6 +3011,13 @@ async function beginTurn(
       failure ??= message;
       if (!stopped) await emit({ type: "error", message }).catch(() => {});
     } finally {
+      // The turn's ordering boundary closes as soon as the event stream is over:
+      // a steer or answer arriving during usage capture or transport close must
+      // not seal the finished reply. Late records append below the final segment.
+      run.ended = true;
+      delete run.sealAssistant;
+      delete run.unsealAssistant;
+      delete run.settleHeld;
       clearTimeout(timer);
       clearTimeout(stopFallback);
       if (timedOut) {
@@ -3019,14 +3084,11 @@ async function beginTurn(
       // A switched account has a working session again; stop replaying history.
       if (thread.providerSwitch && completed && thread.runtimeId) delete thread.providerSwitch;
       await run.session?.close().catch(() => {});
-      // The turn's ordering boundary: the final segment owns the transcript from here.
-      // A late interjection confirmation appends below it instead of sealing a copy of
-      // it, and no new steer enters a turn that is already over.
-      run.ended = true;
-      delete run.sealAssistant;
-      delete run.unsealAssistant;
-      delete run.settleHeld;
-      thread.messages.push(assistant);
+      // Messages recorded after the boundary belong below the completed reply,
+      // even if the final segment has not been pushed yet.
+      const lateAt = thread.messages.findIndex((entry) => run.lateMessages.includes(entry.id));
+      if (lateAt >= 0) thread.messages.splice(lateAt, 0, assistant);
+      else thread.messages.push(assistant);
       if (synced) {
         const mark = await transcriptMark(thread).catch(() => null);
         if (mark) thread.transcriptMark = mark;
@@ -3387,6 +3449,7 @@ export function chatStatus(id: string): SessionStatus {
   const queue = new SessionMessageStore(getSqlite())
     .queued(thread.id)
     .map(({ id, state, position }) => ({ id, state, position }));
+  const childWork = childWorkCounts(thread.id);
   return {
     session_id: thread.id,
     title: thread.title,
@@ -3411,6 +3474,9 @@ export function chatStatus(id: string): SessionStatus {
     children: store()
       .children([thread.id])
       .map((child) => child.id),
+    working_children: childWork.working,
+    waiting_children: childWork.waiting,
+    stopping: run?.stopping === true,
     project_id: thread.projectId ?? null,
     cwd: thread.cwd,
     started_at: thread.spawnedBy?.at ?? null,
@@ -3451,6 +3517,10 @@ registerChatControl({
     return !!run;
   },
   running: (threadId) => !!threadRun(threadId),
+  waiting: (threadId) => {
+    const run = threadRun(threadId)?.[1];
+    return run?.permissions.size ? "approval" : run?.questions.size ? "question" : null;
+  },
   full: () => runs.size >= 4,
   startPending: startPendingChildren,
 });

@@ -10,7 +10,10 @@ CLI bridge and its registered specs before declaring ORC unavailable. Use a regi
 ORC spec, or `--mcp-http <selected ORC URL>/mcp` / an existing secure stdio launcher;
 per-agent MCP configuration is not required. An already connected MCP tool is also
 supported. Select the readable project name and call `context` first, then fetch
-the effective `orc-sdlc` with `skill_read` through that interface. Read relevant
+the effective `orc-sdlc` with `skill_read` through that interface. Discover tools
+with `tool_search`/`tool_describe`; use `tool_invoke` for a single call and
+`tool_execute` to parallelize independent reads or filter large results before they
+reach context, passing `connection` for external Spec tools. Read relevant
 knowledge, not every document. Inspect the actual code/artifact before asking
 questions that it can answer. Report a connection gap only after checking the
 available bridge and direct connection; preserve scope and never use stale guidance.

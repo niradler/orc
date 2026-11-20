@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { changes } from "@orc/core/changes";
@@ -6,6 +9,7 @@ import { ChatThreadSchema } from "@orc/core/chat";
 import { resetConfig } from "@orc/core/config";
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
+import { setSpecHome } from "api-spec-cli";
 import { previewBroker } from "../desktop-preview/broker.js";
 import { setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -13,9 +17,12 @@ const session = crypto.randomUUID(),
   other = crypto.randomUUID();
 const originalBase = process.env.ORC_API_BASE;
 let server: ReturnType<typeof Bun.serve>;
+// Meta search fans out across Spec connections; keep it off the machine's real registry.
+const specHome = mkdtempSync(join(tmpdir(), "orc-preview-spec-home-"));
 const connections: Client[] = [];
 const desktops: { id: string; lease: string }[] = [];
 beforeAll(() => {
+  setSpecHome(specHome);
   const app = setupTestApp();
   for (const id of [session, other])
     new ChatStore(getSqlite()).save(
@@ -49,6 +56,8 @@ afterAll(async () => {
   if (originalBase === undefined) delete process.env.ORC_API_BASE;
   else process.env.ORC_API_BASE = originalBase;
   teardownTestApp();
+  setSpecHome(undefined);
+  rmSync(specHome, { recursive: true, force: true });
 });
 async function connect(mode: "full" | "meta", bound = true, clientId?: string): Promise<Client> {
   const client = new Client({ name: "capability-demo", version: "1" });
