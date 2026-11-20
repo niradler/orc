@@ -75,6 +75,7 @@ describe("deleteJob", () => {
 });
 
 describe("transaction usage", () => {
+  // A synchronous whole-repo scan: give it a budget that survives parallel CI load.
   test("no source file passes an async callback to a transaction", () => {
     const root = join(import.meta.dir, "../../..");
     const offenders: string[] = [];
@@ -97,5 +98,5 @@ describe("transaction usage", () => {
       }
     }
     expect(offenders).toEqual([]);
-  });
+  }, 30000);
 });

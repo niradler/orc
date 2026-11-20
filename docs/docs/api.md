@@ -580,7 +580,9 @@ at that point, then a slim `thread` event naming the run and a `turn` event with
 the turn's start time; a reattach replays only the events after the interjection,
 because the sealed prose is already stored, and re-emits any approval or question
 still pending so a replay cutoff never hides a prompt the turn waits on. A tool
-call, plan or subagent that spans the split keeps its entry in the segment that
-started it; its result updates that segment rather than starting a nameless copy
-below. Once the turn's final message is stored, a late confirmation appends below
-it instead of sealing a copy of it.
+call (including same-id updates), plan or subagent that spans the split keeps its
+entry in the segment that started it; its result updates that segment rather than
+starting a nameless copy below. Once the agent's event stream ends the turn is
+closed to interjections: a new steer is refused (queue it instead), and a late
+answer confirmation appends below the completed reply instead of sealing a copy
+of it.

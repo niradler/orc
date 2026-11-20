@@ -185,8 +185,12 @@ interface ChatRun {
   listeners: Set<(data: string | null) => void>;
   stop: () => void;
   say?: (text: string) => Promise<void>;
-  /** Set once the final segment is pushed: later interjections append, never seal. */
+  /** Set once the event stream is over: later interjections append, never seal. */
   ended: boolean;
+  /** Messages recorded after the boundary; the final segment is inserted before them. */
+  lateMessages: string[];
+  /** Request ids the agent or a successful respond already resolved. */
+  resolved: Set<string>;
   /** Freeze the prose streamed so far as its own assistant message, before `beforeId`. */
   sealAssistant?: (beforeId?: string) => ChatMessage | undefined;
   /** Undo a seal whose human message was refused, when no later interjection owns it. */
@@ -616,8 +620,10 @@ async function recordInterjection(
   // Voice holds prose for a settle pass; it belongs to the segment being sealed.
   await run.settleHeld?.();
   const sealed = run.ended ? undefined : run.sealAssistant?.(message.id);
-  if (!run.thread.messages.some((entry) => entry.id === message.id))
+  if (!run.thread.messages.some((entry) => entry.id === message.id)) {
     run.thread.messages.push(message);
+    if (run.ended) run.lateMessages.push(message.id);
+  }
   run.thread.updatedAt = Date.now();
   publish(run, { type: "interjection", message });
   publishThreadSnapshot(run);
@@ -1917,6 +1923,7 @@ app.openapi(
       sessionGrants.set(run.threadId, (sessionGrants.get(run.threadId) ?? new Set()).add(grant));
     run.permissions.delete(requestId);
     run.pending.delete(requestId);
+    run.resolved.add(requestId);
     resolveChatNotification(run.thread.id, `${c.req.valid("param").id}:${requestId}`);
     changes.publish("human-requests");
     return c.json({ ok: true });
@@ -2018,10 +2025,15 @@ app.openapi(
     try {
       await run.session.respondQuestion(requestId, answers);
     } catch (error) {
-      run.questions.set(requestId, question);
-      run.pending.set(requestId, { type: "question_request", data: question });
+      // A request the agent already withdrew (or a turn that ended mid-delivery)
+      // must not resurrect as a phantom pending card.
+      if (!run.resolved.has(requestId) && !run.ended) {
+        run.questions.set(requestId, question);
+        run.pending.set(requestId, { type: "question_request", data: question });
+      }
       throw error;
     }
+    run.resolved.add(requestId);
     // The answer belongs to the conversation, not just the vanished form. Recording
     // means accepted for delivery: inbox-backed questions resolve on the inbox write,
     // and a later native delivery failure surfaces in the inbox, not here.
@@ -2449,6 +2461,8 @@ async function beginTurn(
     pending: new Map(),
     listeners: new Set(),
     ended: false,
+    lateMessages: [],
+    resolved: new Set(),
     stop: () => {
       stopped = true;
       halt();
@@ -2921,6 +2935,7 @@ async function beginTurn(
             run.permissions.delete(event.data.requestId);
             run.questions.delete(event.data.requestId);
             run.pending.delete(event.data.requestId);
+            run.resolved.add(event.data.requestId);
             changes.publish("human-requests");
             await emit({ type: "request_resolved", requestId: event.data.requestId });
           } else if (event.type === "error") await emit({ type: "error", message: event.data });
@@ -2953,6 +2968,13 @@ async function beginTurn(
       failure ??= message;
       if (!stopped) await emit({ type: "error", message }).catch(() => {});
     } finally {
+      // The turn's ordering boundary closes as soon as the event stream is over:
+      // a steer or answer arriving during usage capture or transport close must
+      // not seal the finished reply. Late records append below the final segment.
+      run.ended = true;
+      delete run.sealAssistant;
+      delete run.unsealAssistant;
+      delete run.settleHeld;
       clearTimeout(timer);
       clearTimeout(stopFallback);
       if (timedOut) {
@@ -3019,14 +3041,11 @@ async function beginTurn(
       // A switched account has a working session again; stop replaying history.
       if (thread.providerSwitch && completed && thread.runtimeId) delete thread.providerSwitch;
       await run.session?.close().catch(() => {});
-      // The turn's ordering boundary: the final segment owns the transcript from here.
-      // A late interjection confirmation appends below it instead of sealing a copy of
-      // it, and no new steer enters a turn that is already over.
-      run.ended = true;
-      delete run.sealAssistant;
-      delete run.unsealAssistant;
-      delete run.settleHeld;
-      thread.messages.push(assistant);
+      // Messages recorded after the boundary belong below the completed reply,
+      // even if the final segment has not been pushed yet.
+      const lateAt = thread.messages.findIndex((entry) => run.lateMessages.includes(entry.id));
+      if (lateAt >= 0) thread.messages.splice(lateAt, 0, assistant);
+      else thread.messages.push(assistant);
       if (synced) {
         const mark = await transcriptMark(thread).catch(() => null);
         if (mark) thread.transcriptMark = mark;
