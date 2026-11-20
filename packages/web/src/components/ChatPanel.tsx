@@ -34,7 +34,6 @@ import { ChatActivityList } from "@/components/ChatActivityList";
 import { ChatAgentModelPicker } from "@/components/ChatAgentModelPicker";
 import { ChatPermissionPrompt, ChatPlanReview } from "@/components/ChatApprovalCard";
 import { ChatAttachments } from "@/components/ChatAttachments";
-import { ChatBackgroundWork } from "@/components/ChatBackgroundWork";
 import {
   ChatContinueInTerminal,
   useChatContinueInTerminal,
@@ -48,7 +47,7 @@ import {
   useDictation,
 } from "@/components/ChatDictation";
 import { ChatForkNotice } from "@/components/ChatForkNotice";
-import { ChatLiveAnnouncer, ChatLiveStatus } from "@/components/ChatLiveStatus";
+import { ChatLiveAnnouncer } from "@/components/ChatLiveStatus";
 import { ChatMessageActions } from "@/components/ChatMessageActions";
 import { ChatPermissionChip } from "@/components/ChatPermissionSelect";
 import {
@@ -67,6 +66,7 @@ import {
   isVoiceShortcut,
   useVoiceMode,
 } from "@/components/ChatVoiceMode";
+import { ChatWorkStatus } from "@/components/ChatWorkStatus";
 import { ChatWorkspaceControls } from "@/components/ChatWorkspaceControls";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { MobileChatShell } from "@/components/chat-mobile/MobileChatShell";
@@ -268,6 +268,7 @@ export function ChatPanel({
     reconnecting,
     refreshing,
     refresh,
+    setChildWork,
     streamingAgent,
     streamText,
     activity,
@@ -319,6 +320,15 @@ export function ChatPanel({
     // instead of popping the working panel on an idle session.
     staleTime: 0,
     refetchOnWindowFocus: true,
+    // A requested Stop and child work change without a stream event of their own.
+    refetchInterval: (query) => {
+      const data = query.state.data as
+        | { stopping?: boolean; workingChildren?: number; waitingChildren?: number }
+        | undefined;
+      return data?.stopping || (data?.workingChildren ?? 0) > 0 || (data?.waitingChildren ?? 0) > 0
+        ? 2000
+        : false;
+    },
   });
   const answers = session.data?.queued ?? [];
   const sessionChanged = !!session.data?.changed && !streaming && !refreshing;
@@ -353,7 +363,14 @@ export function ChatPanel({
     turnElsewhere,
     runClaim,
     hasThread: !!thread,
+    workingChildren: session.data?.workingChildren,
+    waitingChildren: session.data?.waitingChildren,
   });
+  const childWorking = session.data?.workingChildren ?? 0;
+  const childWaiting = session.data?.waitingChildren ?? 0;
+  useEffect(() => {
+    if (thread?.id) setChildWork(childWorking, childWaiting);
+  }, [thread?.id, childWorking, childWaiting, setChildWork]);
   const forkDisabledReason =
     streaming || refreshing || reconnecting || turnElsewhere
       ? "Wait for the current response to finish before forking."
@@ -376,18 +393,23 @@ export function ChatPanel({
     await refresh(sessionChanged);
     void session.refetch();
   };
-  const children = useSessionChildren(thread?.id ?? null);
+  const children = useSessionChildren(thread?.id ?? null, streaming);
+  const subagents = useSessionSubagents(thread?.sourceId ?? thread?.id ?? null, streaming);
   const lastMessage = messages[messages.length - 1];
   const background = chatBackgroundWork(
     streaming ? activity : lastMessage?.role === "assistant" ? (lastMessage.activity ?? []) : [],
     children.data ?? [],
+    subagents.data ?? [],
+    streaming,
   );
   const queryClient = useQueryClient();
   const [backgroundError, setBackgroundError] = useState<string | null>(null);
-  const openBackground = async (sessionId: string) => {
+  const openBackground = async (sessionId: string, native?: boolean) => {
     setBackgroundError(null);
     try {
-      openThread(await api.chat.get(sessionId));
+      // A spawned chat opens directly; a discovered native subagent resumes into chat
+      // the same way the session list opens a live session.
+      openThread(native ? await api.chat.resume(sessionId) : await api.chat.get(sessionId));
     } catch (cause) {
       setBackgroundError(
         cause instanceof Error ? cause.message : "That session could not be opened.",
@@ -404,6 +426,17 @@ export function ChatPanel({
         cause instanceof Error ? cause.message : "That session could not be stopped.",
       );
     }
+  };
+  // Stop is cooperative: the turn keeps running until the agent ends it. Show that the
+  // request landed instead of letting a second click look like a no-op.
+  const [stopRequested, setStopRequested] = useState(false);
+  useEffect(() => {
+    if (!streaming) setStopRequested(false);
+  }, [streaming]);
+  const stopping = streaming && (stopRequested || session.data?.stopping === true);
+  const requestStop = () => {
+    setStopRequested(true);
+    cancel();
   };
   const home = useSessionHome();
   const lineage = useSessionLineage(thread?.sourceId ? thread.id : null);
@@ -554,10 +587,9 @@ export function ChatPanel({
       ),
     [messages],
   );
-  const { data: subagents } = useSessionSubagents(thread?.sourceId ?? thread?.id ?? null);
   const subagentLinks = useMemo(
-    () => matchSubagents(messages, subagents ?? []),
-    [messages, subagents],
+    () => matchSubagents(messages, subagents.data ?? []),
+    [messages, subagents.data],
   );
   const lastAssistant = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index--) {
@@ -1359,19 +1391,18 @@ export function ChatPanel({
                 </div>
               )}
             </div>
-            {streaming && (
-              <ChatLiveStatus
+            {(streaming || (!focusChat && background.length > 0)) && (
+              <ChatWorkStatus
                 agent={streamingAgent}
+                streaming={streaming}
                 startedAt={turn?.startedAt}
                 activity={activity}
+                items={focusChat ? [] : background}
+                error={focusChat ? null : backgroundError}
+                onOpen={(sessionId, native) => void openBackground(sessionId, native)}
+                onStop={(sessionId) => void stopBackground(sessionId)}
               />
             )}
-            <ChatBackgroundWork
-              items={focusChat ? [] : background}
-              error={backgroundError}
-              onOpen={(sessionId) => void openBackground(sessionId)}
-              onStop={(sessionId) => void stopBackground(sessionId)}
-            />
             {focusChat && backgroundError && (
               // Focus hides the background rows, never a failure raised from them.
               <p
@@ -1823,15 +1854,23 @@ export function ChatPanel({
                       </ActionHelp>
                     )}
                     {streaming && (
-                      <ActionHelp label="Stop response">
+                      <ActionHelp
+                        label={stopping ? "Stopping…" : "Stop response"}
+                        description={stopping ? "Waiting for the agent to end the turn" : undefined}
+                      >
                         <button
                           type="button"
                           data-testid="chat-cancel-button"
-                          aria-label="Stop response"
-                          onClick={cancel}
-                          className={iconButton}
+                          aria-label={stopping ? "Stopping response" : "Stop response"}
+                          onClick={requestStop}
+                          disabled={stopping}
+                          className={cn(iconButton, stopping && "opacity-60")}
                         >
-                          <Square size={17} />
+                          {stopping ? (
+                            <LoaderCircle size={17} className="motion-safe:animate-spin" />
+                          ) : (
+                            <Square size={17} />
+                          )}
                         </button>
                       </ActionHelp>
                     )}

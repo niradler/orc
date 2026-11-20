@@ -126,7 +126,12 @@ import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { isClaudeProcessName } from "../sessions/claude.js";
 import { projectIdFor } from "../sessions/common.js";
-import { notifySpawner, spawnChain } from "../sessions/control.js";
+import {
+  childWorkCounts,
+  childWorkCountsMany,
+  notifySpawner,
+  spawnChain,
+} from "../sessions/control.js";
 import { opencodeSessionUpdated } from "../sessions/opencode.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
 import { readTranscriptBytes, type TranscriptTurn } from "../sessions/transcript.js";
@@ -184,6 +189,8 @@ interface ChatRun {
   pending: Map<string, ChatEvent>;
   listeners: Set<(data: string | null) => void>;
   stop: () => void;
+  /** Stop was requested; the turn stays in `runs` until it drains. */
+  stopping?: boolean;
   say?: (text: string) => Promise<void>;
   /** Set once the event stream is over: later interjections append, never seal. */
   ended: boolean;
@@ -1225,6 +1232,8 @@ app.openapi(
                   title: z.string(),
                   updatedAt: z.number(),
                   running: z.boolean(),
+                  workingChildren: z.number().int(),
+                  waitingChildren: z.number().int(),
                   agent: z.string().nullable().optional(),
                   runtimeId: z.string().nullable().optional(),
                   sourceId: z.string().nullable().optional(),
@@ -1248,27 +1257,53 @@ app.openapi(
     const sources = sourceIds.length
       ? await getDb().query.gateway_sessions.findMany({
           where: inArray(gateway_sessions.id, sourceIds),
-          columns: { id: true, title: true, display_title: true, cwd: true, hidden_at: true },
+          columns: {
+            id: true,
+            title: true,
+            display_title: true,
+            cwd: true,
+            hidden_at: true,
+            backend: true,
+            runtime_session_id: true,
+            execution_host: true,
+          },
         })
       : [];
     const sourceById = new Map(sources.map((row) => [row.id, row]));
-    const sourceTitle = (thread: (typeof threads)[number]) => {
+    const sourceTitle = (thread: { title: string; sourceId: string | null; resumed: number }) => {
       const source = thread.sourceId ? sourceById.get(thread.sourceId) : undefined;
       const title = source && (source.display_title ?? source.title);
       if (!title) return null;
       return thread.resumed || isClaudeProcessName(thread.title, source.cwd) ? title : null;
     };
+    const visible = threads.filter(
+      (thread) =>
+        include_hidden || !(thread.sourceId && sourceById.get(thread.sourceId)?.hidden_at),
+    );
+    // One batched rollup for the whole list; summaries carry no strict thread parse,
+    // so legacy and corrupt rows keep listing with zero counts.
+    const counts = childWorkCountsMany(
+      visible.map((thread) => {
+        const source = thread.sourceId ? sourceById.get(thread.sourceId) : undefined;
+        return {
+          id: thread.id,
+          nativeId: thread.runtimeId ?? source?.runtime_session_id ?? null,
+          backend: thread.backend ?? source?.backend ?? null,
+          host: thread.host ?? source?.execution_host ?? null,
+        };
+      }),
+    );
     return c.json({
-      threads: threads
-        .filter(
-          (thread) =>
-            include_hidden || !(thread.sourceId && sourceById.get(thread.sourceId)?.hidden_at),
-        )
-        .map(({ resumed, ...thread }) => ({
+      threads: visible.map(({ resumed, backend, ...thread }) => {
+        const count = counts.get(thread.id);
+        return {
           ...thread,
           title: sourceTitle({ ...thread, resumed }) || thread.title,
           running: !!threadRun(thread.id),
-        })),
+          workingChildren: count?.working ?? 0,
+          waitingChildren: count?.waiting ?? 0,
+        };
+      }),
     });
   },
 );
@@ -1315,6 +1350,9 @@ app.openapi(
             schema: z.object({
               changed: z.boolean(),
               running: z.boolean(),
+              workingChildren: z.number().int(),
+              waitingChildren: z.number().int(),
+              stopping: z.boolean(),
               live: z
                 .object({
                   id: z.string(),
@@ -1360,9 +1398,13 @@ app.openapi(
     // A stale watcher "running" claim must not pop the working panel on an idle
     // session: verify it against the native store before the chat trusts it.
     const liveStatus = source && !running ? await settleStaleRun(source) : source?.status;
+    const childWork = childWorkCounts(thread.id);
     return c.json({
       changed,
       running,
+      workingChildren: childWork.working,
+      waitingChildren: childWork.waiting,
+      stopping: threadRun(thread.id)?.[1]?.stopping === true,
       live: source
         ? {
             id: source.id,
@@ -2465,6 +2507,7 @@ async function beginTurn(
     resolved: new Set(),
     stop: () => {
       stopped = true;
+      run.stopping = true;
       halt();
       const session = run.session;
       // Interrupt-capable backends end the turn cooperatively and keep the native
@@ -3406,6 +3449,7 @@ export function chatStatus(id: string): SessionStatus {
   const queue = new SessionMessageStore(getSqlite())
     .queued(thread.id)
     .map(({ id, state, position }) => ({ id, state, position }));
+  const childWork = childWorkCounts(thread.id);
   return {
     session_id: thread.id,
     title: thread.title,
@@ -3430,6 +3474,9 @@ export function chatStatus(id: string): SessionStatus {
     children: store()
       .children([thread.id])
       .map((child) => child.id),
+    working_children: childWork.working,
+    waiting_children: childWork.waiting,
+    stopping: run?.stopping === true,
     project_id: thread.projectId ?? null,
     cwd: thread.cwd,
     started_at: thread.spawnedBy?.at ?? null,
@@ -3470,6 +3517,10 @@ registerChatControl({
     return !!run;
   },
   running: (threadId) => !!threadRun(threadId),
+  waiting: (threadId) => {
+    const run = threadRun(threadId)?.[1];
+    return run?.permissions.size ? "approval" : run?.questions.size ? "question" : null;
+  },
   full: () => runs.size >= 4,
   startPending: startPendingChildren,
 });

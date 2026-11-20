@@ -730,3 +730,100 @@ describe("agent session control", () => {
     await req(app, "POST", `/sessions/live/${lead.id}/stop`);
   });
 });
+
+describe("child work rollup", () => {
+  test("an idle parent reads working while its spawned child holds a turn", async () => {
+    const parent = await startParent("parent: delegate and rest", repo);
+    const parentTurn = await turnFor("parent: delegate");
+    await req(
+      app,
+      "POST",
+      "/sessions/live/spawn",
+      { prompt: "child: long run", title: "Long run" },
+      as(parent.id),
+    );
+    const childTurn = await turnFor("child: long run");
+    parentTurn.release();
+    await until(async () => (await status(parent.id)).status === "idle", "parent idle");
+
+    // The parent's own turn ended, but the child still holds work: the status, the
+    // thread list and the thread session payload must all say so.
+    const idle = await status(parent.id);
+    expect(idle.status).toBe("idle");
+    expect(idle.working_children).toBe(1);
+    expect(idle.waiting_children).toBe(0);
+    const threads = await (await req(app, "GET", "/chat/threads")).json<{
+      threads: { id: string; workingChildren: number; waitingChildren: number }[];
+    }>();
+    const row = threads.threads.find((thread) => thread.id === parent.id);
+    expect(row?.workingChildren).toBe(1);
+    const session = await (await req(app, "GET", `/chat/threads/${parent.id}/session`)).json<{
+      workingChildren: number;
+      waitingChildren: number;
+      stopping: boolean;
+    }>();
+    expect(session.workingChildren).toBe(1);
+    expect(session.stopping).toBe(false);
+
+    childTurn.release();
+    await until(async () => (await status(parent.id)).working_children === 0, "child settled");
+    for (const turn of turns) turn.release();
+  });
+
+  test("native subagents discovered under the session count as child work", async () => {
+    const parent = await startParent("parent: native children", repo);
+    const parentTurn = await turnFor("parent: native");
+    parentTurn.release();
+    await until(async () => (await status(parent.id)).status === "idle", "parent idle");
+    const thread = await (await req(app, "GET", `/chat/threads/${parent.id}`)).json<{
+      runtimeId: string | null;
+    }>();
+    expect(thread.runtimeId).toBeTruthy();
+    const sqlite = getSqlite();
+    const subagentId = `sub-${crypto.randomUUID()}`;
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions
+           (id, chat_id, backend, mode, status, role, parent_session_id, runtime_session_id, created_at, updated_at)
+         VALUES (?, '__live-sessions__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, unixepoch(), unixepoch())`,
+      )
+      .run(subagentId, thread.runtimeId, `native-${subagentId}`);
+    try {
+      const withChild = await status(parent.id);
+      expect(withChild.status).toBe("idle");
+      expect(withChild.working_children).toBe(1);
+      sqlite.query("UPDATE gateway_sessions SET status = 'stopped' WHERE id = ?").run(subagentId);
+      expect((await status(parent.id)).working_children).toBe(0);
+    } finally {
+      sqlite.query("DELETE FROM gateway_sessions WHERE id = ?").run(subagentId);
+    }
+  });
+
+  test("a requested stop reads stopping until the agent ends the turn", async () => {
+    const wrapper = createBackend("claude");
+    let releaseTurn = () => {};
+    registerBackend("claude", () => ({
+      ...wrapper,
+      startSession: async (opts) => {
+        const session = fakeSession(opts.cwd, `native-stop-${crypto.randomUUID()}`);
+        // An agent that acknowledges the interrupt but keeps working: the turn must
+        // stay visible as stopping, not flip to idle on the ack.
+        return { ...session, interrupt: async () => {}, close: async () => releaseTurn() };
+      },
+    }));
+    try {
+      const parent = await startParent("parent: stop me", repo);
+      const turn = await turnFor("parent: stop me");
+      releaseTurn = turn.release;
+      expect((await req(app, "POST", `/sessions/live/${parent.id}/stop`)).status).toBe(200);
+      const stopping = await status(parent.id);
+      expect(stopping.status).toBe("running");
+      expect(stopping.stopping).toBe(true);
+      releaseTurn();
+      await until(async () => (await status(parent.id)).status === "stopped", "turn drained");
+      expect((await status(parent.id)).stopping).toBe(false);
+    } finally {
+      registerBackend("claude", () => wrapper);
+    }
+  });
+});

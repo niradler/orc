@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   AGENT_STATE_ORDER,
   AGENT_STATES,
+  chatSessionState,
   liveSessionState,
   moreUrgent,
   pendingLabel,
@@ -16,6 +17,34 @@ describe("agent state language", () => {
     expect(liveSessionState({ status: "running" })).toBe("working");
     expect(liveSessionState({ status: "idle" })).toBe("idle");
     expect(liveSessionState({ status: "stopped" })).toBe("ended");
+  });
+
+  test("an idle parent whose children still work reads as working, not idle", () => {
+    expect(liveSessionState({ status: "idle", working_children: 2 })).toBe("working");
+    expect(liveSessionState({ status: "idle", working_children: 0 })).toBe("idle");
+    // A child parked on a human needs the human through its parent too.
+    expect(liveSessionState({ status: "idle", waiting_children: 1 })).toBe("needs-you");
+    expect(liveSessionState({ status: "running", waiting_children: 1 })).toBe("needs-you");
+    // A failed or ended parent keeps its own state; children have their own rows.
+    expect(liveSessionState({ status: "error", working_children: 2 })).toBe("failed");
+    expect(liveSessionState({ status: "stopped", working_children: 2 })).toBe("ended");
+  });
+
+  test("chat state rolls child work up without a live turn", () => {
+    const base = {
+      needsYou: false,
+      failed: false,
+      streaming: false,
+      reconnecting: false,
+      refreshing: false,
+      turnElsewhere: false,
+      runClaim: false,
+      hasThread: true,
+    };
+    expect(chatSessionState(base)).toBe("idle");
+    expect(chatSessionState({ ...base, workingChildren: 1 })).toBe("working");
+    expect(chatSessionState({ ...base, waitingChildren: 1 })).toBe("needs-you");
+    expect(chatSessionState({ ...base, failed: true, workingChildren: 1 })).toBe("failed");
   });
 
   test("should prioritize actionable states ahead of quiet and unknown states", () => {

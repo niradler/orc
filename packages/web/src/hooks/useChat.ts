@@ -137,6 +137,10 @@ export interface ChatTab {
   /** Segments sealed by interjections in the current run; only they own routed activity. */
   interjectionSegments: string[];
   respondingAgent: string;
+  /** Child sessions and native subagents with a turn in flight, from the session poll. */
+  workingChildren?: number;
+  /** Child sessions parked on a human question or approval. */
+  waitingChildren?: number;
   /** A background turn finished or is waiting for a reply since the tab was last viewed. */
   attention: boolean;
 }
@@ -1280,6 +1284,17 @@ function useChatController() {
     stop(key);
   }, [stop, update]);
 
+  /** Keep the open tab's row honest while its children work after the turn ends. */
+  const setChildWork = useCallback(
+    (workingChildren: number, waitingChildren: number) =>
+      update(activeRef.current, (current) =>
+        current.workingChildren === workingChildren && current.waitingChildren === waitingChildren
+          ? {}
+          : { workingChildren, waitingChildren },
+      ),
+    [update],
+  );
+
   const editQueued = useCallback(
     (id: string | null, content?: string) => {
       const key = activeRef.current;
@@ -1639,6 +1654,7 @@ function useChatController() {
     reconnecting: tab.reconnecting,
     refreshing: tab.refreshing,
     refresh,
+    setChildWork,
     streamText: tab.streamText,
     activity: tab.activity,
     error: tab.error,

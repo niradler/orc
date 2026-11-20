@@ -157,6 +157,12 @@ export const SessionStatusSchema = z.object({
   ),
   parent_session_id: identity.nullable(),
   children: z.array(identity),
+  /** Child sessions (spawned chats and native subagents) with a turn in flight. */
+  working_children: z.number().int().min(0).default(0),
+  /** Child sessions parked on a human question or approval. */
+  waiting_children: z.number().int().min(0).default(0),
+  /** Stop was requested and the turn has not drained yet; status stays running until it does. */
+  stopping: z.boolean().default(false),
   project_id: identity.nullable(),
   cwd: z.string(),
   /** When a session another session started began; null for one a human started. */

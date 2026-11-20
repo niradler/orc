@@ -173,6 +173,20 @@ test("unseen Done never hides a session that needs you or is working", () => {
   expect(historyEntryState(working, empty)).toBe("working");
 });
 
+test("a saved chat whose children work reads Working, and a waiting child reads Needs you", () => {
+  const own = { ...saved, sourceId: null };
+  const empty = { since: 0, seen: {} };
+  const [idle] = chatHistoryList([], [own], [], []);
+  const [working] = chatHistoryList([], [{ ...own, workingChildren: 2 }], [], []);
+  const [waiting] = chatHistoryList([], [{ ...own, waitingChildren: 1 }], [], []);
+  expect(historyEntryState(idle, empty, true)).toBe("idle");
+  expect(historyEntryState(working, empty, true)).toBe("working");
+  expect(historyEntryState(waiting, empty, true)).toBe("needs-you");
+  // A native parent rolls up the same way through the shared live state.
+  const [native] = chatHistoryList([], [], [{ ...live, status: "idle", working_children: 1 }], []);
+  expect(historyEntryState(native, empty, true)).toBe("working");
+});
+
 const terminal: Terminal = {
   id: "term-1",
   name: "claude · repo",
