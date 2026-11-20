@@ -8669,7 +8669,7 @@ export interface paths {
                              * @default meta
                              * @enum {string}
                              */
-                            default_mode: "meta" | "full";
+                            default_mode: "full" | "meta" | "code";
                             prompts: {
                                 name: string;
                                 title: string;
@@ -8702,7 +8702,7 @@ export interface paths {
                          * @default meta
                          * @enum {string}
                          */
-                        default_mode?: "meta" | "full";
+                        default_mode?: "full" | "meta" | "code";
                         prompts?: {
                             name: string;
                             title: string;
@@ -8725,7 +8725,7 @@ export interface paths {
                              * @default meta
                              * @enum {string}
                              */
-                            default_mode: "meta" | "full";
+                            default_mode: "full" | "meta" | "code";
                             prompts: {
                                 name: string;
                                 title: string;

@@ -12,6 +12,7 @@ import { MCP_PROMPT_REQUEST_ARG, renderMcpPrompt } from "@orc/core/mcp-prompts";
 import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { z } from "zod";
+import { codeToolListing, runCodeMode } from "./code-mode.js";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
 export { parseMcpProjects } from "./project-scope.js";
@@ -55,9 +56,16 @@ export interface McpServerOptions extends ToolOptions {
   mode?: McpMode;
   project?: string;
   projects?: string[];
+  requestSignal?: AbortSignal;
 }
 
-export function createMcpServer({ mode, project, projects, ...options }: McpServerOptions = {}) {
+export function createMcpServer({
+  mode,
+  project,
+  projects,
+  requestSignal,
+  ...options
+}: McpServerOptions = {}) {
   if (project !== undefined && projects !== undefined)
     throw new Error("Use project or projects, not both");
   const names = projects ? normalizeMcpProjects(projects) : parseMcpProjects(project);
@@ -65,7 +73,15 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
   const selectedMode = mode ?? loadConfig().mcp.default_mode;
   const server = new Server(
     { name: "orc", version: "0.0.1" },
-    { capabilities: { tools: {}, prompts: {} } },
+    {
+      capabilities: { tools: {}, prompts: {} },
+      ...(selectedMode === "code"
+        ? {
+            instructions:
+              "Use tool_execute to discover ORC tools, inspect their schemas, and combine calls. Return compact findings.",
+          }
+        : {}),
+    },
   );
 
   // The set of tools this connection serves. Every lookup, listing and meta
@@ -99,10 +115,11 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
     );
   }
 
-  async function callTool(name: string, args: unknown): Promise<ToolResult> {
+  async function callTool(name: string, args: unknown, scripted = false): Promise<ToolResult> {
     logger.debug(
       `Tool call: ${name}`,
-      name === "session_handoff" ||
+      scripted ||
+        name === "session_handoff" ||
         name === "tool_invoke" ||
         name === "human_request" ||
         name === "command_request" ||
@@ -203,29 +220,41 @@ export function createMcpServer({ mode, project, projects, ...options }: McpServ
           : {}),
       };
     } catch (err) {
-      logger.error(`Tool error: ${name}`, err);
+      logger.error(`Tool error: ${name}`, scripted ? undefined : err);
       const msg = err instanceof Error ? err.message : "Unknown error";
       return { content: [{ type: "text" as const, text: msg }], isError: true };
     }
   }
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools:
-      selectedMode === "meta"
-        ? [
-            ...metaToolListing(),
-            ...(options.agentSessionId
-              ? listing(toolDefinitions.filter((tool) => tool.name === "speak"))
-              : []),
-          ]
-        : listing(await servedTools()),
-  }));
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    if (selectedMode === "full") return { tools: listing(await servedTools()) };
+    const surface = selectedMode === "code" ? [codeToolListing] : metaToolListing();
+    const speak = options.agentSessionId
+      ? listing(toolDefinitions.filter((tool) => tool.name === "speak"))
+      : [];
+    return { tools: [...surface, ...speak] };
+  });
 
   // In meta mode a CallTool naming a real tool is routed through the same
   // callTool as tool_invoke, so clients that already know a name keep working;
   // the served set still bounds what is reachable.
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, { signal }) => {
     const { name, arguments: args } = request.params;
+    if (selectedMode === "code") {
+      if (name === codeToolListing.name) {
+        return runCodeMode(
+          toolDefinitions,
+          args,
+          requestSignal ? AbortSignal.any([signal, requestSignal]) : signal,
+          (tool, input) => callTool(tool, input, true),
+        );
+      }
+      if (name === "speak" && options.agentSessionId) return callTool(name, args);
+      return {
+        content: [{ type: "text", text: `Unknown tool in code mode: ${name}` }],
+        isError: true,
+      };
+    }
     if (selectedMode === "meta" && isMetaToolName(name)) {
       const invoke =
         name === "tool_invoke"

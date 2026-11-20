@@ -1,8 +1,9 @@
+import { MCP_MODES, type McpSettings } from "@orc/core/mcp-settings";
 import { z } from "zod";
 import type { toolDefinitions } from "./tools.js";
 
-export const MCP_MODES = ["full", "meta"] as const;
-export type McpMode = (typeof MCP_MODES)[number];
+export { MCP_MODES };
+export type McpMode = McpSettings["default_mode"];
 
 export function parseMcpMode(value: string | null | undefined): McpMode {
   if (value === null || value === undefined) return "meta";
@@ -18,6 +19,7 @@ export type ToolResult = {
     | { type: "image"; data: string; mimeType: string; text?: never }
   )[];
   isError?: boolean;
+  structuredContent?: Record<string, unknown>;
 };
 
 const searchInput = z.object({

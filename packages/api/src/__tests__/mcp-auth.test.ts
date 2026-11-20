@@ -132,6 +132,26 @@ describe("MCP HTTP endpoint mode", () => {
     expect(await listNames("?mode=meta")).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
   });
 
+  test("?mode=code lists the executor and keeps speak conversation-bound", async () => {
+    expect(await listNames("?mode=code")).toEqual(["tool_execute"]);
+    expect(await listNames("?mode=code&session=thread-1")).toEqual(["tool_execute", "speak"]);
+  });
+
+  test("?mode=code executes JavaScript through the authenticated HTTP route", async () => {
+    const res = await rpc("?mode=code", {
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: {
+        name: "tool_execute",
+        arguments: { code: 'return (await tools.search("task")).tools.map(tool => tool.name);' },
+      },
+    });
+    const text = await res.text();
+    const payload = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+    expect(payload.result.structuredContent.result).toContain("task_list");
+  });
+
   test("bare /mcp defaults to meta discovery", async () => {
     const names = await listNames("");
     expect(names).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
@@ -158,6 +178,6 @@ describe("MCP HTTP endpoint mode", () => {
     const res = await rpc("?mode=bogus", { jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("full, meta");
+    expect(body.error).toContain("full, meta, code");
   });
 });

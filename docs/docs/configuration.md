@@ -499,7 +499,7 @@ Pick the execution host from the SSH row under **Settings → Hosts**: **Change*
 | Key                | Default | Env                 | Purpose                                               |
 | ------------------ | ------- | ------------------- | ----------------------------------------------------- |
 | `rules.enabled`    | `false` | `ORC_RULES_ENABLED` | Enforce [agent rules](./agent-rules.md)               |
-| `mcp.default_mode` | `meta`  | none                | MCP tool surface: `meta` or `full`                    |
+| `mcp.default_mode` | `meta`  | none                | MCP tool surface: `meta`, `full`, or `code`          |
 | `github.token`     | none    | `ORC_GITHUB_TOKEN`  | Token for ORC's GitHub calls (pull requests, reviews) |
 
 ### Channels (Telegram, Slack)

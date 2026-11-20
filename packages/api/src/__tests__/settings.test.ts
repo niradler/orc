@@ -164,7 +164,7 @@ test("should require authentication for reading and writing preferences", async 
 
 test("should persist MCP defaults and serve DB prompts over HTTP and MCP", async () => {
   const settings = {
-    default_mode: "full",
+    default_mode: "code",
     prompts: [
       {
         name: "render-ui",
@@ -184,7 +184,7 @@ test("should persist MCP defaults and serve DB prompts over HTTP and MCP", async
   expect(await (await app.request("/api/settings/mcp", { headers })).json()).toEqual(settings);
   const raw = JSON.parse(readFileSync(globalConfigPath(), "utf8"));
   expect(raw.api.secret).toBe("private-server-secret");
-  expect(raw.mcp.default_mode).toBe("full");
+  expect(raw.mcp.default_mode).toBe("code");
   expect(raw.mcp.prompts).toBeUndefined();
   async function rpc(method: string, params = {}, query = "") {
     const response = await app.request(`/mcp${query}`, {
@@ -204,6 +204,9 @@ test("should persist MCP defaults and serve DB prompts over HTTP and MCP", async
     (tool: { name: string }) => tool.name,
   );
   expect(tools).not.toContain("ui_catalog");
+  expect((await rpc("tools/list")).result.tools.map((tool: { name: string }) => tool.name)).toEqual(
+    ["tool_execute"],
+  );
   expect(
     (await rpc("tools/list", {}, "?mode=meta")).result.tools.map(
       (tool: { name: string }) => tool.name,

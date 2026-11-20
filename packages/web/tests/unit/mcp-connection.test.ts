@@ -16,14 +16,15 @@ test("endpoint follows the configured API origin", () => {
   );
 });
 
-test("query carries only non-default mode and the selected project scope", () => {
-  expect(mcpUrl(base)).toBe("http://localhost:7700/mcp");
+test("query preserves the selected mode and project scope independently of the server default", () => {
+  expect(mcpUrl(base)).toBe("http://localhost:7700/mcp?mode=meta");
   expect(mcpUrl({ ...base, mode: "full", projects: ["orc"] })).toBe(
     "http://localhost:7700/mcp?mode=full&project=orc",
   );
   expect(mcpUrl({ ...base, projects: ["orc", "spec cli"] })).toBe(
-    "http://localhost:7700/mcp?projects=orc%2Cspec+cli",
+    "http://localhost:7700/mcp?mode=meta&projects=orc%2Cspec+cli",
   );
+  expect(mcpUrl({ ...base, mode: "code" })).toBe("http://localhost:7700/mcp?mode=code");
 });
 
 test("snippets reference the secret env var and omit auth when there is none", () => {
@@ -32,18 +33,18 @@ test("snippets reference the secret env var and omit auth when there is none", (
     mcpServers: {
       orc: {
         type: "http",
-        url: "http://localhost:7700/mcp?project=orc",
+        url: "http://localhost:7700/mcp?mode=meta&project=orc",
         headers: { Authorization: `Bearer \${ORC_API_SECRET}` },
       },
     },
   });
   expect(mcpSnippet("claude-cli", scoped)).toBe(
-    `claude mcp add --transport http orc 'http://localhost:7700/mcp?project=orc' --header 'Authorization: Bearer \${ORC_API_SECRET}'`,
+    `claude mcp add --transport http orc 'http://localhost:7700/mcp?mode=meta&project=orc' --header 'Authorization: Bearer \${ORC_API_SECRET}'`,
   );
   expect(mcpSnippet("codex", scoped)).toBe(
-    '[mcp_servers.orc]\nurl = "http://localhost:7700/mcp?project=orc"\nbearer_token_env_var = "ORC_API_SECRET"',
+    '[mcp_servers.orc]\nurl = "http://localhost:7700/mcp?mode=meta&project=orc"\nbearer_token_env_var = "ORC_API_SECRET"',
   );
   expect(mcpSnippet("spec", { ...scoped, secretEnv: "" })).toBe(
-    "spec add orc --mcp-http 'http://localhost:7700/mcp?project=orc'",
+    "spec add orc --mcp-http 'http://localhost:7700/mcp?mode=meta&project=orc'",
   );
 });

@@ -51,6 +51,7 @@ app.all("/mcp", async (c) => {
     publicApiBaseUrl: origin,
     projectsChanged: reassignSessions,
     mode,
+    requestSignal: c.req.raw.signal,
     ...(agentSessionId ? { agentSessionId } : {}),
     ...(preview.sessionId
       ? { previewScope: { sessionId: preview.sessionId, clientId: preview.clientId } }

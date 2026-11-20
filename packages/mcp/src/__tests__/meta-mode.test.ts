@@ -172,6 +172,7 @@ describe("parseMcpMode", () => {
     expect(parseMcpMode(undefined)).toBe("meta");
     expect(parseMcpMode("full")).toBe("full");
     expect(parseMcpMode("meta")).toBe("meta");
-    expect(() => parseMcpMode("bogus")).toThrow("Valid modes: full, meta");
+    expect(parseMcpMode("code")).toBe("code");
+    expect(() => parseMcpMode("bogus")).toThrow("Valid modes: full, meta, code");
   });
 });

@@ -141,13 +141,13 @@ With no secret configured, requests are accepted unauthenticated. To avoid handi
 
 | Parameter  | Example                    | Effect                                         |
 | ---------- | -------------------------- | ---------------------------------------------- |
-| `mode`     | `/mcp?mode=full`           | `meta` or `full`; overrides `mcp.default_mode` |
+| `mode`     | `/mcp?mode=code`           | `meta`, `full`, or `code`. Overrides `mcp.default_mode`. |
 | `project`  | `/mcp?project=my-app`      | Scope the connection to one project            |
 | `projects` | `/mcp?projects=my-app,api` | Scope to several projects (max 50)             |
 
 Project names are case-insensitive; unknown names are rejected. Use `project` or `projects`, not both. On a scoped connection, tool calls default to the selected project(s); a call naming a project outside the selection fails.
 
-For stdio, `orc mcp --mode full` overrides the mode. `ORC_SESSION_ID` (or `CLAUDE_CODE_SESSION_ID`) attributes tool calls to an agent session.
+For stdio, `orc mcp --mode code` selects code mode. `ORC_SESSION_ID` (or `CLAUDE_CODE_SESSION_ID`) attributes tool calls to an agent session.
 
 ## Client config
 
@@ -189,6 +189,7 @@ Per-agent setup: [Connect agents](./connect-agents.md).
 | ------ | ------------------------------ | ------------------------ |
 | `meta` | Three discovery tools          | Yes (`mcp.default_mode`) |
 | `full` | Every ORC tool with its schema |                          |
+| `code` | `tool_execute` for sandboxed JavaScript |                  |
 
 Meta mode keeps the agent's context small. The agent discovers tools on demand:
 
@@ -205,6 +206,38 @@ tool_search({ query: "create task" })
 tool_describe({ name: "task_create" })
 tool_invoke({ name: "task_create", arguments: { title: "Fix login redirect", project: "my-app" } })
 ```
+
+### Code mode
+
+Code mode lets an agent discover tools, run several calls, and process their results before they enter the conversation. Connect to `/mcp?mode=code&project=my-app` over HTTP or pass `--mode code` to the stdio server. Conversation-bound connections also serve `speak`, and MCP prompts are available in every mode.
+
+Send `tool_execute` an object with `code` and an optional `timeout_ms`. The code is a JavaScript async function body with `await` and `return`.
+
+| Inside the script | What it returns |
+| --- | --- |
+| `await tools.search(query, { limit, offset })` | `{ tools, total }` with names, short descriptions and read/write effects. An empty query pages through eligible tools. |
+| `await tools.describe(name)` | Description, input JSON Schema, read/write effect, and output guidance where available. |
+| `await tools.call(name, args)` | A JSON value or plain text from ORC. MCP tool errors reject the promise. |
+
+```js
+const [tasks, jobs] = await Promise.all([
+  tools.search("list active tasks"),
+  tools.search("list jobs"),
+]);
+const names = [tasks.tools[0].name, jobs.tools[0].name];
+const definitions = await Promise.all(names.map(name => tools.describe(name)));
+const results = await Promise.allSettled(definitions.map(tool => tools.call(tool.name, {})));
+return Object.fromEntries(results.map((result, index) => [
+  names[index],
+  result.status === "fulfilled" ? String(result.value).split("\n").slice(0, 3) : "Unavailable",
+]));
+```
+
+The result is `{ result, logs, truncated }`, with matching text for clients that use MCP text content. Each run starts in a fresh QuickJS WASM worker. The script has no host filesystem, environment, network, or package APIs. ORC checks each call against the code-mode tool set and the connection's existing project and tool permissions. Use meta or full mode for tools outside the code-mode set, including browser control and launching jobs.
+
+Independent calls can overlap up to four at a time within a run. Writes run exclusively in that run. A timeout or cancellation stops the script and discards queued calls. Dispatched operations can finish and writes can already be committed, so check their state before retrying. Tool results are untrusted data even when the script filters them.
+
+Execution defaults to 15 seconds and accepts 100 to 25,000 milliseconds, with a 64 MiB guest heap and 64 bridge requests per run. A bridge result can be up to 512 KiB, with a 4 MiB cumulative budget. A result larger than 8,192 characters or above the JSON complexity limit is replaced by `null` with `truncated: true`. Up to 16 log lines of 256 characters each are returned.
 
 ## Prompts
 

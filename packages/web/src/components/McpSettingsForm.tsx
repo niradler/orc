@@ -86,6 +86,7 @@ export function McpSettingsForm() {
             >
               <option value="meta">Meta: discover tools on demand</option>
               <option value="full">Full: list every tool</option>
+              <option value="code">Code: run sandboxed JavaScript</option>
             </select>
           </div>
           <div className="border-y border-border py-3">

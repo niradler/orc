@@ -99,6 +99,12 @@ function run(cmd: string, args: string[], cwd: string): { code: number; stdout: 
 async function probeMcp(entry: string, mode: string): Promise<{ tools: string[]; search: string }> {
   const child = spawn(process.execPath, [entry, "mcp", "--mode", mode], {
     stdio: ["pipe", "pipe", "ignore"],
+    env: {
+      ...process.env,
+      ORC_DB_PATH: ":memory:",
+      ORC_SESSION_ID: "",
+      CLAUDE_CODE_SESSION_ID: "",
+    },
   });
   const send = (msg: unknown) => child.stdin.write(`${JSON.stringify(msg)}\n`);
   const replies = new Map<number, { result?: unknown; error?: { message: string } }>();
@@ -134,7 +140,18 @@ async function probeMcp(entry: string, mode: string): Promise<{ tools: string[];
     jsonrpc: "2.0",
     id: 3,
     method: "tools/call",
-    params: { name: "tool_search", arguments: { query: "create task" } },
+    params:
+      mode === "code"
+        ? {
+            name: "tool_execute",
+            arguments: {
+              code: `const page = await tools.search("create task");
+                const description = await tools.describe(page.tools[0].name);
+                const results = await Promise.all([tools.call("task_list"), tools.call("project_list")]);
+                return { name: description.name, calls: results.length };`,
+            },
+          }
+        : { name: "tool_search", arguments: { query: "create task" } },
   });
   const deadline = Date.now() + 30000;
   try {
@@ -254,6 +271,15 @@ if (tarball && failures.length === 0) {
         if (full.tools.includes("task_create") && !full.tools.includes("tool_search"))
           ok(`full mode lists ${full.tools.length} domain tools`);
         else fail(`full mode listed unexpected tools: ${full.tools.slice(0, 10).join(", ")}`);
+        const code = await probeMcp(installedEntry, "code");
+        const execution = JSON.parse(code.search);
+        if (
+          code.tools.join(",") === "tool_execute" &&
+          execution.result?.name === "task_create" &&
+          execution.result?.calls === 2
+        )
+          ok("code mode discovers, describes and runs real tools in the installed worker");
+        else fail("installed code mode returned an unexpected listing or execution result");
       } catch (err) {
         fail(`orc mcp stdio probe failed: ${err instanceof Error ? err.message : String(err)}`);
       }
