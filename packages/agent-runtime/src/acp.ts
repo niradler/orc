@@ -203,6 +203,13 @@ export class AcpSession implements AgentSession {
   private sessionList = false;
   /** OpenCode 2.x steers through `_session/steering`; a second prompt is rejected. */
   private steeringExtension = false;
+  /**
+   * ACP has no system slot, so the instructions ride in the first prompt of a
+   * new session only; the agent keeps them in its history. A loaded or forked
+   * session already carries them, and re-sending them every turn would spam
+   * the transcript with user-role system instructions.
+   */
+  private systemPromptPending = false;
   private closed = false;
   private done = true;
   private busy = false;
@@ -742,6 +749,7 @@ export class AcpSession implements AgentSession {
           if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(created.sessionId))
             throw new Error("ACP returned an invalid session identity.");
           this.runtimeId = created.sessionId;
+          this.systemPromptPending = true;
           configOptions = created.configOptions ?? [];
         }
       } finally {
@@ -845,9 +853,12 @@ export class AcpSession implements AgentSession {
         data: `This session moved to ${this.effectiveCwd}; continuing there.`,
       });
     }
-    const text = AGENT_COMMAND_PATTERN.test(prompt.trim())
-      ? prompt.trim()
-      : [this.opts.systemPromptAppend, prompt].filter(Boolean).join("\n\n");
+    const command = AGENT_COMMAND_PATTERN.test(prompt.trim());
+    const append = !command && this.systemPromptPending ? this.opts.systemPromptAppend : undefined;
+    // Once submitted, the agent's history owns the instructions. A prompt the
+    // agent rejects fails this session; the next turn opens a fresh one.
+    if (append) this.systemPromptPending = false;
+    const text = command ? prompt.trim() : [append, prompt].filter(Boolean).join("\n\n");
     const { agent } = this.connection;
     const sessionId = this.runtimeId;
     const turn = (content: PromptRequest["prompt"]): Promise<PromptResponse> =>

@@ -3,7 +3,12 @@ import { ChevronRight } from "lucide-react";
 import { createContext, memo, type ReactNode, useContext, useMemo } from "react";
 import { ChatUiBlock } from "@/components/chat-ui/ChatUiBlock";
 import { Markdown } from "@/components/Markdown";
-import { splitAgentMessage, splitUiBlocks, type UiMessagePart } from "@/lib/agent-message";
+import {
+  splitAgentMessage,
+  splitTurnPreamble,
+  splitUiBlocks,
+  type UiMessagePart,
+} from "@/lib/agent-message";
 import { splitStreamingMarkdown } from "@/lib/streaming-markdown";
 
 /**
@@ -38,17 +43,24 @@ export function AgentMessageText({
   plain = false,
   revealContext = false,
   streaming,
+  userTurn = false,
 }: {
   children: string;
   plain?: boolean;
   revealContext?: boolean;
   /** Overrides the provider; a finished message renders one document as before. */
   streaming?: boolean;
+  /** A human turn: ORC instructions injected ahead of the turn context stay collapsed. */
+  userTurn?: boolean;
 }) {
   const fromProvider = useContext(AgentTextStreaming);
   const live = streaming ?? fromProvider;
+  const preamble = useMemo(
+    () => (userTurn && !plain ? splitTurnPreamble(children) : null),
+    [children, userTurn, plain],
+  );
   const parts = useMemo(() => {
-    if (plain) return null;
+    if (plain || preamble) return null;
     return splitAgentMessage(children).flatMap<UiMessagePart>((part) =>
       part.kind === "context"
         ? [{ kind: "text", text: part.text, offset: part.offset }]
@@ -57,7 +69,33 @@ export function AgentMessageText({
             offset: block.offset + part.offset,
           })),
     );
-  }, [children, plain]);
+  }, [children, plain, preamble]);
+  // Imported transcripts carry the instructions ORC prepended to the turn.
+  // Show them as one quiet collapsed row, never as the user's own words.
+  if (preamble)
+    return (
+      <>
+        <details
+          open={revealContext || undefined}
+          data-testid="chat-instructions"
+          className="group my-2 min-w-0 rounded-md border border-outline-variant text-on-surface-variant"
+        >
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-3 text-xs hover:bg-surface">
+            <ChevronRight size={14} aria-hidden="true" className="shrink-0 group-open:rotate-90" />
+            <span className="min-w-0 break-all font-mono">System instructions</span>
+          </summary>
+          <pre
+            data-testid="chat-instructions-content"
+            className="max-h-80 overflow-auto border-t border-outline-variant p-3 whitespace-pre-wrap wrap-break-word wrap-anywhere font-mono text-xs"
+          >
+            {preamble.preamble}
+          </pre>
+        </details>
+        <AgentMessageText revealContext={revealContext} streaming={live}>
+          {preamble.rest}
+        </AgentMessageText>
+      </>
+    );
   if (!parts?.some((part) => part.kind === "ui"))
     return (
       <AgentText plain={plain} revealContext={revealContext} streaming={live}>

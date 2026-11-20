@@ -154,11 +154,21 @@ function ToolBox({
   );
 }
 
-function Block({ block, matched }: { block: TurnBlock; matched: boolean }) {
+function Block({
+  block,
+  matched,
+  userTurn,
+}: {
+  block: TurnBlock;
+  matched: boolean;
+  userTurn: boolean;
+}) {
   if (block.type === "text")
     return (
       <div className="chat-message">
-        <AgentMessageText revealContext={matched}>{block.text}</AgentMessageText>
+        <AgentMessageText revealContext={matched} userTurn={userTurn}>
+          {block.text}
+        </AgentMessageText>
       </div>
     );
   if (block.type === "tool_use") return <ToolBox block={block} open={matched} />;
@@ -480,7 +490,7 @@ export function SessionView({
                 const matched = matches.includes(turn.index);
                 const blocks = turn.blocks.map((block, i) => (
                   // biome-ignore lint/suspicious/noArrayIndexKey: blocks are positional
-                  <Block key={i} block={block} matched={matched} />
+                  <Block key={i} block={block} matched={matched} userTurn={turn.role === "user"} />
                 ));
                 return (
                   <div

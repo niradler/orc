@@ -2809,14 +2809,10 @@ async function beginTurn(
           setup.continuation && input.trim() !== "/compact"
             ? `${setup.continuation}\n\n${message}`
             : message;
-        const prompt =
-          thread.backend === "acpx"
-            ? [thread.config.system, sent].filter(Boolean).join("\n\n")
-            : sent;
         thread.capabilities = run.session.capabilities ??
           backend.capabilities ?? { ...UNKNOWN_CAPABILITIES };
         await emit({ type: "capabilities", capabilities: thread.capabilities });
-        await run.session.send(prompt);
+        await run.session.send(sent);
         let receivedResult = false;
         let outputBytes = 0;
         for await (const event of run.session.events()) {

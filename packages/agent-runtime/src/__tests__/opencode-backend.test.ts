@@ -230,11 +230,11 @@ test("opencode backend runs the builtin ACP command with a provider executable o
   }
 });
 
-test("opencode receives /compact as a bare native command, without the ORC context prefix", async () => {
+test("opencode receives the ORC context once, and /compact as a bare native command", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-compact-"));
   const { argvFile, session } = await startPeer(cwd, { systemPromptAppend: "ORC CONTEXT" });
   try {
-    for (const prompt of ["hello", "/compact"]) {
+    for (const prompt of ["hello", "/compact", "what changed since then?"]) {
       await session.send(prompt);
       for await (const event of session.events()) if (event.type === "result") break;
     }
@@ -244,9 +244,43 @@ test("opencode receives /compact as a bare native command, without the ORC conte
       .map((line) => JSON.parse(line))
       .filter((request) => request.method === "session/prompt")
       .map((request) => request.params.prompt[0].text);
-    expect(prompts).toEqual(["ORC CONTEXT\n\nhello", "/compact"]);
+    expect(prompts).toEqual(["ORC CONTEXT\n\nhello", "/compact", "what changed since then?"]);
   } finally {
     await session.close();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
+
+test("opencode resume never re-sends the ORC context prefix", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-resume-prefix-"));
+  const { argvFile, session } = await startPeer(cwd, { systemPromptAppend: "ORC CONTEXT" });
+  try {
+    await session.send("hello");
+    for await (const event of session.events()) if (event.type === "result") break;
+    await session.close();
+    const script =
+      process.platform === "win32" ? join(cwd, "opencode.exe") : join(cwd, "opencode.ts");
+    const resumed = await createBackend("opencode").resumeSession("oc-ses-1", {
+      cwd,
+      orcMcp: false,
+      providerExecutable: script,
+      acpAgent: "opencode",
+      systemPromptAppend: "ORC CONTEXT",
+    });
+    try {
+      await resumed.send("continue");
+      for await (const event of resumed.events()) if (event.type === "result") break;
+      const prompts = readFileSync(`${argvFile}.wire`, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line))
+        .filter((request) => request.method === "session/prompt")
+        .map((request) => request.params.prompt[0].text);
+      expect(prompts).toEqual(["ORC CONTEXT\n\nhello", "continue"]);
+    } finally {
+      await resumed.close();
+    }
+  } finally {
     rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });

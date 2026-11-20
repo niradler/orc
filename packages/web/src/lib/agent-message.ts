@@ -1,3 +1,5 @@
+import { ORC_CONTEXT_TAG } from "@orc/core/chat-context";
+
 export type AgentMessagePart =
   | { kind: "text"; text: string; offset: number }
   | { kind: "context"; tag: string; text: string; offset: number };
@@ -146,4 +148,22 @@ export function splitAgentMessage(text: string): AgentMessagePart[] {
   }
   if (start < text.length) parts.push({ kind: "text", text: text.slice(start), offset: start });
   return parts;
+}
+
+/**
+ * ORC builds a user turn as injected instructions, then the turn's own
+ * <orc-context> block, then the typed text. Anything before that context block
+ * is ORC preamble (chat system instructions or a replayed continuation), never
+ * something the human typed, so the UI can show it collapsed. Display-only:
+ * the exact bytes stay intact. Null when the turn starts with its context
+ * block or has none.
+ */
+export function splitTurnPreamble(text: string): { preamble: string; rest: string } | null {
+  const context = splitAgentMessage(text).find(
+    (part) => part.kind === "context" && part.tag === ORC_CONTEXT_TAG,
+  );
+  if (!context || context.offset === 0) return null;
+  const preamble = text.slice(0, context.offset);
+  if (!preamble.trim()) return null;
+  return { preamble, rest: text.slice(context.offset) };
 }

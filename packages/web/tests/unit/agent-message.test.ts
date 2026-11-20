@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { splitAgentMessage, splitUiBlocks } from "../../src/lib/agent-message";
+import { splitAgentMessage, splitTurnPreamble, splitUiBlocks } from "../../src/lib/agent-message";
 
 describe("orc-ui blocks", () => {
   test("should leave quoted component examples inside an outer code fence inert", () => {
@@ -114,5 +114,43 @@ describe("agent context display", () => {
     expect(splitAgentMessage(source)).toEqual([
       { kind: "context", tag: "context", text: source, offset: 0 },
     ]);
+  });
+});
+
+describe("turn preamble display", () => {
+  const context = "<orc-context>\nsource: webchat\nroute: /tasks\n</orc-context>";
+
+  test("splits injected instructions ahead of the turn context, keeping every byte", () => {
+    const preamble = "You are the ORC platform chat assistant.\n\nUse the catalog.";
+    const source = `${preamble}\n\n${context}\n\nshow my tasks`;
+    const split = splitTurnPreamble(source);
+    expect(split?.preamble).toBe(`${preamble}\n\n`);
+    expect(split?.rest).toBe(`${context}\n\nshow my tasks`);
+    expect(`${split?.preamble}${split?.rest}`).toBe(source);
+  });
+
+  test("a turn that starts with its context block has no preamble", () => {
+    expect(splitTurnPreamble(`${context}\n\nshow my tasks`)).toBeNull();
+  });
+
+  test("plain typed text and whitespace-only prefixes are not preamble", () => {
+    expect(splitTurnPreamble("just a question")).toBeNull();
+    expect(splitTurnPreamble(`\n\n${context}\n\nhi`)).toBeNull();
+    expect(splitTurnPreamble("")).toBeNull();
+  });
+
+  test("catalog fence examples inside the preamble stay raw text", () => {
+    const preamble = 'Instructions\n```orc-ui\n{"root":"card"}\n```\nMore instructions';
+    const split = splitTurnPreamble(`${preamble}\n\n${context}\n\nhi`);
+    expect(split?.preamble).toBe(`${preamble}\n\n`);
+    expect(split?.rest.startsWith(context)).toBe(true);
+  });
+
+  test("a quoted orc-context example in the preamble is not the turn context", () => {
+    const preamble = "Docs say:\n```xml\n<orc-context>example</orc-context>\n```";
+    const source = `${preamble}\n\n${context}\n\nhi`;
+    const split = splitTurnPreamble(source);
+    expect(split?.preamble).toBe(`${preamble}\n\n`);
+    expect(split?.rest).toBe(`${context}\n\nhi`);
   });
 });

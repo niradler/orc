@@ -573,6 +573,10 @@ describe("native chat runtime", () => {
       expect(first.response.status).toBe(200);
       expect(first.events.some((event) => event.type === "done")).toBe(true);
       expect(cursorCalls[0]?.opts).toMatchObject({ acpxAgent: "cursor", orcMcp: true });
+      // The instructions travel in the session options for once-per-session
+      // delivery; the turn prompt itself never carries them.
+      expect(cursorCalls[0]?.opts.systemPromptAppend).toContain("Operator instructions");
+      expect(cursorCalls[0]?.prompt).not.toContain("Operator instructions");
       const thread = first.events.find((event) => event.type === "thread");
       if (thread?.type !== "thread") throw new Error("Missing Cursor thread");
       expect(
@@ -589,6 +593,7 @@ describe("native chat runtime", () => {
       });
       expect(next.response.status).toBe(200);
       expect(cursorCalls[1]?.id).toBe("native-fixture");
+      expect(cursorCalls[1]?.prompt).not.toContain("Operator instructions");
     } finally {
       registerBackend("acpx", () => originalAcpx);
     }

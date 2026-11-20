@@ -195,9 +195,13 @@ export class CodexSession implements AgentSession {
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;
+    // Codex exec has no system slot: the instructions ride in the first prompt
+    // of a new thread only. A resumed thread already carries them in its
+    // rollout history, so later turns send the user's text alone.
+    const append = opts.runtimeSessionId ? undefined : opts.systemPromptAppend;
     writeToStdin(
       this.proc.stdin,
-      new TextEncoder().encode([opts.systemPromptAppend, prompt].filter(Boolean).join("\n\n")),
+      new TextEncoder().encode([append, prompt].filter(Boolean).join("\n\n")),
     );
     endStdin(this.proc.stdin);
 
