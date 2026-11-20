@@ -530,6 +530,17 @@ an ACP agent offered no `allow_always`, or an ORC rule requires a human answer) 
 characters) is the reason sent with a denial; sending it with another decision returns
 `400`. A request that is no longer pending returns `409`.
 
+`POST /chat/runs/{id}/answer` answers a pending `question_request` with
+`{ "requestId": "...", "answers": { "<question id>": ["..."] } }` and returns
+`{ ok: true, message }`, where `message` is the user message recorded in the
+conversation: one readable line per question, secret answers shown as `(hidden)`
+and a sole dismissal as `(dismissed)` (a dismissal reads even for a secret
+question, since it is the user's own action; alongside real values the dismissal
+sentinel is dropped). Recording means accepted for delivery: an inbox-backed
+question resolves on the inbox write, and a later native delivery failure
+surfaces in the inbox. A request that is no longer pending returns
+`409`; missing or empty answers return `400`.
+
 `POST /chat/runs/{id}/cancel` stops the running turn and returns `{ ok: true }`; a run
 that already finished returns `409`. On interrupt-capable backends (Pi, Codex,
 OpenCode/direct ACP) it sends the native interrupt and keeps the session resumable, so
@@ -558,6 +569,22 @@ use the same authentication as the rest of the API. The SDK exposes
 `client.chat.capabilities(agent, threadId?)` and `client.chat.steer(runId, input, requestId?)`.
 Reuse the same request ID and input when retrying. A duplicate ID with different
 content returns `409`; a live run accepts at most 32 distinct steering requests.
-The intent is saved before native delivery. An initial save failure sends nothing.
-Unconfirmed delivery is retained in history and cannot be resent with the same ID;
-a delivery-status save failure reports a warning while keeping the saved intent.
+The message is recorded at dispatch — the moment it was sent is its place in the
+transcript, independent of when the agent acknowledges delivery. An initial save
+failure sends nothing. Unconfirmed delivery is retained in history and cannot be
+resent with the same ID; a delivery-status save failure reports a warning while
+keeping the saved intent. An agent that explicitly refuses the text rolls the
+record back (a plain `CONFLICT`); clients reconcile the transcript at turn end.
+
+A steer or an answer joins the running turn without ending it, and the transcript
+keeps chronological order: the assistant prose streamed before the human message
+is sealed as its own assistant message above it, and the rest of the turn follows
+below. Chat SSE emits an `interjection` event carrying the recorded user message
+at that point, then a slim `thread` event naming the run and a `turn` event with
+the turn's start time; a reattach replays only the events after the interjection,
+because the sealed prose is already stored, and re-emits any approval or question
+still pending so a replay cutoff never hides a prompt the turn waits on. A tool
+call, plan or subagent that spans the split keeps its entry in the segment that
+started it; its result updates that segment rather than starting a nameless copy
+below. Once the turn's final message is stored, a late confirmation appends below
+it instead of sealing a copy of it.
