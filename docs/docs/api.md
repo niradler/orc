@@ -526,6 +526,13 @@ an ACP agent offered no `allow_always`, or an ORC rule requires a human answer) 
 characters) is the reason sent with a denial; sending it with another decision returns
 `400`. A request that is no longer pending returns `409`.
 
+`POST /chat/runs/{id}/answer` answers a pending `question_request` with
+`{ "requestId": "...", "answers": { "<question id>": ["..."] } }` and returns
+`{ ok: true, message }`, where `message` is the user message recorded in the
+conversation: one readable line per question, secret answers shown as `(hidden)`
+and a dismissal as `(dismissed)`. A request that is no longer pending returns
+`409`; missing or empty answers return `400`.
+
 `POST /chat/runs/{id}/cancel` stops the running turn and returns `{ ok: true }`; a run
 that already finished returns `409`. On interrupt-capable backends (Pi, Codex,
 OpenCode/direct ACP) it sends the native interrupt and keeps the session resumable, so
@@ -557,3 +564,10 @@ content returns `409`; a live run accepts at most 32 distinct steering requests.
 The intent is saved before native delivery. An initial save failure sends nothing.
 Unconfirmed delivery is retained in history and cannot be resent with the same ID;
 a delivery-status save failure reports a warning while keeping the saved intent.
+
+A steer or an answer joins the running turn without ending it, and the transcript
+keeps chronological order: the assistant prose streamed before the human message
+is sealed as its own assistant message above it, and the rest of the turn follows
+below. Chat SSE emits an `interjection` event carrying the recorded user message
+at that point, then a slim `thread` event naming the run; a reattach replays only
+the events after the interjection, because the sealed prose is already stored.

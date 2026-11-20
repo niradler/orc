@@ -677,8 +677,11 @@ The composer groups folder, branch, agent/model and permissions into compact
 controls. Phones and narrow desktop panels use icons; wide composers show labels.
 While a reply is running, **Send** joins that turn when the backend accepts
 steering (Codex, Claude, Pi and OpenCode), so the agent reads the message before
-its next step. **While responding** in Session settings → Customize switches the
-conversation to **Queue for the next turn**; new chats take that default from
+its next step. A steered message keeps its place in the chat: the reply streamed
+up to that point stays above it, and the agent's continuing work streams below,
+in the order things actually happened. **While responding** in Session settings
+→ Customize switches the conversation to **Queue for the next turn**; new chats
+take that default from
 Settings → Chat. The companion control beside Stop performs the other action
 either way, so both stay one press away. Attachments always queue, because
 steering carries text only.

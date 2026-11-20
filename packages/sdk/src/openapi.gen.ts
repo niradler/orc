@@ -4051,6 +4051,110 @@ export interface paths {
                     content: {
                         "application/json": {
                             ok: boolean;
+                            message: {
+                                id: string;
+                                /** @enum {string} */
+                                role: "user" | "assistant";
+                                content: string;
+                                timestamp: number;
+                                turn?: {
+                                    startedAt: number;
+                                    finishedAt?: number;
+                                    durationMs?: number;
+                                    /** @enum {string} */
+                                    outcome?: "completed" | "stopped" | "failed";
+                                    usage?: {
+                                        input_tokens: number;
+                                        cached_input_tokens: number;
+                                        context_tokens?: number;
+                                        context_window?: number;
+                                    };
+                                };
+                                agent?: string;
+                                model?: string;
+                                activity?: ({
+                                    /** @enum {string} */
+                                    type: "thinking";
+                                    id: string;
+                                    text: string;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "tool";
+                                    id: string;
+                                    name: string;
+                                    input: string;
+                                    result?: string;
+                                    isError?: boolean;
+                                    startedAt?: number;
+                                    /** @enum {string} */
+                                    background?: "command" | "subagent";
+                                } | {
+                                    /** @enum {string} */
+                                    type: "status";
+                                    id: string;
+                                    text: string;
+                                } | {
+                                    id: string;
+                                    title?: string;
+                                    entries: {
+                                        id: string;
+                                        /** @enum {string} */
+                                        status: "pending" | "in_progress" | "completed" | "failed";
+                                        content: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    type: "plan";
+                                } | {
+                                    id: string;
+                                    parentId?: string;
+                                    title?: string;
+                                    /** @enum {string} */
+                                    status: "running" | "waiting" | "completed" | "failed" | "stopped";
+                                    startedAt?: number;
+                                    durationMs?: number;
+                                    tokens?: number;
+                                    activity: ({
+                                        /** @enum {string} */
+                                        type: "thinking";
+                                        id: string;
+                                        text: string;
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "tool";
+                                        id: string;
+                                        name: string;
+                                        input: string;
+                                        result?: string;
+                                        isError?: boolean;
+                                        startedAt?: number;
+                                        /** @enum {string} */
+                                        background?: "command" | "subagent";
+                                    } | {
+                                        /** @enum {string} */
+                                        type: "status";
+                                        id: string;
+                                        text: string;
+                                    })[];
+                                    text?: string;
+                                    /** @enum {string} */
+                                    type: "subagent";
+                                })[];
+                                providerActivity?: {
+                                    id: string;
+                                    kind: string;
+                                    data?: {
+                                        [key: string]: unknown;
+                                    };
+                                }[];
+                                attachments?: {
+                                    id: string;
+                                    name: string;
+                                    path: string;
+                                    size: number;
+                                    mimeType: string;
+                                    description?: string;
+                                }[];
+                            };
                         };
                     };
                 };

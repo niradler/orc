@@ -29,6 +29,7 @@ import {
   ChatFilesSchema,
   ChatHistoryPageSchema,
   type ChatMessage,
+  ChatMessageSchema,
   ChatModelSchema,
   type ChatModels,
   ChatModelsSchema,
@@ -40,6 +41,7 @@ import {
   ChatThreadSchema,
   type ChatTurn,
   ChatWorkspaceSchema,
+  chatAnswerText,
   chatSystemPrompt,
   nativeChatAgent,
   nativeChatResumeUnavailableReason,
@@ -172,10 +174,16 @@ interface ChatRun {
   threadId: string;
   thread: ChatThread;
   key: string;
+  runId: string;
+  startedAt: number;
   events: string[];
+  /** Events from here on reconstruct the live turn; earlier prose is already stored. */
+  replayFrom?: number;
   listeners: Set<(data: string | null) => void>;
   stop: () => void;
   say?: (text: string) => Promise<void>;
+  /** Freeze the prose streamed so far as its own assistant message, before `beforeId`. */
+  sealAssistant?: (beforeId?: string) => void;
 }
 const runs = new Map<string, ChatRun>();
 
@@ -275,7 +283,7 @@ function follow(c: Context, run: ChatRun) {
       write = write.then(() => s.writeSSE({ data })).catch(end);
     };
     const listener = (data: string | null) => (data === null ? end() : send(data));
-    for (const data of run.events) send(data);
+    for (const data of run.events.slice(run.replayFrom ?? 0)) send(data);
     run.listeners.add(listener);
     s.onAbort(end);
     const ping = setInterval(() => send(JSON.stringify({ type: "ping" })), 25000);
@@ -580,6 +588,28 @@ const STEER_LIMIT = 32;
 /** The message may already be in the conversation, so a client must not resend it. */
 const STEER_UNCONFIRMED = "STEER_UNCONFIRMED";
 
+/**
+ * Record a human message that joined the running turn (a steer or an answer).
+ * The prose streamed so far is sealed before it so the transcript keeps the
+ * order things happened in, and attached clients split their live stream at the
+ * same point. A reattach replays only what follows: the sealed prose is already
+ * in the stored thread, and the slim thread event still names the run.
+ */
+function recordInterjection(run: ChatRun, message: ChatMessage): void {
+  run.sealAssistant?.(message.id);
+  if (!run.thread.messages.some((entry) => entry.id === message.id))
+    run.thread.messages.push(message);
+  run.thread.updatedAt = Date.now();
+  publish(run, { type: "interjection", message });
+  publish(run, {
+    type: "thread",
+    thread: { ...run.thread, messages: run.thread.messages.slice(-1) },
+    runId: run.runId,
+  });
+  publish(run, { type: "turn", turn: { startedAt: run.startedAt } });
+  run.replayFrom = run.events.length - 2;
+}
+
 function steerable(
   run: ChatRun | undefined,
 ): run is ChatRun & { session: AgentSession & Required<Pick<AgentSession, "steer">> } {
@@ -669,6 +699,7 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
           text: "Delivery unconfirmed. Check the response before sending again.",
         },
       ];
+      recordInterjection(run, message);
       saveDelivery();
       throw new ConflictError(
         "Steering delivery could not be confirmed. Check the response before sending another message; this text may already be in the conversation.",
@@ -676,6 +707,7 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       );
     }
     delete message.activity;
+    recordInterjection(run, message);
     saveDelivery();
     return run.thread;
   };
@@ -1930,7 +1962,11 @@ app.openapi(
     responses: {
       200: {
         description: "Answer delivered to the agent",
-        content: { "application/json": { schema: z.object({ ok: z.boolean() }) } },
+        content: {
+          "application/json": {
+            schema: z.object({ ok: z.boolean(), message: ChatMessageSchema }),
+          },
+        },
       },
     },
   }),
@@ -1953,9 +1989,25 @@ app.openapi(
       run.questions.set(requestId, question);
       throw error;
     }
+    // The answer belongs to the conversation, not just the vanished form.
+    const message: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: chatAnswerText(question, answers),
+      timestamp: Date.now(),
+    };
+    recordInterjection(run, message);
+    try {
+      store().save(run.thread);
+    } catch {
+      publish(run, {
+        type: "error",
+        message: "The answer was delivered, but it could not be saved to the conversation.",
+      });
+    }
     resolveChatNotification(run.thread.id, `${c.req.valid("param").id}:${requestId}`);
     changes.publish("human-requests");
-    return c.json({ ok: true });
+    return c.json({ ok: true, message });
   },
 );
 
@@ -2356,6 +2408,8 @@ async function beginTurn(
     threadId: thread.id,
     thread,
     key,
+    runId,
+    startedAt: Date.now(),
     events: [],
     listeners: new Set(),
     stop: () => {
@@ -2410,7 +2464,8 @@ async function beginTurn(
   });
   if (thread.title === "New chat") thread.title = input.slice(0, 100);
   const startedAt = Date.now();
-  const assistant: ChatMessage = {
+  run.startedAt = startedAt;
+  const newSegment = (): ChatMessage => ({
     id: crypto.randomUUID(),
     role: "assistant",
     content: "",
@@ -2419,6 +2474,19 @@ async function beginTurn(
     ...(thread.config.model ? { model: thread.config.model } : {}),
     activity: [],
     turn: { startedAt },
+  });
+  let assistant: ChatMessage = newSegment();
+  // A human interjection splits the turn: the prose so far becomes its own
+  // message before the human's, and later events stream into a fresh segment.
+  // Only the final segment carries the turn's outcome and timing.
+  run.sealAssistant = (beforeId) => {
+    if (!assistant.content && !assistant.activity?.length) return;
+    const sealed: ChatMessage = { ...assistant, timestamp: Date.now() };
+    delete sealed.turn;
+    const index = beforeId ? thread.messages.findIndex((entry) => entry.id === beforeId) : -1;
+    if (index >= 0) thread.messages.splice(index, 0, sealed);
+    else thread.messages.push(sealed);
+    assistant = newSegment();
   };
   thread.updatedAt = Date.now();
   try {

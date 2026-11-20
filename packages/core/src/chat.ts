@@ -74,6 +74,28 @@ export const CHAT_QUESTION_DISMISS_ANSWER =
 export const ChatAnswersSchema = z
   .record(z.string().min(1).max(256), z.array(z.string().max(20000)).min(1).max(20))
   .refine((value) => Object.keys(value).length <= 20, "Too many answers");
+/**
+ * The transcript record of a question answer: one readable line per question.
+ * Secret answers never enter the stored conversation, and a dismissal reads as
+ * the user's choice, not the instruction the agent receives.
+ */
+export function chatAnswerText(question: ChatQuestion, answers: Record<string, string[]>): string {
+  return question.questions
+    .map((entry) => {
+      const label = (entry.question || entry.header).replace(/\s+/g, " ").trim();
+      const values = answers[entry.id] ?? [];
+      const text = entry.isSecret
+        ? "(hidden)"
+        : values.includes(CHAT_QUESTION_DISMISS_ANSWER)
+          ? "(dismissed)"
+          : values
+              .map((value) => value.replace(/\s+/g, " ").trim())
+              .filter(Boolean)
+              .join(", ");
+      return `${label.length > 200 ? `${label.slice(0, 197)}…` : label}: ${text || "(no answer)"}`;
+    })
+    .join("\n");
+}
 export const ChatSettingsSchema = z
   .object({
     providerId: z
@@ -696,6 +718,10 @@ export const ChatEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("question_request"), data: ChatQuestionSchema }),
   z.object({ type: z.literal("request_resolved"), requestId: z.string() }),
+  // A human message joined the running turn (a steer or a question answer). The
+  // prose streamed before it is sealed as its own assistant segment, so the
+  // transcript keeps the order things actually happened in.
+  z.object({ type: z.literal("interjection"), message: ChatMessageSchema }),
   // Slim: thread metadata plus the turn's user message only; the full transcript
   // is read from GET /chat/threads/{id}.
   z.object({ type: z.literal("thread"), thread: ChatThreadSchema, runId: z.string().uuid() }),

@@ -89,4 +89,12 @@ describe("chat SSE contract", () => {
     }
     expect(parseChatEvent('data: {"type":"done"}')).toEqual({ type: "done" });
   });
+
+  test("a mid-turn human interjection carries its recorded message", () => {
+    const message = { id: "m1", role: "user", content: "Focus on tests", timestamp: 5 };
+    expect(
+      parseChatEvent(`data: {"type":"interjection","message":${JSON.stringify(message)}}`),
+    ).toEqual({ type: "interjection", message });
+    expect(parseChatEvent('data: {"type":"interjection"}')).toBeNull();
+  });
 });

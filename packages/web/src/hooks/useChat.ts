@@ -37,6 +37,7 @@ import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useProjects } from "@/hooks/useProjects";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { activeApiHeaders } from "@/lib/api-hosts";
+import { withInterjection } from "@/lib/chat-interjection";
 import { groupChatMessages } from "@/lib/chat-message-groups";
 import { permissionModes } from "@/lib/composer-chips";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
@@ -454,6 +455,8 @@ function useChatController() {
           permissions: tab.permissions.filter((request) => request.requestId !== event.requestId),
           questions: tab.questions.filter((request) => request.requestId !== event.requestId),
         }));
+      else if (event.type === "interjection")
+        update(key, (tab) => withInterjection(tab, event.message));
       else if (event.type !== "done")
         update(key, (tab) => ({ activity: appendChatActivity(tab.activity, event) }));
     },
@@ -1346,9 +1349,7 @@ function useChatController() {
                 thread,
                 error: null,
                 draft: tab.draft === input ? "" : tab.draft,
-                messages: tab.messages.some((message) => message.id === requestId)
-                  ? tab.messages.map((message) => (message.id === requestId ? delivered : message))
-                  : [...tab.messages, delivered],
+                ...withInterjection(tab, delivered),
               }
             : { error: null, draft: tab.draft === input ? "" : tab.draft },
         );
@@ -1431,9 +1432,14 @@ function useChatController() {
       if (!current || !pending || responding) return;
       setResponding(true);
       try {
-        await api.chat.answer(current.runId, pending.requestId, answers);
+        const { message: recorded } = await api.chat.answer(
+          current.runId,
+          pending.requestId,
+          answers,
+        );
         update(key, (tab) => ({
           questions: tab.questions.filter((request) => request.requestId !== pending.requestId),
+          ...withInterjection(tab, recorded),
         }));
       } catch (cause) {
         update(key, () => ({ error: message(cause, "Answer could not be sent.") }));

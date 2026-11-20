@@ -943,10 +943,14 @@ export const api = {
         ...(feedback ? { feedback } : {}),
       }),
     answer: (runId: string, requestId: string, answers: Record<string, string[]>) =>
-      req<{ ok: boolean }>("POST", `/chat/runs/${encodeURIComponent(runId)}/answer`, {
-        requestId,
-        answers,
-      }),
+      req<{ ok: boolean; message: import("@orc/core/chat").ChatMessage }>(
+        "POST",
+        `/chat/runs/${encodeURIComponent(runId)}/answer`,
+        {
+          requestId,
+          answers,
+        },
+      ),
     permissionMode: (runId: string, mode: NonNullable<ChatThread["config"]["permissionMode"]>) =>
       req<ChatThread>("POST", `/chat/runs/${encodeURIComponent(runId)}/permission-mode`, { mode }),
   },
