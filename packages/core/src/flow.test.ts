@@ -210,6 +210,47 @@ describe("validateFlowGraph", () => {
     };
     expect(issues(bad).join()).toContain("needs an agent profile, skill or prompt");
   });
+
+  const COMMAND_FLOW = {
+    name: "goal",
+    entry: "check",
+    nodes: {
+      check: { kind: "command", command: "exit 0" },
+      done: { kind: "terminal" },
+    },
+    edges: [{ from: "check", to: "done", when: { outcome: "passed" } }],
+  };
+
+  test("accepts a command node routed by its outcome", () => {
+    expect(issues(COMMAND_FLOW)).toEqual([]);
+  });
+
+  test("rejects a command node with no command", () => {
+    const bad = {
+      ...COMMAND_FLOW,
+      nodes: { ...COMMAND_FLOW.nodes, check: { kind: "command" } },
+    };
+    expect(issues(bad).join()).toContain("command node needs a command");
+  });
+
+  test("rejects command fields on non-command nodes", () => {
+    const bad = {
+      ...COMMAND_FLOW,
+      nodes: { ...COMMAND_FLOW.nodes, done: { kind: "terminal", command: "exit 0" } },
+    };
+    expect(issues(bad).join()).toContain("only apply to command nodes");
+  });
+
+  test("rejects an unreadable metric pattern", () => {
+    const bad = {
+      ...COMMAND_FLOW,
+      nodes: {
+        ...COMMAND_FLOW.nodes,
+        check: { kind: "command", command: "exit 0", metric_pattern: "(" },
+      },
+    };
+    expect(issues(bad).join()).toContain("not a valid regular expression");
+  });
 });
 
 describe("declaredOutcomes", () => {

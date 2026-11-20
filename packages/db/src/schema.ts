@@ -534,6 +534,32 @@ export const flow_runs = sqliteTable(
 );
 
 /**
+ * A goal (#173): a durable objective whose flow loops worker → check until the
+ * check passes or the budget/stall ladder halts it. Passed/halted status is
+ * derived from the flow run at read time; `status` here records only the
+ * lifecycle override a human applied (stop).
+ */
+export const goals = sqliteTable(
+  "goals",
+  {
+    id: text("id").primaryKey(),
+    task_id: text("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    flow_run_id: text("flow_run_id").references(() => flow_runs.id, {
+      onDelete: "set null",
+    }),
+    objective: text("objective").notNull(),
+    spec: text("spec", { mode: "json" }).$type<unknown>().notNull(),
+    status: text("status", { enum: ["active", "stopped"] })
+      .default("active")
+      .notNull(),
+    ...timestamps,
+  },
+  (t) => [index("goals_task_idx").on(t.task_id), index("goals_status_idx").on(t.status)],
+);
+
+/**
  * One visit to one node. This is the ledger: a durable, inspectable record of
  * what each node was asked to do and what verdict it came back with, readable
  * by a later node (or a human) without replaying anyone's context.

@@ -21,6 +21,7 @@ import { flowsRouter } from "./routes/flows.js";
 import { gatewayRouter } from "./routes/gateway.js";
 import { gitRouter } from "./routes/git.js";
 import { githubRouter } from "./routes/github.js";
+import { goalsRouter } from "./routes/goals.js";
 import { healthRouter } from "./routes/health.js";
 import { humanRequestsRouter } from "./routes/human-requests.js";
 import { integrationsRouter } from "./routes/integrations.js";
@@ -155,6 +156,7 @@ export function createApp() {
   app.route("/api", searchRouter);
   app.route("/api", primitivesRouter);
   app.route("/api", flowsRouter);
+  app.route("/api", goalsRouter);
   app.route("/api", tasksRouter);
   app.route("/api", taskLinksRouter);
   app.route("/api", memoriesRouter);

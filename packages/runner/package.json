@@ -9,7 +9,8 @@
     "./scheduler": "./src/scheduler.ts",
     "./watcher": "./src/watcher.ts",
     "./task-loop": "./src/task-loop.ts",
-    "./flow-runner": "./src/flow-runner.ts"
+    "./flow-runner": "./src/flow-runner.ts",
+    "./goal-service": "./src/goal-service.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

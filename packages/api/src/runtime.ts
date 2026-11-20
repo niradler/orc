@@ -36,6 +36,8 @@ try {
 } catch (err) {
   logger.error("Could not move MCP prompts from config.json into the database", err);
 }
+// Browser e2e only: a deterministic goal worker so the loop test needs no paid agent.
+if (process.env.ORC_E2E_GOAL_FIXTURE === "1") await import("./e2e-goal-fixture.js");
 const app = createApp();
 
 type SocketData = TerminalSocketData | VoiceSocketData;

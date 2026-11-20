@@ -157,3 +157,33 @@ export const SessionCacheUsageSchema = z.object({
 
 export type CacheTokenUsage = z.infer<typeof CacheTokenUsageSchema>;
 export type SessionCacheUsage = z.infer<typeof SessionCacheUsageSchema>;
+
+/**
+ * Best-effort token count from a backend's raw `result` usage, for run budgets.
+ * Backends report different shapes (Claude input/output, Codex totalTokens,
+ * nested totals); an unknown shape contributes 0, so a token budget is a floor
+ * on recorded consumption, never a guess. The full per-request accounting lives
+ * in the usage index, not here.
+ */
+export function resultUsageTokens(usage: unknown): number {
+  if (typeof usage !== "object" || usage === null) return 0;
+  const record = usage as Record<string, unknown>;
+  const num = (value: unknown) =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+  const total = record.total;
+  if (typeof total === "object" && total !== null) {
+    const nested = total as Record<string, unknown>;
+    const summed = num(nested.totalTokens) + num(nested.inputTokens) + num(nested.outputTokens);
+    if (summed > 0) return summed;
+  }
+  const direct = num(record.totalTokens) || num(record.total_tokens);
+  if (direct > 0) return direct;
+  return (
+    num(record.input_tokens) +
+    num(record.output_tokens) +
+    num(record.inputTokens) +
+    num(record.outputTokens) +
+    num(record.input) +
+    num(record.output)
+  );
+}

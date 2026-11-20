@@ -10,6 +10,7 @@ import {
   drainPendingNodes,
   getActiveFlowRunForTask,
   getActiveWorkerCount,
+  recoverOrphanedFlowSessions,
   startFlowForTask,
   sweepFlowTimeouts,
 } from "./flow-runner.js";
@@ -219,6 +220,12 @@ export async function startTaskLoop(): Promise<void> {
 
   const _jobId = await ensureSystemJob();
   const cronExpr = `*/${config.agent_loop.poll_interval_minutes} * * * *`;
+
+  // A restart orphaned the previous daemon's workers: settle them and queue
+  // resume retries before the first cycle claims their slots.
+  const recovered = await recoverOrphanedFlowSessions();
+  if (recovered > 0)
+    logger.info(`Recovered ${recovered} orphaned worker session(s) from the previous daemon`);
 
   logger.info(
     `Task loop started (cron: ${cronExpr}, max ${config.agent_loop.max_workers} workers, ` +

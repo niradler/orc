@@ -116,13 +116,15 @@ An LLM decides *what happened*. Nothing else. Where that verdict leads is code.
 
 | Field              | Applies to     | Meaning                                                              |
 | ------------------ | -------------- | -------------------------------------------------------------------- |
-| `kind`             | all            | `agent` \| `gate` \| `human` \| `terminal`                           |
+| `kind`             | all            | `agent` \| `command` \| `gate` \| `human` \| `terminal`              |
 | `skill`            | agent          | Skill name, or `$task.skill_name`                                    |
 | `prompt`           | agent, human   | Node-specific instructions appended to the skill                     |
 | `backend`, `model` | agent          | Override the backend/model; `$task.agent_backend` etc. also work     |
 | `role`             | agent          | `worker` (default) or `reviewer` — sets the session role             |
 | `outcomes`         | agent, human   | Declared verdicts. Defaults to whatever the outgoing edges reference  |
 | `on_error`         | agent          | Outcome to route on if the node dies. Without it, the run halts       |
+| `command`          | command        | Shell command to run; exit 0 reports `passed`, anything else `failed` |
+| `metric_pattern`   | command        | Regex with one capture group extracting a number from stdout          |
 | `routing`          | any            | `first` (default, first matching edge wins) or `all` (fan out)        |
 | `join`             | any            | `{ mode: "all" \| "any", from: [...], cancel_siblings? }`             |
 | `max_visits`       | any            | Hard cap on how many times this node may run                          |
@@ -131,6 +133,25 @@ An LLM decides *what happened*. Nothing else. Where that verdict leads is code.
 | `vars`             | any            | Merged into run vars **on entry** — this is how a loopback resets state |
 
 `gate` nodes run nothing and route immediately: use them for deterministic branching, fan-out points, and joins. `human` nodes wait for `orc flow resume`. `terminal` nodes end the run and decide the task's final status.
+
+`command` nodes run a shell command instead of an agent — the external success
+check a goal loop routes on. The command runs in the task's current worktree (or
+the project scope when there is no repository), with the node timeout enforced
+and its output bounded. It holds **no worker slot**, so a saturated agent pool
+cannot starve a check. Each run writes run vars named after the node:
+
+| Var                | Meaning                                                        |
+| ------------------ | -------------------------------------------------------------- |
+| `<node>_exit`      | Exit code                                                      |
+| `<node>_output`    | Bounded stdout/stderr tail                                     |
+| `<node>_metric`    | Number captured by `metric_pattern`, when it parses            |
+| `<node>_stall`     | Consecutive checks with an unchanged metric; 0 without a metric |
+
+The verdict is an ordinary outcome — `passed` on exit 0, `failed` otherwise — so
+edges route it like any agent verdict, and `{ "var": "<node>_stall", "gte": 3 }`
+is a stall guard. Commands come from flow definitions (the same trust model as
+jobs: authored by a user or agent in the database), never from edge conditions,
+which stay declarative.
 
 ### Edges and conditions
 
@@ -232,7 +253,7 @@ flow_report(task: "<id>", node: "verify", outcome: "fail",
             vars: { tests_ok: false })
 ```
 
-The node's prompt is assembled from its skill plus **exactly the outcomes its outgoing edges can route**, so the agent is told which verdicts are legal rather than inventing one the graph cannot use. Anything else is rejected with the valid list.
+The node's prompt is assembled from its skill plus **exactly the outcomes its outgoing edges can route**, so the agent is told which verdicts are legal rather than inventing one the graph cannot use. Anything else is rejected with the valid list. `command` nodes are the exception: the runner records their verdict from the exit code, and each check posts a ledger comment with the result.
 
 The node's prompt lists exactly the outcomes its outgoing edges can route, and anything else is rejected — with one honest exception: a node whose only outgoing edge is a catch-all has no derivable outcome list, so it accepts whatever it is given.
 
@@ -341,6 +362,58 @@ smallest complete changes, connected-code review and reusable lessons. Comparati
 agent-quality measurements are deferred; process correctness and usability are
 validated separately.
 
+## Goals — loops with an external check
+
+A **goal** is a durable objective ORC works until an external success check
+passes, within a budget. Where a harness-native loop (`/loop`, `/goal`) is
+invisible to ORC and stops silently when stuck, a goal runs as an ordinary flow:
+the loop, the budget and the escalation are visible and enforceable here.
+
+```
+POST /api/goals
+{
+  "objective": "make bun test packages/api pass",
+  "check": "bun test packages/api",        // exit 0 = goal met
+  "metric_pattern": "(\\d+) pass",          // optional progress signal
+  "agents": ["claude", "codex-cli"],        // ladder order, default ["claude"]
+  "budget": { "iterations": 30, "tokens": 2000000, "hours": 6 },
+  "stall_limit": 3,
+  "project_id": "…",                        // or task_id to attach to a task
+  "skill": "orc-coder"
+}
+```
+
+The generated flow is: one worker stage per allowed agent → a `command` check
+after every worker turn → a guarded loopback while the check fails and budget
+remains. Workers keep their native session across iterations
+(`reset_on_revisit: false`), so the loop keeps its conversation, not just its
+ledger.
+
+- **Budgets**: iterations via a `visits` guard on the check, wall clock via
+  `execution_timeout_secs`, tokens by accumulating each worker turn's reported
+  usage into `tokens_used` (best-effort where a backend estimates usage).
+- **Stall ladder**: when the check's metric does not improve for `stall_limit`
+  iterations, the loop switches to the next allowed agent; after the last agent
+  it asks a reviewer for a diagnosis, then raises **one** human request (the task
+  shows `blocked`) and halts. Without a `metric_pattern` there is no progress
+  signal, so the ladder never trips on stall — budgets still apply.
+- **Verdict**: `passed` when the check passes (task `done`); `halted` when a
+  budget or the ladder ends it (task `paused`); `stopped` when you stop it.
+  Status is derived from the flow run and the task at read time — never a second
+  synced truth.
+
+Surfaces: `GET /api/goals`, `GET /api/goals/{id}` (live status + check history),
+`GET /api/tasks/{id}/goal`, `POST /api/goals/{id}/stop`; MCP `goal_create`,
+`goal_status`, `goal_stop`. The task detail panel shows iteration and budget
+left, the current agent stage, stall count, tokens, the last check's exit and
+output, and the check history on demand. Stopping a goal kills its live sessions
+like a flow halt; the history stays on the flow.
+
+Goals are long-running work: an active goal's worker is exempt from the absolute
+session lifetime ceiling while it keeps making progress (idle goal workers are
+still reclaimed), and infrastructure retries and daemon-restart recovery resume
+its native session instead of starting fresh. See [Live sessions](./live-sessions.md).
+
 ## Authoring
 
 ```bash
@@ -388,6 +461,7 @@ Human gates are first-class rather than bolted on:
 - **Flows browser** (`/flows`) lists every flow with its source, marks the one a task with no `flow_name` will run, flags a flow that shadows another of the same name, and renders the `broken[]` array from `GET /flows` with its validation errors — an invalid flow is visible before a task tries to run it.
 - **Flow picker** on task create and edit writes `flow_name` (clearing it falls back to the default). A task carrying an inline `flow_override` says so instead of offering a name, because the override wins.
 - **`queued` reads as pending, not in progress.** The board maps it into Todo and the dashboard counts it with todo, because the runner sets `queued` while a node waits for a worker slot. Cards whose real status differs from their column say which status they are in.
+- **Task detail → Goal.** A task with a goal shows its loop state above the flow: verdict, iteration and budgets left, current agent stage, stall count, tokens, the last check's exit/metric and expandable output, and the check history as a quiet summary that expands to one slim row per check. An escalated goal (the ladder's human rung) says so while the task is `blocked`; Stop sits behind a confirmation.
 
 The web UI needed two additions to the API, both additive: `GET /flows` returns `default_flow` (the configured `agent_loop.default_flow`, without which "which flow will this task run" is unanswerable from outside the server), and each ledger row carries `created_at` (a queued or human-parked node has no `started_at`, so it is the only clock for how long it has been waiting — the same `COALESCE` the runner uses).
 
@@ -409,7 +483,14 @@ flow_node_runs
 tasks
   + flow_name TEXT
   + flow_override TEXT (JSON)
+
+goals
+  id, task_id, flow_run_id, objective, spec (JSON), status (active|stopped),
+  created_at, updated_at
 ```
+
+A goal's live status is not stored: it is derived from its flow run and task
+(`goalStatusFromRun`), so the record cannot drift from the work it describes.
 
 `status = completed` means the graph reached a terminal — including an escalation terminal that pauses the task. `status = halted` means a rail tripped. The two are worth distinguishing when reading a run: one is a designed outcome, the other is the safety net.
 

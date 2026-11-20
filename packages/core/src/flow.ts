@@ -129,7 +129,7 @@ export const FlowConditionSchema: z.ZodType<FlowCondition> = z.lazy(() =>
 // Nodes and edges
 // ---------------------------------------------------------------------------
 
-export const FlowNodeKindSchema = z.enum(["agent", "gate", "human", "terminal"]);
+export const FlowNodeKindSchema = z.enum(["agent", "gate", "human", "terminal", "command"]);
 export type FlowNodeKind = z.infer<typeof FlowNodeKindSchema>;
 
 export const FlowJoinSchema = z.strictObject({
@@ -152,6 +152,15 @@ export const FlowNodeSchema = z.strictObject({
   backend: z.string().optional(),
   model: z.string().optional(),
   role: z.enum(["worker", "reviewer"]).optional(),
+
+  // command nodes: run a shell command as a flow step (a goal's success check).
+  // Exit 0 reports outcome "passed", anything else "failed"; the exit code,
+  // bounded output and an optional extracted metric land in run vars as
+  // `<node>_exit`, `<node>_output`, `<node>_metric`, `<node>_stall` so edges can
+  // guard on them. The command runs with the task's worktree and host, under
+  // the node timeout — never from an edge condition, which stays declarative.
+  command: z.string().min(1).max(4000).optional(),
+  metric_pattern: z.string().max(500).optional(),
 
   // routing
   outcomes: z.array(z.string().min(1)).optional(),
@@ -298,6 +307,28 @@ export function validateFlowGraph(def: FlowDefinition): FlowValidationIssue[] {
         path: `nodes.${id}`,
         message: `agent/skill/backend/model only apply to agent nodes, not ${node.kind}`,
       });
+    }
+    if (node.kind === "command" && !node.command) {
+      issues.push({
+        path: `nodes.${id}`,
+        message: "command node needs a command to run",
+      });
+    }
+    if (node.kind !== "command" && (node.command || node.metric_pattern)) {
+      issues.push({
+        path: `nodes.${id}`,
+        message: `command/metric_pattern only apply to command nodes, not ${node.kind}`,
+      });
+    }
+    if (node.metric_pattern) {
+      try {
+        new RegExp(node.metric_pattern);
+      } catch {
+        issues.push({
+          path: `nodes.${id}.metric_pattern`,
+          message: "metric_pattern is not a valid regular expression",
+        });
+      }
     }
 
     // An unconditional edge shadows everything after it — first match wins, so

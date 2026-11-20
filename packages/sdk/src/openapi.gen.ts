@@ -15540,6 +15540,219 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/goals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List goals, newest first */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Goals */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            goals: components["schemas"]["Goal"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Start a goal: a flow that loops worker and check until the check passes */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        objective: string;
+                        check: string;
+                        metric_pattern?: string;
+                        /**
+                         * @default [
+                         *       "claude"
+                         *     ]
+                         */
+                        agents?: string[];
+                        /**
+                         * @default {
+                         *       "iterations": 30,
+                         *       "hours": 6
+                         *     }
+                         */
+                        budget?: {
+                            /** @default 30 */
+                            iterations?: number;
+                            tokens?: number;
+                            /** @default 6 */
+                            hours?: number;
+                        };
+                        /** @default 3 */
+                        stall_limit?: number;
+                        skill?: string;
+                        project_id?: string;
+                        task_id?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Goal started */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            goal: components["schemas"]["Goal"];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/goals/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A goal with its live status and check history */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Goal */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            goal: components["schemas"]["Goal"];
+                            history: components["schemas"]["GoalCheckVisit"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/tasks/{id}/goal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The goal attached to a task, if any */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Goal or null */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            goal: components["schemas"]["Goal"] & unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/goals/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a goal's flow and mark it stopped */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Goal stopped */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            goal: components["schemas"]["Goal"];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/tasks": {
         parameters: {
             query?: never;
@@ -24497,6 +24710,70 @@ export interface components {
                 [key: string]: unknown;
             };
             author?: string;
+        };
+        Goal: {
+            id: string;
+            task_id: string;
+            flow_run_id: string | null;
+            objective: string;
+            spec: {
+                objective: string;
+                check: string;
+                metric_pattern?: string;
+                /**
+                 * @default [
+                 *       "claude"
+                 *     ]
+                 */
+                agents: string[];
+                /**
+                 * @default {
+                 *       "iterations": 30,
+                 *       "hours": 6
+                 *     }
+                 */
+                budget: {
+                    /** @default 30 */
+                    iterations: number;
+                    tokens?: number;
+                    /** @default 6 */
+                    hours: number;
+                };
+                /** @default 3 */
+                stall_limit: number;
+                skill?: string;
+                project_id?: string;
+                task_id?: string;
+            };
+            /** @enum {string} */
+            status: "active" | "stopped";
+            run: components["schemas"]["GoalRunStatus"];
+            created_at: number;
+            updated_at: number;
+        };
+        GoalRunStatus: {
+            /** @enum {string} */
+            status: "active" | "passed" | "halted" | "stopped";
+            iteration: number;
+            stage: number;
+            stall: number;
+            tokens_used: number;
+            last_check: {
+                exit: number | null;
+                metric: number | null;
+                output: string | null;
+            } | null;
+            halt_reason: string | null;
+            started_at: number | null;
+            ended_at: number | null;
+        } | null;
+        GoalCheckVisit: {
+            attempt: number;
+            retry: number;
+            outcome: string | null;
+            summary: string | null;
+            started_at: number | null;
+            ended_at: number | null;
         };
         Task: {
             git_repo: string | null;

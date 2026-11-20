@@ -11,6 +11,7 @@ import { ErrorState } from "@/components/ErrorState";
 import { FormDialog } from "@/components/FormDialog";
 import { FlowPicker, USE_DEFAULT_FLOW, useEffectiveFlow } from "@/components/flow/FlowPicker";
 import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel";
+import { GoalPanel } from "@/components/flow/GoalPanel";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Markdown } from "@/components/Markdown";
 import { MarkdownField } from "@/components/MarkdownField";
@@ -310,6 +311,7 @@ export function TaskDetailSheet({
                 <TaskSessions taskId={task.id} />
 
                 <div className="border-t border-surface-highest pt-4 space-y-3">
+                  <GoalPanel taskId={task.id} taskStatus={task.status} />
                   <FlowSectionHeading />
                   <FlowRunPanel taskId={task.id} />
                 </div>

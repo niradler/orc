@@ -24,15 +24,29 @@ type ToolAfter = {
 type PromptEvent = { sessionID: string; messageID: string; prompt: { text: string } };
 type ContextEvent = { sessionID: string; system: Array<{ type: string; text: string }> };
 type CompactionEvent = { sessionID: string };
+type IdleEvent = { sessionID: string; background: unknown[] };
+type SyntheticCall = {
+  sessionID: string;
+  text: string;
+  delivery?: string;
+  resume?: boolean;
+};
 type Hook<E> = (event: E) => Promise<void> | void;
+type HostBehavior = { idleUnsupported?: boolean; syntheticFails?: boolean };
 
-function fakeContext(options: Record<string, unknown>, directory: string) {
+function fakeContext(
+  options: Record<string, unknown>,
+  directory: string,
+  behavior: HostBehavior = {},
+) {
   const toolHooks: { before?: Hook<ToolBefore>; after?: Hook<ToolAfter> } = {};
   const sessionHooks: {
     prompt?: Hook<PromptEvent>;
     context?: Hook<ContextEvent>;
     compaction?: Hook<CompactionEvent>;
+    idle?: Hook<IdleEvent>;
   } = {};
+  const syntheticCalls: SyntheticCall[] = [];
   const registration = { dispose: async () => undefined };
   const ctx = {
     options,
@@ -47,16 +61,25 @@ function fakeContext(options: Record<string, unknown>, directory: string) {
     session: {
       hook: async (
         name: string,
-        callback: Hook<PromptEvent> | Hook<ContextEvent> | Hook<CompactionEvent>,
+        callback: Hook<PromptEvent> | Hook<ContextEvent> | Hook<CompactionEvent> | Hook<IdleEvent>,
       ) => {
         if (name === "prompt") sessionHooks.prompt = callback as Hook<PromptEvent>;
         if (name === "context") sessionHooks.context = callback as Hook<ContextEvent>;
         if (name === "compaction") sessionHooks.compaction = callback as Hook<CompactionEvent>;
+        if (name === "experimental.idle") {
+          if (behavior.idleUnsupported) throw new Error("unknown hook: experimental.idle");
+          sessionHooks.idle = callback as Hook<IdleEvent>;
+        }
         return registration;
+      },
+      synthetic: async (input: SyntheticCall) => {
+        if (behavior.syntheticFails) throw new Error("synthetic delivery unavailable");
+        syntheticCalls.push(input);
+        return {};
       },
     },
   };
-  return { ctx: ctx as unknown as Plugin.Context, toolHooks, sessionHooks };
+  return { ctx: ctx as unknown as Plugin.Context, toolHooks, sessionHooks, syntheticCalls };
 }
 
 const directory = mkdtempSync(join(tmpdir(), "orc-opencode-plugin-"));
@@ -165,8 +188,12 @@ afterEach(() => {
   writeFileSync(log, "");
 });
 
-async function setup(options: Record<string, unknown> = {}) {
-  const fake = fakeContext({ command: stubCommand, apiBase: apiUrl, ...options }, directory);
+async function setup(options: Record<string, unknown> = {}, behavior: HostBehavior = {}) {
+  const fake = fakeContext(
+    { command: stubCommand, apiBase: apiUrl, ...options },
+    directory,
+    behavior,
+  );
   await plugin.setup(fake.ctx);
   return fake;
 }
@@ -195,6 +222,7 @@ describe("plugin registration", () => {
     expect(sessionHooks.prompt).toBeFunction();
     expect(sessionHooks.context).toBeFunction();
     expect(sessionHooks.compaction).toBeFunction();
+    expect(sessionHooks.idle).toBeFunction();
   });
 
   test("rules=false loads without enforcement", async () => {
@@ -437,5 +465,60 @@ describe("context delivery", () => {
   test("compaction context is queued without blocking", async () => {
     const { sessionHooks } = await setup({ command: "porc-missing-command-xyz", apiBase: deadUrl });
     await sessionHooks.compaction?.({ sessionID: "ses-1" });
+  });
+});
+
+describe("idle delivery", () => {
+  test("queued context is admitted at the idle boundary instead of sleeping", async () => {
+    const { toolHooks, sessionHooks, syntheticCalls } = await setup();
+    await toolHooks.before?.(toolEvent("context guidance"));
+    await sessionHooks.idle?.({ sessionID: "ses-1", background: [] });
+    expect(syntheticCalls).toEqual([
+      {
+        sessionID: "ses-1",
+        text: "ORC rules:\ntool guidance",
+        delivery: "queue",
+        resume: true,
+      },
+    ]);
+    // Delivered once: the next model request must not repeat it.
+    const event: ContextEvent = { sessionID: "ses-1", system: [] };
+    await sessionHooks.context?.(event);
+    expect(event.system).toEqual([]);
+  });
+
+  test("idle without queued context admits nothing", async () => {
+    const { sessionHooks, syntheticCalls } = await setup();
+    await sessionHooks.idle?.({ sessionID: "ses-1", background: [] });
+    expect(syntheticCalls).toEqual([]);
+  });
+
+  test("idle delivery is session-scoped", async () => {
+    const { toolHooks, sessionHooks, syntheticCalls } = await setup();
+    await toolHooks.before?.(toolEvent("context guidance"));
+    await sessionHooks.idle?.({ sessionID: "ses-other", background: [] });
+    expect(syntheticCalls).toEqual([]);
+    await sessionHooks.idle?.({ sessionID: "ses-1", background: [] });
+    expect(syntheticCalls.length).toBe(1);
+  });
+
+  test("a failed synthetic delivery restores context for the next prompt", async () => {
+    const { toolHooks, sessionHooks, syntheticCalls } = await setup({}, { syntheticFails: true });
+    await toolHooks.before?.(toolEvent("context guidance"));
+    await sessionHooks.idle?.({ sessionID: "ses-1", background: [] });
+    expect(syntheticCalls).toEqual([]);
+    const event: ContextEvent = { sessionID: "ses-1", system: [] };
+    await sessionHooks.context?.(event);
+    expect(event.system).toEqual([{ type: "text", text: "ORC rules:\ntool guidance" }]);
+  });
+
+  test("a host without experimental.idle keeps next-prompt delivery", async () => {
+    const { toolHooks, sessionHooks } = await setup({}, { idleUnsupported: true });
+    expect(sessionHooks.idle).toBeUndefined();
+    expect(sessionHooks.context).toBeFunction();
+    await toolHooks.before?.(toolEvent("context guidance"));
+    const event: ContextEvent = { sessionID: "ses-1", system: [] };
+    await sessionHooks.context?.(event);
+    expect(event.system).toEqual([{ type: "text", text: "ORC rules:\ntool guidance" }]);
   });
 });

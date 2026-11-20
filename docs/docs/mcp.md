@@ -281,6 +281,21 @@ See [Task flows](./task-flows.md).
 | `flow_status` | Active nodes, outcome ledger, visit counts and halt reason of a task's run |
 | `flow_report` | Report your outcome as a flow node                                         |
 
+### Goals
+
+See [Task flows → Goals](./task-flows.md#goals--loops-with-an-external-check).
+
+| Tool          | Description                                                                                     |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| `goal_create` | Start a goal: ORC loops a worker and an external check until it passes, within a budget          |
+| `goal_status` | Live status by goal id or task id: iteration, stage, stall, tokens, last check and check history |
+| `goal_stop`   | Stop a goal's flow and mark it stopped                                                           |
+
+`goal_create` takes `objective`, `check` (shell command, exit 0 = met), optional
+`metric_pattern`, `agents` (ladder order), `iterations`/`tokens`/`hours` budget,
+`stall_limit`, `skill`, `project`, and `task` to attach to an existing task.
+Project-scoped MCP sessions can only create and read goals inside their scopes.
+
 ### Knowledge bases
 
 | Tool              | Description                                                                        |

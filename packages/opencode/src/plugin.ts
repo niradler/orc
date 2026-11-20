@@ -219,6 +219,35 @@ const plugin: Plugin.Plugin = {
       }
     });
 
+    // The last delivery point before a session sleeps: queued ORC context
+    // admitted here runs in the same execution instead of waiting for the next
+    // prompt. Experimental in the host SDK — feature-detect the registration
+    // and the synthetic API, degrading to next-prompt delivery when absent.
+    try {
+      await ctx.session.hook("experimental.idle", async (event) => {
+        const chunks = pending.get(event.sessionID);
+        if (!chunks?.length) return;
+        if (typeof ctx.session.synthetic !== "function") return;
+        pending.delete(event.sessionID);
+        try {
+          await ctx.session.synthetic({
+            sessionID: event.sessionID,
+            text: `ORC rules:\n${chunks.join("\n\n")}`,
+            delivery: "queue",
+            resume: true,
+          });
+        } catch {
+          // Delivery failed: restore the context (ahead of anything queued
+          // since) so the next prompt still receives it, in order.
+          const existing = pending.get(event.sessionID) ?? [];
+          pending.set(event.sessionID, [...chunks, ...existing].slice(-32));
+        }
+      });
+    } catch {
+      // Host without experimental.idle: the context hook still delivers on the
+      // next model request.
+    }
+
     await ctx.session.hook("context", (event) => {
       const chunks = pending.get(event.sessionID);
       if (!chunks?.length) return;
