@@ -138,7 +138,7 @@ program
 program
   .command("mcp")
   .description("Start the MCP server (stdio)")
-  .option("--mode <mode>", "override the configured tool mode: meta (discovery) or full")
+  .option("--mode <mode>", "override the configured tool mode: meta or full")
   .action(async (opts: { mode?: string }) => {
     // Import the modules, not the @orc/mcp barrel: the bundled barrel does not await its
     // async children, so the tool registry would still be undefined when clients call it.

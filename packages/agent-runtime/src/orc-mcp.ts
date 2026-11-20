@@ -13,14 +13,14 @@ import {
   type SshExecHost,
   writeHostFile,
 } from "@orc/core/exec-host";
+import type { McpSettings } from "@orc/core/mcp-settings";
 
 export const ORC_MCP_SERVER_NAME = "orc";
 export const ORC_TOOL_PREFIX = `mcp__${ORC_MCP_SERVER_NAME}__`;
 // Permission rule matching every tool of the orc server; the served set is chosen by the MCP URL.
 export const ORC_TOOLS_RULE = `mcp__${ORC_MCP_SERVER_NAME}`;
 
-/** Served tool surface: every tool, or meta tools that search, describe and invoke them. */
-export type OrcMcpMode = "full" | "meta";
+export type OrcMcpMode = McpSettings["default_mode"];
 
 export type OrcHttpMcpServer = {
   type: "http";

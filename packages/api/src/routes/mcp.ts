@@ -1,5 +1,5 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { getSqlite } from "@orc/db/client";
@@ -51,6 +51,8 @@ app.all("/mcp", async (c) => {
     publicApiBaseUrl: origin,
     projectsChanged: reassignSessions,
     mode,
+    requestSignal: c.req.raw.signal,
+    allowCodeExecution: !!configuredApiSecret(loadConfig().api.secret),
     ...(agentSessionId ? { agentSessionId } : {}),
     ...(preview.sessionId
       ? { previewScope: { sessionId: preview.sessionId, clientId: preview.clientId } }

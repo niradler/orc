@@ -88,6 +88,20 @@ export function McpSettingsForm() {
               <option value="full">Full: list every tool</option>
             </select>
           </div>
+          <div className="flex min-h-11 items-center gap-2">
+            <input
+              type="checkbox"
+              id="mcp-code-execution"
+              data-testid="mcp-code-execution"
+              checked={config.code_execution}
+              onChange={(event) => setConfig({ ...config, code_execution: event.target.checked })}
+            />
+            <Label htmlFor="mcp-code-execution">Allow sandboxed scripts</Label>
+            <HelpPopover label="sandboxed MCP scripts">
+              Agents can combine calls and filter results in JavaScript from meta mode over
+              authenticated HTTP or local stdio.
+            </HelpPopover>
+          </div>
           <div className="border-y border-border py-3">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-1">

@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "build:web": "cd ../web && bun run build",
     "build:copy-web": "bun run copy-web.ts",
-    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun --minify --external '@anthropic-ai/claude-agent-sdk' --external sqlite-vec && bun run build:copy-web && bun run copy-skills.ts",
+    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun --minify --define ORC_NPM_BUNDLE:true --external '@anthropic-ai/claude-agent-sdk' --external sqlite-vec && bun build ../mcp/src/code-worker.ts --outdir dist --target bun --minify && bun run build:copy-web && bun run copy-skills.ts",
     "build:bin": "bun run build.ts",
     "validate:package": "bun run scripts/validate-package.ts",
     "prepublishOnly": "cp ../../README.md . && bun run build && bun run validate:package",
@@ -23,6 +23,8 @@
   },
   "files": [
     "dist/index.js",
+    "dist/code-worker.js",
+    "dist/emscripten-module-*.wasm",
     "dist/checksums.txt",
     "dist/web",
     "dist/skills",

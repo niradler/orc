@@ -45,6 +45,7 @@ test("should use configured defaults for native MCP connections and keep explici
       "tool_search",
       "tool_describe",
       "tool_invoke",
+      "tool_execute",
     ]);
   } finally {
     await Promise.all(clients.map((client) => client.close()));

@@ -12,17 +12,19 @@ import {
   MCP_CLIENT_LABELS,
   MCP_CLIENTS,
   type McpClient,
+  type McpConnection,
   mcpBaseUrl,
   mcpSnippet,
   SERVER_NAME,
 } from "@/lib/mcp-connection";
 
 const row = "grid gap-4 border-b border-border py-5 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]";
+const toolSurfaces = { meta: "Meta tools", full: "All tools" } as const;
 
 export function McpServerSettings() {
   const { data: projects = [] } = useProjects();
   const [baseUrl, setBaseUrl] = useState(() => mcpBaseUrl(getApiUrl(), window.location.origin));
-  const [mode, setMode] = useState<"meta" | "full">("meta");
+  const [mode, setMode] = useState<McpConnection["mode"]>("meta");
   const [selected, setSelected] = useState<string[]>([]);
   const [client, setClient] = useState<McpClient>("claude-json");
   const [name, setName] = useState("orc");
@@ -102,7 +104,8 @@ export function McpServerSettings() {
         <div className="flex items-center gap-1">
           <span className="text-sm font-medium">Tool surface</span>
           <HelpPopover label="tool surface" testId="mcp-tool-surface-help">
-            Meta serves search, describe and invoke so agents load schemas on demand.
+            Meta loads schemas on demand and supports sandboxed scripts when execution is enabled.
+            All tools lists every available tool.
           </HelpPopover>
         </div>
         <fieldset aria-label="Tool surface" className="flex flex-wrap gap-2">
@@ -114,7 +117,7 @@ export function McpServerSettings() {
               data-testid={`mcp-mode-${value}`}
               onClick={() => edit(setMode)(value)}
             >
-              {value === "meta" ? "Meta tools" : "All tools"}
+              {toolSurfaces[value]}
             </Button>
           ))}
         </fieldset>
