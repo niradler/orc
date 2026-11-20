@@ -4,6 +4,17 @@ The chat page's session list and viewer use the same working, waiting and ended 
 
 Opening a chat verifies a stale **Working** claim before showing it: when the session has no native activity for 30 seconds, ORC re-checks the agent's own store and settles the row if the turn has ended, so an idle session does not pop the working panel. Returning to the tab re-checks it the same way. A claim with recent activity stays trusted and settles through the usual process and file watches.
 
+A parent whose turn has ended but whose children still work does not read as idle.
+The status strip above the composer stays up and names the work in flight
+(**Waiting on 2 subagents**, or **Running 1 command** for detached commands), with a
+row per child that keeps its own clock and opens or stops that child. Spawned chat
+sessions and the provider's own native subagents both count, and the rows come from
+live session state, not the finished turn's transcript. The session list rolls the
+same truth up: the parent reads **Working** while a child holds a turn and
+**Needs you** when a child waits for a human, while its own status stays idle so a
+new message still starts a turn immediately. **Stop** shows **Stopping…** until the
+agent actually ends the turn, rather than flipping to idle on the request.
+
 Opening a linked task keeps you on that task even while a session search is updating.
 
 Sessions without a title use a readable folder name, including Windows extended
@@ -255,9 +266,16 @@ a stuck one:
   agent that can detach work.
 - A running, queued or waiting child session appears as a row with **Open**
   (switch to its chat) and **Stop** (stop it and the sessions it started).
-  These rows follow the child's real status and clear when it settles.
+  Rows come from live session state — both sessions the chat spawned and the
+  provider's own native subagents — follow the child's real status and clear
+  when it settles.
 - Each row keeps its own clock. One job reads as a single line; several fold
-  into one summary row that expands to the full list.
+  into one summary row that expands to the full list. While the parent's turn
+  has ended but children still work, the strip header reads **Waiting on N
+  subagents** with a running timer instead of going quiet.
+- The session list rolls the same truth up: a parent reads **Working** while a
+  child holds a turn and **Needs you** when a child waits for a human, while
+  its own status stays idle so a new message starts a turn immediately.
 - Detached tool rows come from the agent's latest turn and clear when the agent
   replies again: a backend that never reports a background command's exit
   cannot be checked, so ORC does not keep claiming it is running.

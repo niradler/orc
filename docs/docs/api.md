@@ -316,13 +316,14 @@ folder under the working directory; both take the same `threadId`, `host` and `c
 | --- | --- | --- |
 | `GET` | `/sessions` | Recorded agent sessions |
 | `GET` | `/sessions/{id}` | Session detail with events |
-| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones at any depth (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id. `spawned_from_id` is the id of the session that started a top-level session as an independent one (Claude Desktop `start_session`). `model` is the model the transcript last reported and `permission_mode` the latest permission mode (Claude `permissionMode`, Codex `approval_policy/sandbox_policy`, OpenCode agent such as `build` or `plan`); both are `null` when unknown. `waiting_for` says why a session waits for a human (`permission`, `question` or `dialog`) and which `tool` waits (Claude permissions and questions; Codex `request_user_input` questions; OpenCode questions, with `tool` `null`); `background_work` is `true` while a session idles between turns with background work still running (Claude Code background shells) |
+| `GET` | `/sessions/live` | Top-level coding-agent sessions seen by the file watcher; `include_hidden=true` also returns hidden ones, `include_children=true` adds the subagent sessions of the listed ones at any depth (Claude Code, Codex, Cursor, OpenCode), each with `parent_id` set to its parent's id. `spawned_from_id` is the id of the session that started a top-level session as an independent one (Claude Desktop `start_session`). `model` is the model the transcript last reported and `permission_mode` the latest permission mode (Claude `permissionMode`, Codex `approval_policy/sandbox_policy`, OpenCode agent such as `build` or `plan`); both are `null` when unknown. `waiting_for` says why a session waits for a human (`permission`, `question` or `dialog`) and which `tool` waits (Claude permissions and questions; Codex `request_user_input` questions; OpenCode questions, with `tool` `null`); `background_work` is `true` while a session idles between turns with background work still running (Claude Code background shells); `working_children` and `waiting_children` count child sessions and native subagents with a turn in flight or parked on a human question or approval, so a parent whose own turn ended still reads as working while its children work — its `status` itself stays turn-truth |
 | `GET` | `/sessions/live/{id}` | One discovered session, for the read-only viewer |
 | `PATCH` | `/sessions/live/{id}` | Link a task, rename (`display_title`) or hide (`hidden`) a live session |
 | `GET` | `/sessions/live/{id}/transcript` | Paged transcript |
 | `GET` | `/sessions/live/{id}/analytics` | Analytics for the chat that owns this session |
 | `GET` | `/sessions/live/{id}/cache` | Recorded prompt-cache usage |
 | `GET` | `/sessions/live/{id}/subagents` | The subagents a session ran at any depth, in start order, each with `tool_call_id`: the tool call that started it (null for Cursor, which records none), and `parent_id`: the subagent that spawned it, or null when the session itself did |
+| `GET` | `/sessions/live/{id}/children` | Sessions this session started, each with its status and the same `working_children` / `waiting_children` / `stopping` rollup |
 | `GET` `POST` | `/sessions/live/{id}/messages` | Read or queue a message for a live session |
 | `POST` | `/session-messages` | Queue a message from an agent session (`X-ORC-Session`) |
 | `POST` | `/session-messages/{id}/cancel` | Cancel a queued message |
@@ -333,7 +334,8 @@ folder under the working directory; both take the same `threadId`, `host` and `c
 | `GET` | `/sessions/live/{id}/sends` | The session's send history, newest first |
 | `GET` | `/sessions/archive` | Search archived session passages |
 | `POST` | `/session-handoffs` | Start a session handoff |
-| `GET` `POST` | `/chat/threads` | Chat threads |
+| `GET` `POST` | `/chat/threads` | Chat threads; each carries `workingChildren` / `waitingChildren` (child work rollup) and `stopping` (a Stop was requested and the turn has not ended yet) |
+| `GET` | `/chat/threads/{id}/session` | Native session state for a thread: `changed`, `running`, `workingChildren`, `waitingChildren`, `stopping`, the settled `live` status and queued human answers |
 | `GET` | `/chat/threads/by-message/{id}` | Find the thread holding a user message id (send recovery) |
 | `POST` | `/chat/threads/{id}/fork` | Fork a chat at an assistant response |
 | `GET` | `/chat/threads/{id}/analytics` | Chat, tool, turn, context and compaction analytics |

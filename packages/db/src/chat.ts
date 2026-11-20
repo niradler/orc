@@ -3,6 +3,7 @@ import { type ChatThread, parseChatThread } from "@orc/core/chat";
 
 type ChatSummary = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   agent: string | null;
+  backend: string | null;
   runtimeId: string | null;
   sourceId: string | null;
   host: string | null;
@@ -33,6 +34,10 @@ export class ChatStore {
             CASE WHEN json_type(data, '$.config.agent') = 'text'
               THEN json_extract(data, '$.config.agent') END
           END AS agent,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.backend') = 'text'
+              THEN json_extract(data, '$.backend') END
+          END AS backend,
           CASE WHEN json_valid(data) THEN
             CASE WHEN json_type(data, '$.runtimeId') = 'text'
               THEN json_extract(data, '$.runtimeId') END

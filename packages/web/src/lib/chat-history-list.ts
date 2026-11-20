@@ -10,6 +10,8 @@ import { liveSubagentTree, subagentState } from "./subagent-links";
 
 type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   running: boolean;
+  workingChildren?: number;
+  waitingChildren?: number;
   agent?: string | null;
   runtimeId?: string | null;
   sourceId?: string | null;
@@ -404,20 +406,34 @@ export function historyEntryState(
   selected = false,
 ): AgentState {
   const tab = entry.kind === "local" ? entry.tab : null;
+  const workingChildren =
+    entry.kind === "local"
+      ? (entry.tab.workingChildren ?? 0)
+      : entry.kind === "saved"
+        ? (entry.thread.workingChildren ?? 0)
+        : 0;
+  const waitingChildren =
+    entry.kind === "local"
+      ? (entry.tab.waitingChildren ?? 0)
+      : entry.kind === "saved"
+        ? (entry.thread.waitingChildren ?? 0)
+        : 0;
   const own: AgentState = tab
-    ? tab.permissions.length || tab.questions.length
+    ? tab.permissions.length || tab.questions.length || waitingChildren > 0
       ? "needs-you"
       : tab.error
         ? "failed"
-        : tab.streaming
+        : tab.streaming || workingChildren > 0
           ? "working"
           : tab.attention
             ? "done"
             : "idle"
     : entry.kind === "saved"
-      ? entry.thread.running
-        ? "working"
-        : "idle"
+      ? waitingChildren > 0
+        ? "needs-you"
+        : entry.thread.running || workingChildren > 0
+          ? "working"
+          : "idle"
       : entry.kind === "native"
         ? liveSessionState(entry.session)
         : entry.kind === "terminal"

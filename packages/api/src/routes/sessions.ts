@@ -31,6 +31,7 @@ import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, liveRunFields, syncNow } from "../session-watcher.js";
 import { emptySessionCacheUsage, loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
+import { childWorkCountsMany } from "../sessions/control.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
@@ -97,6 +98,12 @@ const LiveSessionSchema = z
       .openapi({ description: "Why the session waits for a human, and the tool that waits" }),
     background_work: z.boolean().default(false).openapi({
       description: "Idle between turns while the agent's background work still runs",
+    }),
+    working_children: z.number().int().default(0).openapi({
+      description: "Child sessions and native subagents with a turn in flight",
+    }),
+    waiting_children: z.number().int().default(0).openapi({
+      description: "Child sessions parked on a human question or approval",
     }),
     hidden: z.boolean().default(false),
     renamed: z.boolean().default(false),
@@ -446,6 +453,14 @@ async function toLiveDtos(rows: GatewayRow[]) {
       : [];
   const byId = new Map(linked.map((t) => [t.id, t]));
   const fromBody = await bodyLinkIndex();
+  const childWork = childWorkCountsMany(
+    rows.map((r) => ({
+      id: r.id,
+      nativeId: r.runtime_session_id,
+      backend: r.backend,
+      host: r.execution_host,
+    })),
+  );
   return rows.map((r) => {
     const handoff = handoffsBySession.get(r.id);
     const sendRow = sendsBySession.get(r.id);
@@ -478,6 +493,8 @@ async function toLiveDtos(rows: GatewayRow[]) {
       pid: r.pid ?? null,
       status: r.status,
       ...liveRunFields(r.backend, r.execution_host ?? null, r.runtime_session_id ?? null),
+      working_children: childWork.get(r.id)?.working ?? 0,
+      waiting_children: childWork.get(r.id)?.waiting ?? 0,
       hidden: r.hidden_at != null,
       renamed: r.display_title != null,
       project_id: r.project_id ?? null,

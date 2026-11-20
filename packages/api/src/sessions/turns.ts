@@ -13,6 +13,7 @@ export type ChatControl = {
   canSteer(target: ChatTarget): boolean;
   stop(threadId: string): boolean;
   running(threadId: string): boolean;
+  waiting(threadId: string): "question" | "approval" | null;
   full(): boolean;
   startPending(): void;
 };
@@ -23,6 +24,7 @@ let control: ChatControl = {
   canSteer: () => false,
   stop: () => false,
   running: () => false,
+  waiting: () => null,
   full: () => true,
   startPending: () => {},
 };

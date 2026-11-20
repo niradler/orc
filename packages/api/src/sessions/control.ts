@@ -17,6 +17,7 @@ import {
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
 import { SessionMessageStore } from "@orc/db/session-messages";
+import { sessionWaitingForHuman } from "../session-watcher.js";
 import { subagentToolCalls } from "./subagent-links.js";
 import { chatControl } from "./turns.js";
 
@@ -88,6 +89,168 @@ export function lastReply(thread: ChatThread): string {
   return (
     [...thread.messages].reverse().find((message) => message.role === "assistant")?.content ?? ""
   );
+}
+
+export type ChildWorkCounts = { working: number; waiting: number };
+
+export type ChildWorkParent = {
+  id: string;
+  nativeId?: string | null;
+  backend?: string | null;
+  host?: string | null;
+};
+
+const nativeBackend = (backend: string | null | undefined) =>
+  backend === "codex-cli" ? "codex" : backend === "claude-cli" ? "claude" : backend;
+
+/**
+ * Active work under sessions: chats they spawned plus the native subagents their provider
+ * started. A parent reads as working while any of these hold a turn, and as needing a
+ * human when one is parked on a question or approval. Direct children only — a child
+ * with its own running children is itself running, so the rollup stays honest without
+ * walking the whole tree on every status read. Batched: two queries for any list size.
+ */
+export function childWorkCountsMany(parents: ChildWorkParent[]): Map<string, ChildWorkCounts> {
+  const sqlite = getSqlite();
+  const counts = new Map<string, ChildWorkCounts>(
+    parents.map((parent) => [parent.id, { working: 0, waiting: 0 }]),
+  );
+  const add = (ownerId: string, waiting: boolean) => {
+    const count = counts.get(ownerId);
+    if (!count) return;
+    if (waiting) count.waiting++;
+    else count.working++;
+  };
+
+  // Chats spawned by any parent id (a spawn records the chat id or the native id).
+  const ownersBySpawnId = new Map<string, string[]>();
+  for (const parent of parents) {
+    for (const key of [parent.id, parent.nativeId]) {
+      if (!key) continue;
+      const owners = ownersBySpawnId.get(key) ?? [];
+      owners.push(parent.id);
+      ownersBySpawnId.set(key, owners);
+    }
+  }
+  const spawnIds = [...ownersBySpawnId.keys()];
+  if (spawnIds.length) {
+    // Raw summaries, not parsed threads: a legacy or corrupt child row must not
+    // take down the status read that lists it.
+    const marks = spawnIds.map(() => "?").join(",");
+    const children = sqlite
+      .query<{ id: string; spawnedFrom: string | null; hasPrompt: number }, string[]>(
+        `SELECT id, json_extract(data, '$.spawnedBy.sessionId') AS spawnedFrom,
+           json_extract(data, '$.spawnedBy.prompt') IS NOT NULL AS hasPrompt
+         FROM chat_threads WHERE json_valid(data)
+           AND json_extract(data, '$.spawnedBy.sessionId') IN (${marks})
+         ORDER BY updated_at DESC LIMIT 200`,
+      )
+      .all(...spawnIds);
+    for (const child of children) {
+      const running = chatControl().running(child.id);
+      // A queued spawn holds work the parent is waiting on even before its first turn.
+      if (!running && !child.hasPrompt) continue;
+      const waiting = running && chatControl().waiting(child.id) !== null;
+      for (const owner of ownersBySpawnId.get(child.spawnedFrom ?? "") ?? []) {
+        add(owner, waiting);
+      }
+    }
+  }
+
+  // Native subagents the provider started under each parent's native session.
+  const nativeParents = parents.filter((parent) => parent.nativeId && parent.backend);
+  if (nativeParents.length) {
+    const ownerByKey = new Map(
+      nativeParents.map((parent) => [
+        `${nativeBackend(parent.backend)}\u0000${parent.nativeId}\u0000${parent.host ?? ""}`,
+        parent.id,
+      ]),
+    );
+    const nativeIds = [...new Set(nativeParents.map((parent) => parent.nativeId as string))];
+    const marks = nativeIds.map(() => "?").join(",");
+    const children = sqlite
+      .query<
+        {
+          backend: string;
+          parent_session_id: string;
+          host: string;
+          runtime_session_id: string | null;
+        },
+        string[]
+      >(
+        `SELECT backend, parent_session_id, coalesce(execution_host, '') AS host, runtime_session_id
+         FROM gateway_sessions WHERE status = 'running' AND parent_session_id IN (${marks})`,
+      )
+      .all(...nativeIds);
+    for (const child of children) {
+      const owner = ownerByKey.get(
+        `${child.backend}\u0000${child.parent_session_id}\u0000${child.host}`,
+      );
+      if (!owner) continue;
+      const waiting =
+        !!child.runtime_session_id &&
+        sessionWaitingForHuman(child.backend, child.host || null, child.runtime_session_id);
+      add(owner, waiting);
+    }
+  }
+  return counts;
+}
+
+export function childWorkCounts(id: string): ChildWorkCounts {
+  const sqlite = getSqlite();
+  const thread = threadWorkFields(sqlite, id);
+  const lookup = sqlite.query<
+    { backend: string; runtime_session_id: string | null; execution_host: string | null },
+    [string]
+  >(
+    "SELECT backend, runtime_session_id, execution_host FROM gateway_sessions WHERE id = ?1 OR runtime_session_id = ?1 ORDER BY updated_at DESC LIMIT 1",
+  );
+  // A running chat may not have its runtime id yet; the discovered source links it.
+  const native = lookup.get(id) ?? (thread?.sourceId ? lookup.get(thread.sourceId) : undefined);
+  return (
+    childWorkCountsMany([
+      {
+        id,
+        nativeId: thread?.runtimeId ?? native?.runtime_session_id ?? null,
+        backend: thread?.backend ?? native?.backend ?? null,
+        host: thread?.host ?? native?.execution_host ?? null,
+      },
+    ]).get(id) ?? { working: 0, waiting: 0 }
+  );
+}
+
+/**
+ * The thread fields the rollup needs, read without the strict thread parse: the
+ * chat list must keep answering for legacy, minimal or corrupt rows.
+ */
+function threadWorkFields(
+  sqlite: ReturnType<typeof getSqlite>,
+  id: string,
+): {
+  runtimeId: string | null;
+  backend: string | null;
+  host: string | null;
+  sourceId: string | null;
+} | null {
+  const row = sqlite
+    .query<{ data: string }, [string]>("SELECT data FROM chat_threads WHERE id = ?")
+    .get(id);
+  if (!row) return null;
+  let data: unknown;
+  try {
+    data = JSON.parse(row.data);
+  } catch {
+    return null;
+  }
+  if (typeof data !== "object" || data === null) return null;
+  const record = data as Record<string, unknown>;
+  const text = (key: string) => (typeof record[key] === "string" ? (record[key] as string) : null);
+  return {
+    runtimeId: text("runtimeId"),
+    backend: text("backend"),
+    host: text("host"),
+    sourceId: text("sourceId"),
+  };
 }
 
 function outcomeText(outcome: ChildOutcome): string {

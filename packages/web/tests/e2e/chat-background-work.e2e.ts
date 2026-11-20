@@ -115,6 +115,12 @@ for (const width of [1440, 390]) {
     await page.goto(`/tasks?chat=open&chatThread=${parentId}`);
     const strip = page.getByTestId("chat-background-work");
     await expect(strip).toBeVisible();
+    // The turn ended, but the strip stays up and names the work still in flight.
+    const status = page.getByTestId("chat-activity-status");
+    await expect(status.getByTestId("chat-waiting-label")).toHaveText(
+      "Waiting on 1 subagent · 1 command",
+    );
+    await expect(status.getByTestId("chat-waiting-timer")).toBeVisible();
     await expect(strip.getByTestId("chat-background-title")).toHaveText(
       "Running 1 command and 1 subagent",
     );
@@ -135,6 +141,7 @@ for (const width of [1440, 390]) {
     await expect(strip).toContainText("bun test --watch");
     await expect(strip.getByTestId("chat-background-item")).toHaveCount(0);
     await expect(strip).not.toContainText("Reword the release notes");
+    await expect(status.getByTestId("chat-waiting-label")).toHaveText("Running 1 command");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,
     );
@@ -153,6 +160,65 @@ test("opening a background session shows its conversation", async ({ page }) => 
   await expect(page.getByRole("heading", { name: "Reword the release notes" })).toBeVisible();
   await expect(page.getByTestId("chat-background-work")).toBeHidden();
 });
+
+for (const width of [1440, 390]) {
+  test(`a native subagent keeps the parent strip up at ${width}px`, async ({ page }) => {
+    const parentId = crypto.randomUUID();
+    const started = Date.now() - 90_000;
+    seed(chatThread(parentId, "Native subagents", [], started));
+    // The provider's own subagent, discovered as a live session rather than a chat
+    // child: the strip must still name it while the parent's turn has ended.
+    await page.route(`**/api/sessions/live/${parentId}/subagents`, (route) =>
+      route.fulfill({
+        json: {
+          subagents: [
+            {
+              id: "gw-child",
+              parent_id: null,
+              session_id: "native-child",
+              title: "Audit the diff",
+              status: "running",
+              tool_call_id: null,
+              created_at: Math.floor(started / 1000),
+            },
+          ],
+        },
+      }),
+    );
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tasks?chat=open&chatThread=${parentId}`);
+    const status = page.getByTestId("chat-activity-status");
+    await expect(status.getByTestId("chat-waiting-label")).toHaveText("Waiting on 1 subagent");
+    await expect(status.getByTestId("chat-waiting-timer")).toBeVisible();
+    const strip = page.getByTestId("chat-background-work");
+    await expect(strip).toContainText("Audit the diff");
+    await expect(strip.getByTestId("chat-background-open")).toBeVisible();
+    await page.screenshot({ path: test.info().outputPath(`native-subagent-${width}.png`) });
+  });
+}
+
+for (const width of [1440, 390]) {
+  test(`stop reads Stopping until the turn ends at ${width}px`, async ({ page }) => {
+    await installStreamControl(page);
+    await page.route("**/api/chat/runs/*/cancel", (route) => route.fulfill({ json: { ok: true } }));
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/?chat=open");
+    await page.getByTestId("chat-input").fill("Refactor the parser");
+    await page.getByTestId("chat-send-button").click();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as StreamWindow).chatStreams))
+      .toBe(1);
+    await push(page, 0, [{ type: "thread", thread: fakeThread(), runId: crypto.randomUUID() }]);
+    const stop = page.getByTestId("chat-cancel-button");
+    await expect(stop).toHaveAttribute("aria-label", "Stop response");
+    await stop.click();
+    // Cooperative stop: the request is acknowledged, but the turn keeps running
+    // until the agent ends it, so the button must not look clickable again.
+    await expect(stop).toHaveAttribute("aria-label", "Stopping response");
+    await expect(stop).toBeDisabled();
+    await page.screenshot({ path: test.info().outputPath(`stopping-${width}.png`) });
+  });
+}
 
 test("a turn that detaches a command shows it while it runs", async ({ page }) => {
   await installStreamControl(page);

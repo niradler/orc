@@ -141,13 +141,20 @@ export function useTaskSessions(taskId: string | null) {
   });
 }
 
-export function useSessionSubagents(sessionId: string | null) {
+export function useSessionSubagents(sessionId: string | null, live = false) {
   return useQuery({
     queryKey: ["sessions", "subagents", sessionId],
     queryFn: () => api.sessions.subagents(sessionId as string),
     select: (data) => data.subagents,
     enabled: Boolean(sessionId),
     retry: false,
+    // Keep polling while the parent works (a subagent may start at any moment) or
+    // any reported subagent still runs; settle to rest once everything is quiet.
+    refetchInterval: (query) => {
+      const data = query.state.data as { subagents: { status: string }[] } | undefined;
+      const active = data?.subagents.some((subagent) => subagent.status === "running");
+      return live || active ? 3000 : false;
+    },
   });
 }
 
@@ -160,13 +167,20 @@ export function useSessionLineage(sessionId: string | null) {
   });
 }
 
-export function useSessionChildren(sessionId: string | null) {
+export function useSessionChildren(sessionId: string | null, live = false) {
   return useQuery({
     queryKey: ["sessions", "children", sessionId],
     queryFn: () => api.sessions.children(sessionId as string),
     select: (data) => data.sessions,
     enabled: Boolean(sessionId),
     retry: false,
+    refetchInterval: (query) => {
+      const data = query.state.data as { sessions: { status: string }[] } | undefined;
+      const active = data?.sessions.some((session) =>
+        ["running", "waiting", "queued"].includes(session.status),
+      );
+      return live || active ? 3000 : false;
+    },
   });
 }
 
