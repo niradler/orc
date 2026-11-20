@@ -19,7 +19,7 @@ import {
 } from "@/lib/mcp-connection";
 
 const row = "grid gap-4 border-b border-border py-5 lg:grid-cols-[minmax(160px,1fr)_minmax(0,2fr)]";
-const toolSurfaces = { meta: "Meta tools", full: "All tools", code: "Code mode" } as const;
+const toolSurfaces = { meta: "Meta tools", full: "All tools" } as const;
 
 export function McpServerSettings() {
   const { data: projects = [] } = useProjects();
@@ -104,12 +104,12 @@ export function McpServerSettings() {
         <div className="flex items-center gap-1">
           <span className="text-sm font-medium">Tool surface</span>
           <HelpPopover label="tool surface" testId="mcp-tool-surface-help">
-            Meta loads tool schemas on demand. Code mode lets agents discover and combine tools in
-            sandboxed JavaScript. All tools lists every available tool.
+            Meta loads schemas on demand and supports sandboxed scripts when execution is enabled.
+            All tools lists every available tool.
           </HelpPopover>
         </div>
         <fieldset aria-label="Tool surface" className="flex flex-wrap gap-2">
-          {(["meta", "full", "code"] as const).map((value) => (
+          {(["meta", "full"] as const).map((value) => (
             <Button
               key={value}
               variant={mode === value ? "secondary" : "outline"}

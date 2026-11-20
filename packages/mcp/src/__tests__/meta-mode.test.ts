@@ -5,6 +5,7 @@ import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb } from "@orc/db/client";
 import { parseMcpMode, searchTools } from "../meta-tools.js";
 import { createMcpServer } from "../server.js";
+import { specToolDefinitions } from "../spec-tools.js";
 import { toolDefinitions } from "../tools.js";
 
 const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
@@ -38,16 +39,26 @@ const textOf = (res: unknown) =>
   ((res as { content: { text: string }[] }).content[0] as { text: string }).text;
 
 describe("meta mode", () => {
-  test("lists only the three meta tools", async () => {
+  test("lists shared discovery, direct invocation and execution", async () => {
     const client = await connect("meta");
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
+    expect(tools.map((t) => t.name)).toEqual([
+      "tool_search",
+      "tool_describe",
+      "tool_invoke",
+      "tool_execute",
+    ]);
   });
 
-  test("default mode lists only discovery tools", async () => {
+  test("default mode uses the unified meta surface", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
+    expect(tools.map((t) => t.name)).toEqual([
+      "tool_search",
+      "tool_describe",
+      "tool_invoke",
+      "tool_execute",
+    ]);
   });
 
   test("tool_search finds memory_list with a one-line description", async () => {
@@ -86,7 +97,7 @@ describe("meta mode", () => {
     const client = await connect("meta");
     for (const args of [{}, { query: "  " }, { query: "the a" }]) {
       const text = textOf(await client.callTool({ name: "tool_search", arguments: args }));
-      const available = toolDefinitions.filter(
+      const available = [...toolDefinitions, ...specToolDefinitions].filter(
         (tool) => !tool.name.startsWith("preview_") && tool.name !== "speak",
       );
       expect(text).toStartWith(`${available.length} tools by toolset:`);
@@ -172,7 +183,7 @@ describe("parseMcpMode", () => {
     expect(parseMcpMode(undefined)).toBe("meta");
     expect(parseMcpMode("full")).toBe("full");
     expect(parseMcpMode("meta")).toBe("meta");
-    expect(parseMcpMode("code")).toBe("code");
-    expect(() => parseMcpMode("bogus")).toThrow("Valid modes: full, meta, code");
+    expect(() => parseMcpMode("code")).toThrow("Valid modes: full, meta");
+    expect(() => parseMcpMode("bogus")).toThrow("Valid modes: full, meta");
   });
 });

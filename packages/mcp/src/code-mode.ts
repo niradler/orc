@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { CODE_LIMITS, hasBoundedJsonShape } from "./code-protocol.js";
 import { runCodeWorker } from "./code-runner.js";
-import { type ServedTool, searchTools, type ToolResult } from "./meta-tools.js";
-import type { ToolName } from "./tools.js";
+import { describeServedTool, type ServedTool, searchTools, type ToolResult } from "./meta-tools.js";
+
+type ToolName = ServedTool["name"];
 
 const readable: ReadonlySet<ToolName> = new Set<ToolName>([
   "context",
@@ -36,6 +37,10 @@ const readable: ReadonlySet<ToolName> = new Set<ToolName>([
   "flow_list",
   "flow_read",
   "flow_status",
+  "preview_browser_snapshot",
+  "spec_list",
+  "spec_tools",
+  "spec_describe",
 ]);
 const writable: ReadonlySet<ToolName> = new Set<ToolName>([
   "task_create",
@@ -46,6 +51,7 @@ const writable: ReadonlySet<ToolName> = new Set<ToolName>([
   "memory_update",
   "pad_create",
   "pad_update",
+  "spec_invoke",
 ]);
 
 const outputHints: Partial<Record<ToolName, string>> = {
@@ -73,6 +79,7 @@ export const codeToolListing = {
   name: "tool_execute",
   description:
     "Run an isolated JavaScript async function body. Use await and return directly. " +
+    "Use tool_search and tool_describe to discover scriptable tools. Prefer tool_invoke for one small, direct result. " +
     'Discover tools with const { tools: hits } = await tools.search("list active tasks"). ' +
     'An empty query pages through the catalog with tools.search("", { limit: 20, offset: 0 }). ' +
     "Use await tools.describe(name) for inputSchema, effect and any output hint, then await tools.call(name, args). " +
@@ -108,9 +115,18 @@ const requestSchema = z.discriminatedUnion("operation", [
   }),
 ]);
 
-function toolEffect(name: ToolName): "read" | "write" | undefined {
+export function toolEffect(name: ToolName): "read" | "write" | undefined {
   if (readable.has(name)) return "read";
   if (writable.has(name)) return "write";
+}
+
+export function scriptToolInfo(name: ToolName) {
+  const effect = toolEffect(name);
+  return {
+    scriptable: effect !== undefined,
+    ...(effect ? { effect } : {}),
+    ...(outputHints[name] ? { output: outputHints[name] } : {}),
+  };
 }
 
 function encodeReply(reply: { value: unknown } | { error: string }): string {
@@ -126,6 +142,7 @@ function asBridgeValue(result: ToolResult): string {
     .flatMap((item) => (item.type === "text" ? [item.text] : []))
     .join("\n");
   if (result.isError) return encodeReply({ error: text.slice(0, 512) || "Tool failed" });
+  if (result.structuredContent) return encodeReply({ value: result.structuredContent });
   if (Buffer.byteLength(text) > CODE_LIMITS.responseBytes) {
     return encodeReply({
       error: "Tool response exceeded the bridge limit. Narrow the tool arguments.",
@@ -190,11 +207,8 @@ export async function runCodeMode(
             if (request.operation === "describe") {
               return encodeReply({
                 value: {
-                  name: tool.name,
-                  description: tool.description,
-                  effect: toolEffect(tool.name),
-                  ...(outputHints[tool.name] ? { output: outputHints[tool.name] } : {}),
-                  inputSchema: z.toJSONSchema(tool.inputSchema, { target: "draft-7", io: "input" }),
+                  ...describeServedTool(tool),
+                  ...scriptToolInfo(tool.name),
                 },
               });
             }

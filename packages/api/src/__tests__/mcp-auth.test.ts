@@ -129,16 +129,16 @@ describe("MCP HTTP endpoint mode", () => {
   };
 
   test("?mode=meta lists only the meta tools", async () => {
-    expect(await listNames("?mode=meta")).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
+    expect(await listNames("?mode=meta")).toEqual([
+      "tool_search",
+      "tool_describe",
+      "tool_invoke",
+      "tool_execute",
+    ]);
   });
 
-  test("?mode=code lists the executor and keeps speak conversation-bound", async () => {
-    expect(await listNames("?mode=code")).toEqual(["tool_execute"]);
-    expect(await listNames("?mode=code&session=thread-1")).toEqual(["tool_execute", "speak"]);
-  });
-
-  test("?mode=code executes JavaScript through the authenticated HTTP route", async () => {
-    const res = await rpc("?mode=code", {
+  test("meta executes JavaScript through the authenticated HTTP route", async () => {
+    const res = await rpc("?mode=meta", {
       jsonrpc: "2.0",
       id: 2,
       method: "tools/call",
@@ -154,7 +154,7 @@ describe("MCP HTTP endpoint mode", () => {
 
   test("bare /mcp defaults to meta discovery", async () => {
     const names = await listNames("");
-    expect(names).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
+    expect(names).toEqual(["tool_search", "tool_describe", "tool_invoke", "tool_execute"]);
   });
 
   test("explicit full mode lists the real tools", async () => {
@@ -168,6 +168,7 @@ describe("MCP HTTP endpoint mode", () => {
       "tool_search",
       "tool_describe",
       "tool_invoke",
+      "tool_execute",
       "speak",
     ]);
     expect(await listNames("?mode=full&session=thread-1")).toContain("speak");
@@ -178,6 +179,30 @@ describe("MCP HTTP endpoint mode", () => {
     const res = await rpc("?mode=bogus", { jsonrpc: "2.0", id: 1, method: "tools/list" });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("full, meta, code");
+    expect(body.error).toContain("full, meta");
+  });
+
+  test("should withhold execution on anonymous HTTP, including direct calls by name", async () => {
+    const previous = process.env.ORC_API_SECRET;
+    process.env.ORC_API_SECRET = "";
+    resetConfig();
+    try {
+      expect(await listNames("?mode=meta")).toEqual([
+        "tool_search",
+        "tool_describe",
+        "tool_invoke",
+      ]);
+      const response = await rpc("?mode=meta", {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "tools/call",
+        params: { name: "tool_execute", arguments: { code: "return 42;" } },
+      });
+      expect(await response.text()).toContain("Script execution is unavailable");
+    } finally {
+      if (previous === undefined) delete process.env.ORC_API_SECRET;
+      else process.env.ORC_API_SECRET = previous;
+      resetConfig();
+    }
   });
 });

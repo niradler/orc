@@ -24,7 +24,6 @@ test("query preserves the selected mode and project scope independently of the s
   expect(mcpUrl({ ...base, projects: ["orc", "spec cli"] })).toBe(
     "http://localhost:7700/mcp?mode=meta&projects=orc%2Cspec+cli",
   );
-  expect(mcpUrl({ ...base, mode: "code" })).toBe("http://localhost:7700/mcp?mode=code");
 });
 
 test("snippets reference the secret env var and omit auth when there is none", () => {

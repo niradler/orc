@@ -19,7 +19,7 @@ beforeAll(() => {
 afterAll(() => closeDb());
 
 async function withClient(run: (client: Client) => Promise<void>): Promise<void> {
-  const server = createMcpServer({ mode: "code", project: "Alpha" });
+  const server = createMcpServer({ mode: "meta", project: "Alpha" });
   const client = new Client({ name: "test", version: "1" });
   const [serverTransport, clientTransport] = InMemoryTransport.createLinkedPair();
   try {
@@ -82,7 +82,8 @@ describe("MCP code mode", () => {
         truncated: false,
       });
       expect(JSON.stringify(result.content)).not.toContain("Alpha fixture");
-      expect((await client.callTool({ name: "task_list" })).isError).toBe(true);
+      expect((await client.callTool({ name: "task_list" })).isError).toBeUndefined();
+      expect((await client.callTool({ name: "spec_list" })).isError).toBe(true);
     });
   });
 

@@ -8669,7 +8669,9 @@ export interface paths {
                              * @default meta
                              * @enum {string}
                              */
-                            default_mode: "full" | "meta" | "code";
+                            default_mode: "full" | "meta";
+                            /** @default true */
+                            code_execution: boolean;
                             prompts: {
                                 name: string;
                                 title: string;
@@ -8698,11 +8700,9 @@ export interface paths {
             requestBody?: {
                 content: {
                     "application/json": {
-                        /**
-                         * @default meta
-                         * @enum {string}
-                         */
-                        default_mode?: "full" | "meta" | "code";
+                        /** @enum {string} */
+                        default_mode?: "full" | "meta";
+                        code_execution?: boolean;
                         prompts?: {
                             name: string;
                             title: string;
@@ -8725,7 +8725,9 @@ export interface paths {
                              * @default meta
                              * @enum {string}
                              */
-                            default_mode: "full" | "meta" | "code";
+                            default_mode: "full" | "meta";
+                            /** @default true */
+                            code_execution: boolean;
                             prompts: {
                                 name: string;
                                 title: string;

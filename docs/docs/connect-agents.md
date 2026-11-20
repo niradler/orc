@@ -22,7 +22,7 @@ ORC serves MCP two ways:
 | Streamable HTTP | `http://127.0.0.1:7700/mcp` | `Authorization: Bearer <secret or token>` when a secret is set   |
 | stdio           | `orc mcp`                   | Reads `api.secret` from `~/.orc/config.json` or `ORC_API_SECRET` |
 
-Both default to meta mode. The agent uses `tool_search`, `tool_describe`, and `tool_invoke` to find and call tools without loading every schema. Select `full` for direct tool listings or `code` to discover and combine tools in sandboxed JavaScript. Pass the mode with `?mode=code` over HTTP or `orc mcp --mode code` over stdio. See [MCP code mode](./mcp.md#code-mode).
+Both default to meta mode. The agent uses `tool_search` and `tool_describe` to discover tools, then picks `tool_invoke` for a direct call or `tool_execute` to batch calls and filter results in JavaScript. Execution is available on authenticated HTTP and local stdio when enabled. Select `full` for direct tool listings. See [MCP scripts](./mcp.md#code-execution-in-meta-mode).
 
 Scope a connection to projects with query parameters:
 

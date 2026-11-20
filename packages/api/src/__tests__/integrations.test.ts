@@ -452,3 +452,91 @@ test("reads the pre-0.6 spec-cli registry in place when ~/.spec-cli does not exi
     rmSync(user, { recursive: true, force: true });
   }
 });
+
+test("should use the same meta discovery and enabled Spec bindings for direct calls and filtered scripts", async () => {
+  const page = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () =>
+      new Response(
+        "<html><title>Fixture release notes</title><body>omit this page body</body></html>",
+        {
+          headers: { "Content-Type": "text/html" },
+        },
+      ),
+  });
+  const api = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
+  const previousBase = process.env.ORC_API_BASE;
+  process.env.ORC_API_BASE = `http://127.0.0.1:${api.port}`;
+  try {
+    const specPath = join(home, "page-fixture.json");
+    writeFileSync(
+      specPath,
+      JSON.stringify({
+        openapi: "3.0.0",
+        info: { title: "Page fixture", version: "1" },
+        paths: {
+          "/page": { get: { operationId: "getPage", summary: "Read the fixture HTML page" } },
+          "/disabled": { get: { operationId: "disabledPage", summary: "Disabled operation" } },
+        },
+      }),
+    );
+    const client = createSpecClient();
+    try {
+      client.specs.add("page-fixture", {
+        type: "openapi",
+        source: specPath,
+        baseUrl: `http://127.0.0.1:${page.port}`,
+        disabledTools: ["disabledPage"],
+      });
+    } finally {
+      await client.close();
+    }
+    async function call(name: string, args: Record<string, unknown>) {
+      const response = await fetch(`http://127.0.0.1:${api.port}/mcp?mode=meta`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          Authorization: "Bearer test-secret",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
+        }),
+      });
+      expect(response.status).toBe(200);
+      const content = await response.text();
+      return JSON.parse(content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1)).result;
+    }
+    const discovery = await call("tool_describe", {
+      names: ["spec_tools", "spec_invoke", "task_list"],
+    });
+    expect(
+      discovery.structuredContent.tools.map((tool: { scriptable: boolean }) => tool.scriptable),
+    ).toEqual([true, true, true]);
+    const direct = await call("tool_search", { connection: "page-fixture" });
+    expect(direct.content[0].text).toContain("getPage");
+    expect(direct.content[0].text).not.toContain("disabledPage");
+    const described = await call("tool_describe", { connection: "page-fixture", name: "getPage" });
+    expect(described.content[0].text).toContain("inputSchema");
+    const scripted = await call("tool_execute", {
+      code: `const target = {connection: "page-fixture", tool: "getPage"};
+        const page = await tools.call("spec_invoke", target);
+        return page.body.match(/<title>([^<]*)<\\/title>/)?.[1];`,
+    });
+    expect(scripted.structuredContent.result).toBe("Fixture release notes");
+    expect(JSON.stringify(scripted)).not.toContain("omit this page body");
+    const denied = await call("tool_execute", {
+      code: 'return await tools.call("spec_invoke", {connection:"page-fixture",tool:"disabledPage"});',
+    });
+    expect(denied.isError).toBe(true);
+  } finally {
+    if (previousBase === undefined) delete process.env.ORC_API_BASE;
+    else process.env.ORC_API_BASE = previousBase;
+    api.stop(true);
+    page.stop(true);
+  }
+});
