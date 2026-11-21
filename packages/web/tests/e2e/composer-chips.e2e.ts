@@ -269,6 +269,9 @@ test("@sanity long model names stay readable in the composer chip and picker", a
         });
       }
       await page.keyboard.press("Escape");
+      await expect(page.getByTestId(`chat-model-tooltip-${scenario.id}`)).toBeHidden();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
       await expect(page.getByTestId("chat-send-button")).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -279,7 +282,7 @@ test("@sanity long model names stay readable in the composer chip and picker", a
 
 test.describe("touch composer", () => {
   test.use({ hasTouch: true });
-  test("long model names scroll sideways in the chip without a scrollbar", async ({
+  test("long model names truncate in the chip and scroll sideways in the picker", async ({
     page,
     request,
   }) => {
@@ -306,11 +309,9 @@ test.describe("touch composer", () => {
       scrollbarWidth: getComputedStyle(element).scrollbarWidth,
       scrollable: element.scrollWidth > element.clientWidth,
     }));
-    expect(state).toEqual({ overflowX: "auto", scrollbarWidth: "none", scrollable: true });
-    await model.evaluate((element) => {
-      element.scrollLeft = 80;
-    });
-    expect(await model.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    // The closed chip truncates; it is not a sideways scroller.
+    expect(state).toEqual({ overflowX: "hidden", scrollbarWidth: "auto", scrollable: true });
+    expect(await model.getAttribute("data-chip-scroll")).toBeNull();
     await page.screenshot({ path: test.info().outputPath("long-model-touch-820.png") });
     // No info icons anywhere; the hover popover is the only disclosure.
     await expect(page.getByTestId("chat-model-help")).toHaveCount(0);

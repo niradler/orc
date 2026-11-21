@@ -287,7 +287,7 @@ export function AgentModelPicker({
       type="button"
       data-chip-main
       data-testid={`${testIdPrefix}-agent-model-button`}
-      aria-label={`Agent and model: ${name}, ${accessibleSummary ?? modelName}`}
+      aria-label={`Agent and model: ${name}, ${accessibleSummary ?? modelName}${profileName ? `, profile ${profileName}` : ""}`}
       disabled={!ready}
       className="inline-flex min-w-0 flex-1 self-stretch items-center gap-1.5 focus-visible:outline-hidden"
     >
@@ -307,11 +307,7 @@ export function AgentModelPicker({
         </>
       )}
       <span data-chip-label className="flex min-w-0 items-center gap-1">
-        <span
-          data-chip-scroll
-          data-testid={`${testIdPrefix}-model-current`}
-          className="min-w-0 truncate"
-        >
+        <span data-testid={`${testIdPrefix}-model-current`} className="min-w-0 truncate">
           {profileName ?? modelName}
         </span>
         {effortLabel && (

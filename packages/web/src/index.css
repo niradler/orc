@@ -293,9 +293,9 @@ html[data-chat-font="serif"] {
   }
 }
 
-/* Touch: a truncated model label scrolls sideways instead of relying on hover;
-   the scrollbar stays hidden and scrolling does not chain to the composer row
-   or to the picker list. */
+/* Touch: a truncated row label inside the open picker scrolls sideways instead
+   of relying on hover; the scrollbar stays hidden and scrolling does not chain
+   to the picker list. The closed chip stays a plain truncation. */
 @media (pointer: coarse) {
   [data-chip-scroll] {
     overflow-x: auto;

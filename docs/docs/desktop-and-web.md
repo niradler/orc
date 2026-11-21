@@ -625,12 +625,15 @@ default or a level such as Low, High or Extra high; the choice applies to the ne
 turn and is kept with that agent's chat options. Other adapters have no effort
 setting.
 
-Each discovered model shows the agent's own description under its name, unless the
-description only repeats the name. When the agent reports which effort levels a
-model supports (Claude Code and Codex do), the Effort column lists only those; a
-model that reports none, such as Haiku, has no Effort column, and switching to a
-model that lacks the selected level resets it to the default. A list of more than
-six models adds a search field; Enter picks the first match.
+Rows show the provider's model label exactly as it arrives. Hovering a row while
+the panel is open reveals its full label, raw id and the agent's own description;
+nothing is hidden behind an icon or shown on the closed chip. A saved **composer
+profile** replaces the model name in the chip while the current agent, model,
+effort and permission mode still match it. When the agent reports which effort
+levels a model supports (Claude Code and Codex do), the Effort column lists only
+those; a model that reports none, such as Haiku, has no Effort column, and
+switching to a model that lacks the selected level resets it to the default. A
+list of more than six models adds a search field; Enter picks the first match.
 
 On a phone the picker opens on a Model tab, beside Agent and Effort tabs that are
 labelled with the current choices. Picking an agent moves to Model, picking a
