@@ -364,7 +364,9 @@ app.openapi(
     const host = findRemoteHost(c.req.valid("param").id);
     const { path, host: alias } = c.req.valid("query");
     const query = new URLSearchParams({ path });
-    if (alias) query.set("host", alias);
+    // An empty string means the remote's own machine, so forward it rather than
+    // letting the remote fall back to its configured execution host.
+    if (alias !== undefined) query.set("host", alias);
     return c.json(
       await remoteJson<z.infer<typeof BrowseListingSchema>>(
         host,

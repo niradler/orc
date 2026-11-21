@@ -295,7 +295,7 @@ export function ChatWorkspaceControls() {
                 aria-label="Workspace host"
                 className="max-h-[min(16rem,45dvh)] overflow-y-auto"
               >
-                <p className={chipHeading}>This server</p>
+                {hostChoices.length > 0 && <p className={chipHeading}>This server</p>}
                 {hostChoices.map((alias) => (
                   <button
                     type="button"

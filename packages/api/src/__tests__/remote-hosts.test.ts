@@ -205,6 +205,38 @@ describe("remote ORC hosts", () => {
     expect(after.directories).toContain("picked-here");
   });
 
+  test("forwards the requested host, including an empty one, to the remote server", async () => {
+    const original = globalThis.fetch;
+    const requested: string[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requested.push(String(input));
+      return new Response(
+        JSON.stringify({ host: null, path: destHome, parent: null, directories: [] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+    try {
+      const own = await req(
+        app,
+        "GET",
+        `/remote-hosts/${id}/browse?path=${encodeURIComponent(destHome)}&host=`,
+      );
+      expect(own.status).toBe(200);
+      const aliased = await req(
+        app,
+        "GET",
+        `/remote-hosts/${id}/browse?path=${encodeURIComponent(destHome)}&host=my-ssh-host`,
+      );
+      expect(aliased.status).toBe(200);
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(requested.map((url) => new URL(url).searchParams.get("host"))).toEqual([
+      "",
+      "my-ssh-host",
+    ]);
+  });
+
   test("a wrong token fails the test with a clear reason", async () => {
     await req(app, "POST", "/remote-hosts", {
       id,
