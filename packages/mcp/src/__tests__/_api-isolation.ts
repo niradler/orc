@@ -11,3 +11,4 @@ const probe = Bun.serve({
   fetch: () => new Response("isolated test endpoint", { status: 503 }),
 });
 process.env.ORC_API_BASE = `http://127.0.0.1:${probe.port}`;
+process.on("exit", () => probe.stop(true));
