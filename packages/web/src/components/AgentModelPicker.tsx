@@ -174,6 +174,7 @@ export function AgentModelPicker({
   providerId,
   onProvider,
   agentName,
+  profileName,
   accessibleSummary,
   favorites,
   onFavorite,
@@ -206,6 +207,9 @@ export function AgentModelPicker({
   providerId?: string | undefined;
   onProvider?: (id: string) => boolean;
   agentName?: string | undefined;
+  /** Name of the saved composer profile the current settings match; the chip
+   *  shows it instead of the model while the profile is still exact. */
+  profileName?: string | undefined;
   accessibleSummary?: string;
   favorites?: ReadonlySet<string>;
   onFavorite?: (model: string) => void;
@@ -305,7 +309,7 @@ export function AgentModelPicker({
           data-testid={`${testIdPrefix}-model-current`}
           className="min-w-0 truncate"
         >
-          {modelName}
+          {profileName ?? modelName}
         </span>
         {effortLabel && (
           <span
@@ -346,6 +350,8 @@ export function AgentModelPicker({
           side="top"
           align="start"
           collisionPadding={12}
+          // Width follows the columns' content; it is not a fixed panel.
+          className="max-h-[min(36rem,60vh)] w-fit max-w-[calc(100vw-1.5rem)] overflow-y-auto p-1.5 max-[520px]:w-[calc(100vw-1.5rem)]"
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             focusChipOption(started || phone ? modelList.current : agentList.current);
@@ -392,10 +398,8 @@ export function AgentModelPicker({
           )}
           <div
             className={cn(
-              "grid gap-1.5 max-[520px]:grid-cols-1",
-              effortChoices.length
-                ? "grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.7fr)]"
-                : "grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]",
+              "grid items-start gap-1.5 max-[520px]:grid-cols-1",
+              effortChoices.length ? "grid-cols-[auto_auto_auto]" : "grid-cols-[auto_auto]",
             )}
           >
             <div
@@ -405,7 +409,7 @@ export function AgentModelPicker({
               data-testid={`${testIdPrefix}-agent-select`}
               onKeyDown={onChipListKeyDown}
               className={cn(
-                "min-w-0 border-border min-[521px]:border-r min-[521px]:pr-1.5",
+                "min-w-0 max-w-[12rem] border-border min-[521px]:border-r min-[521px]:pr-1.5",
                 phone && shown !== "agent" && "hidden",
               )}
             >
@@ -471,7 +475,7 @@ export function AgentModelPicker({
               data-testid={`${testIdPrefix}-model-select`}
               onKeyDown={onChipListKeyDown}
               className={cn(
-                "min-w-0",
+                "min-w-[11rem] max-w-[20rem]",
                 effortChoices.length && "border-border min-[521px]:border-r min-[521px]:pr-1.5",
                 phone && shown !== "model" && "hidden",
               )}
@@ -597,7 +601,10 @@ export function AgentModelPicker({
                 aria-label={`${name} effort`}
                 data-testid={`${testIdPrefix}-effort-select`}
                 onKeyDown={onChipListKeyDown}
-                className={cn("min-w-0", phone && shown !== "effort" && "hidden")}
+                className={cn(
+                  "min-w-[8.5rem] max-w-[10rem]",
+                  phone && shown !== "effort" && "hidden",
+                )}
               >
                 {!phone && <p className={chipHeading}>Effort</p>}
                 <div className="max-h-64 overflow-y-auto">
