@@ -94,6 +94,7 @@ export async function piCommand(
 
 export class PiSession implements AgentSession {
   readonly id = ulid();
+  readonly systemPromptSlot = true;
   readonly capabilities = { ...PI_CAPABILITIES };
   private rpc?: PiRpc;
   private runtimeId?: string;

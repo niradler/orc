@@ -154,6 +154,13 @@ export interface AgentSession {
    * a turn confirms it; system-slot sessions re-apply it on every turn.
    */
   readonly systemPromptOnce?: boolean | undefined;
+  /**
+   * True when this session re-applies `systemPromptAppend` in a system slot on
+   * every turn (it never enters the conversation history). Callers keep offering
+   * it each turn. Mutually exclusive with `systemPromptOnce`; a session declaring
+   * neither ignores the append, so the caller must deliver it in the prompt.
+   */
+  readonly systemPromptSlot?: boolean | undefined;
   interrupt?(): Promise<void>;
   steer?(prompt: string): Promise<void>;
   /** Native identity may be known before a turn completes, including on cancellation. */

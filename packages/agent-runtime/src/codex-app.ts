@@ -44,6 +44,7 @@ function object(value: unknown): Record<string, unknown> {
 /** Interactive chat uses JSON-RPC; exec remains available for unattended callers. */
 export class CodexAppSession implements AgentSession {
   readonly id = ulid();
+  readonly systemPromptSlot = true;
   readonly capabilities = CODEX_CAPABILITIES;
   private sending = false;
   private bufferedBytes = 0;

@@ -163,6 +163,8 @@ See [Agent rules](./agent-rules.md).
 
 A skill is a `SKILL.md` folder of instructions, scripts and references that agents load with `skill_read`. An agent profile (`.agent.md`) defines a specialist that any backend can run. Packages bundle skills, profiles and instructions. See [Skills](./skills.md) and [Agent packages](./agent-packages.md).
 
+A profile's instructions are delivered like the chat system prompt, not repeated with every message: agents with a system prompt slot (Claude, Codex, Pi) apply them on every turn, while agents without one (OpenCode/ACP, ACPX, the Codex CLI) receive them with the first message that reaches the agent and keep them in the session history. Resumed conversations are not sent them again, and steering mid-turn never re-sends them.
+
 ## Audit
 
 ORC keeps a central audit log of knowledge changes and notification, human-request, job-run and task lifecycle events, plus who changed jobs (create, update, delete), activated or reverted rules, changed settings, opened or removed terminals, and signed in or issued tokens. Each entry records the actor (web UI, CLI/API or the agent name) and session, with changed field names but never commands, environment values or secrets; failed sign-ins are sampled to one per minute. Read it in Activity → Audit or `GET /api/audit`; `audit_list` also exposes knowledge history over MCP. Audit retention defaults to 90 days, configurable independently from the 30-day notification history, and the log is also capped at 200,000 rows (oldest removed first). See [Notifications](./notifications.md). Memories and skills also keep their own change history with revert.

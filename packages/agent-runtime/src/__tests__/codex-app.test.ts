@@ -70,6 +70,7 @@ test("should compact the existing native thread without sending a model prompt",
   // The app server owns a system slot: it re-applies the append every turn,
   // unlike codex exec, which rides the first prompt.
   expect((session as AgentSession).systemPromptOnce).toBeUndefined();
+  expect((session as AgentSession).systemPromptSlot).toBe(true);
   try {
     await session.send("/compact");
     const events: AgentEvent[] = [];

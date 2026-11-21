@@ -5,6 +5,7 @@
 
 import type { AgentFull } from "@orc/core/agent-service";
 import { readAgent, renderAgentInstructions } from "@orc/core/agent-service";
+import { AGENT_COMMAND_PATTERN } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { packageInstructionsForAgent } from "@orc/core/package-service";
@@ -84,27 +85,40 @@ export async function openAgentSession(
         .filter(Boolean)
         .join("\n\n")
     : "";
+  // Profile instructions are system instructions: they ride the same delivery as
+  // systemPromptAppend (a system slot re-applied each turn, or the first prompt of
+  // a prompt-riding session) instead of being re-concatenated into every user
+  // prompt and steer, which repeated them for the life of the conversation.
+  const sessionOpts: SessionOpts = context
+    ? {
+        ...resolvedOpts,
+        systemPromptAppend: [resolvedOpts.systemPromptAppend, context].filter(Boolean).join("\n\n"),
+      }
+    : resolvedOpts;
+  // Sessions that consume the append themselves need no prompt wrapping. A session
+  // that ignores it (no system slot, no first-prompt delivery) still receives the
+  // profile in the prompt, but only until a turn confirms delivery — never on steer.
   const wrap = (session: AgentSession): AgentSession => {
-    if (!profile) return session;
+    if (!context || session.systemPromptOnce || session.systemPromptSlot) return session;
+    let pending = !sessionOpts.systemPromptDelivered;
     return {
       id: session.id,
       systemPromptOnce: session.systemPromptOnce,
+      systemPromptSlot: session.systemPromptSlot,
       get capabilities() {
         return session.capabilities;
       },
       ...(session.interrupt ? { interrupt: session.interrupt.bind(session) } : {}),
-      ...(session.steer
-        ? {
-            steer: async (prompt: string) => {
-              await session.steer?.(`${context}\n\n${prompt}`);
-            },
-          }
-        : {}),
+      ...(session.steer ? { steer: session.steer.bind(session) } : {}),
       ...(session.setPermissionMode
         ? { setPermissionMode: session.setPermissionMode.bind(session) }
         : {}),
       getRuntimeSessionId: () => session.getRuntimeSessionId?.(),
-      send: (prompt, images) => session.send(`${context}\n\n${prompt}`, images),
+      send: (prompt, images) => {
+        const prepend = pending && !AGENT_COMMAND_PATTERN.test(prompt.trim());
+        if (prepend) pending = false;
+        return session.send(prepend ? `${context}\n\n${prompt}` : prompt, images);
+      },
       respondPermission: (requestId, result, feedback) =>
         session.respondPermission(requestId, result, feedback),
       ...(session.respondQuestion
@@ -123,7 +137,7 @@ export async function openAgentSession(
   if (runtimeSessionId) {
     try {
       const session = await backend.resumeSession(runtimeSessionId, {
-        ...resolvedOpts,
+        ...sessionOpts,
         runtimeSessionId,
       });
       logger.info(`Resumed session ${runtimeSessionId} via ${backendName}`);
@@ -136,7 +150,7 @@ export async function openAgentSession(
     }
   }
 
-  const session = await backend.startSession(resolvedOpts);
+  const session = await backend.startSession(sessionOpts);
   logger.info(`Started new session via ${backendName}`);
   return wrap(session);
 }
