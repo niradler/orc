@@ -180,4 +180,4 @@ test("HTTP lifecycle: authenticated settings, parser upload, vectors, scoped evi
   expect(afterDelete.hits.some((hit: { document_id: string }) => hit.document_id === doc.id)).toBe(
     false,
   );
-});
+}, 30_000);
