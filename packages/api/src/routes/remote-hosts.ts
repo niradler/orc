@@ -8,6 +8,7 @@ import {
   updateGlobalConfig,
 } from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
+import { ALIAS_PATTERN } from "@orc/core/exec-host";
 import { SEND_BLOCKED_HEADERS } from "@orc/core/session-send";
 import { recordAudit } from "../lib/audit-actor.js";
 import { createRouter } from "../lib/router.js";
@@ -326,6 +327,92 @@ app.openapi(
         scope: project.scope ?? null,
       })),
     });
+  },
+);
+
+const BrowseHostSchema = z.string().max(255).regex(ALIAS_PATTERN).nullable();
+const BrowseHostQuerySchema = z
+  .union([z.literal(""), z.string().max(255).regex(ALIAS_PATTERN)])
+  .optional();
+const BrowseListingSchema = z
+  .object({
+    host: z.string().nullable(),
+    path: z.string(),
+    parent: z.string().nullable(),
+    directories: z.array(z.string()),
+  })
+  .openapi("RemoteHostBrowse");
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/remote-hosts/{id}/browse",
+    tags: ["System"],
+    summary: "List folders on a remote ORC's machine or one of its SSH hosts",
+    request: {
+      params: idParam,
+      query: z.object({ path: z.string().max(4096).default(""), host: BrowseHostQuerySchema }),
+    },
+    responses: {
+      200: {
+        description: "Folders",
+        content: { "application/json": { schema: BrowseListingSchema } },
+      },
+    },
+  }),
+  async (c) => {
+    const host = findRemoteHost(c.req.valid("param").id);
+    const { path, host: alias } = c.req.valid("query");
+    const query = new URLSearchParams({ path });
+    if (alias) query.set("host", alias);
+    return c.json(
+      await remoteJson<z.infer<typeof BrowseListingSchema>>(
+        host,
+        `/terminals/browse?${query.toString()}`,
+      ),
+      200,
+    );
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/remote-hosts/{id}/browse/folders",
+    tags: ["System"],
+    summary: "Create a folder on a remote ORC's machine or one of its SSH hosts",
+    request: {
+      params: idParam,
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              host: BrowseHostSchema,
+              parent: z.string().min(1).max(4096),
+              name: z.string().trim().min(1).max(255),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Created folder",
+        content: { "application/json": { schema: z.object({ path: z.string() }) } },
+      },
+    },
+  }),
+  async (c) => {
+    const host = findRemoteHost(c.req.valid("param").id);
+    const { host: alias, parent, name } = c.req.valid("json");
+    return c.json(
+      await remoteJson<{ path: string }>(host, "/terminals/browse/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ host: alias, parent, name }),
+      }),
+      200,
+    );
   },
 );
 

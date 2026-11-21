@@ -11,11 +11,10 @@ import {
   GitBranch,
   GitBranchPlus,
   Globe,
-  LoaderCircle,
   Server,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { api, getApiUrl } from "@/api/client";
+import { api } from "@/api/client";
 import {
   chipHeading,
   chipOption,
@@ -56,7 +55,6 @@ export function ChatWorkspaceControls() {
   const [branchOpen, setBranchOpen] = useState(false);
   const [branchScreen, setBranchScreen] = useState<"run" | "base">("run");
   const [branchFilter, setBranchFilter] = useState("");
-  const [picking, setPicking] = useState(false);
   const [error, setError] = useState("");
   const [pathDraft, setPathDraft] = useState<string | null>(null);
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
@@ -112,9 +110,7 @@ export function ChatWorkspaceControls() {
   });
   const copied = copiedPath === displayPath;
   const worktree = workspace?.worktree ?? false;
-  const disabled = streaming || !ssh || picking;
-  const current = useRef({ host, thread, streaming, activeKey });
-  const mounted = useRef(true);
+  const disabled = streaming || !ssh;
   const folderTrigger = useRef<HTMLButtonElement>(null);
   const folderList = useRef<HTMLDivElement>(null);
   const branchList = useRef<HTMLDivElement>(null);
@@ -122,7 +118,6 @@ export function ChatWorkspaceControls() {
   const baseOptions = useRef<HTMLDivElement>(null);
   const previousBranchScreen = useRef<"run" | "base">("run");
   const previousConversation = useRef(activeKey);
-  current.current = { host, thread, streaming, activeKey };
   useEffect(() => {
     if (previousConversation.current === activeKey) return;
     previousConversation.current = activeKey;
@@ -145,12 +140,6 @@ export function ChatWorkspaceControls() {
     if (branchScreen === "base") baseBack.current?.focus();
     else focusChipOption(branchList.current);
   }, [branchOpen, branchScreen]);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
   useEffect(() => {
     // No host: a new chat follows the server-wide execution host until the user pins one.
     if (ssh && !workspace && !thread && !streaming)
@@ -209,48 +198,12 @@ export function ChatWorkspaceControls() {
     setPathDraft(null);
     setError("");
   };
-  const pick = async () => {
+  // Folders are browsed in the shared in-app picker: a native dialog opened by the
+  // server can stay behind the dashboard, and it cannot show another host's folders.
+  const pick = () => {
     setError("");
-    let localApi = false;
-    try {
-      const hostname = new URL(getApiUrl(), window.location.href).hostname;
-      localApi = ["localhost", "127.0.0.1", "[::1]"].includes(hostname);
-    } catch {
-      /* Invalid API settings cannot open a native dialog. */
-    }
-    if (host !== null || !localApi) {
-      openWorkspacePicker(cwd);
-      return;
-    }
-    const selectedHost = host;
-    const selectedConversation = activeKey;
-    setPicking(true);
-    try {
-      const result = await api.terminals.pickFolder(cwd || undefined, selectedHost);
-      if (
-        mounted.current &&
-        result.path &&
-        current.current.host === selectedHost &&
-        current.current.activeKey === selectedConversation &&
-        !current.current.thread &&
-        !current.current.streaming
-      )
-        choose(result.path);
-    } catch (problem) {
-      if (
-        !mounted.current ||
-        current.current.thread ||
-        current.current.activeKey !== selectedConversation
-      )
-        return;
-      const message =
-        problem instanceof Error ? problem.message : "Could not open the folder picker.";
-      if (message.includes("No folder picker is available on this machine"))
-        openWorkspacePicker(cwd);
-      else setError(message);
-    } finally {
-      setPicking(false);
-    }
+    setFolderOpen(false);
+    openWorkspacePicker(cwd);
   };
   const applyDraft = () => {
     choose((pathDraft ?? cwd).trim());
@@ -274,9 +227,7 @@ export function ChatWorkspaceControls() {
             disabled={disabled}
             className={cn(composerChip, "max-w-56")}
           >
-            {picking ? (
-              <LoaderCircle size={14} aria-hidden="true" className="shrink-0 animate-spin" />
-            ) : host ? (
+            {host ? (
               <Server size={14} aria-hidden="true" className="shrink-0" />
             ) : (
               <Folder size={14} aria-hidden="true" className="shrink-0" />
@@ -339,8 +290,12 @@ export function ChatWorkspaceControls() {
               </button>
             </div>
             {hostChoices.length + remoteChoices.length > 1 && (
-              <div role="menu" aria-label="Workspace host">
-                <p className={chipHeading}>Host</p>
+              <div
+                role="menu"
+                aria-label="Workspace host"
+                className="max-h-[min(16rem,45dvh)] overflow-y-auto"
+              >
+                <p className={chipHeading}>This server</p>
                 {hostChoices.map((alias) => (
                   <button
                     type="button"
@@ -369,15 +324,14 @@ export function ChatWorkspaceControls() {
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="block truncate">{alias ?? THIS_SERVER}</span>
-                      {!alias && serverAddress && (
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {serverAddress}
-                        </span>
-                      )}
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {alias ? "SSH host" : (serverAddress ?? "This machine")}
+                      </span>
                     </span>
                     {host === alias && <Check size={14} aria-hidden="true" />}
                   </button>
                 ))}
+                {remoteChoices.length > 0 && <p className={chipHeading}>Remote ORC servers</p>}
                 {remoteChoices.map((choice) => (
                   <button
                     type="button"
@@ -450,8 +404,7 @@ export function ChatWorkspaceControls() {
               disabled={disabled}
               className={chipOption}
               onClick={() => {
-                setFolderOpen(false);
-                void pick();
+                pick();
               }}
             >
               <FolderOpen size={14} aria-hidden="true" />
@@ -708,11 +661,6 @@ export function ChatWorkspaceControls() {
             </div>
           </PopoverContent>
         </Popover>
-      )}
-      {picking && (
-        <span role="status" className="basis-full px-2 text-xs text-muted-foreground">
-          Choose a folder in the native dialog…
-        </span>
       )}
       {error && (
         <div className="basis-full px-2 text-xs">

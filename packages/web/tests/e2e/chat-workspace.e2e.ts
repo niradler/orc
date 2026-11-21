@@ -318,148 +318,88 @@ test("switching to a host without folder history turns off worktree and preserve
     });
 });
 
-test("native folder choice preserves cancellation and surfaces genuine picker errors", async ({
-  page,
-}) => {
-  await workspaceFixture(page);
-  let result: "cancel" | "error" | "chosen" = "cancel";
-  let picks = 0;
-  await page.route("**/api/terminals/pick-folder", (route) => {
-    picks++;
-    expect(route.request().postDataJSON()).toEqual({
-      initial: "/local/projects/a-long-project-name/packages/application",
-      host: null,
-    });
-    return result === "error"
-      ? route.fulfill({ status: 500, json: { error: "Folder dialog failed to open" } })
-      : route.fulfill({ json: { path: result === "cancel" ? null : "/local/chosen" } });
-  });
-  await openChat(page);
-  await page.getByTestId("chat-input").fill("Preserve the draft");
-  const folder = page.getByTestId("chat-workspace-folder");
-  await browseWorkspace(page);
-  await expect.poll(() => picks).toBe(1);
-  await expect(folder).toBeEnabled();
-  await expect(folder).toHaveAttribute(
-    "title",
-    "Local: /local/projects/a-long-project-name/packages/application",
-  );
-  await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
-  result = "error";
-  await browseWorkspace(page);
-  await expect(page.getByTestId("chat-workspace-error")).toContainText(
-    "Folder dialog failed to open",
-  );
-  await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
-  await expect(folder).toHaveAttribute(
-    "title",
-    "Local: /local/projects/a-long-project-name/packages/application",
-  );
-  result = "chosen";
-  await browseWorkspace(page);
-  await expect(folder).toHaveAttribute("title", "Local: /local/chosen");
-  await expect(page.getByTestId("chat-workspace-error")).toBeHidden();
-  await expect(page.getByTestId("chat-input")).toHaveValue("Preserve the draft");
-});
-
-test("a delayed native folder result cannot change a newly selected conversation", async ({
-  page,
-}) => {
-  await workspaceFixture(page);
-  let finishPicker = () => {};
-  const pendingPicker = new Promise<void>((resolvePicker) => {
-    finishPicker = resolvePicker;
-  });
-  let requested = false;
-  await page.route("**/api/terminals/pick-folder", async (route) => {
-    requested = true;
-    await pendingPicker;
-    await route.fulfill({ json: { path: "/local/late-choice-for-first-conversation" } });
-  });
-  await openChat(page);
-  await page.getByTestId("chat-input").fill("First conversation draft");
-  await browseWorkspace(page);
-  await expect.poll(() => requested).toBe(true);
-  await expect(page.getByTestId("chat-workspace-folder")).toBeDisabled();
-  await page.getByTestId("chat-clear-button").filter({ visible: true }).click();
-  await expect(page.getByTestId("chat-input")).toHaveValue("");
-  await page.getByTestId("chat-input").fill("Second conversation draft");
-  const completed = page.waitForResponse((response) =>
-    response.url().endsWith("/api/terminals/pick-folder"),
-  );
-  finishPicker();
-  await (await completed).finished();
-  await expect(page.getByTestId("chat-workspace-folder")).toBeEnabled();
-  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
-    "title",
-    "Local: /local/projects/a-long-project-name/packages/application",
-  );
-  await expect(page.getByTestId("chat-input")).toHaveValue("Second conversation draft");
-});
-
-test("headless local browsing falls back safely and remote browsing stays on its selected host", async ({
+test("local folder browsing opens the shared dialog and never asks the server for a native one", async ({
   page,
 }) => {
   await workspaceFixture(page);
   let nativePicks = 0;
   await page.route("**/api/terminals/pick-folder", (route) => {
     nativePicks++;
-    return route.fulfill({
-      status: 400,
-      json: { error: "No folder picker is available on this machine", code: "VALIDATION_ERROR" },
-    });
+    return route.fulfill({ json: { path: null } });
   });
-  const browseRequests: (string | null)[] = [];
+  const browseRequests: string[] = [];
   await page.route("**/api/terminals/browse?**", (route) => {
     const params = new URL(route.request().url()).searchParams;
-    const host = params.get("host");
-    browseRequests.push(host);
+    browseRequests.push(params.get("path") ?? "");
     return route.fulfill({
+      json: { host: null, path: "/local/chosen", parent: "/local", directories: [] },
+    });
+  });
+  await openChat(page);
+  await page.getByTestId("chat-input").fill("Preserve the draft");
+  const folder = page.getByTestId("chat-workspace-folder");
+  await browseWorkspace(page);
+  await expect(page.getByTestId("remote-folder-browser")).toBeVisible();
+  await expect(page.getByTestId("remote-folder-selection")).toHaveValue("/local/chosen");
+  await expect.poll(() => browseRequests.length).toBeGreaterThan(0);
+  await page.getByTestId("remote-folder-cancel").click();
+  await expect(page.getByTestId("remote-folder-browser")).toBeHidden();
+  await expect(folder).toHaveAttribute(
+    "title",
+    "Local: /local/projects/a-long-project-name/packages/application",
+  );
+  await browseWorkspace(page);
+  await page.getByTestId("remote-folder-pick").click();
+  await expect(folder).toHaveAttribute("title", "Local: /local/chosen");
+  await expect(page.getByTestId("chat-input")).toHaveValue("Preserve the draft");
+  expect(nativePicks).toBe(0);
+});
+
+test("a remote ORC host browses folders through that server", async ({ page }) => {
+  await workspaceFixture(page);
+  await page.route("**/api/remote-hosts", (route) =>
+    route.fulfill({
       json: {
-        host,
-        path: params.get("path"),
-        parent: host === "lab" ? "/remote" : "/local",
-        directories: ["child"],
+        hosts: [
+          {
+            id: "lab1",
+            label: "Lab",
+            url: "https://lab.example",
+            has_token: true,
+            header_names: [],
+          },
+        ],
       },
+    }),
+  );
+  await page.route("**/api/remote-hosts/lab1/hosts", (route) =>
+    route.fulfill({ json: { host: null, hosts: [] } }),
+  );
+  const remoteBrowse: string[] = [];
+  await page.route("**/api/remote-hosts/lab1/browse?**", (route) => {
+    remoteBrowse.push(new URL(route.request().url()).search);
+    return route.fulfill({
+      json: { host: null, path: "/srv/remote", parent: "/", directories: ["repo"] },
     });
   });
   await openChat(page);
   await page.getByTestId("chat-input").fill("Preserve the remote draft");
+  await openWorkspaceFolder(page);
+  const hosts = page.getByRole("menu", { name: "Workspace host" });
+  await expect(hosts).toContainText("This server");
+  await expect(hosts).toContainText("Remote ORC servers");
+  await chooseWorkspaceHost(page, "Remote ORC");
   await browseWorkspace(page);
   await expect(page.getByTestId("remote-folder-browser")).toBeVisible();
-  await expect.poll(() => nativePicks).toBe(1);
-  await expect.poll(() => browseRequests.length).toBeGreaterThan(0);
-  expect(browseRequests.at(-1)).toBe("");
-  await page.getByTestId("remote-folder-browser").getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
-    "title",
-    "Local: /local/projects/a-long-project-name/packages/application",
-  );
-  await chooseWorkspaceHost(page, "lab");
-  await browseWorkspace(page);
-  await expect(page.getByTestId("remote-folder-browser")).toBeVisible();
-  await expect.poll(() => browseRequests.at(-1)).toBe("lab");
-  expect(nativePicks).toBe(1);
-  await page.getByTestId("remote-folder-name-child").dblclick();
-  await expect(page.getByTestId("remote-folder-selection")).toHaveValue("/remote/current/child");
+  await expect.poll(() => remoteBrowse.at(-1)).toBe("?host=");
+  await page.getByTestId("remote-folder-name-repo").click();
+  await expect(page.getByTestId("remote-folder-selection")).toHaveValue("/srv/remote/repo");
   await page.getByTestId("remote-folder-pick").click();
   await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute(
     "title",
-    "lab: /remote/current/child",
+    "Lab: /srv/remote/repo",
   );
   await expect(page.getByTestId("chat-input")).toHaveValue("Preserve the remote draft");
-  await setWorkspaceWorktree(page, true);
-  let launch: unknown;
-  await page.route("**/api/chat/stream", (route) => {
-    launch = route.request().postDataJSON();
-    return route.fulfill({ status: 400, json: { error: "Captured remote launch" } });
-  });
-  await page.getByTestId("chat-send-button").click();
-  await expect
-    .poll(() => launch)
-    .toMatchObject({
-      workspace: { host: "lab", cwd: "/remote/current/child", worktree: true },
-    });
 });
 for (const width of [320, 820, 1440]) {
   test(`chat model, saved history and configuration work at ${width}px`, async ({

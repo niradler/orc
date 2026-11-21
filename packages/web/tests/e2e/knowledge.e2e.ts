@@ -395,18 +395,14 @@ test.describe("Knowledge bases", () => {
       await openKb(page, kb.name);
       await expect(page.getByTestId("kb-folders-none")).toBeVisible();
       await page.getByTestId("kb-folders-add").click();
-      // The OS folder dialog cannot open under test, so its answer is stubbed. It starts from
-      // whatever was typed, and its choice lands in the field, which stays editable.
-      let startedFrom: unknown;
-      await page.route("**/api/terminals/pick-folder", async (route) => {
-        startedFrom = route.request().postDataJSON()?.initial;
-        await route.fulfill({ json: { path: directory } });
-      });
       const path = page.getByTestId("kb-source-path-input");
-      await path.fill(join(directory, "typed"));
+      await path.fill(directory);
       await page.getByTestId("kb-source-choose-folder").click();
+      await expect(page.getByTestId("folder-picker-dialog")).toBeVisible();
+      await expect(page.getByTestId("remote-folder-selection")).toHaveValue(directory);
+      await page.getByTestId("remote-folder-pick").click();
+      await expect(page.getByTestId("folder-picker-dialog")).toBeHidden();
       await expect(path).toHaveValue(directory);
-      expect(startedFrom).toBe(join(directory, "typed"));
       await page.getByTestId("kb-source-add").click();
       await expect(page.getByTestId("kb-source-row")).toHaveCount(1);
       await expect(page.getByTestId("kb-source-result")).toContainText("1 added");

@@ -182,6 +182,29 @@ describe("remote ORC hosts", () => {
     );
   });
 
+  test("browses and creates folders through the remote server", async () => {
+    const listed = await req(
+      app,
+      "GET",
+      `/remote-hosts/${id}/browse?path=${encodeURIComponent(destHome)}&host=`,
+    );
+    expect(listed.status).toBe(200);
+    const listing = await listed.json<{ path: string; directories: string[] }>();
+    expect(listing.path).toBe(destHome);
+
+    const created = await req(app, "POST", `/remote-hosts/${id}/browse/folders`, {
+      host: null,
+      parent: destHome,
+      name: "picked-here",
+    });
+    expect(created.status).toBe(200);
+    expect((await created.json<{ path: string }>()).path).toBe(join(destHome, "picked-here"));
+    const after = await (
+      await req(app, "GET", `/remote-hosts/${id}/browse?path=${encodeURIComponent(destHome)}`)
+    ).json<{ directories: string[] }>();
+    expect(after.directories).toContain("picked-here");
+  });
+
   test("a wrong token fails the test with a clear reason", async () => {
     await req(app, "POST", "/remote-hosts", {
       id,

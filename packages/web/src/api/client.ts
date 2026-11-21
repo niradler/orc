@@ -700,6 +700,12 @@ export type UpdateScratchpadInput = {
 
 // ---- API client ----
 
+/** `orc:<id>` / `orc:<id>/<ssh alias>` addresses a saved remote ORC server. */
+function remoteTarget(host: string | null | undefined): { id: string; host: string | null } | null {
+  const match = host?.match(/^orc:([a-z0-9][a-z0-9-]{0,63})(?:\/(.+))?$/);
+  return match?.[1] ? { id: match[1], host: match[2] ?? null } : null;
+}
+
 export const api = {
   preview: {
     session: (session_id: string) =>
@@ -1824,15 +1830,28 @@ export const api = {
         "POST",
         `/terminals/${encodeURIComponent(id)}/ticket`,
       ),
-    pickFolder: (initial?: string, host?: string | null) =>
-      req<{ path: string | null }>("POST", "/terminals/pick-folder", { initial, host }),
-    browse: (path?: string, host?: string | null) =>
-      req<HostDirectoryListing>("GET", "/terminals/browse", undefined, {
+    browse: (path?: string, host?: string | null) => {
+      const remote = remoteTarget(host);
+      if (remote)
+        return req<HostDirectoryListing>("GET", `/remote-hosts/${remote.id}/browse`, undefined, {
+          path,
+          host: remote.host ?? "",
+        });
+      return req<HostDirectoryListing>("GET", "/terminals/browse", undefined, {
         path,
         host: host === null ? "" : host,
-      }),
-    createFolder: (host: string | null, parent: string, name: string) =>
-      req<{ path: string }>("POST", "/terminals/browse/folders", { host, parent, name }),
+      });
+    },
+    createFolder: (host: string | null, parent: string, name: string) => {
+      const remote = remoteTarget(host);
+      if (remote)
+        return req<{ path: string }>("POST", `/remote-hosts/${remote.id}/browse/folders`, {
+          host: remote.host,
+          parent,
+          name,
+        });
+      return req<{ path: string }>("POST", "/terminals/browse/folders", { host, parent, name });
+    },
   },
 
   workspaces: {

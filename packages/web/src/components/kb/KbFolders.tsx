@@ -1,8 +1,9 @@
 import type { KbSource, KbSourceScan, KnowledgeBase } from "@orc/core/kb";
 import { FolderOpen, FolderSync, Plus } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { HelpPopover } from "@/components/HelpPopover";
 import { ErrorLine, Field, useAction } from "@/components/kb/KbDialogs";
 import { ago } from "@/components/kb/KbDigest";
@@ -61,7 +62,8 @@ export function KbFolders({ kb }: { kb: KnowledgeBase }) {
   const [result, setResult] = useState<string | null>(null);
   const [removing, setRemoving] = useState<KbSource | null>(null);
   const [adding, setAdding] = useState(false);
-  const [choosing, setChoosing] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
+  const chooseTrigger = useRef<HTMLButtonElement>(null);
   const list = sources.data ?? [];
   const failing = list.filter((s) => s.last_error).length;
   const documents = list.reduce((n, s) => n + s.document_count, 0);
@@ -76,19 +78,6 @@ export function KbFolders({ kb }: { kb: KnowledgeBase }) {
     action.setError(null);
     // With no folders the form is all the row holds, so closing it collapses the row.
     if (list.length === 0) setExpanded(false);
-  }
-
-  async function chooseFolder() {
-    setChoosing(true);
-    action.setError(null);
-    try {
-      const { path } = await api.terminals.pickFolder(root.trim() || undefined);
-      if (path) setRoot(path);
-    } catch (error) {
-      action.setError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setChoosing(false);
-    }
   }
 
   async function add(e: FormEvent) {
@@ -233,14 +222,22 @@ export function KbFolders({ kb }: { kb: KnowledgeBase }) {
                   <Button
                     type="button"
                     variant="outline"
+                    ref={chooseTrigger}
                     data-testid="kb-source-choose-folder"
-                    onClick={chooseFolder}
-                    disabled={choosing}
+                    onClick={() => setBrowsing(true)}
                     className="shrink-0"
                   >
                     <FolderOpen size={14} />
-                    {choosing ? "Choosing…" : "Choose folder"}
+                    Choose folder
                   </Button>
+                  <FolderPickerDialog
+                    open={browsing}
+                    onOpenChange={setBrowsing}
+                    host={null}
+                    initial={root.trim()}
+                    onPick={setRoot}
+                    returnFocusRef={chooseTrigger}
+                  />
                 </div>
               </Field>
               <Field label="File pattern" hint="e.g. *.md, **/*.md">

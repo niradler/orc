@@ -271,27 +271,13 @@ export function PackageRunDialog({
                         Boolean(hostInfo.error) ||
                         (!host && !hostInfo.data?.ready)
                       }
-                      onClick={async () => {
-                        if (host) {
-                          setBrowsing(true);
-                          return;
-                        }
-                        try {
-                          const result = await api.terminals.pickFolder(
-                            setup.cwd || undefined,
-                            null,
-                          );
-                          if (result.path) change({ cwd: result.path });
-                        } catch (failure) {
-                          setError((failure as Error).message);
-                        }
-                      }}
+                      onClick={() => setBrowsing(true)}
                     >
                       Browse
                     </Button>
                   </div>
                   <FolderPickerDialog
-                    open={browsing && !!host}
+                    open={browsing}
                     onOpenChange={setBrowsing}
                     host={host}
                     initial={setup.cwd}

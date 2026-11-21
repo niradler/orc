@@ -734,7 +734,10 @@ choosing a file inserts `@path`. Dot files appear once the name you type starts
 with `.`. Arrow keys move, Enter or Tab chooses, Escape closes the list.
 
 The folder picker shows the full path, copy action, recent folders, host choices
-when configured, and browsing. Branch/worktree controls appear for Git folders.
+when configured, and browsing. **Browse folders…** opens the dashboard's folder
+dialog for the current host, so it works the same from the browser, the desktop
+app and on a phone; SSH hosts and remote ORC servers list their own folders.
+Branch/worktree controls appear for Git folders.
 **Run in** keeps the current checkout, creates a worktree from the current branch,
 creates one from the repository default branch (for example `origin/main`), or
 creates one from any local or remote branch you pick. The branch chip shows the
