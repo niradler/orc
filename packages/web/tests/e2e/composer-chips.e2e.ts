@@ -215,13 +215,21 @@ test("@sanity long model names stay readable in the composer chip and picker", a
         `Model: ${LONG_MODEL.label}`,
       );
     } else {
+      // The chip stays compact; the full name is disclosed on hover/focus.
+      const bounds = await chip.boundingBox();
+      expect(bounds?.width).toBeLessThanOrEqual(256);
       const model = chip.getByTestId("chat-model-current");
       await expect(model).toHaveText(LONG_MODEL.label);
-      expect(await model.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      expect(await model.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(
         true,
       );
-      await page.screenshot({ path: test.info().outputPath(`long-model-${width}.png`) });
+      await model.hover();
+      const tooltip = page.getByTestId("chat-agent-model-tooltip");
+      await expect(tooltip).toBeVisible();
+      await expect(tooltip).toContainText(LONG_MODEL.label);
+      await page.screenshot({ path: test.info().outputPath(`long-model-hover-${width}.png`) });
       await chip.click();
+      await expect(tooltip).toBeHidden();
     }
     const option = page.getByTestId(`chat-model-option-${LONG_MODEL.id}`);
     await expect(option).toContainText(LONG_MODEL.label);
@@ -238,6 +246,43 @@ test("@sanity long model names stay readable in the composer chip and picker", a
       true,
     );
   }
+});
+
+test.describe("touch composer", () => {
+  test.use({ hasTouch: true });
+  test("long model names scroll sideways in the chip without a scrollbar", async ({
+    page,
+    request,
+  }) => {
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+    await page.route("**/api/chat/models?**", (route) =>
+      route.fulfill({ json: { models: [LONG_MODEL], warning: null } }),
+    );
+    await request.patch("/api/settings", {
+      headers,
+      data: { chat: { ...defaults, agent: "claude", model: LONG_MODEL.id } },
+    });
+    await page.setViewportSize({ width: 820, height: 900 });
+    await openChat(page);
+    const model = page.getByTestId("chat-model-current");
+    await expect(model).toBeVisible();
+    const state = await model.evaluate((element) => ({
+      overflowX: getComputedStyle(element).overflowX,
+      scrollbarWidth: getComputedStyle(element).scrollbarWidth,
+      scrollable: element.scrollWidth > element.clientWidth,
+    }));
+    expect(state).toEqual({ overflowX: "auto", scrollbarWidth: "none", scrollable: true });
+    await model.evaluate((element) => {
+      element.scrollLeft = 80;
+    });
+    expect(await model.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    await page.screenshot({ path: test.info().outputPath("long-model-touch-820.png") });
+    await page.getByTestId("chat-agent-model-button").tap();
+    await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+    await expect(page.getByTestId(`chat-model-option-${LONG_MODEL.id}`)).toContainText(
+      LONG_MODEL.label,
+    );
+  });
 });
 
 test("folder changes in two clicks and agent+model change from one pill", async ({ page }) => {

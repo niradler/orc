@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import type { AgentEffortChoice } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
@@ -156,41 +157,56 @@ export function AgentModelPicker({
         else reset();
       }}
     >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          data-testid={`${testIdPrefix}-agent-model-button`}
-          aria-label={`Agent and model: ${name}, ${accessibleSummary ?? summary}`}
-          title={`${name} · ${summary}`}
-          disabled={!ready}
-          className={cn(composerChip, "text-on-surface")}
-        >
-          <AgentIcon agent={agent} decorative size={14} />
-          <span
-            data-chip-label
-            data-testid={`${testIdPrefix}-agent-current`}
-            className="min-w-0 max-w-32 truncate"
+      <TooltipProvider delayDuration={300}>
+        <Tooltip open={open ? false : undefined}>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                data-testid={`${testIdPrefix}-agent-model-button`}
+                aria-label={`Agent and model: ${name}, ${accessibleSummary ?? summary}`}
+                disabled={!ready}
+                className={cn(composerChip, "max-w-64 text-on-surface")}
+              >
+                <AgentIcon agent={agent} decorative size={14} />
+                <span
+                  data-chip-label
+                  data-testid={`${testIdPrefix}-agent-current`}
+                  className="min-w-0 max-w-32 truncate"
+                >
+                  {name}
+                </span>
+                <span data-chip-label aria-hidden="true" className="text-muted-foreground">
+                  ·
+                </span>
+                <span
+                  data-chip-label
+                  data-chip-scroll
+                  data-testid={`${testIdPrefix}-model-current`}
+                  className="min-w-0 truncate"
+                >
+                  {summary}
+                </span>
+                <ChevronDown
+                  data-chip-label
+                  size={12}
+                  aria-hidden="true"
+                  className="shrink-0 opacity-60"
+                />
+              </button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent
+            side="top"
+            data-testid={`${testIdPrefix}-agent-model-tooltip`}
+            className="max-w-[calc(100vw-1.5rem)]"
           >
-            {name}
-          </span>
-          <span data-chip-label aria-hidden="true" className="text-muted-foreground">
-            ·
-          </span>
-          <span
-            data-chip-label
-            data-testid={`${testIdPrefix}-model-current`}
-            className="min-w-0 truncate"
-          >
-            {summary}
-          </span>
-          <ChevronDown
-            data-chip-label
-            size={12}
-            aria-hidden="true"
-            className="shrink-0 opacity-60"
-          />
-        </button>
-      </PopoverTrigger>
+            <span className="block max-w-96 wrap-break-word text-xs">
+              {name} · {accessibleSummary ?? summary}
+            </span>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <PopoverContent
         data-testid={`${testIdPrefix}-agent-model-picker`}
         aria-label="Choose agent and model"
