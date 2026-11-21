@@ -391,6 +391,7 @@ test("a remote ORC host browses folders through that server", async ({ page }) =
   await chooseWorkspaceHost(page, "Remote ORC");
   await browseWorkspace(page);
   await expect(page.getByTestId("remote-folder-browser")).toBeVisible();
+  await expect(page.getByTestId("folder-picker-dialog")).toContainText("Folders on Lab");
   await expect.poll(() => remoteBrowse.at(-1)).toBe("?host=");
   await page.getByTestId("remote-folder-name-repo").click();
   await expect(page.getByTestId("remote-folder-selection")).toHaveValue("/srv/remote/repo");

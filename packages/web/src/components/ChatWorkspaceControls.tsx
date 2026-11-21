@@ -682,6 +682,7 @@ export function ChatWorkspaceControls() {
         open={browse}
         onOpenChange={setBrowse}
         host={host}
+        hostLabel={host ? (hostLabel ?? undefined) : undefined}
         initial={cwd}
         onPick={choose}
         returnFocusRef={folderTrigger}

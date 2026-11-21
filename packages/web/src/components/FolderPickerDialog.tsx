@@ -7,6 +7,7 @@ export function FolderPickerDialog({
   open,
   onOpenChange,
   host,
+  hostLabel,
   initial,
   onPick,
   returnFocusRef,
@@ -15,6 +16,8 @@ export function FolderPickerDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   host: string | null;
+  /** Display name for `host`, e.g. a remote ORC's saved label instead of `orc:<id>`. */
+  hostLabel?: string;
   initial: string;
   onPick: (path: string) => void;
   returnFocusRef?: RefObject<HTMLButtonElement | null>;
@@ -53,8 +56,11 @@ export function FolderPickerDialog({
       >
         <div className="shrink-0 border-b border-border px-4 py-3 pr-12">
           <DialogTitle>Choose folder</DialogTitle>
-          <DialogDescription className="mt-1 truncate text-xs" title={host ?? "API host"}>
-            Folders on {host ?? "the API host"}
+          <DialogDescription
+            className="mt-1 truncate text-xs"
+            title={hostLabel ?? host ?? "API host"}
+          >
+            Folders on {hostLabel ?? host ?? "the API host"}
           </DialogDescription>
         </div>
         <RemoteFolderBrowser
