@@ -6,7 +6,6 @@ import {
   CheckCheck,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
   MoreHorizontal,
   X,
 } from "lucide-react";
@@ -32,12 +31,7 @@ import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
 import { useResourceFallback } from "@/hooks/useResourceFallback";
 import { desktopBridge } from "@/lib/desktop-bridge";
-import {
-  mergeNotificationToasts,
-  NotificationFeed,
-  type NotificationToastEntry,
-  notificationInView,
-} from "@/lib/notification-feed";
+import { NotificationFeed, notificationInView } from "@/lib/notification-feed";
 import {
   getNotificationPrefs,
   playNeedsYouSound,
@@ -63,6 +57,8 @@ const labels: Record<string, string> = {
 
 type Center = {
   unread: number;
+  /** Increments once per delivered notification burst; the bell jumps on each. */
+  pulse: number;
   expanded: boolean;
   anchor: HTMLElement | null;
   show: (anchor: HTMLElement) => void;
@@ -150,7 +146,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, RequestDraft>>({});
-  const [toasts, setToasts] = useState<NotificationToastEntry[]>([]);
+  const [pulse, setPulse] = useState(0);
   const [announcement, setAnnouncement] = useState("");
   const feed = useRef(new NotificationFeed());
   // Completion IDs already settled for the open view; the inbox refetch catches up.
@@ -237,24 +233,6 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     const latest = query.data?.pages[0]?.notifications;
     if (!latest) return;
     feed.current.update(latest, Date.now());
-    const current = new Map(latest.map((item) => [item.id, item]));
-    setToasts((toasts) =>
-      toasts.flatMap((toast) => {
-        const items = toast.items.flatMap((previous) => {
-          const item = current.get(previous.id);
-          if (
-            !item ||
-            item.read_at !== null ||
-            item.dismissed_at !== null ||
-            item.expires_at <= Date.now() ||
-            (previous.requires_action && !item.requires_action)
-          )
-            return [];
-          return [item];
-        });
-        return items.length ? [{ ...toast, items }] : [];
-      }),
-    );
   }, [query.data]);
 
   const activeThreadId = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
@@ -296,23 +274,21 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   useEffect(() => {
     const timer = window.setInterval(() => {
       const state = delivery.current;
-      const incoming = feed.current
-        .flush(Date.now(), (item) => {
-          if (document.visibilityState === "hidden" || !document.hasFocus()) return false;
-          return notificationInView(item, {
-            active: true,
-            pathname: state.location.pathname,
-            search: state.location.search,
-            chatThreadId: state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id ?? null,
-            threadSourceId:
-              state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.sourceId ?? null,
-            sessions: state.sessions,
-            requests: state.requests ?? undefined,
-          });
-        })
-        .filter((item) => item.type !== "agent.finished");
+      const incoming = feed.current.flush(Date.now(), (item) => {
+        if (document.visibilityState === "hidden" || !document.hasFocus()) return false;
+        return notificationInView(item, {
+          active: true,
+          pathname: state.location.pathname,
+          search: state.location.search,
+          chatThreadId: state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id ?? null,
+          threadSourceId:
+            state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.sourceId ?? null,
+          sessions: state.sessions,
+          requests: state.requests ?? undefined,
+        });
+      });
       if (!incoming.length) return;
-      setToasts((current) => mergeNotificationToasts(current, incoming));
+      setPulse((current) => current + 1);
       setAnnouncement(
         incoming.length > 1 ? `${incoming.length} new notifications` : (incoming[0]?.title ?? ""),
       );
@@ -419,9 +395,6 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
 
   const openItem = (item: OrcNotification) => {
     if (!item.read_at) update.mutate({ id: item.id, read: true });
-    setToasts((current) =>
-      current.filter((toast) => !toast.items.some((entry) => entry.id === item.id)),
-    );
     if (item.type === "human.request") {
       setSelected(item.source_id);
       if (phone) {
@@ -444,6 +417,7 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
 
   const center: Center = {
     unread,
+    pulse,
     expanded,
     anchor,
     show,
@@ -518,35 +492,6 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       <div data-testid="agent-notification-live" aria-live="polite" className="sr-only">
         {announcement}
       </div>
-      {toasts.length > 0 && (
-        <section
-          data-testid="agent-toasts"
-          aria-label="New notifications"
-          className="pointer-events-none fixed bottom-4 right-4 z-40 hidden w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 md:flex"
-        >
-          {toasts.map((entry) => (
-            <NotificationToast
-              key={entry.id}
-              entry={entry}
-              onOpen={() => {
-                const item = entry.items[0];
-                if (entry.items.length === 1 && item) openItem(item);
-                else {
-                  setSelected(null);
-                  const button = document.querySelector<HTMLButtonElement>(
-                    '[data-testid="notification-bell"]',
-                  );
-                  if (button) show(button);
-                  setToasts((current) => current.filter((toast) => toast.id !== entry.id));
-                }
-              }}
-              onDismiss={() =>
-                setToasts((current) => current.filter((toast) => toast.id !== entry.id))
-              }
-            />
-          ))}
-        </section>
-      )}
     </CenterContext.Provider>
   );
 }
@@ -1092,7 +1037,18 @@ export function AgentNotificationBell() {
         else center.show(event.currentTarget);
       }}
     >
-      <Bell className="size-4" />
+      {/* Remounting on each pulse restarts the jump animation for every burst. */}
+      <span
+        key={center.pulse}
+        data-testid="notification-bell-icon"
+        data-pulse={center.pulse}
+        className={cn(
+          "inline-flex origin-top",
+          center.pulse > 0 && "motion-safe:animate-bell-jump",
+        )}
+      >
+        <Bell className="size-4" />
+      </span>
       {center.unread > 0 && (
         <span
           data-testid="notification-unread"
@@ -1102,73 +1058,5 @@ export function AgentNotificationBell() {
         </span>
       )}
     </Button>
-  );
-}
-
-function NotificationToast({
-  entry,
-  onOpen,
-  onDismiss,
-}: {
-  entry: NotificationToastEntry;
-  onOpen: () => void;
-  onDismiss: () => void;
-}) {
-  const item = entry.items[0];
-  const title = entry.items.length > 1 ? `${entry.items.length} updates finished` : item?.title;
-  const body =
-    entry.items.length > 1
-      ? entry.items
-          .slice(0, 3)
-          .map((item) => item.title)
-          .join(" · ")
-      : item?.body;
-  const [paused, setPaused] = useState(false);
-  const remaining = useRef(6000);
-  const dismiss = useRef(onDismiss);
-  dismiss.current = onDismiss;
-  useEffect(() => {
-    if (item?.level !== "done" || paused) return;
-    const started = Date.now();
-    const timer = window.setTimeout(() => dismiss.current(), remaining.current);
-    return () => {
-      window.clearTimeout(timer);
-      remaining.current = Math.max(0, remaining.current - (Date.now() - started));
-    };
-  }, [item?.level, paused]);
-  return (
-    <article
-      data-testid="agent-toast"
-      data-level={item?.level}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
-      }}
-      className="pointer-events-auto rounded-lg border border-control-border bg-surface-high p-3 shadow-lg"
-    >
-      <div className="flex items-start gap-2">
-        <p className="min-w-0 flex-1 truncate text-sm font-medium">{title}</p>
-        <Button variant="ghost" size="icon" aria-label="Dismiss notification" onClick={onDismiss}>
-          <X />
-        </Button>
-      </div>
-      {body && <p className="mt-1 line-clamp-2 text-xs text-outline">{body}</p>}
-      <Button
-        data-testid="agent-toast-open"
-        size="sm"
-        variant="ghost"
-        className="mt-2"
-        onClick={onOpen}
-      >
-        <ExternalLink />
-        {entry.items.length > 1
-          ? "Open notifications"
-          : item?.requires_action
-            ? "Review notification"
-            : "Open"}
-      </Button>
-    </article>
   );
 }
