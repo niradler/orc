@@ -53,6 +53,12 @@ export type SessionOpts = {
   agentApiUrl?: string | undefined;
   permissionMode?: LivePermissionMode | undefined;
   systemPromptAppend?: string | undefined;
+  /**
+   * True when a previous turn confirmed the agent received the append in a
+   * prompt-riding session's history. Those sessions skip it; system-slot
+   * sessions ignore the flag and re-apply the append on every turn.
+   */
+  systemPromptDelivered?: boolean | undefined;
   agentProfile?: string | undefined;
   toolAllowlist?: string[] | undefined;
   mcpAlwaysLoad?: boolean | undefined;
@@ -141,6 +147,13 @@ export function permissionModeAllows(mode: LivePermissionMode | undefined, tool:
 export interface AgentSession {
   readonly id: string;
   readonly capabilities?: AgentCapabilities | undefined;
+  /**
+   * True when this session has no system slot and delivers `systemPromptAppend`
+   * in the first prompt that reaches the agent, which keeps it in its history.
+   * Callers track delivery for these sessions and stop offering the append once
+   * a turn confirms it; system-slot sessions re-apply it on every turn.
+   */
+  readonly systemPromptOnce?: boolean | undefined;
   interrupt?(): Promise<void>;
   steer?(prompt: string): Promise<void>;
   /** Native identity may be known before a turn completes, including on cancellation. */

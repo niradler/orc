@@ -88,6 +88,7 @@ export async function openAgentSession(
     if (!profile) return session;
     return {
       id: session.id,
+      systemPromptOnce: session.systemPromptOnce,
       get capabilities() {
         return session.capabilities;
       },

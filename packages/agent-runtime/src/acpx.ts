@@ -350,11 +350,12 @@ export class AcpxSession implements AgentSession {
   private parse = createAcpxParser();
   private gotError = false;
   /**
-   * ACPX has no system slot, so the instructions ride in the first prompt of
-   * this session object. Callers offer them only while the native session
-   * still lacks a confirmed delivery, so a resumed session whose history
-   * carries them gets none and a failed first delivery is offered again.
+   * ACPX has no system slot: the instructions ride in the first prompt that
+   * reaches the agent and live in its history afterwards. The caller keeps
+   * offering them until a turn confirms delivery (opts.systemPromptDelivered),
+   * so a first turn that never reached the agent is offered them again.
    */
+  readonly systemPromptOnce = true;
   private systemPromptPending = true;
 
   constructor(opts: SessionOpts, acpxCmd: string[], host: ExecHost) {
@@ -529,10 +530,12 @@ export class AcpxSession implements AgentSession {
     this.eventQueue.length = 0;
 
     const command = AGENT_COMMAND_PATTERN.test(prompt.trim());
-    const append = !command && this.systemPromptPending ? this.opts.systemPromptAppend : undefined;
-    // Once submitted, the session's history owns the instructions. The caller
-    // stops offering them after a turn confirms delivery; a first turn that
-    // never reached the agent keeps the offer alive for the next turn.
+    const append =
+      !command && this.systemPromptPending && !this.opts.systemPromptDelivered
+        ? this.opts.systemPromptAppend
+        : undefined;
+    // Once submitted, the session's history owns the instructions; a later
+    // send() on this session must not repeat them.
     if (append) this.systemPromptPending = false;
     const text = command ? prompt.trim() : [append, prompt].filter(Boolean).join("\n\n");
     const args = [

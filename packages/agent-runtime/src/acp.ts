@@ -204,11 +204,12 @@ export class AcpSession implements AgentSession {
   /** OpenCode 2.x steers through `_session/steering`; a second prompt is rejected. */
   private steeringExtension = false;
   /**
-   * ACP has no system slot, so the instructions ride in the first prompt of
-   * this session object. Callers offer them only while the native session
-   * still lacks a confirmed delivery, so a resumed session whose history
-   * carries them gets none and a failed first delivery is offered again.
+   * ACP has no system slot: the instructions ride in the first prompt that
+   * reaches the agent and live in its history afterwards. The caller keeps
+   * offering them until a turn confirms delivery (opts.systemPromptDelivered),
+   * so a first turn that never reached the agent is offered them again.
    */
+  readonly systemPromptOnce = true;
   private systemPromptPending = true;
   private closed = false;
   private done = true;
@@ -853,10 +854,12 @@ export class AcpSession implements AgentSession {
       });
     }
     const command = AGENT_COMMAND_PATTERN.test(prompt.trim());
-    const append = !command && this.systemPromptPending ? this.opts.systemPromptAppend : undefined;
-    // Once submitted, the agent's history owns the instructions. The caller
-    // stops offering them after a turn confirms delivery; a first turn that
-    // never reached the agent keeps the offer alive for the next turn.
+    const append =
+      !command && this.systemPromptPending && !this.opts.systemPromptDelivered
+        ? this.opts.systemPromptAppend
+        : undefined;
+    // Once submitted, the agent's history owns the instructions; a later send
+    // on this session must not repeat them.
     if (append) this.systemPromptPending = false;
     const text = command ? prompt.trim() : [append, prompt].filter(Boolean).join("\n\n");
     const { agent } = this.connection;

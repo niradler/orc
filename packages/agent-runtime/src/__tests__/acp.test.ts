@@ -662,6 +662,25 @@ test("ACP delivers an offered preamble once per session object, including a resu
   expect(prompts).toEqual(["ORC PREAMBLE\n\nContinue", "And then?"]);
 });
 
+test("ACP skips the preamble once delivery is confirmed", async () => {
+  const { session, cwd } = fixture({
+    runtimeSessionId: "saved-session",
+    systemPromptAppend: "ORC PREAMBLE",
+    systemPromptDelivered: true,
+  });
+  expect(session.systemPromptOnce).toBe(true);
+  await session.initialize();
+  await session.send("Continue");
+  await run(session);
+  const prompts = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((message) => message.method === "session/prompt")
+    .map((message) => message.params.prompt[0].text);
+  expect(prompts).toEqual(["Continue"]);
+});
+
 test("ACP sends bare turns when the caller offers no preamble", async () => {
   const { session, cwd } = fixture({ runtimeSessionId: "saved-session" });
   await session.initialize();

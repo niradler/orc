@@ -66,6 +66,47 @@ console.log(JSON.stringify({id:1,result:{stopReason:'end_turn'}}));`,
   }
 });
 
+test("should skip offered instructions once delivery is confirmed", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-delivered-"));
+  const wire = join(cwd, "wire.ndjson");
+  const script = join(cwd, "cli.ts");
+  writeFileSync(
+    script,
+    `import {appendFileSync} from 'node:fs';
+const args=process.argv.slice(2);
+appendFileSync(${JSON.stringify(wire)},JSON.stringify(args)+'\\n');
+if(args.includes('ensure')){console.log('{}');process.exit(0);}
+console.log(JSON.stringify({id:1,result:{stopReason:'end_turn'}}));`,
+  );
+  const session = new AcpxSession(
+    {
+      cwd,
+      acpxAgent: "cursor",
+      orcMcp: false,
+      runtimeSessionId: "orc-delivered",
+      systemPromptAppend: "ORC PREAMBLE",
+      systemPromptDelivered: true,
+    },
+    [process.execPath, script],
+    { kind: "local" },
+  );
+  expect(session.systemPromptOnce).toBe(true);
+  try {
+    await session.send("first");
+    for await (const event of session.events()) expect(event.type).toBe("result");
+    const prompts = readFileSync(wire, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as string[])
+      .filter((args) => args.includes("prompt"))
+      .map((args) => args[args.length - 1]);
+    expect(prompts).toEqual(["first"]);
+  } finally {
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("should inject private ACPX MCP config for prepare, send and resume and clean it after exit", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-mcp-"));
   const capture = join(cwd, "capture.json");

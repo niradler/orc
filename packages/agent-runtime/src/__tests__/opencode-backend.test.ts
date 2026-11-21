@@ -282,6 +282,27 @@ test("opencode resume delivers an offered preamble once, then sends bare turns",
     } finally {
       await resumed.close();
     }
+    const delivered = await createBackend("opencode").resumeSession("oc-ses-1", {
+      cwd,
+      orcMcp: false,
+      providerExecutable: script,
+      acpAgent: "opencode",
+      systemPromptAppend: "ORC CONTEXT",
+      systemPromptDelivered: true,
+    });
+    try {
+      await delivered.send("already in history");
+      for await (const event of delivered.events()) if (event.type === "result") break;
+      const prompts = readFileSync(`${argvFile}.wire`, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line))
+        .filter((request) => request.method === "session/prompt")
+        .map((request) => request.params.prompt[0].text);
+      expect(prompts.at(-1)).toBe("already in history");
+    } finally {
+      await delivered.close();
+    }
   } finally {
     rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }

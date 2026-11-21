@@ -1850,6 +1850,10 @@ app.openapi(
     delete forked.providerSwitch;
     delete forked.forkPending;
     delete forked.forkContext;
+    // A context fork replays stored messages into a fresh native session; the
+    // injected instructions are not part of that replay, so the source's
+    // delivery mark must not suppress them. A native fork carries the history.
+    if (!nativeEligible) delete forked.systemPromptDelivered;
     if (nativeEligible && thread.runtimeId) {
       // Native fork is deferred to the first turn: some backends only mint the
       // new identity when they resume with their fork flag, and no idle process
@@ -2570,11 +2574,6 @@ async function beginTurn(
     let timedOut = false;
     let receivedResult = false;
     let commandTurn = false;
-    // Offer the instructions until a turn confirms the agent received them:
-    // a first turn that failed before delivery must not lose them forever.
-    const instructions = thread.systemPromptDelivered
-      ? undefined
-      : chatSystemPrompt(thread.config.system, { webchat: true });
     let toolsPending = 0;
     const subagents = new Map<string, string>();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -2698,7 +2697,10 @@ async function beginTurn(
             ? thread.config.permissionMode
             : undefined,
           model: thread.config.model,
-          systemPromptAppend: instructions,
+          // Always offered: system-slot sessions re-apply the append every turn;
+          // prompt-riding sessions skip it once the delivery mark is set.
+          systemPromptAppend: chatSystemPrompt(thread.config.system, { webchat: true }),
+          systemPromptDelivered: thread.systemPromptDelivered,
           orcMcp: thread.config.mcp === "orc",
           orcPreviewSessionId: thread.id,
           orcMcpMode: loadConfig().mcp.default_mode,
@@ -2783,6 +2785,10 @@ async function beginTurn(
               delete thread.forkPending;
             }
           if (thread.forkedFrom?.mode === "context" && !thread.forkPending) {
+            // The native fork failed and a fresh session takes the replay, which
+            // carries stored messages only — offer the instructions again.
+            delete thread.systemPromptDelivered;
+            opts.systemPromptDelivered = false;
             // The just-sent user message is appended after this context; do not
             // replay it twice.
             const fallback = buildContinuation(thread.messages.slice(0, -1), "fork");
@@ -3004,10 +3010,11 @@ async function beginTurn(
       const nativeId = noResumableSession ? undefined : run.session?.getRuntimeSessionId?.();
       if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
         thread.runtimeId = nativeId;
-      // A confirmed non-command turn owns the instructions in the agent's
-      // history, so later turns stop offering them. A turn that never reached
-      // the agent (no result) or ran only a slash command keeps the offer alive.
-      if (receivedResult && !noResumableSession && instructions && !commandTurn)
+      // A confirmed non-command turn owns the instructions in the history of a
+      // prompt-riding session, so later turns stop delivering them. A turn that
+      // never reached the agent (no result) or ran only a slash command keeps
+      // the offer alive. System-slot sessions re-apply the append every turn.
+      if (receivedResult && !noResumableSession && !commandTurn && run.session?.systemPromptOnce)
         thread.systemPromptDelivered = true;
       if (thread.forkedFrom?.mode === "native" && !thread.runtimeId && !thread.forkPending) {
         // The provider accepted the fork request but never returned an identity.
