@@ -5,13 +5,17 @@ const ONSET_FRAMES = 3;
 const PREROLL_FRAMES = 15;
 const MIN_VOICED_MS = 200;
 const MAX_TURN_MS = 60_000;
+/** A syllable gap this short does not erase barge progress: real speech dips
+ *  below any floor between syllables, so a symmetric decay never adds up. */
+const BARGE_HOLD_MS = 240;
 
 export type TurnEvent =
   | { type: "start" }
   | { type: "barge" }
   /** `peakDb` is the loudest frame of the turn: the number that decides whether
-   *  barge-in can ever fire in this room. */
-  | { type: "end"; audio: Int16Array | null; peakDb: number };
+   *  barge-in can ever fire in this room. `bargeBlocked` says the turn held
+   *  speech but never cleared the barge gate. */
+  | { type: "end"; audio: Int16Array | null; peakDb: number; bargeBlocked: boolean };
 
 export function createTurnDetector({
   silenceMs,
@@ -35,6 +39,7 @@ export function createTurnDetector({
   let silent = 0;
   let voicedMs = 0;
   let bargeVoiced = 0;
+  let bargeQuiet = 0;
   let bargeSent = false;
   let speaking = false;
   let peakDb = Number.NEGATIVE_INFINITY;
@@ -51,6 +56,7 @@ export function createTurnDetector({
     silent = 0;
     voicedMs = 0;
     bargeVoiced = 0;
+    bargeQuiet = 0;
     bargeSent = false;
     peakDb = Number.NEGATIVE_INFINITY;
   };
@@ -65,9 +71,10 @@ export function createTurnDetector({
     // Anything quieter is echo or a stray knock: the client unducks and the
     // reply carries on.
     const voiced = voicedMs >= MIN_VOICED_MS && (!speaking || (bargeMs > 0 && bargeSent));
+    const bargeBlocked = speaking && voicedMs >= MIN_VOICED_MS && !bargeSent;
     const loudest = Number.isFinite(peakDb) ? Math.round(peakDb * 10) / 10 : -Infinity;
     resetTurn();
-    return { type: "end", audio: voiced ? audio : null, peakDb: loudest };
+    return { type: "end", audio: voiced ? audio : null, peakDb: loudest, bargeBlocked };
   };
 
   return {
@@ -76,6 +83,7 @@ export function createTurnDetector({
     setSpeaking(active: boolean) {
       speaking = active;
       bargeVoiced = 0;
+      bargeQuiet = 0;
       bargeSent = false;
     },
     push(pcm: Int16Array): TurnEvent[] {
@@ -108,9 +116,16 @@ export function createTurnDetector({
         } else silent += FRAME_MS;
         if (speaking && bargeMs > 0 && !bargeSent) {
           // Echo of our own speaker falls below this floor once the client ducks
-          // it, so only the person in the room can sustain it.
-          if (db > thresholdDb + bargeMarginDb) bargeVoiced += FRAME_MS;
-          else bargeVoiced = Math.max(0, bargeVoiced - FRAME_MS);
+          // it, so only the person in the room can sustain it. Speech still dips
+          // between syllables, so a short gap holds the progress instead of
+          // erasing it; only a real pause (BARGE_HOLD_MS) takes it back.
+          if (db > thresholdDb + bargeMarginDb) {
+            bargeVoiced += FRAME_MS;
+            bargeQuiet = 0;
+          } else {
+            bargeQuiet += FRAME_MS;
+            if (bargeQuiet >= BARGE_HOLD_MS) bargeVoiced = Math.max(0, bargeVoiced - FRAME_MS);
+          }
           if (bargeVoiced >= bargeMs) {
             bargeSent = true;
             events.push({ type: "barge" });

@@ -631,11 +631,12 @@ While a reply plays, the client ducks it to a quarter volume as soon as the
 microphone hears speech. Only sustained speech above `threshold_db` (plus
 `speech.voice_mode.barge_margin_db` dB of headroom, 0 by default) for
 `speech.voice_mode.barge_ms` interrupts: the server then drops the rest of
-the reply and the client plays `barge`. Anything shorter sends
-`speech_cancelled`, and the reply returns to full volume. `barge_ms: 0` keeps
-voice mode half-duplex and never interrupts a reply. Raise `barge_margin_db`
-when a loud speaker keeps interrupting, or lower `threshold_db` when a quiet
-microphone cannot reach the barge at all.
+the reply and the client plays `barge`. Short gaps between syllables hold that
+progress instead of erasing it; only a pause of about a quarter second takes it
+back. Anything shorter sends `speech_cancelled`, and the reply returns to full
+volume. `barge_ms: 0` keeps voice mode half-duplex and never interrupts a reply.
+Raise `barge_margin_db` when a loud speaker keeps interrupting, or lower
+`threshold_db` when a quiet microphone cannot reach the barge at all.
 A turn waiting for an approval or a question is not interrupted: voice says
 "It needs you on screen." and the prompt stays in the UI. A turn that starts in
 voice sends `turn_started` on the socket, so the chat view follows that turn's

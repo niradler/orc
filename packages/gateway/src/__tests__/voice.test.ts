@@ -183,7 +183,7 @@ test("silence never starts a turn and a short click ends one without audio", () 
   click.fill(8000, 16_000, 16_000 + 1600);
   expect(detect(click, 320)).toEqual([
     { type: "start" },
-    { type: "end", audio: null, peakDb: expect.any(Number) },
+    { type: "end", audio: null, peakDb: expect.any(Number), bargeBlocked: false },
   ]);
 });
 
@@ -218,7 +218,7 @@ test("a brief burst while a reply plays is not a barge-in", () => {
   const events = detectSpeaking([concatPcm(burst(200, 3000), new Int16Array(16_000))]);
   expect(events).toEqual([
     { type: "start" },
-    { type: "end", audio: null, peakDb: expect.any(Number) },
+    { type: "end", audio: null, peakDb: expect.any(Number), bargeBlocked: true },
   ]);
 });
 
@@ -239,8 +239,25 @@ test("barge_margin_db raises the bar for a quieter room", () => {
   });
   expect(events).toEqual([
     { type: "start" },
-    { type: "end", audio: null, peakDb: expect.any(Number) },
+    { type: "end", audio: null, peakDb: expect.any(Number), bargeBlocked: true },
   ]);
+});
+
+test("speech with syllable gaps still interrupts a reply", () => {
+  // Measured in the field: 2 s of speech that peaks at -32 dBFS never barged,
+  // because every dip between syllables erased the progress it had made.
+  const gap = () => new Int16Array(120 * 16);
+  const events = detectSpeaking([
+    concatPcm(
+      burst(120, 3000),
+      gap(),
+      burst(120, 3000),
+      gap(),
+      burst(160, 3000),
+      new Int16Array(16_000),
+    ),
+  ]);
+  expect(events.map((event) => event.type)).toEqual(["start", "barge", "end"]);
 });
 
 test("the end event reports the loudest frame, so a room can be tuned", () => {
@@ -257,7 +274,7 @@ test("barge_ms 0 keeps voice mode half-duplex", () => {
   });
   expect(events).toEqual([
     { type: "start" },
-    { type: "end", audio: null, peakDb: expect.any(Number) },
+    { type: "end", audio: null, peakDb: expect.any(Number), bargeBlocked: true },
   ]);
 });
 

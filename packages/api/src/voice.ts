@@ -284,7 +284,7 @@ export const voiceWebsocket: WebSocketHandler<VoiceSocketData> = {
         logger.info("voice: mic turn dropped", {
           threadId: ws.data.threadId,
           peakDb: event.peakDb,
-          reason: ws.data.sending ? "below barge" : "too short",
+          reason: event.bargeBlocked ? "held by the barge gate" : "too short",
         });
         send(ws, { type: "speech_cancelled" });
         continue;
