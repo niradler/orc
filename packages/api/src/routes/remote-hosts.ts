@@ -35,7 +35,19 @@ const RemoteHostDraftSchema = z
     token: z.string().max(8192).optional(),
     clear_token: z.boolean().optional(),
     headers: z
-      .array(z.object({ name: z.string().trim().min(1).max(256), value: z.string().max(8192) }))
+      .array(
+        z.object({
+          // Same token shape the send path enforces; reject invalid names here
+          // instead of storing one that fails opaquely at dial time.
+          name: z
+            .string()
+            .trim()
+            .min(1)
+            .max(128)
+            .regex(/^[A-Za-z0-9-]{1,128}$/, "Expected a valid header name"),
+          value: z.string().max(8192),
+        }),
+      )
       .max(32)
       .optional(),
   })

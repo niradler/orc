@@ -93,7 +93,7 @@ afterAll(() => {
       Bun.sleepSync(100);
     }
   }
-});
+}, 20_000);
 
 async function runTask(folder: string | null, repository: string = repo): Promise<string> {
   const id = ulid();

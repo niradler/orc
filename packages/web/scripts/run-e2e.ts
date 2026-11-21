@@ -206,7 +206,7 @@ async function cleanup(): Promise<void> {
         rmSync(path, { recursive: true, force: true });
         return;
       } catch (error) {
-        if (attempt >= 50) throw error;
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 50) throw error;
         await Bun.sleep(200);
       }
     }

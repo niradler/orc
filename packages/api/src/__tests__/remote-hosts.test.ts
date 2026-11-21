@@ -111,6 +111,21 @@ describe("remote ORC hosts", () => {
       headers: [{ name: "Authorization", value: "x" }],
     });
     expect(blocked.status).toBe(400);
+
+    // Names are trimmed before the blocklist check, and invalid tokens are
+    // rejected here instead of failing opaquely at dial time.
+    const padded = await req(app, "POST", "/remote-hosts", {
+      label: "Bad",
+      url: destUrl,
+      headers: [{ name: "  Authorization  ", value: "x" }],
+    });
+    expect(padded.status).toBe(400);
+    const invalid = await req(app, "POST", "/remote-hosts", {
+      label: "Bad",
+      url: destUrl,
+      headers: [{ name: "X Bad Name", value: "x" }],
+    });
+    expect(invalid.status).toBe(400);
   });
 
   test("editing headers keeps a blank stored value, adds new ones, and never returns values", async () => {

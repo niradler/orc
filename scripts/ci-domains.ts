@@ -41,6 +41,8 @@ export type PackageDomain = {
   name: string;
   folder: string;
   hasTestScript: boolean;
+  /** The package's test script pins --max-concurrency=1; per-file runs must honor it too. */
+  serialTests: boolean;
 };
 
 export type DomainSelection = {
@@ -89,10 +91,12 @@ export function readPackageDomains(root: string): PackageDomain[] {
   for (const folder of folders) {
     const manifest = readManifest(root, folder);
     if (!manifest.name) throw new Error(`packages/${folder}/package.json has no name`);
+    const testScript = manifest.scripts?.test;
     domains.push({
       name: manifest.name,
       folder,
-      hasTestScript: typeof manifest.scripts?.test === "string",
+      hasTestScript: typeof testScript === "string",
+      serialTests: typeof testScript === "string" && testScript.includes("--max-concurrency=1"),
     });
   }
   return domains;

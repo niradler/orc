@@ -316,6 +316,44 @@ test("should dismiss every alert for an observed session that runs again", () =>
   ).toBe(false);
 });
 
+test("a dismissed question alert does not suppress a new question for the same session", async () => {
+  const store = new NotificationStore(getSqlite());
+  const now = Date.now();
+  store.publish({
+    type: "agent.question",
+    source_key: "observed:flapped:question:old",
+    source_id: "flapped",
+    title: "Flapped",
+    level: "needs-you",
+    requires_action: true,
+    path: "/sessions",
+    created_at: now,
+    expires_at: now + 60000,
+  });
+  // dismissSource leaves requires_action set; the dedup must still ignore the row.
+  store.dismissSource("flapped");
+  recordObservedNotification(
+    {
+      id: "flapped",
+      backend: "codex",
+      host: null,
+      nativeId: "native-flapped",
+      title: "Flapped",
+      projectId: null,
+      previous: "running",
+      status: "running",
+      waiting: true,
+      wasWaiting: false,
+      activity: now,
+    },
+    () => true,
+  );
+  await Bun.sleep(1100);
+  const active = store.list().notifications.filter((item) => item.source_id === "flapped");
+  expect(active).toHaveLength(1);
+  expect(active[0]?.type).toBe("agent.question");
+});
+
 test("should authenticate notification operations and reject invalid inputs", async () => {
   for (const [method, path] of [
     ["GET", "/notifications"],

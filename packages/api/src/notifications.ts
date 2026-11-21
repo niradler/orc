@@ -206,9 +206,11 @@ export function recordObservedNotification(
         kind === "question" &&
         sqlite
           .query(
-            "SELECT 1 FROM notifications WHERE type='agent.question' AND source_id=? AND requires_action=1 LIMIT 1",
+            // A dismissed or expired alert must not suppress a genuinely new
+            // question for the same session (e.g. after a stopped->running flap).
+            "SELECT 1 FROM notifications WHERE type='agent.question' AND source_id=? AND requires_action=1 AND dismissed_at IS NULL AND expires_at>? LIMIT 1",
           )
-          .get(event.id)
+          .get(event.id, Date.now())
       )
         return;
       if (kind === "finished")

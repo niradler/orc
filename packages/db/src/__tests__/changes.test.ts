@@ -9,9 +9,22 @@ import { HumanRequestStore } from "../human-requests.js";
 import { installKnowledgeBases } from "../kb.js";
 
 const tempDirs: string[] = [];
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+afterEach(async () => {
+  // The fs-watch test closes sqlite (and its watcher) right before removal;
+  // Windows lags the handle release. Bun ignores rmSync maxRetries, so retry.
+  Bun.gc(true);
+  for (const dir of tempDirs.splice(0)) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 100) throw error;
+        await Bun.sleep(100);
+      }
+    }
+  }
+}, 15_000);
 
 describe("database change notifications", () => {
   test("should publish human request transitions but ignore waiting-owner heartbeats", async () => {
