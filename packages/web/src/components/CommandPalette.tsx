@@ -348,7 +348,7 @@ export function CommandPalette({
     () => {
       focusNotifications.current = true;
     },
-    "toast alerts needs you attention",
+    "bell alerts needs you attention",
   );
   add(
     "theme",

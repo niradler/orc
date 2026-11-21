@@ -480,9 +480,9 @@ the alert. The header bell opens a menu containing generic notifications, includ
 human requests, agent outcomes and job results. Open a request to answer or review
 its action. Read and dismissed state is shared across clients.
 
-Desktop browsers show toasts. Needs-you toasts stay until dismissed or resolved;
-**Done** toasts are silent and close after six seconds, pausing on hover or focus.
-Sessions finishing together collapse into one notification. Use **Alt+N** or
+New notifications jump the header bell a few times instead of showing toasts.
+Needs-you alerts can chime; **Done** alerts are silent. Sessions finishing
+together arrive as one burst. Use **Alt+N** or
 **Open notifications** in the command palette to reach notifications. On a phone,
 pull down from the very top of the screen with two fingers to open the
 notification center from the chat, like the system shade.
@@ -503,8 +503,7 @@ the job's notify setting and start with new runs. See [Installation](./install.m
 The Electron desktop app also sends native notifications while its window is
 unfocused, minimized or hidden. Clicking one brings ORC forward, opens its
 destination and marks that notification read, clearing it from the inbox.
-A grouped done toast opens its destination only; clear the collapsed items from
-the notification menu. Done notifications are silent; native Needs-you sound follows the OS.
+Done notifications are silent; native Needs-you sound follows the OS.
 
 ## Browser app and updates
 

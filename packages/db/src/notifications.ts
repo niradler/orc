@@ -358,22 +358,23 @@ export class NotificationStore {
       .immediate();
   }
 
-  markFinishedRead(sourceId: string): number {
+  /** A continuing session makes every alert about it stale; dismiss them all. */
+  dismissSource(sourceId: string): number {
     z.string().min(1).max(256).parse(sourceId);
     const now = this.now();
     return this.db
       .transaction(() => {
         const rows = this.db
           .query<Row, [number, string, string, number, number]>(
-            `UPDATE notifications SET read_at=? WHERE (source_id=? OR source_id IN (${RELATED_SOURCES})) AND type='agent.finished'
-             AND read_at IS NULL AND dismissed_at IS NULL AND expires_at>? AND created_at>?
+            `UPDATE notifications SET dismissed_at=? WHERE (source_id=? OR source_id IN (${RELATED_SOURCES}))
+             AND dismissed_at IS NULL AND expires_at>? AND created_at>?
              RETURNING ${COLUMNS}`,
           )
           .all(now, sourceId, sourceId, now, now - this.maximumAge());
         for (const row of rows)
           recordNotificationAudit(
             this.db,
-            "notification.read",
+            "notification.dismissed",
             notification(row, this.maximumAge()),
             {
               now: () => now,

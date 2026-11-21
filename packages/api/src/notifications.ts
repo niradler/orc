@@ -88,12 +88,12 @@ export function syncFinishedNotificationSessions(sqlite: Database): void {
   }
 }
 
-export function retireChatFinishedNotifications(thread: ChatThread): void {
+export function retireChatNotifications(thread: ChatThread): void {
   if (thread.runtimeId)
     associateSessionSources(getSqlite(), thread.id, thread.backend, thread.host, thread.runtimeId);
   const notifications = new NotificationStore(getSqlite());
-  let count = notifications.markFinishedRead(thread.id);
-  if (thread.sourceId) count += notifications.markFinishedRead(thread.sourceId);
+  let count = notifications.dismissSource(thread.id);
+  if (thread.sourceId) count += notifications.dismissSource(thread.sourceId);
   if (count) changes.publish("notifications");
 }
 
@@ -157,8 +157,9 @@ export function recordObservedNotification(
   const sqlite = getSqlite();
   if (event.status === "running" && event.previous !== "running") {
     associateSessionSources(sqlite, event.id, event.backend, event.host, event.nativeId);
+    // The agent continued: every alert about this session is stale now.
     const notifications = new NotificationStore(sqlite);
-    const count = notifications.markFinishedRead(event.id);
+    const count = notifications.dismissSource(event.id);
     if (count) changes.publish("notifications");
   }
   if (!event.waiting) new NotificationStore(sqlite).resolveSource("agent.question", event.id);

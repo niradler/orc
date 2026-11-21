@@ -116,7 +116,7 @@ import { unbufferedSSE } from "../lib/sse.js";
 import {
   recordChatNotification,
   resolveChatNotification,
-  retireChatFinishedNotifications,
+  retireChatNotifications,
 } from "../notifications.js";
 import { notify, truncate } from "../push/service.js";
 import { parseRemoteTarget, startRemoteChat } from "../remote-hosts.js";
@@ -2610,7 +2610,7 @@ async function beginTurn(
   thread.updatedAt = Date.now();
   try {
     store().save(thread);
-    retireChatFinishedNotifications(thread);
+    retireChatNotifications(thread);
     changes.publish("sessions");
   } catch (error) {
     active.delete(key);
