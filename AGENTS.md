@@ -33,8 +33,9 @@ extra agents, production changes, publication, or imply hook enforcement.
   browser flows (the critical paths in `packages/web/tests/e2e/sanity.e2e.ts`). Use
   `bun run ci:changed` while iterating (no browser), `bun run ci:pr --plan` to see what will
   run and why, and `bun --cwd packages/<name> test ./path/to.test.ts` for one file.
-  `ci:full` (every unit plus the full browser suite) runs before merging to master or
-  releasing. Root manifests, `bun.lock`, `patches/`, CI scripts, `.github/` and `.githooks/`
+  `ci:pr` on the touched packages is the merge gate. `ci:full` (every unit plus the full
+  browser suite) is a pre-release tool only; never run it for a merge. Root manifests,
+  `bun.lock`, `patches/`, CI scripts, `.github/` and `.githooks/`
   run everything. A new critical flow gets a `@sanity` test; a flaky test is fixed at its
   race, never retried or skipped. Details:
   [docs/development/build-and-test.md](docs/development/build-and-test.md).

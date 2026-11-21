@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ViewHeader } from "@/components/ViewHeader";
+import { VoiceSettings } from "@/components/VoiceSettings";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { desktopBridge } from "@/lib/desktop-bridge";
 import {
@@ -326,6 +327,9 @@ export default function Settings() {
                     </Button>
                   </div>
                 </section>
+                <div className="border-t border-border pt-8">
+                  <VoiceSettings />
+                </div>
                 {desktopBridge()?.preview && (
                   <div className="border-t border-border pt-8">
                     <BrowserSettings />

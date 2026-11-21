@@ -12,6 +12,7 @@ import {
 } from "@/components/ChatDictation";
 import { microphoneError } from "@/lib/dictation";
 import { cn } from "@/lib/utils";
+import { getVoiceInputDevice, openMicrophone } from "@/lib/voice-input";
 
 export type VoiceMode = ReturnType<typeof useVoiceMode>;
 type VoiceEvent = { type: string; text?: string; message?: string };
@@ -89,9 +90,7 @@ export function useVoiceMode(threadId: string | undefined, streaming: boolean) {
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone needs HTTPS.");
       const resumed = context.resume();
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
+      stream = await openMicrophone(getVoiceInputDevice());
       await resumed.catch(() => {});
       if (run !== attempt.current) return release();
       if (context.state !== "running") throw new Error("Audio didn't start. Tap Stop and retry.");

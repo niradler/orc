@@ -24,6 +24,12 @@ const provider = Bun.serve({
   hostname: "127.0.0.1",
   port: 0,
   async fetch(request) {
+    if (new URL(request.url).pathname.endsWith("/audio/voices")) {
+      return Response.json({
+        voices: [{ id: "af_heart", name: "Heart", language: "en", gender: "female" }],
+        total: 1,
+      });
+    }
     if (new URL(request.url).pathname.endsWith("/chat/completions")) {
       const body = (await request.json()) as Record<string, unknown>;
       qwenRequests.push({ auth: request.headers.get("authorization"), ...body });
@@ -197,4 +203,56 @@ test("Qwen's byte limit is advertised and enforced before the provider is called
   const atLimit = await transcribe(new Blob([new Uint8Array(7_400_000)], { type: "audio/wav" }));
   expect(atLimit.status).toBe(200);
   expect(qwenRequests).toHaveLength(1);
+});
+
+test("speech settings read defaults and the voice catalog, and save them server-wide", async () => {
+  writeFileSync(
+    join(process.env.ORC_HOME ?? "", "config.json"),
+    JSON.stringify({
+      speech: {
+        enabled: true,
+        provider: "openai",
+        language: "en",
+        openai: { api_key: "sk-test-secret-key", base_url: `http://127.0.0.1:${provider.port}/v1` },
+      },
+      tts: {
+        enabled: true,
+        provider: "openai",
+        openai: { base_url: `http://127.0.0.1:${provider.port}/v1` },
+      },
+    }),
+  );
+  resetConfig();
+  const read = await app.request("/api/speech/settings", { headers: auth });
+  expect(read.status).toBe(200);
+  expect(await read.json()).toEqual({
+    language: "en",
+    voice: "",
+    voices: [{ id: "af_heart", name: "Heart", language: "en", gender: "female" }],
+    voice_source: "provider",
+  });
+  const saved = await app.request("/api/speech/settings", {
+    method: "PATCH",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ language: "he", voice: "af_heart" }),
+  });
+  expect(saved.status).toBe(200);
+  expect(await saved.json()).toMatchObject({ language: "he", voice: "af_heart" });
+  const onDisk = JSON.parse(
+    readFileSync(join(process.env.ORC_HOME ?? "", "config.json"), "utf8"),
+  ) as { speech: { language: string }; tts: { voice: string } };
+  expect(onDisk.speech.language).toBe("he");
+  expect(onDisk.tts.voice).toBe("af_heart");
+  const invalid = await app.request("/api/speech/settings", {
+    method: "PATCH",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ language: "not-a-code!" }),
+  });
+  expect(invalid.status).toBe(400);
+});
+
+test("without a TTS voice catalog the voice source is none", async () => {
+  configure({ enabled: true, provider: "openai", openai: { api_key: "k" } });
+  const read = await app.request("/api/speech/settings", { headers: auth });
+  expect(await read.json()).toMatchObject({ voice_source: "none", voices: [] });
 });

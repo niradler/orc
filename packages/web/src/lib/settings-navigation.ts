@@ -32,7 +32,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     id: "general",
     label: "General",
-    description: "Appearance, terminal font and browser",
+    description: "Appearance, terminal font, voice and browser",
     domain: "workspace",
   },
   {
@@ -112,6 +112,7 @@ const SETTINGS_TARGETS: Record<string, SettingsTarget> = {
   execution: { group: "hosts" },
   appearance: { group: "general" },
   terminals: { group: "general" },
+  voice: { group: "general" },
   browser: { group: "general" },
   agents: { group: "agents" },
   chat: { group: "agents", agentTab: "chat" },

@@ -6,7 +6,7 @@
  *   bun run ci:pr        # changed packages plus the @sanity browser flows
  *   bun run ci:full      # every unit test plus the full browser suite
  *
- * The pre-push hook runs `ci:pr`. Run `ci:full` before merging to master or releasing.
+ * The pre-push hook runs `ci:pr`, the merge gate. Run `ci:full` only before a release.
  */
 
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";

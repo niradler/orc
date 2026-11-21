@@ -1964,6 +1964,9 @@ export const api = {
   speech: {
     status: () =>
       req<{ available: boolean; max_bytes: number; voice_mode: boolean }>("GET", "/speech/status"),
+    settings: () => req<SpeechSettings>("GET", "/speech/settings"),
+    saveSettings: (data: { language?: string; voice?: string }) =>
+      req<SpeechSettings>("PATCH", "/speech/settings", data),
     voiceTicket: (threadId: string) =>
       req<{ ticket: string; expires_in: number }>(
         "POST",
@@ -1987,4 +1990,18 @@ export const api = {
       return json.text ?? "";
     },
   },
+};
+
+export type SpeechVoiceOption = {
+  id: string;
+  name: string;
+  language?: string;
+  gender?: string;
+};
+
+export type SpeechSettings = {
+  language: string;
+  voice: string;
+  voices: SpeechVoiceOption[];
+  voice_source: "provider" | "catalog" | "none";
 };
