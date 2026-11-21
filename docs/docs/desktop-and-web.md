@@ -582,7 +582,7 @@ Agents can load the component list, copy-paste skeleton and chart guidance with
 
 | Section       | Controls                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| General       | Theme (dark or light, saved on the server); dark background, interface and chat fonts, interface and chat text sizes for desktop and phone, and chat width, saved in this browser (see [Appearance](#appearance)); terminal font for new terminals; and the desktop preview browser.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| General       | Theme (dark or light, saved on the server); dark background, interface and chat fonts, interface and chat text sizes for desktop and phone, and chat width, saved in this browser (see [Appearance](#appearance)); terminal font for new terminals; the microphone used by dictation and voice mode (system default by default, saved in this browser); and the desktop preview browser.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Servers       | The ORC servers this client opens: save addresses with optional access tokens and proxy headers, then **Use** one. A browser stores them in this browser; the desktop app in its data folder. |
 | Hosts         | Where the connected server runs agents, terminals and git: **Local** (its own machine), an alias from its `~/.ssh/config`, or a **remote ORC** server added with **Add remote ORC** (address and access token, saved in the server's `~/.orc/config.json`). |
 | Agents        | **Providers** chooses which coding agents appear in the chat agent picker, channel agent choices and the terminal launcher. Claude Code, Codex and Pi are native; OpenCode runs over direct ACP; Cursor, Gemini CLI, GitHub Copilot, Qwen Code, Factory Droid, Kimi CLI, Kiro CLI and any custom agent id run through ACPX. First startup selects installed agents from Codex, Claude, Cursor, Gemini CLI and OpenCode and saves that selection. If a saved provider list has no recorded selection yet, the next start aligns it with the installed agents once. Copilot can be enabled in Settings. Later selections are preserved even if an installation is missing. The terminal launcher only lists enabled agents installed on the selected host. **Chat** sets default models, instructions, tools and permission mode. **MCP** builds the MCP config snippet for your agent; see [Connect agents](./connect-agents.md). |
@@ -820,8 +820,11 @@ Send now stay disabled while recording and transcribing. A recording stops on it
 own after five minutes (sooner when the provider takes smaller clips). A blocked or missing microphone, or a failed
 transcription, shows the reason with **Retry**, which resends the same clip
 when the recording itself succeeded. The browser needs HTTPS or `localhost` to
-reach the microphone. The audio goes to the ORC server, which forwards it to the
-configured provider; the provider key never leaves the server.
+reach the microphone. With several microphones connected, **Settings → General →
+Voice** picks the source; the default follows the operating system, and a chosen
+microphone that is unplugged falls back to the system default. The audio goes to
+the ORC server, which forwards it to the configured provider; the provider key
+never leaves the server.
 
 ### Voice mode
 
@@ -833,7 +836,8 @@ live input level and the current state: **Listening**, **Hearing you**,
 and playback stops. **Mute** stops sending audio, **Stop** (or **Escape**)
 leaves voice mode and releases the microphone and audio. Your words and the spoken
 replies appear in the transcript. Approvals and questions stay on screen and are
-never answered by voice.
+never answered by voice. Voice mode records from the same microphone as
+dictation, chosen in **Settings → General → Voice**.
 
 ## Desktop app only
 

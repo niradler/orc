@@ -13,6 +13,7 @@ import {
   wavFile,
 } from "@/lib/dictation";
 import { cn } from "@/lib/utils";
+import { getVoiceInputDevice, openMicrophone } from "@/lib/voice-input";
 
 type Phase = "idle" | "starting" | "recording" | "transcribing" | "error";
 export type Dictation = ReturnType<typeof useDictation>;
@@ -118,9 +119,7 @@ export function useDictation(
       const context = new AudioContext();
       teardown = () => void context.close().catch(() => {});
       const resumed = context.resume();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
+      const stream = await openMicrophone(getVoiceInputDevice());
       teardown = () => {
         for (const track of stream.getTracks()) track.stop();
         void context.close().catch(() => {});
