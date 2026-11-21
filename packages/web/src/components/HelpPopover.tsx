@@ -10,11 +10,13 @@ export function HelpPopover({
   children,
   testId = "view-help",
   className,
+  contentClassName,
 }: {
   label: string;
   children: ReactNode;
   testId?: string;
   className?: string;
+  contentClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const openAtPointerDown = useRef(false);
@@ -46,7 +48,10 @@ export function HelpPopover({
             side="bottom"
             align="start"
             collisionPadding={16}
-            className="w-80 max-w-[calc(100vw-2rem)] border-control-border bg-surface-high px-3 py-2.5 text-sm leading-relaxed"
+            className={cn(
+              "w-80 max-w-[calc(100vw-2rem)] border-control-border bg-surface-high px-3 py-2.5 text-sm leading-relaxed",
+              contentClassName,
+            )}
             data-testid={`${testId}-content`}
           >
             {children}

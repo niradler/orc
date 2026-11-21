@@ -221,6 +221,20 @@ export function AgentModelPicker({
           aria-label="Choose agent and model"
           side="top"
           align="start"
+          // The model help button sits in the chip, outside this content; using it
+          // must not dismiss the open menu (which would unmount the button).
+          onPointerDownOutside={(event) => {
+            const target = event.detail.originalEvent.target;
+            if (target instanceof HTMLElement && target.closest("[data-chip-help]")) {
+              event.preventDefault();
+            }
+          }}
+          onFocusOutside={(event) => {
+            const target = event.detail.originalEvent.target;
+            if (target instanceof HTMLElement && target.closest("[data-chip-help]")) {
+              event.preventDefault();
+            }
+          }}
           className={cn(
             "max-h-[min(36rem,60vh)] max-w-[calc(100vw-1.5rem)] overflow-y-auto p-1.5",
             effortChoices.length ? "w-[32rem]" : "w-[26rem]",
@@ -540,12 +554,13 @@ export function AgentModelPicker({
           )}
         </PopoverContent>
       </Popover>
-      {hasModelDetail && (
+      {hasModelDetail && open && (
         <span data-chip-help className="inline-flex shrink-0 self-stretch">
           <HelpPopover
             label={`${name} model`}
             testId={`${testIdPrefix}-model-help`}
             className="h-full w-8 max-sm:w-11 pointer-coarse:w-11 lg:h-full lg:w-8 focus-visible:outline-hidden"
+            contentClassName="w-fit max-w-[min(20rem,calc(100vw-2rem))]"
           >
             <span className="block wrap-break-word" data-testid={`${testIdPrefix}-model-help-name`}>
               {modelName}

@@ -244,22 +244,32 @@ test("@sanity long model names stay readable in the composer chip and picker", a
           `Model: ${scenario.label}`,
         );
       } else {
-        // The chip shows the core name; the rest lives in the help popover.
+        // Resting chip is clean: core name, no help icon until the menu opens.
         // Fullscreen remounts the composer; wait for the labeled chip before measuring.
         await expect(chip.getByTestId("chat-model-current")).toBeVisible();
         const bounds = await chip.boundingBox();
         expect(bounds?.width).toBeLessThanOrEqual(256);
         await expect(chip.getByTestId("chat-model-current")).toHaveText(scenario.short);
         const help = page.getByTestId("chat-model-help");
+        await expect(help).toBeHidden();
+        // Opening the menu reveals the i inside the chip, beside the model name.
+        await chip.click();
+        await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+        await expect(help).toBeVisible();
         await help.hover();
         const content = page.getByTestId("chat-model-help-content");
         await expect(content).toBeVisible();
         await expect(page.getByTestId("chat-model-help-name")).toHaveText(scenario.label);
+        // The popover adapts to its text instead of a fixed 320px box.
+        const contentBounds = await content.boundingBox();
+        expect(contentBounds?.width).toBeLessThanOrEqual(320);
+        if (scenario.agent !== "claude") expect(contentBounds?.width).toBeLessThan(300);
         await page.screenshot({
           path: test.info().outputPath(`chip-${scenario.agent}-${width}.png`),
         });
-        await chip.click();
-        await expect(content).toBeHidden();
+        // Using the i keeps the menu open (it lives outside the popover content).
+        await help.click();
+        await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
       }
       const option = page.getByTestId(`chat-model-option-${scenario.id}`);
       await expect(option).toContainText(scenario.label);
@@ -312,9 +322,13 @@ test.describe("touch composer", () => {
     });
     expect(await model.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
     await page.screenshot({ path: test.info().outputPath("long-model-touch-820.png") });
+    // The i only exists while the menu is open; tapping it must not close the menu.
+    await expect(page.getByTestId("chat-model-help")).toBeHidden();
+    await page.getByTestId("chat-agent-model-button").tap();
+    await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+    await expect(page.getByTestId("chat-model-help")).toBeVisible();
     await page.getByTestId("chat-model-help").tap();
     await expect(page.getByTestId("chat-model-help-name")).toHaveText(raw.label);
-    await page.getByTestId("chat-agent-model-button").tap();
     await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
     await expect(page.getByTestId(`chat-model-option-${raw.id}`)).toContainText(raw.label);
   });
