@@ -1,2 +1,2 @@
 [test]
-preload = ["./src/__tests__/_api-isolation.ts"]
+preload = ["../../scripts/test-home-isolation.ts", "./src/__tests__/_api-isolation.ts"]

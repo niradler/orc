@@ -107,6 +107,8 @@ Two related rules follow from the same shared-state hazard:
 - The `@orc/mcp` suite runs serially (`bun test --max-concurrency=1`). `bun test` interleaves files in one process, and several files swap the process-global `ORC_API_BASE` around their fixtures; concurrent files could dial another file's already-stopped server.
 - Workspace port-block tests inject `setWorkspacePortProber` (the `setTerminalManager` pattern) instead of probing live host ports. Their boundary blocks sit at the top of the OS ephemeral range, where the suite's own sockets land; Windows allocates ephemeral ports roughly sequentially, so a live probe fails whenever the suite's socket churn sweeps past the block. Production keeps the real bind probe.
 
+Every package with unit tests also preloads `scripts/test-home-isolation.ts` through its `bunfig.toml`: a direct `bun test` run gets a throwaway `HOME` (and Windows profile variables) under the temp root unless it is already isolated, so no test can open or rewrite the live `~/.orc/orc.db`. The gates isolate `HOME` per test step already; `scripts/test-home-isolation.test.ts` proves the guard trips and runs as its own gate step.
+
 ### Web e2e (Playwright)
 
 ```bash
