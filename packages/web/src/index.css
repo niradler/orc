@@ -255,10 +255,6 @@ html[data-chat-font="serif"] {
     display: none;
   }
 
-  [data-chip-help] {
-    display: none;
-  }
-
   .composer-chip [data-chip-main] {
     justify-content: center;
     gap: 0;

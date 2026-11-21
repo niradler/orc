@@ -3,20 +3,15 @@ import { Info } from "lucide-react";
 import { type ReactNode, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 
 export function HelpPopover({
   label,
   children,
   testId = "view-help",
-  className,
-  contentClassName,
 }: {
   label: string;
   children: ReactNode;
   testId?: string;
-  className?: string;
-  contentClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const openAtPointerDown = useRef(false);
@@ -29,7 +24,7 @@ export function HelpPopover({
             type="button"
             variant="ghost"
             size="icon"
-            className={cn("size-11 shrink-0 text-outline lg:size-8", className)}
+            className="size-11 shrink-0 text-outline lg:size-8"
             aria-label={`About ${label}`}
             data-testid={testId}
             onPointerDown={() => {
@@ -48,10 +43,7 @@ export function HelpPopover({
             side="bottom"
             align="start"
             collisionPadding={16}
-            className={cn(
-              "w-80 max-w-[calc(100vw-2rem)] border-control-border bg-surface-high px-3 py-2.5 text-sm leading-relaxed",
-              contentClassName,
-            )}
+            className="w-80 max-w-[calc(100vw-2rem)] border-control-border bg-surface-high px-3 py-2.5 text-sm leading-relaxed"
             data-testid={`${testId}-content`}
           >
             {children}

@@ -23,29 +23,19 @@ import { cn } from "@/lib/utils";
 const rowAction =
   "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus max-sm:size-11 pointer-coarse:size-11";
 
-const rowHelp = cn(
-  rowAction,
-  "hidden size-6 max-[767px]:inline-flex pointer-coarse:inline-flex lg:size-6",
-);
-
-/** Full label, raw id and description of the selected model, for the chip's info
- *  popover and the picker's hover help. */
+/** Full label, raw id and description of one model, shown by the row hover. */
 function ModelDetails({
   label,
   id,
   description,
-  testId,
 }: {
   label: string;
   id?: string;
   description?: string;
-  testId?: string;
 }) {
   return (
     <>
-      <span className="block wrap-break-word" data-testid={testId}>
-        {label}
-      </span>
+      <span className="block wrap-break-word">{label}</span>
       {id && id !== label && (
         <span className="mt-0.5 block font-mono text-xs text-muted-foreground wrap-break-word">
           {id}
@@ -121,16 +111,6 @@ function ModelRow({
         </span>
         {selected && <Check size={14} aria-hidden="true" />}
       </button>
-      {detailed && (
-        <HelpPopover
-          label={`${label} details`}
-          testId={`${testIdPrefix}-model-help-${id || "default"}`}
-          className={cn(rowHelp, "text-muted-foreground")}
-          contentClassName="w-fit max-w-[min(20rem,calc(100vw-2rem))]"
-        >
-          <ModelDetails label={label} id={id} description={description} />
-        </HelpPopover>
-      )}
       {id && onFavorite && (
         <button
           type="button"
@@ -148,7 +128,14 @@ function ModelRow({
   );
   if (!detailed) return row;
   return (
-    <Tooltip open={hovered}>
+    <Tooltip
+      open={hovered}
+      // Escape must dismiss the tooltip; otherwise the still-hovered row keeps
+      // it open and swallows the key instead of closing the model panel.
+      onOpenChange={(next) => {
+        if (!next) setHovered(false);
+      }}
+    >
       <TooltipTrigger asChild>{row}</TooltipTrigger>
       <TooltipContent
         side="right"
@@ -241,7 +228,6 @@ export function AgentModelPicker({
   const shown = tab === "effort" && !effortChoices.length ? "model" : tab;
   const effortLabel = effortChoices.find((choice) => choice.value === (effort ?? ""))?.label;
   const summary = effortLabel ? `${modelName} · ${effortLabel}` : modelName;
-  const description = descriptions?.get(selectedModel);
   const modelRows = [["", "Agent default"] as const, ...choices]
     .filter(([id, label]) =>
       `${id} ${label} ${descriptions?.get(id) ?? ""}`
@@ -345,49 +331,12 @@ export function AgentModelPicker({
           else reset();
         }}
       >
-        <TooltipProvider delayDuration={300}>
-          <Tooltip open={open ? false : undefined}>
-            <TooltipTrigger asChild>
-              <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-            </TooltipTrigger>
-            <TooltipContent
-              side="top"
-              data-testid={`${testIdPrefix}-agent-model-tooltip`}
-              className="max-w-[min(24rem,calc(100vw-1.5rem))]"
-            >
-              <span className="block text-xs text-muted-foreground">
-                {name}
-                {effortLabel ? ` · ${effortLabel} effort` : ""}
-              </span>
-              <span className="mt-0.5 block wrap-break-word text-xs">
-                {accessibleSummary ?? modelName}
-              </span>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <PopoverTrigger asChild>{trigger}</PopoverTrigger>
         <PopoverContent
           data-testid={`${testIdPrefix}-agent-model-picker`}
           aria-label="Choose agent and model"
           side="top"
           align="start"
-          // The model help button sits in the chip, outside this content; using it
-          // must not dismiss the open menu (which would unmount the button).
-          onPointerDownOutside={(event) => {
-            const target = event.detail.originalEvent.target;
-            if (target instanceof HTMLElement && target.closest("[data-chip-help]")) {
-              event.preventDefault();
-            }
-          }}
-          onFocusOutside={(event) => {
-            const target = event.detail.originalEvent.target;
-            if (target instanceof HTMLElement && target.closest("[data-chip-help]")) {
-              event.preventDefault();
-            }
-          }}
-          className={cn(
-            "max-h-[min(36rem,60vh)] max-w-[calc(100vw-1.5rem)] overflow-y-auto p-1.5",
-            effortChoices.length ? "w-[36rem]" : "w-[28rem]",
-          )}
           collisionPadding={12}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
@@ -681,27 +630,6 @@ export function AgentModelPicker({
           )}
         </PopoverContent>
       </Popover>
-      {open && (
-        <span data-chip-help className="inline-flex shrink-0 self-stretch">
-          <HelpPopover
-            label={`${name} model`}
-            testId={`${testIdPrefix}-model-help`}
-            className="h-full w-7 max-sm:w-11 pointer-coarse:w-11 lg:h-full lg:w-7 focus-visible:outline-hidden"
-            contentClassName="w-fit max-w-[min(20rem,calc(100vw-2rem))]"
-          >
-            <span className="block text-xs text-muted-foreground">
-              {name}
-              {effortLabel ? ` · ${effortLabel} effort` : ""}
-            </span>
-            <ModelDetails
-              label={modelName}
-              id={selectedModel}
-              description={description}
-              testId={`${testIdPrefix}-model-help-name`}
-            />
-          </HelpPopover>
-        </span>
-      )}
     </span>
   );
 }
