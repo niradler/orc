@@ -114,6 +114,17 @@ test("should run a changed package fully and only the dependent tests that impor
   expect(files.length).toBeLessThan(all.length);
 });
 
+test("should serialize affected-file runs for packages whose test script serializes", () => {
+  const selection = selectDomains(["packages/core/src/ids.ts"], domains, dependents);
+  const steps = new Map(packageTestSteps(root, selection, { sanity: false, e2e: false }));
+  // A direct `bun test` never reads the package script, so the gate must carry
+  // the script's --max-concurrency=1 into the affected-files step itself.
+  const mcp = steps.get("Test @orc/mcp affected files");
+  expect(mcp?.slice(0, 5)).toEqual(["bun", "--cwd", "packages/mcp", "test", "--max-concurrency=1"]);
+  const api = steps.get("Test @orc/api affected files");
+  expect(api?.[4]).not.toBe("--max-concurrency=1");
+});
+
 test("should skip a dependent package whose tests never import the change", () => {
   const selection = selectDomains(["packages/web/src/App.tsx"], domains, dependents);
   expect(selection.packageNames).toContain("orc-ai");

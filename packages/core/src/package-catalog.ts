@@ -5,12 +5,12 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  rmSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
 import { NotFoundError, ValidationError } from "./errors.js";
+import { removeTreeBestEffort } from "./fs-cleanup.js";
 import { packageToolCommands, qualifyPackageCommand } from "./package-launch.js";
 import { createPackage, parseApmManifest, readPackage } from "./package-service.js";
 import { parsePluginManifest, validatePluginMcp } from "./plugin-service.js";
@@ -95,8 +95,10 @@ export async function acquireApmSource(
   const value = validateApmSource(source);
   for (const [token, item] of acquisitions)
     if (item.expires < Date.now()) {
-      acquisitions.delete(token);
-      rmSync(item.root, { recursive: true, force: true });
+      removeTreeBestEffort(item.root);
+      // Keep the token until the tree is actually gone, so a locked root stays
+      // tracked and is retried on the next acquisition instead of leaking.
+      if (!existsSync(item.root)) acquisitions.delete(token);
     }
   if (acquisitions.size >= 8)
     throw new ValidationError("Too many pending imports; finish one or try again in 15 minutes");
@@ -126,7 +128,7 @@ export async function acquireApmSource(
       }
     }
   } catch (error) {
-    rmSync(root, { recursive: true, force: true });
+    removeTreeBestEffort(root);
     throw error;
   }
   const token = crypto.randomUUID();
@@ -149,7 +151,7 @@ export function importAcquiredPackage(token: string, path: string): PackageFull 
   });
   const pkg = createPackage(selected.name, content, files, selected.format, true);
   acquisitions.delete(token);
-  rmSync(acquired.root, { recursive: true, force: true });
+  removeTreeBestEffort(acquired.root);
   return pkg;
 }
 
@@ -317,7 +319,7 @@ export async function importRepositoryPackage(input: {
       "APM did not acquire the selected package. Check its target and trust requirements.",
     );
   } finally {
-    rmSync(root, { recursive: true, force: true });
+    removeTreeBestEffort(root);
   }
 }
 
@@ -388,7 +390,7 @@ export async function exportPackageArtifact(
       format,
     };
   } finally {
-    rmSync(stage, { recursive: true, force: true });
+    removeTreeBestEffort(stage);
   }
 }
 

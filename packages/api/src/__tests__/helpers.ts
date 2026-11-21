@@ -37,7 +37,21 @@ export function teardownTestApp() {
   else process.env.ORC_ACTIVE_PROJECT = originalActiveProject;
   if (originalOrcHome === undefined) delete process.env.ORC_HOME;
   else process.env.ORC_HOME = originalOrcHome;
-  if (testHome) rmSync(testHome, { recursive: true, force: true });
+  if (testHome) {
+    // Sync variant of removeTempTree for the many sync teardown callers: Bun
+    // ignores rmSync maxRetries and Windows can lag a just-closed handle's
+    // release, so retry EBUSY within the default hook budget.
+    Bun.gc(true);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(testHome, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 30) throw error;
+        Bun.sleepSync(100);
+      }
+    }
+  }
   testHome = null;
   resetConfig();
 }

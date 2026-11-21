@@ -1,8 +1,9 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { isolateTestHome } from "./test-home-isolation.js";
+import { cleanerSource, isolateTestHome } from "./test-home-isolation.js";
 
 const KEYS = ["HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME"] as const;
 const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
@@ -42,4 +43,29 @@ test("an already isolated home is left untouched", () => {
   process.env.USERPROFILE = isolated;
   isolateTestHome();
   expect(process.env.HOME).toBe(isolated);
+});
+
+test("the cleaner abandons a live owner's home at the deadline", async () => {
+  const home = mkdtempSync(join(tmpdir(), "orc-cleaner-live-"));
+  const script = join(tmpdir(), `orc-cleaner-case-${process.pid}-live.js`);
+  created.push(home, script);
+  writeFileSync(script, cleanerSource(home, process.pid, script, Date.now() + 100));
+  const child = spawn(process.execPath, [script], { stdio: "ignore", windowsHide: true });
+  await new Promise<void>((resolve) => child.on("exit", () => resolve()));
+  // A long direct run outlives the deadline: the home must survive for the
+  // next preload's sweep, and the cleaner removes only its own script.
+  expect(existsSync(home)).toBe(true);
+  expect(existsSync(script)).toBe(false);
+});
+
+test("the cleaner removes the home once the owner pid is gone", async () => {
+  const dead = Bun.spawnSync([process.execPath, "-e", "0"]);
+  const home = mkdtempSync(join(tmpdir(), "orc-cleaner-dead-"));
+  const script = join(tmpdir(), `orc-cleaner-case-${process.pid}-dead.js`);
+  created.push(home, script);
+  writeFileSync(script, cleanerSource(home, dead.pid, script, Date.now() + 60_000));
+  const child = spawn(process.execPath, [script], { stdio: "ignore", windowsHide: true });
+  await new Promise<void>((resolve) => child.on("exit", () => resolve()));
+  expect(existsSync(home)).toBe(false);
+  expect(existsSync(script)).toBe(false);
 });

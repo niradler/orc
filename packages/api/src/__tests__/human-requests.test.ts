@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
@@ -8,7 +8,7 @@ import type { HumanRequest } from "@orc/core/human-requests";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
-import { req, setupTestApp, teardownTestApp } from "./helpers.js";
+import { removeTempTree, req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
 const tempDirs: string[] = [];
@@ -21,9 +21,9 @@ beforeAll(() => {
   app = setupTestApp();
 });
 afterAll(teardownTestApp);
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+afterEach(async () => {
+  for (const dir of tempDirs.splice(0)) await removeTempTree(dir);
+}, 20_000);
 const input = {
   kind: "question",
   prompt: "Which color?",

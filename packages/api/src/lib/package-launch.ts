@@ -1,9 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { readAgent } from "@orc/core/agent-service";
 import { ValidationError } from "@orc/core/errors";
 import { type ExecHost, hostExec, remoteTempPath, writeHostFile } from "@orc/core/exec-host";
+import { removeTreeBestEffort } from "@orc/core/fs-cleanup";
 import { ulid } from "@orc/core/ids";
 import {
   type AgentSetup,
@@ -139,6 +140,6 @@ export async function installPackageForChat(setup: AgentSetup, host: ExecHost): 
       );
     return plan.setup.cwd;
   } finally {
-    if (staging) rmSync(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    if (staging) removeTreeBestEffort(staging);
   }
 }
