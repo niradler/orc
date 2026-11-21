@@ -274,6 +274,7 @@ type ClaudeTurn = {
 class ClaudeSDKSession implements AgentSession {
   readonly capabilities = CLAUDE_CAPABILITIES;
   readonly id = ulid();
+  readonly systemPromptSlot = true;
 
   private runtimeSessionId: string | undefined;
   /** The first query resumes the source with `forkSession`; later queries resume the new id. */

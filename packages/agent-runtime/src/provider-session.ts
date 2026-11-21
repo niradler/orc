@@ -131,6 +131,7 @@ export function withProviderRedaction(session: AgentSession, opts: SessionOpts):
   const wrapped: AgentSession = {
     id: session.id,
     systemPromptOnce: session.systemPromptOnce,
+    systemPromptSlot: session.systemPromptSlot,
     get capabilities() {
       return session.capabilities;
     },

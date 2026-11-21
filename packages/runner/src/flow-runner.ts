@@ -1697,6 +1697,9 @@ async function driveNodeSession(opts: {
         ...(opts.env && Object.keys(opts.env).length ? { env: opts.env } : {}),
         ...(opts.model ? { model: opts.model } : {}),
         ...(opts.agentProfile ? { agentProfile: opts.agentProfile } : {}),
+        // A node session only pins its native id once a result confirmed the turn,
+        // so a resumed session's history already owns the profile instructions.
+        systemPromptDelivered: !!opts.previousRuntimeSessionId,
       },
       opts.previousRuntimeSessionId,
     );
