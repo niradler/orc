@@ -302,18 +302,14 @@ export function modelDisplayName(id: string): string {
   return words.join(" ") || id;
 }
 
-export function agentModelLabel(model: string, effort: string | null): string {
-  return effort ? `${model} · ${effort}` : model;
-}
-
 const MODEL_QUALIFIERS = /[(,–—]|\s+-\s+|\s+with\s+|\s+featuring\s+/i;
 const MODEL_BRAND_PREFIX: Record<string, string> = { claude: "Claude " };
 
-/** Core model name for the composer chip; qualifiers and duplicated brand words
- *  move to the model help popover. Raw IDs use the shared display formatter. */
+/** Compact name shown on the composer chip. Only trailing qualifier clauses
+ *  ("(1M context)", ", 200K", " with extended thinking") and a brand word that
+ *  repeats the agent icon are dropped; a custom id is shown exactly as typed. */
 export function shortModelLabel(label: string, id: string, agent: string): string {
-  if (!id) return label;
-  if (label === id) return modelDisplayName(id);
+  if (!id || label === id) return label;
   const core = (label.split(MODEL_QUALIFIERS)[0] ?? label).trim();
   const brand = MODEL_BRAND_PREFIX[agent];
   const short =

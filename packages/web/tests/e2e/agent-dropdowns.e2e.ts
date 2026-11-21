@@ -14,8 +14,7 @@ for (const theme of ["dark", "light"] as const) {
       await gotoView(page, "tasks");
       await page.goto("/tasks?chat=full");
       const picker = page.getByTestId("chat-agent-model-button");
-      const current = page.getByTestId("chat-agent-current");
-      await expect(current).toHaveText("Codex");
+      await expect(picker).toHaveAccessibleName(/^Agent and model: Codex,/);
       await picker.click();
       await showPickerTab(page, "agent");
       await expect(page.getByTestId("chat-agent-select")).toBeVisible();
@@ -41,7 +40,7 @@ for (const theme of ["dark", "light"] as const) {
       await page.screenshot({ path: testInfo.outputPath(`agents-${theme}-${width}.png`) });
       await page.keyboard.press("Escape");
       await chooseChatAgent(page, "cursor");
-      await expect(current).toHaveText("Cursor");
+      await expect(picker).toHaveAccessibleName(/^Agent and model: Cursor,/);
       await openChatModel(page);
       expect(
         await page.getByTestId("chat-agent-model-picker").evaluate((element) => ({
@@ -51,7 +50,9 @@ for (const theme of ["dark", "light"] as const) {
       ).toEqual(colours);
       await page.keyboard.press("Escape");
       await page.reload();
-      await expect(page.getByTestId("chat-agent-current")).toHaveText("Cursor");
+      await expect(page.getByTestId("chat-agent-model-button")).toHaveAccessibleName(
+        /^Agent and model: Cursor,/,
+      );
     });
   }
 }

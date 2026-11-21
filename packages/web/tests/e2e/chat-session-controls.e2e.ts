@@ -143,7 +143,9 @@ for (const width of [1440, 390]) {
       .getByTestId("chat-resume-thread")
       .click();
     await waitHistoryClosed(page);
-    await expect(page.getByTestId("chat-agent-current")).toContainText("Cursor");
+    await expect(
+      page.getByTestId("chat-agent-model-button").filter({ visible: true }),
+    ).toHaveAccessibleName(/Cursor/);
     await expect(page.getByTestId("chat-model-current")).toContainText("fixture-model");
     // The linked-thread open and the resume click can both read the same thread, so the
     // guard is against a runaway refetch rather than exactly one read.
@@ -183,7 +185,9 @@ for (const width of [1440, 390]) {
     await waitHistoryClosed(page);
     expect(resumeCalls).toBe(1);
     await expect(page.getByTestId("chat-model-current")).toContainText("fixture-claude");
-    await expect(page.getByTestId("chat-agent-current")).toContainText("Claude Code");
+    await expect(
+      page.getByTestId("chat-agent-model-button").filter({ visible: true }),
+    ).toHaveAccessibleName(/Claude Code/);
     await openChatSettings(page);
     await expect(page.getByTestId("chat-config-dialog")).toContainText("claude-host");
     await expect(page.getByTestId("chat-config-dialog")).toContainText(resumed.cwd);

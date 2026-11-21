@@ -32,6 +32,7 @@ export function JobAgentPicker({
   return (
     <AgentModelPicker
       testIdPrefix="job"
+      showAgent
       agent={agent}
       selectedModel={value.model ?? ""}
       agents={agents}

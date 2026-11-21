@@ -297,11 +297,11 @@ html[data-chat-font="serif"] {
   }
 }
 
-/* Touch: the truncated model label scrolls sideways inside the chip instead of
-   relying on hover; the scrollbar stays hidden and scrolling does not chain to
-   the composer row. */
+/* Touch: a truncated model label scrolls sideways instead of relying on hover;
+   the scrollbar stays hidden and scrolling does not chain to the composer row
+   or to the picker list. */
 @media (pointer: coarse) {
-  .composer-chip [data-chip-scroll] {
+  [data-chip-scroll] {
     overflow-x: auto;
     text-overflow: clip;
     scrollbar-width: none;
@@ -309,7 +309,7 @@ html[data-chat-font="serif"] {
     -webkit-overflow-scrolling: touch;
   }
 
-  .composer-chip [data-chip-scroll]::-webkit-scrollbar {
+  [data-chip-scroll]::-webkit-scrollbar {
     display: none;
   }
 }

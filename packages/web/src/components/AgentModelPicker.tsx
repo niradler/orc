@@ -23,6 +23,153 @@ import { cn } from "@/lib/utils";
 const rowAction =
   "inline-flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-highest hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus max-sm:size-11 pointer-coarse:size-11";
 
+const rowHelp = cn(
+  rowAction,
+  "hidden size-6 max-[767px]:inline-flex pointer-coarse:inline-flex lg:size-6",
+);
+
+/** Full label, raw id and description of one model. The compact chip and picker
+ *  rows show the short name; this is what hover, the info button and the
+ *  accessible name disclose. */
+function ModelDetails({
+  label,
+  id,
+  description,
+  testId,
+}: {
+  label: string;
+  id?: string;
+  description?: string;
+  testId?: string;
+}) {
+  return (
+    <>
+      <span className="block wrap-break-word" data-testid={testId}>
+        {label}
+      </span>
+      {id && id !== label && (
+        <span className="mt-0.5 block font-mono text-xs text-muted-foreground wrap-break-word">
+          {id}
+        </span>
+      )}
+      {description && (
+        <span className="mt-1 block text-xs text-muted-foreground wrap-break-word">
+          {description}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** One model row: compact label, description, hover details and the actions that
+ *  reveal the full label on touch. */
+function ModelRow({
+  id,
+  label,
+  short,
+  description,
+  selected,
+  disabled,
+  testIdPrefix,
+  onChoose,
+  favorite,
+  onFavorite,
+}: {
+  id: string;
+  label: string;
+  short: string;
+  description?: string | undefined;
+  selected: boolean;
+  disabled: boolean;
+  testIdPrefix: string;
+  onChoose: (id: string) => void;
+  favorite: boolean;
+  onFavorite?: ((model: string) => void) | undefined;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const detailed = short !== label || !!description;
+  const row = (
+    <div
+      className="flex min-w-0 items-center"
+      onPointerEnter={
+        detailed
+          ? (event) => {
+              // Hover help is for mice; touch reveals the same details through
+              // the row's info button instead of a flash on tap.
+              if (event.pointerType === "mouse") setHovered(true);
+            }
+          : undefined
+      }
+      onPointerLeave={detailed ? () => setHovered(false) : undefined}
+    >
+      <button
+        type="button"
+        role="menuitemradio"
+        data-chip-option
+        aria-checked={selected}
+        aria-label={detailed ? `${label}${description ? `. ${description}` : ""}` : undefined}
+        data-testid={
+          id ? `${testIdPrefix}-model-option-${id}` : `${testIdPrefix}-model-option-default`
+        }
+        disabled={disabled}
+        onClick={() => onChoose(id)}
+        className={chipOption}
+      >
+        <span className="flex min-w-0 flex-1 flex-col py-1">
+          <span
+            data-chip-scroll
+            data-testid={`${testIdPrefix}-model-label-${id || "default"}`}
+            className="min-w-0 truncate"
+          >
+            {short}
+          </span>
+          {description && (
+            <span className="line-clamp-2 text-xs text-muted-foreground">{description}</span>
+          )}
+        </span>
+        {selected && <Check size={14} aria-hidden="true" />}
+      </button>
+      {detailed && (
+        <HelpPopover
+          label={`${label} details`}
+          testId={`${testIdPrefix}-model-help-${id || "default"}`}
+          className={cn(rowHelp, "text-muted-foreground")}
+          contentClassName="w-fit max-w-[min(20rem,calc(100vw-2rem))]"
+        >
+          <ModelDetails label={label} id={id} description={description} />
+        </HelpPopover>
+      )}
+      {id && onFavorite && (
+        <button
+          type="button"
+          data-testid={`${testIdPrefix}-model-favorite-${id}`}
+          aria-pressed={favorite}
+          aria-label={`Favorite ${label}`}
+          title={favorite ? "Unpin" : "Pin to top"}
+          onClick={() => onFavorite(id)}
+          className={cn(rowAction, favorite && "text-warning")}
+        >
+          <Star size={14} aria-hidden="true" fill={favorite ? "currentColor" : "none"} />
+        </button>
+      )}
+    </div>
+  );
+  if (!detailed) return row;
+  return (
+    <Tooltip open={hovered}>
+      <TooltipTrigger asChild>{row}</TooltipTrigger>
+      <TooltipContent
+        side="right"
+        align="center"
+        data-testid={`${testIdPrefix}-model-tooltip-${id || "default"}`}
+        className="max-w-[min(24rem,calc(100vw-1.5rem))]"
+      >
+        <ModelDetails label={label} id={id} description={description} />
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function AgentModelPicker({
   agent,
   selectedModel,
@@ -44,6 +191,7 @@ export function AgentModelPicker({
   note,
   started = false,
   testIdPrefix = "chat",
+  showAgent = false,
   providers,
   providerId,
   onProvider,
@@ -74,6 +222,9 @@ export function AgentModelPicker({
   note?: string | undefined;
   started?: boolean;
   testIdPrefix?: string;
+  /** Keep the agent name in the chip when nothing else in that surface names it
+   *  (the job action form); the composer chip focuses on the model alone. */
+  showAgent?: boolean;
   providers?: { id: string; name: string; agent: string }[];
   providerId?: string | undefined;
   onProvider?: (id: string) => boolean;
@@ -97,11 +248,11 @@ export function AgentModelPicker({
   const name = agentName ?? agentLabel(agent);
   const modelName = choices.get(selectedModel) || selectedModel || "Agent default";
   const shortModel = shortModelLabel(modelName, selectedModel, agent);
-  const hasModelDetail = shortModel !== modelName;
   const summary = suppliedSummary ?? shortModel;
   const effortChoices = efforts ?? [];
   const shown = tab === "effort" && !effortChoices.length ? "model" : tab;
   const effortLabel = effortChoices.find((choice) => choice.value === (effort ?? ""))?.label;
+  const description = descriptions?.get(selectedModel);
   const modelRows = [["", "Agent default"] as const, ...choices]
     .filter(([id, label]) =>
       `${id} ${label} ${descriptions?.get(id) ?? ""}`
@@ -160,16 +311,20 @@ export function AgentModelPicker({
       className="inline-flex min-w-0 flex-1 self-stretch items-center gap-1.5 focus-visible:outline-hidden"
     >
       <AgentIcon agent={agent} decorative size={14} />
-      <span
-        data-chip-label
-        data-testid={`${testIdPrefix}-agent-current`}
-        className="min-w-0 max-w-32 truncate"
-      >
-        {name}
-      </span>
-      <span data-chip-label aria-hidden="true" className="text-muted-foreground">
-        ·
-      </span>
+      {showAgent && (
+        <>
+          <span
+            data-chip-label
+            data-testid={`${testIdPrefix}-agent-current`}
+            className="min-w-0 max-w-32 truncate"
+          >
+            {name}
+          </span>
+          <span data-chip-label aria-hidden="true" className="text-muted-foreground">
+            ·
+          </span>
+        </>
+      )}
       <span
         data-chip-label
         data-chip-scroll
@@ -178,7 +333,12 @@ export function AgentModelPicker({
       >
         {summary}
       </span>
-      <ChevronDown data-chip-label size={12} aria-hidden="true" className="shrink-0 opacity-60" />
+      <ChevronDown
+        data-chip-label
+        size={12}
+        aria-hidden="true"
+        className={cn("shrink-0 opacity-60 transition-transform", open && "rotate-180")}
+      />
     </button>
   );
   return (
@@ -196,26 +356,26 @@ export function AgentModelPicker({
           else reset();
         }}
       >
-        {hasModelDetail ? (
-          <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-        ) : (
-          <TooltipProvider delayDuration={300}>
-            <Tooltip open={open ? false : undefined}>
-              <TooltipTrigger asChild>
-                <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-              </TooltipTrigger>
-              <TooltipContent
-                side="top"
-                data-testid={`${testIdPrefix}-agent-model-tooltip`}
-                className="max-w-[calc(100vw-1.5rem)]"
-              >
-                <span className="block max-w-96 wrap-break-word text-xs">
-                  {name} · {accessibleSummary ?? modelName}
-                </span>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
+        <TooltipProvider delayDuration={300}>
+          <Tooltip open={open ? false : undefined}>
+            <TooltipTrigger asChild>
+              <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              data-testid={`${testIdPrefix}-agent-model-tooltip`}
+              className="max-w-[min(24rem,calc(100vw-1.5rem))]"
+            >
+              <span className="block text-xs text-muted-foreground">
+                {name}
+                {effortLabel ? ` · ${effortLabel} effort` : ""}
+              </span>
+              <span className="mt-0.5 block wrap-break-word text-xs">
+                {accessibleSummary ?? modelName}
+              </span>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <PopoverContent
           data-testid={`${testIdPrefix}-agent-model-picker`}
           aria-label="Choose agent and model"
@@ -237,7 +397,7 @@ export function AgentModelPicker({
           }}
           className={cn(
             "max-h-[min(36rem,60vh)] max-w-[calc(100vw-1.5rem)] overflow-y-auto p-1.5",
-            effortChoices.length ? "w-[32rem]" : "w-[26rem]",
+            effortChoices.length ? "w-[36rem]" : "w-[28rem]",
           )}
           collisionPadding={12}
           onOpenAutoFocus={(event) => {
@@ -257,17 +417,24 @@ export function AgentModelPicker({
               >
                 {(
                   [
-                    ["agent", "Agent", name],
-                    ["model", "Model", modelName],
+                    ["agent", "Agent", name, name],
+                    ["model", "Model", summary, modelName],
                     ...(effortChoices.length
-                      ? [["effort", "Effort", effortLabel ?? "Default"] as const]
+                      ? [
+                          [
+                            "effort",
+                            "Effort",
+                            effortLabel ?? "Default",
+                            effortLabel ?? "Default",
+                          ] as const,
+                        ]
                       : []),
                   ] as const
-                ).map(([value, kind, pick]) => (
+                ).map(([value, kind, pick, full]) => (
                   <TabsTrigger
                     key={value}
                     value={value}
-                    aria-label={`${kind}: ${pick}`}
+                    aria-label={`${kind}: ${full}`}
                     data-testid={`${testIdPrefix}-picker-tab-${value}`}
                     className="min-w-0 px-2"
                   >
@@ -281,8 +448,8 @@ export function AgentModelPicker({
             className={cn(
               "grid gap-1.5 max-[520px]:grid-cols-1",
               effortChoices.length
-                ? "grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)_minmax(0,0.75fr)]"
-                : "grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]",
+                ? "grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.7fr)]"
+                : "grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]",
             )}
           >
             <div
@@ -388,51 +555,23 @@ export function AgentModelPicker({
                 {modelRows.length === 0 && (
                   <p className="px-2 py-1 text-xs text-muted-foreground">No models match</p>
                 )}
-                {modelRows.map(([id, label]) => (
-                  <div key={id || "default"} className="flex min-w-0 items-center">
-                    <button
-                      type="button"
-                      role="menuitemradio"
-                      data-chip-option
-                      aria-checked={selectedModel === id}
-                      data-testid={
-                        id
-                          ? `${testIdPrefix}-model-option-${id}`
-                          : `${testIdPrefix}-model-option-default`
-                      }
+                <TooltipProvider>
+                  {modelRows.map(([id, label]) => (
+                    <ModelRow
+                      key={id || "default"}
+                      id={id}
+                      label={label}
+                      short={shortModelLabel(label, id, agent)}
+                      description={descriptions?.get(id)}
+                      selected={selectedModel === id}
                       disabled={modelsDisabled}
-                      onClick={() => chooseModel(id)}
-                      className={chipOption}
-                    >
-                      <span className="flex min-w-0 flex-1 flex-col py-1">
-                        <span className="wrap-break-word">{label}</span>
-                        {descriptions?.get(id) && (
-                          <span className="line-clamp-2 text-xs text-muted-foreground">
-                            {descriptions.get(id)}
-                          </span>
-                        )}
-                      </span>
-                      {selectedModel === id && <Check size={14} aria-hidden="true" />}
-                    </button>
-                    {id && onFavorite && (
-                      <button
-                        type="button"
-                        data-testid={`${testIdPrefix}-model-favorite-${id}`}
-                        aria-pressed={!!favorites?.has(id)}
-                        aria-label={`Favorite ${label}`}
-                        title={favorites?.has(id) ? "Unpin" : "Pin to top"}
-                        onClick={() => onFavorite(id)}
-                        className={cn(rowAction, favorites?.has(id) && "text-warning")}
-                      >
-                        <Star
-                          size={14}
-                          aria-hidden="true"
-                          fill={favorites?.has(id) ? "currentColor" : "none"}
-                        />
-                      </button>
-                    )}
-                  </div>
-                ))}
+                      testIdPrefix={testIdPrefix}
+                      onChoose={chooseModel}
+                      favorite={!!favorites?.has(id)}
+                      onFavorite={onFavorite}
+                    />
+                  ))}
+                </TooltipProvider>
               </div>
               {custom ? (
                 <form
@@ -554,22 +693,24 @@ export function AgentModelPicker({
           )}
         </PopoverContent>
       </Popover>
-      {hasModelDetail && open && (
+      {open && (
         <span data-chip-help className="inline-flex shrink-0 self-stretch">
           <HelpPopover
             label={`${name} model`}
             testId={`${testIdPrefix}-model-help`}
-            className="h-full w-8 max-sm:w-11 pointer-coarse:w-11 lg:h-full lg:w-8 focus-visible:outline-hidden"
+            className="h-full w-7 max-sm:w-11 pointer-coarse:w-11 lg:h-full lg:w-7 focus-visible:outline-hidden"
             contentClassName="w-fit max-w-[min(20rem,calc(100vw-2rem))]"
           >
-            <span className="block wrap-break-word" data-testid={`${testIdPrefix}-model-help-name`}>
-              {modelName}
+            <span className="block text-xs text-muted-foreground">
+              {name}
+              {effortLabel ? ` · ${effortLabel} effort` : ""}
             </span>
-            {descriptions?.get(selectedModel) && (
-              <span className="mt-1 block text-xs text-muted-foreground">
-                {descriptions.get(selectedModel)}
-              </span>
-            )}
+            <ModelDetails
+              label={modelName}
+              id={selectedModel}
+              description={description}
+              testId={`${testIdPrefix}-model-help-name`}
+            />
           </HelpPopover>
         </span>
       )}

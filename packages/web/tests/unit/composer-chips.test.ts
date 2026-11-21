@@ -5,7 +5,6 @@ import {
   agentEffort,
   agentEffortChoices,
   agentEffortValue,
-  agentModelLabel,
   branchChipLabel,
   branchName,
   currentWorktree,
@@ -156,10 +155,6 @@ describe("agent and model", () => {
       }),
     ).toBe("Extra high");
   });
-  test("agentModelLabel joins model and effort", () => {
-    expect(agentModelLabel("Opus 5.5", "High")).toBe("Opus 5.5 · High");
-    expect(agentModelLabel("Default", null)).toBe("Default");
-  });
   test("offers effort choices only for adapters that accept them", () => {
     expect(agentEffortChoices("claude").map((choice) => choice.value)).toEqual([
       "low",
@@ -307,13 +302,14 @@ describe("shortModelLabel", () => {
       "Qwen3 Max Preview",
     );
   });
-  test("keeps clean labels and formats raw ids with the shared display name", () => {
+  test("keeps clean labels and raw ids exactly as they are", () => {
     expect(shortModelLabel("claude deep", "claude-deep", "claude")).toBe("claude deep");
     expect(shortModelLabel("GPT-5.2 Codex", "gpt-5.2-codex", "codex")).toBe("GPT-5.2 Codex");
     expect(shortModelLabel("Agent default", "", "claude")).toBe("Agent default");
     expect(shortModelLabel("provider/custom-model", "provider/custom-model", "opencode")).toBe(
-      "Custom Model",
+      "provider/custom-model",
     );
+    expect(shortModelLabel("fixture-model", "fixture-model", "cursor")).toBe("fixture-model");
   });
 });
 

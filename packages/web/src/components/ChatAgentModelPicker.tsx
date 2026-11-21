@@ -19,7 +19,6 @@ import {
   agentEffort,
   agentEffortChoices,
   agentEffortValue,
-  agentModelLabel,
   effectivePermissionMode,
   liveEffortChoices,
   permissionModes,
@@ -106,7 +105,7 @@ export function ChatAgentModelPicker() {
     if (thread && options) void chat.applyAgentOptions(config.agent, options).catch(() => {});
   }, [staleEffort, config, setConfig, thread, chat]);
   const name = selectedProvider?.name ?? agentLabel(config.agent);
-  const summary = agentModelLabel(shortModelLabel(modelName, config.model, config.agent), effort);
+  const summary = shortModelLabel(modelName, config.model, config.agent);
   const started = !!thread || streaming;
   const navigate = useNavigate();
   const preferences = useComposerPreferences();

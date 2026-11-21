@@ -125,7 +125,6 @@ for (const width of [320, 390, 820, 1440]) {
       const compact = width !== 820;
       for (const label of [
         folder.getByTestId("chat-workspace-folder-name"),
-        agent.getByTestId("chat-agent-current"),
         agent.getByTestId("chat-model-current"),
       ]) {
         if (compact) await expect(label).toBeHidden();
@@ -162,7 +161,6 @@ for (const width of [320, 390, 820, 1440]) {
       if (width === 1440) {
         await page.getByTestId("chat-fullscreen-button").click();
         await expect(folder.getByTestId("chat-workspace-folder-name")).toBeVisible();
-        await expect(agent.getByTestId("chat-agent-current")).toBeVisible();
         await expect(agent.getByTestId("chat-model-current")).toBeVisible();
         await expect(input).toHaveValue("Keep this draft while the composer changes size");
         await page.screenshot({ path: test.info().outputPath(`wide-${theme}-1440.png`) });
@@ -243,6 +241,7 @@ test("@sanity long model names stay readable in the composer chip and picker", a
           "aria-label",
           `Model: ${scenario.label}`,
         );
+        await page.screenshot({ path: test.info().outputPath(`picker-${width}.png`) });
       } else {
         // Resting chip is clean: core name, no help icon until the menu opens.
         // Fullscreen remounts the composer; wait for the labeled chip before measuring.
@@ -272,13 +271,22 @@ test("@sanity long model names stay readable in the composer chip and picker", a
         await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
       }
       const option = page.getByTestId(`chat-model-option-${scenario.id}`);
-      await expect(option).toContainText(scenario.label);
-      expect(
-        await option
-          .locator("span")
-          .first()
-          .evaluate((element) => element.scrollWidth <= element.clientWidth),
-      ).toBe(true);
+      const label = page.getByTestId(`chat-model-label-${scenario.id}`);
+      await expect(label).toHaveText(scenario.short);
+      // The compact row shows the short name; hover, focus and the info button
+      // reveal the qualifiers, the raw id and the description.
+      await option.hover();
+      await expect(page.getByTestId(`chat-model-tooltip-${scenario.id}`)).toContainText(
+        scenario.label,
+      );
+      if (width !== 390) {
+        await page.screenshot({
+          path: test.info().outputPath(`picker-hover-${scenario.agent}-${width}.png`),
+        });
+      }
+      expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("chat-send-button")).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -299,6 +307,7 @@ test.describe("touch composer", () => {
       agent: "opencode",
       id: "some-provider/very-long-custom-model-identifier-with-many-words-0123456789",
       label: "some-provider/very-long-custom-model-identifier-with-many-words-0123456789",
+      description: "A custom provider model with a long identifier",
     };
     await page.route("**/api/chat/models?**", (route) =>
       route.fulfill({ json: { models: [raw], warning: null } }),
@@ -330,7 +339,20 @@ test.describe("touch composer", () => {
     await page.getByTestId("chat-model-help").tap();
     await expect(page.getByTestId("chat-model-help-name")).toHaveText(raw.label);
     await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
-    await expect(page.getByTestId(`chat-model-option-${raw.id}`)).toContainText(raw.label);
+    // The row's own info button is reachable on touch and reveals the same details.
+    await page.getByTestId(`chat-model-help-${raw.id}`).tap();
+    await expect(page.getByTestId(`chat-model-help-${raw.id}-content`)).toContainText(
+      raw.description,
+    );
+    await expect(page.getByTestId(`chat-model-option-${raw.id}`)).toBeVisible();
+    const row = page.getByTestId(`chat-model-label-${raw.id}`);
+    expect(
+      await row.evaluate((element) => ({
+        overflowX: getComputedStyle(element).overflowX,
+        scrollbarWidth: getComputedStyle(element).scrollbarWidth,
+        scrollable: element.scrollWidth > element.clientWidth,
+      })),
+    ).toEqual({ overflowX: "auto", scrollbarWidth: "none", scrollable: true });
   });
 });
 
@@ -354,7 +376,7 @@ test("folder changes in two clicks and agent+model change from one pill", async 
   );
   await page.getByTestId("chat-model-option-claude-deep").click();
   await expect(page.getByTestId("chat-agent-model-picker")).toBeHidden();
-  await expect(page.getByTestId("chat-agent-current")).toHaveText("Claude Code");
+  await expect(pill).toHaveAccessibleName(/Claude Code/);
   await expect(page.getByTestId("chat-model-current")).toHaveText("claude deep");
 });
 
