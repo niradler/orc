@@ -259,6 +259,16 @@ html[data-chat-font="serif"] {
     display: none;
   }
 
+  .composer-chip [data-chip-main] {
+    justify-content: center;
+    gap: 0;
+  }
+
+  /* The composite chip's border sits outside the inner button's 32px target. */
+  .composer-chip:has([data-chip-main]) {
+    width: 34px;
+  }
+
   .chat-composer-tools,
   .chat-workspace-controls {
     flex-wrap: nowrap;

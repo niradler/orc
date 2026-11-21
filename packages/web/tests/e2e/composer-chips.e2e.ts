@@ -230,6 +230,7 @@ test("@sanity long model names stay readable in the composer chip and picker", a
       if (width === 390) {
         // Compact composer keeps the approved icon-only row; the full name stays
         // in the accessible name and one tap away in the picker.
+        await expect(chip).toBeVisible();
         await expect(chip.getByTestId("chat-model-current")).toBeHidden();
         await expect(page.getByTestId("chat-model-help")).toBeHidden();
         const bounds = await chip.boundingBox();
@@ -244,6 +245,8 @@ test("@sanity long model names stay readable in the composer chip and picker", a
         );
       } else {
         // The chip shows the core name; the rest lives in the help popover.
+        // Fullscreen remounts the composer; wait for the labeled chip before measuring.
+        await expect(chip.getByTestId("chat-model-current")).toBeVisible();
         const bounds = await chip.boundingBox();
         expect(bounds?.width).toBeLessThanOrEqual(256);
         await expect(chip.getByTestId("chat-model-current")).toHaveText(scenario.short);

@@ -153,10 +153,11 @@ export function AgentModelPicker({
   const trigger = (
     <button
       type="button"
+      data-chip-main
       data-testid={`${testIdPrefix}-agent-model-button`}
       aria-label={`Agent and model: ${name}, ${accessibleSummary ?? modelName}`}
       disabled={!ready}
-      className={cn(composerChip, "max-w-64 text-on-surface")}
+      className="inline-flex min-w-0 flex-1 self-stretch items-center gap-1.5 focus-visible:outline-hidden"
     >
       <AgentIcon agent={agent} decorative size={14} />
       <span
@@ -181,7 +182,12 @@ export function AgentModelPicker({
     </button>
   );
   return (
-    <span className="inline-flex min-w-0 items-center gap-0.5">
+    <span
+      className={cn(
+        composerChip,
+        "max-w-[min(16rem,100%)] gap-1 text-on-surface max-[767px]:min-h-[46px] max-[767px]:min-w-[46px] pointer-coarse:min-h-[46px] pointer-coarse:min-w-[46px] any-pointer-coarse:min-h-[46px] any-pointer-coarse:min-w-[46px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus has-[:disabled]:opacity-40 has-[[data-state=open]]:bg-surface-highest has-[[data-state=open]]:text-on-surface",
+      )}
+    >
       <Popover
         open={open}
         onOpenChange={(next) => {
@@ -535,8 +541,12 @@ export function AgentModelPicker({
         </PopoverContent>
       </Popover>
       {hasModelDetail && (
-        <span data-chip-help className="inline-flex">
-          <HelpPopover label={`${name} model`} testId={`${testIdPrefix}-model-help`}>
+        <span data-chip-help className="inline-flex shrink-0 self-stretch">
+          <HelpPopover
+            label={`${name} model`}
+            testId={`${testIdPrefix}-model-help`}
+            className="h-full w-8 max-sm:w-11 pointer-coarse:w-11 lg:h-full lg:w-8 focus-visible:outline-hidden"
+          >
             <span className="block wrap-break-word" data-testid={`${testIdPrefix}-model-help-name`}>
               {modelName}
             </span>
