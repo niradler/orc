@@ -14,7 +14,7 @@
     "start": "bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "build": "bun build src/index.ts src/code-worker.ts --outdir dist --target bun --define ORC_NPM_BUNDLE:true",
-    "test": "bun test",
+    "test": "bun test --max-concurrency=1",
     "clean": "rm -rf dist"
   },
   "dependencies": {
