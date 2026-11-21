@@ -302,23 +302,6 @@ export function modelDisplayName(id: string): string {
   return words.join(" ") || id;
 }
 
-const MODEL_QUALIFIERS = /[(,–—]|\s+-\s+|\s+with\s+|\s+featuring\s+/i;
-const MODEL_BRAND_PREFIX: Record<string, string> = { claude: "Claude " };
-
-/** Compact name shown on the composer chip. Only trailing qualifier clauses
- *  ("(1M context)", ", 200K", " with extended thinking") and a brand word that
- *  repeats the agent icon are dropped; a custom id is shown exactly as typed. */
-export function shortModelLabel(label: string, id: string, agent: string): string {
-  if (!id || label === id) return label;
-  const core = (label.split(MODEL_QUALIFIERS)[0] ?? label).trim();
-  const brand = MODEL_BRAND_PREFIX[agent];
-  const short =
-    brand && core.startsWith(brand) && core.length > brand.length
-      ? core.slice(brand.length).trim()
-      : core;
-  return short || label;
-}
-
 export function resolveAgentId(id: string | null | undefined): string | null {
   if (!id) return null;
   return codingAgent(id)?.id ?? agentForSessionBackend(id)?.id ?? null;

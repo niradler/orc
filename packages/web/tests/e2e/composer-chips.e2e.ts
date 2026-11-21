@@ -182,19 +182,19 @@ const MODEL_SCENARIOS = [
     agent: "claude",
     id: "claude-opus-4-6[1m]",
     label: "Claude Opus 4.6 (1M context) with extended thinking",
-    short: "Opus 4.6",
+    description: "Deepest reasoning for large codebases and long runs.",
   },
   {
     agent: "codex",
     id: "gpt-5.2-codex",
     label: "GPT-5.2 Codex with max reasoning",
-    short: "GPT-5.2 Codex",
+    description: "Fast coding pass for scoped changes.",
   },
   {
     agent: "opencode",
     id: "qwen3-max-preview",
     label: "Qwen3 Max Preview (thinking)",
-    short: "Qwen3 Max Preview",
+    description: "Open-weight preview with visible thinking.",
   },
 ] as const;
 const LONG_MODEL = MODEL_SCENARIOS[0];
@@ -243,12 +243,13 @@ test("@sanity long model names stay readable in the composer chip and picker", a
         );
         await page.screenshot({ path: test.info().outputPath(`picker-${width}.png`) });
       } else {
-        // Resting chip is clean: core name, no help icon until the menu opens.
-        // Fullscreen remounts the composer; wait for the labeled chip before measuring.
+        // Resting chip: the provider's model label (truncated if long), no help
+        // icon until the menu opens. Fullscreen remounts the composer; wait for
+        // the labeled chip before measuring.
         await expect(chip.getByTestId("chat-model-current")).toBeVisible();
         const bounds = await chip.boundingBox();
         expect(bounds?.width).toBeLessThanOrEqual(256);
-        await expect(chip.getByTestId("chat-model-current")).toHaveText(scenario.short);
+        await expect(chip.getByTestId("chat-model-current")).toHaveText(scenario.label);
         const help = page.getByTestId("chat-model-help");
         await expect(help).toBeHidden();
         // Opening the menu reveals the i inside the chip, beside the model name.
@@ -259,34 +260,41 @@ test("@sanity long model names stay readable in the composer chip and picker", a
         const content = page.getByTestId("chat-model-help-content");
         await expect(content).toBeVisible();
         await expect(page.getByTestId("chat-model-help-name")).toHaveText(scenario.label);
+        await expect(content).toContainText(scenario.description);
         // The popover adapts to its text instead of a fixed 320px box.
-        const contentBounds = await content.boundingBox();
-        expect(contentBounds?.width).toBeLessThanOrEqual(320);
-        if (scenario.agent !== "claude") expect(contentBounds?.width).toBeLessThan(300);
+        expect((await content.boundingBox())?.width).toBeLessThanOrEqual(320);
         await page.screenshot({
           path: test.info().outputPath(`chip-${scenario.agent}-${width}.png`),
         });
         // Using the i keeps the menu open (it lives outside the popover content).
         await help.click();
         await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+        await page.mouse.move(0, 0);
+        await expect(content).toBeHidden();
       }
       const option = page.getByTestId(`chat-model-option-${scenario.id}`);
       const label = page.getByTestId(`chat-model-label-${scenario.id}`);
-      await expect(label).toHaveText(scenario.short);
-      // The compact row shows the short name; hover, focus and the info button
-      // reveal the qualifiers, the raw id and the description.
+      // The row is the provider's label only; its description is behind the i.
+      await expect(label).toHaveText(scenario.label);
+      await expect(option).not.toContainText(scenario.description);
+      if (width === 390) {
+        // On touch the row i carries the description and keeps the menu open.
+        await page.getByTestId(`chat-model-help-${scenario.id}`).click();
+        await expect(page.getByTestId(`chat-model-help-${scenario.id}-content`)).toContainText(
+          scenario.description,
+        );
+        await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+        await page.keyboard.press("Escape");
+      }
       await option.hover();
       await expect(page.getByTestId(`chat-model-tooltip-${scenario.id}`)).toContainText(
-        scenario.label,
+        scenario.description,
       );
       if (width !== 390) {
         await page.screenshot({
           path: test.info().outputPath(`picker-hover-${scenario.agent}-${width}.png`),
         });
       }
-      expect(await label.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-        true,
-      );
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("chat-send-button")).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
@@ -339,12 +347,18 @@ test.describe("touch composer", () => {
     await page.getByTestId("chat-model-help").tap();
     await expect(page.getByTestId("chat-model-help-name")).toHaveText(raw.label);
     await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
-    // The row's own info button is reachable on touch and reveals the same details.
+    await page.getByTestId("chat-model-help").tap();
+    await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+    // The row shows the whole label in one line and scrolls it sideways on touch
+    // rather than hiding part of it behind an icon.
+    await expect(page.getByTestId(`chat-model-option-${raw.id}`)).toContainText(raw.label);
+    await expect(page.getByTestId(`chat-model-option-${raw.id}`)).not.toContainText(
+      raw.description,
+    );
     await page.getByTestId(`chat-model-help-${raw.id}`).tap();
     await expect(page.getByTestId(`chat-model-help-${raw.id}-content`)).toContainText(
       raw.description,
     );
-    await expect(page.getByTestId(`chat-model-option-${raw.id}`)).toBeVisible();
     const row = page.getByTestId(`chat-model-label-${raw.id}`);
     expect(
       await row.evaluate((element) => ({

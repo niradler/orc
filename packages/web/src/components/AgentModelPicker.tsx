@@ -17,7 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import { type AgentEffortChoice, shortModelLabel } from "@/lib/composer-chips";
+import type { AgentEffortChoice } from "@/lib/composer-chips";
 import { cn } from "@/lib/utils";
 
 const rowAction =
@@ -28,9 +28,8 @@ const rowHelp = cn(
   "hidden size-6 max-[767px]:inline-flex pointer-coarse:inline-flex lg:size-6",
 );
 
-/** Full label, raw id and description of one model. The compact chip and picker
- *  rows show the short name; this is what hover, the info button and the
- *  accessible name disclose. */
+/** Full label, raw id and description of the selected model, for the chip's info
+ *  popover and the picker's hover help. */
 function ModelDetails({
   label,
   id,
@@ -61,12 +60,11 @@ function ModelDetails({
   );
 }
 
-/** One model row: compact label, description, hover details and the actions that
- *  reveal the full label on touch. */
+/** One model row: the provider's label only. The description it sends is help,
+ *  not part of the name, so it lives behind the info button (and hover). */
 function ModelRow({
   id,
   label,
-  short,
   description,
   selected,
   disabled,
@@ -77,7 +75,6 @@ function ModelRow({
 }: {
   id: string;
   label: string;
-  short: string;
   description?: string | undefined;
   selected: boolean;
   disabled: boolean;
@@ -87,15 +84,13 @@ function ModelRow({
   onFavorite?: ((model: string) => void) | undefined;
 }) {
   const [hovered, setHovered] = useState(false);
-  const detailed = short !== label || !!description;
+  const detailed = !!description;
   const row = (
     <div
       className="flex min-w-0 items-center"
       onPointerEnter={
         detailed
           ? (event) => {
-              // Hover help is for mice; touch reveals the same details through
-              // the row's info button instead of a flash on tap.
               if (event.pointerType === "mouse") setHovered(true);
             }
           : undefined
@@ -107,7 +102,7 @@ function ModelRow({
         role="menuitemradio"
         data-chip-option
         aria-checked={selected}
-        aria-label={detailed ? `${label}${description ? `. ${description}` : ""}` : undefined}
+        aria-label={detailed ? `${label}. ${description}` : undefined}
         data-testid={
           id ? `${testIdPrefix}-model-option-${id}` : `${testIdPrefix}-model-option-default`
         }
@@ -121,11 +116,8 @@ function ModelRow({
             data-testid={`${testIdPrefix}-model-label-${id || "default"}`}
             className="min-w-0 truncate"
           >
-            {short}
+            {label}
           </span>
-          {description && (
-            <span className="line-clamp-2 text-xs text-muted-foreground">{description}</span>
-          )}
         </span>
         {selected && <Check size={14} aria-hidden="true" />}
       </button>
@@ -187,7 +179,6 @@ export function AgentModelPicker({
   modelsDisabled = false,
   fetching = false,
   warning,
-  summary: suppliedSummary,
   note,
   started = false,
   testIdPrefix = "chat",
@@ -218,7 +209,6 @@ export function AgentModelPicker({
   modelsDisabled?: boolean;
   fetching?: boolean;
   warning?: string | null | undefined;
-  summary?: string;
   note?: string | undefined;
   started?: boolean;
   testIdPrefix?: string;
@@ -247,11 +237,10 @@ export function AgentModelPicker({
   const effortList = useRef<HTMLDivElement>(null);
   const name = agentName ?? agentLabel(agent);
   const modelName = choices.get(selectedModel) || selectedModel || "Agent default";
-  const shortModel = shortModelLabel(modelName, selectedModel, agent);
-  const summary = suppliedSummary ?? shortModel;
   const effortChoices = efforts ?? [];
   const shown = tab === "effort" && !effortChoices.length ? "model" : tab;
   const effortLabel = effortChoices.find((choice) => choice.value === (effort ?? ""))?.label;
+  const summary = effortLabel ? `${modelName} · ${effortLabel}` : modelName;
   const description = descriptions?.get(selectedModel);
   const modelRows = [["", "Agent default"] as const, ...choices]
     .filter(([id, label]) =>
@@ -418,7 +407,7 @@ export function AgentModelPicker({
                 {(
                   [
                     ["agent", "Agent", name, name],
-                    ["model", "Model", summary, modelName],
+                    ["model", "Model", modelName, modelName],
                     ...(effortChoices.length
                       ? [
                           [
@@ -561,7 +550,6 @@ export function AgentModelPicker({
                       key={id || "default"}
                       id={id}
                       label={label}
-                      short={shortModelLabel(label, id, agent)}
                       description={descriptions?.get(id)}
                       selected={selectedModel === id}
                       disabled={modelsDisabled}
