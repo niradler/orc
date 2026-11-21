@@ -3012,9 +3012,16 @@ async function beginTurn(
         thread.runtimeId = nativeId;
       // A confirmed non-command turn owns the instructions in the history of a
       // prompt-riding session, so later turns stop delivering them. A turn that
-      // never reached the agent (no result) or ran only a slash command keeps
-      // the offer alive. System-slot sessions re-apply the append every turn.
-      if (receivedResult && !noResumableSession && !commandTurn && run.session?.systemPromptOnce)
+      // never reached the agent (no result), ran only a slash command, or left
+      // no resumable identity keeps the offer alive. System-slot sessions
+      // re-apply the append every turn.
+      if (
+        receivedResult &&
+        !noResumableSession &&
+        !commandTurn &&
+        run.session?.systemPromptOnce &&
+        thread.runtimeId
+      )
         thread.systemPromptDelivered = true;
       if (thread.forkedFrom?.mode === "native" && !thread.runtimeId && !thread.forkPending) {
         // The provider accepted the fork request but never returned an identity.
@@ -3026,6 +3033,9 @@ async function beginTurn(
           "context",
           failure ?? "The native fork did not establish a session.",
         );
+        // The retry replays stored messages into a fresh native session; the
+        // inherited delivery mark must not suppress the instructions there.
+        delete thread.systemPromptDelivered;
         const fallback = buildContinuation(thread.messages, "fork");
         thread.forkContext = {
           messageCount: fallback.messageCount,
