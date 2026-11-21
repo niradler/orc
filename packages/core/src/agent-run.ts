@@ -19,8 +19,8 @@ export const AgentRunSchema = z.object({
     .max(200)
     .regex(/^[a-z0-9][a-z0-9._:/@+-]*$/i)
     .optional(),
-  /** Reasoning effort for runtimes that take one; "" or absent means the
-   *  adapter default. Applied through the same launch options as chat. */
+  /** Reasoning effort for runtimes that take one. `""` clears any effort stored
+   *  in `options`; absent leaves those launch options untouched. */
   effort: z
     .string()
     .trim()
@@ -90,5 +90,7 @@ export function withAgentRunEffort(
   effort: string | undefined,
 ): ChatAgentOptions | undefined {
   if (effort === undefined) return options;
+  // Nothing to clear: leave the provider profile's defaults in place.
+  if (effort === "" && !options) return undefined;
   return withChatEffort(agent === "codex-cli" ? "codex" : agent, options, effort) ?? options;
 }

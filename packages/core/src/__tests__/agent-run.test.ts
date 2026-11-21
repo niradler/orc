@@ -62,6 +62,8 @@ test("run effort follows the agent's launch options and stays the source of trut
   expect(
     withAgentRunEffort("claude", { runtime: "claude-sdk", options: { effort: "max" } }, ""),
   ).toEqual({ runtime: "claude-sdk", options: {} });
+  // Clearing with nothing stored must not shadow the provider profile's defaults.
+  expect(withAgentRunEffort("claude", undefined, "")).toBeUndefined();
   // Agents without an effort keep their options untouched.
   expect(withAgentRunEffort("a2a", { runtime: "acpx", args: ["--x"] }, undefined)).toEqual({
     runtime: "acpx",
