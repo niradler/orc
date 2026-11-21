@@ -67,7 +67,9 @@ export function JobActionFields({
         <>
           <div className="space-y-1.5">
             <Label>Agent and model</Label>
-            <JobAgentPicker value={value} onChange={onChange} host={executionHost} cwd={cwd} />
+            <div className="min-w-0">
+              <JobAgentPicker value={value} onChange={onChange} host={executionHost} cwd={cwd} />
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor={`${id}-prompt`}>Instructions</Label>

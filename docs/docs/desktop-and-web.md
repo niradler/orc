@@ -435,12 +435,16 @@ final argument, so a custom interpreter needs its command option, such as `-c`.
 The interpreter must be installed on the destination. Host default uses sh on Unix
 and Windows PowerShell on Windows; jobs saved before this setting retain sh.
 
-Agent jobs save a prompt, backend, optional model, explicit automatic tool approval
-and supported launch options. Agent and model use the same picker as Chat: enabled
-agents, models reported by the provider on the job's selected host/directory,
-Agent default and an explicit Custom model option. A saved model remains selectable
-if discovery is temporarily unavailable. Changing agents clears the previous model
-and launch options. New agent jobs default to an isolated, detached Git
+Agent jobs save a prompt, backend, optional model and reasoning effort, the
+permission level and supported launch options. Agent and model use the same picker
+as Chat: enabled agents, models reported by the provider on the job's selected
+host/directory, the model's effort values, Agent default and an explicit Custom
+model option. The picker also lists saved composer profiles; choosing one applies
+its agent, model and effort, and maps its permission mode onto the job's level
+(Allow edits to `accept_edits`, Auto or Full access to `auto`; Ask in chat and Plan
+leave the job level unchanged). A saved model remains selectable if discovery is
+temporarily unavailable. Changing agents clears the previous model, effort and
+launch options. New agent jobs default to an isolated, detached Git
 worktree for each run. `HEAD` inherits the project checkout's current commit; override
 it with a branch or remote-tracking ref. ORC does not fetch, reset or push the base.
 **Clean up worktree after a successful run** is off by default. When enabled, cleanup
@@ -620,12 +624,15 @@ default or a level such as Low, High or Extra high; the choice applies to the ne
 turn and is kept with that agent's chat options. Other adapters have no effort
 setting.
 
-Each discovered model shows the agent's own description under its name, unless the
-description only repeats the name. When the agent reports which effort levels a
-model supports (Claude Code and Codex do), the Effort column lists only those; a
-model that reports none, such as Haiku, has no Effort column, and switching to a
-model that lacks the selected level resets it to the default. A list of more than
-six models adds a search field; Enter picks the first match.
+Rows show the provider's model label exactly as it arrives. Hovering a row while
+the panel is open reveals its full label, raw id and the agent's own description;
+nothing is hidden behind an icon or shown on the closed chip. A saved **composer
+profile** replaces the model name in the chip while the current agent, model,
+effort and permission mode still match it. When the agent reports which effort
+levels a model supports (Claude Code and Codex do), the Effort column lists only
+those; a model that reports none, such as Haiku, has no Effort column, and
+switching to a model that lacks the selected level resets it to the default. A
+list of more than six models adds a search field; Enter picks the first match.
 
 On a phone the picker opens on a Model tab, beside Agent and Effort tabs that are
 labelled with the current choices. Picking an agent moves to Model, picking a

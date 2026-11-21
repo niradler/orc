@@ -670,7 +670,9 @@ test("coding-session selection opens native history before sending a continuatio
   await page.getByTestId("chat-session-search").fill("Imported coding work");
   await page.getByTestId("chat-resume-live").filter({ hasText: "Imported coding work" }).click();
   await expect(page.getByTestId("chat-message-content")).toContainText("Earlier native answer");
-  await expect(page.getByTestId("chat-agent-current")).toHaveText("Codex");
+  await expect(
+    page.getByTestId("chat-agent-model-button").filter({ visible: true }),
+  ).toHaveAccessibleName(/Codex/);
   await openChatSettings(page);
   await expect(page.getByTestId("chat-config-dialog")).toContainText("/fixture/repository");
 });

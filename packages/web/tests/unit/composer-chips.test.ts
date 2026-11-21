@@ -5,7 +5,6 @@ import {
   agentEffort,
   agentEffortChoices,
   agentEffortValue,
-  agentModelLabel,
   branchChipLabel,
   branchName,
   currentWorktree,
@@ -154,10 +153,6 @@ describe("agent and model", () => {
         },
       }),
     ).toBe("Extra high");
-  });
-  test("agentModelLabel joins model and effort", () => {
-    expect(agentModelLabel("Opus 5.5", "High")).toBe("Opus 5.5 · High");
-    expect(agentModelLabel("Default", null)).toBe("Default");
   });
   test("offers effort choices only for adapters that accept them", () => {
     expect(agentEffortChoices("claude").map((choice) => choice.value)).toEqual([

@@ -293,12 +293,16 @@ supplying an array replaces it, and an empty array clears it. Names are unique
 secret values are redacted from job logs and saved agent summaries. Legacy `env_vars`
 inputs remain supported as nonsecret values; reads expose them through `environment`.
 Do not supply both forms in one write. An agent action is `{ type: "agent", prompt }`
-plus the agent spec shared with channel rules: `agent`, optional `model`, `profile`
-(an agent profile used as the persona) and `options` (the validated launch options
-for that agent), and `permissions`: `ask` (default), `read_only`, `accept_edits` or
+plus the agent spec shared with channel rules: `agent`, optional `model`, optional
+`effort` (the model's reasoning effort, applied as that runtime's launch option),
+`profile` (an agent profile used as the persona) and `options` (the validated launch
+options for that agent), and `permissions`: `ask` (default), `read_only`, `accept_edits` or
 `auto`. Jobs run unattended, so tool requests the level does not cover are denied.
-Launch options that approve more than `permissions` allows are rejected. Jobs saved
-with the older `backend` and `auto_approve` fields read back in this shape.
+`effort` is checked against the agent's own levels (Claude, Codex and Pi); OpenCode
+accepts the model's live values, and agents without effort reject the field. An
+action without `effort` keeps any effort already stored in `options`; send `""` to
+clear it. Launch options that approve more than `permissions` allows are rejected.
+Jobs saved with the older `backend` and `auto_approve` fields read back in this shape.
 
 Job runs expose `session_id` for the audit record and `native_session_id` for the
 provider identity. The run-session resolver checks run ownership and discovers only

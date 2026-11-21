@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ChatAgentOptions, ChatAgentOptionsSchema } from "./chat-options.js";
+import { type ChatAgentOptions, ChatAgentOptionsSchema, withChatEffort } from "./chat-options.js";
 
 export const AgentPermissions = ["ask", "read_only", "accept_edits", "auto"] as const;
 export type AgentPermission = (typeof AgentPermissions)[number];
@@ -18,6 +18,13 @@ export const AgentRunSchema = z.object({
     .min(1)
     .max(200)
     .regex(/^[a-z0-9][a-z0-9._:/@+-]*$/i)
+    .optional(),
+  /** Reasoning effort for runtimes that take one. `""` clears any effort stored
+   *  in `options`; absent leaves those launch options untouched. */
+  effort: z
+    .string()
+    .trim()
+    .regex(/^$|^[a-z][a-z0-9_-]{0,31}$/i)
     .optional(),
   profile: z.string().min(1).max(100).optional(),
   options: ChatAgentOptionsSchema.optional(),
@@ -71,4 +78,19 @@ export function agentRunSessionOptions(
       ? { chatAgentOptions: run.options }
       : {}),
   };
+}
+
+/** Applies a run's effort to the launch options the same way chat does.
+ *  `codex-cli` shares Codex's runtime. An absent effort leaves the options
+ *  untouched (channel defaults keep theirs); `""` clears a stored one. Runtimes
+ *  without effort keep their options even if a value slips through. */
+export function withAgentRunEffort(
+  agent: string,
+  options: ChatAgentOptions | undefined,
+  effort: string | undefined,
+): ChatAgentOptions | undefined {
+  if (effort === undefined) return options;
+  // Nothing to clear: leave the provider profile's defaults in place.
+  if (effort === "" && !options) return undefined;
+  return withChatEffort(agent === "codex-cli" ? "codex" : agent, options, effort) ?? options;
 }

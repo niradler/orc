@@ -1,5 +1,17 @@
 import { expect, test } from "@playwright/test";
-import { apiGet, gotoView, tid } from "./_helpers";
+import { AUTH_HEADERS, apiGet, gotoView, tid } from "./_helpers";
+
+test.afterEach(async ({ request }) => {
+  const current = await (await request.get("/api/settings", { headers: AUTH_HEADERS })).json();
+  if (!current.composer_profiles?.length) return;
+  await request.patch("/api/settings", {
+    headers: AUTH_HEADERS,
+    data: {
+      composer_revision: current.composer_revision,
+      composer_profiles: [],
+    },
+  });
+});
 
 for (const [width, theme] of [
   [1440, "dark"],
@@ -122,10 +134,33 @@ for (const width of [1440, 390]) {
       const agent = url.searchParams.get("agent");
       await route.fulfill({
         json: {
-          models: [{ id: `${agent}-fixture`, label: `${agent} fixture model` }],
+          models: [
+            {
+              id: `${agent}-fixture`,
+              label: `${agent} fixture model`,
+              efforts: ["low", "medium", "high"],
+            },
+          ],
           warning: null,
         },
       });
+    });
+    const current = await (await request.get("/api/settings", { headers: AUTH_HEADERS })).json();
+    await request.patch("/api/settings", {
+      headers: AUTH_HEADERS,
+      data: {
+        composer_revision: current.composer_revision,
+        composer_profiles: [
+          {
+            id: "deep-run",
+            name: "Deep run",
+            agent: "claude",
+            model: "claude-fixture",
+            effort: "high",
+            permissionMode: "auto",
+          },
+        ],
+      },
     });
     await gotoView(page, "jobs");
     await page.getByTestId("new-job-button").click();
@@ -142,8 +177,22 @@ for (const width of [1440, 390]) {
     await page.getByTestId("job-agent-option-claude").click();
     await page.getByTestId("job-model-option-claude-fixture").click();
     await expect(page.getByTestId("job-model-current")).toContainText("claude fixture model");
+    if (!(await page.getByTestId("job-agent-model-picker").isVisible()))
+      await page.getByTestId("job-agent-model-button").click();
+    if (await page.getByTestId("job-picker-tab-effort").isVisible())
+      await page.getByTestId("job-picker-tab-effort").click();
+    await page.getByTestId("job-effort-option-high").click();
+    if (await page.getByTestId("job-agent-model-picker").isVisible())
+      await page.keyboard.press("Escape");
+    await expect(page.getByTestId("job-model-effort")).toHaveText("· High");
     expect(queriedHosts).toContain("__local__");
     await page.getByTestId("job-agent-prompt").fill("Inspect the incoming event");
+    // A saved composer profile applies its agent, model, effort and permission.
+    await page.getByTestId("job-agent-model-button").click();
+    await expect(page.getByTestId("job-profile-deep-run")).toBeVisible();
+    await page.getByTestId("job-profile-deep-run").click();
+    await expect(page.getByTestId("job-agent-permissions")).toHaveValue("auto");
+    await expect(page.getByTestId("job-model-effort")).toHaveText("· High");
     await page.getByTestId("job-agent-permissions").selectOption("read_only");
     await page.getByTestId("job-agent-permissions").scrollIntoViewIfNeeded();
     await page
@@ -159,7 +208,7 @@ for (const width of [1440, 390]) {
       jobs: {
         id: string;
         name: string;
-        action: { agent: string; model: string; permissions: string };
+        action: { agent: string; model: string; effort: string; permissions: string };
       }[];
     }>(request, "/jobs");
     const saved = jobs.find((job) => job.name === name);
@@ -167,6 +216,7 @@ for (const width of [1440, 390]) {
     expect(saved.action).toMatchObject({
       agent: "claude",
       model: "claude-fixture",
+      effort: "high",
       permissions: "read_only",
     });
     await page.reload();
@@ -177,6 +227,7 @@ for (const width of [1440, 390]) {
     await page.getByTestId("form-step-destination").click();
     await expect(page.getByTestId("job-agent-current")).toHaveText("Claude Code");
     await expect(page.getByTestId("job-model-current")).toHaveText("claude fixture model");
+    await expect(page.getByTestId("job-model-effort")).toHaveText("· High");
     await expect(page.getByTestId("job-agent-permissions")).toHaveValue("read_only");
   });
 }

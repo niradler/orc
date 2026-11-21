@@ -147,9 +147,14 @@ for (const width of [390, 1440]) {
     await gotoView(page, "activity");
     await page.goto("/?chat=open");
     await openChatModel(page);
-    await expect(page.getByTestId("chat-model-option-gpt-sol")).toContainText(
+    // Rows carry the model name; the description lives behind the row's help.
+    const row = page.getByTestId("chat-model-option-gpt-sol");
+    await expect(row).not.toContainText("sol model description");
+    await row.hover();
+    await expect(page.getByTestId("chat-model-tooltip-gpt-sol")).toContainText(
       "sol model description",
     );
+    await page.mouse.move(0, 0);
     await page.getByTestId("chat-model-option-gpt-sol").click();
     await chooseChatEffort(page, "xhigh");
     await openChatModel(page);

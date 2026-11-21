@@ -19,7 +19,6 @@ import {
   agentEffort,
   agentEffortChoices,
   agentEffortValue,
-  agentModelLabel,
   effectivePermissionMode,
   liveEffortChoices,
   permissionModes,
@@ -28,6 +27,7 @@ import {
   withPermissionMode,
 } from "@/lib/composer-chips";
 import { isRemoteHost } from "@/lib/host-labels";
+import { cn } from "@/lib/utils";
 
 const profileChip =
   "inline-flex min-h-8 items-center px-2 text-xs hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus max-sm:min-h-11 pointer-coarse:min-h-11";
@@ -105,7 +105,6 @@ export function ChatAgentModelPicker() {
     if (thread && options) void chat.applyAgentOptions(config.agent, options).catch(() => {});
   }, [staleEffort, config, setConfig, thread, chat]);
   const name = selectedProvider?.name ?? agentLabel(config.agent);
-  const summary = agentModelLabel(modelName, effort);
   const started = !!thread || streaming;
   const navigate = useNavigate();
   const preferences = useComposerPreferences();
@@ -143,6 +142,18 @@ export function ChatAgentModelPicker() {
     if (thread && options) void chat.applyAgentOptions(profile.agent, options).catch(() => {});
   }
   const mode = effectivePermissionMode(config);
+  // A profile is "selected" only while every value it carries still matches the
+  // composer; any later model/effort/permission change drops the label back to
+  // the model. Ambiguous duplicates fall back to the model name.
+  const matchingProfiles = preferences.profiles.filter(
+    (profile) =>
+      profile.agent === config.agent &&
+      (profile.providerId ?? profile.agent) === (config.providerId ?? config.agent) &&
+      profile.model === config.model &&
+      profile.effort === effortValue &&
+      (!profile.permissionMode || profile.permissionMode === mode),
+  );
+  const activeProfile = matchingProfiles.length === 1 ? matchingProfiles[0] : undefined;
   const currentSettings = {
     agent: config.agent,
     ...(config.providerId ? { providerId: config.providerId } : {}),
@@ -246,13 +257,18 @@ export function ChatAgentModelPicker() {
                 <button
                   type="button"
                   data-testid={`chat-profile-${profile.id}`}
+                  aria-current={activeProfile?.id === profile.id ? "true" : undefined}
                   disabled={!ready || streaming}
                   title={profileSummary(profile)}
                   onClick={() => {
                     applyProfile(profile);
                     close();
                   }}
-                  className={`${profileChip} min-w-0 truncate`}
+                  className={cn(
+                    profileChip,
+                    "min-w-0 truncate",
+                    activeProfile?.id === profile.id && "bg-surface-highest text-on-surface",
+                  )}
                 >
                   {profile.name}
                 </button>
@@ -350,6 +366,7 @@ export function ChatAgentModelPicker() {
         </div>
       )}
       selectedModel={config.model}
+      profileName={activeProfile?.name}
       agents={agents}
       choices={choices}
       descriptions={
@@ -364,7 +381,6 @@ export function ChatAgentModelPicker() {
       modelsDisabled={modelsDisabled}
       fetching={catalog.isFetching}
       warning={warning}
-      summary={summary}
       accessibleSummary={`${modelName}${effort ? `, ${effort} effort` : ""}`}
       note={note}
       started={started}

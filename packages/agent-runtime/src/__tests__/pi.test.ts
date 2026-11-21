@@ -65,6 +65,46 @@ test("Pi model discovery preserves provider identity and job options use the nat
       type: "agent",
       agent: "pi",
       prompt: "Check files",
+      effort: "high",
+    }).success,
+  ).toBe(true);
+  expect(
+    JobActionSchema.safeParse({
+      type: "agent",
+      agent: "a2a",
+      prompt: "Check files",
+      effort: "high",
+    }).success,
+  ).toBe(false);
+  expect(
+    JobActionSchema.safeParse({
+      type: "agent",
+      agent: "claude",
+      prompt: "Check files",
+      effort: "banana",
+    }).success,
+  ).toBe(false);
+  expect(
+    JobActionSchema.safeParse({
+      type: "agent",
+      agent: "opencode",
+      prompt: "Check files",
+      effort: "banana",
+    }).success,
+  ).toBe(true);
+  expect(
+    JobActionSchema.safeParse({
+      type: "agent",
+      agent: "cursor",
+      prompt: "Check files",
+      effort: "high",
+    }).success,
+  ).toBe(false);
+  expect(
+    JobActionSchema.safeParse({
+      type: "agent",
+      agent: "pi",
+      prompt: "Check files",
       options: { runtime: "acpx", args: [] },
     }).success,
   ).toBe(false);

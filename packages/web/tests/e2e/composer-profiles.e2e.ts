@@ -80,6 +80,8 @@ for (const width of [1440, 390]) {
     await page.getByTestId("chat-profile-name").fill("Deep plan");
     await page.getByTestId("chat-profile-save").click();
     await expect(page.getByTestId("chat-profiles")).toContainText("Deep plan");
+    // The chip names the profile while every value still matches it.
+    await expect(page.getByTestId("chat-model-current")).toHaveText("Deep plan");
     await expect
       .poll(
         async () =>
@@ -108,6 +110,8 @@ for (const width of [1440, 390]) {
       .toEqual([expect.objectContaining({ id, name: "Deep review", effort: "max" })]);
     await showPickerTab(page, "effort");
     await page.getByTestId("chat-effort-option-low").click();
+    // Changing the effort breaks the match, so the chip is the model again.
+    await expect(page.getByTestId("chat-model-current")).toHaveText("Opus");
     await openChatAgentModel(page);
     await page.getByTestId(`chat-profile-edit-${id}`).click();
     await page.getByTestId("chat-profile-replace").check();
@@ -117,6 +121,7 @@ for (const width of [1440, 390]) {
       .toEqual([
         expect.objectContaining({ id, name: "Deep review", model: "opus", effort: "low" }),
       ]);
+    await expect(page.getByTestId("chat-model-current")).toHaveText("Deep review");
 
     await page.keyboard.press("Escape");
     await chooseChatAgent(page, "codex");
@@ -124,7 +129,7 @@ for (const width of [1440, 390]) {
     await page.getByRole("button", { name: "Deep review", exact: true }).click();
     await expect(
       page.getByTestId("chat-agent-model-button").filter({ visible: true }),
-    ).toHaveAccessibleName("Agent and model: Claude Code, Opus, Low effort");
+    ).toHaveAccessibleName("Agent and model: Claude Code, Opus, Low effort, profile Deep review");
     await expect(page.getByTestId("chat-permission-chip")).toHaveAttribute("data-mode", "plan");
 
     await openChatAgentModel(page);

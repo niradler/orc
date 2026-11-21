@@ -290,6 +290,77 @@ export function chatRuntime(agent: string): ChatAgentOptions["runtime"] {
   if (agent === "opencode") return "opencode";
   return "acpx";
 }
+
+/** Effort values a runtime accepts, in increasing order. `null` means the agent
+ *  reports its own live values, and an empty list means it takes no effort. */
+export function agentEffortValues(agent: string): readonly string[] | null {
+  const runtime = chatRuntime(agent);
+  if (runtime === "claude-sdk") return ["low", "medium", "high", "xhigh", "max"];
+  if (runtime === "pi") return ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  if (runtime === "codex") return ["minimal", "low", "medium", "high", "xhigh"];
+  if (runtime === "opencode") return null;
+  return [];
+}
+
+/** Drops every Codex `-c` entry for the key so a new value can replace it cleanly. */
+function withoutSetting(args: readonly string[], key: string): string[] {
+  const kept: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const token = args[index] ?? "";
+    const equals = token.indexOf("=");
+    const flag = equals >= 0 ? token.slice(0, equals) : token;
+    if (flag !== "-c" && flag !== "--config") {
+      kept.push(token);
+      continue;
+    }
+    const value = equals >= 0 ? token.slice(equals + 1) : args[index + 1];
+    const split = value?.indexOf("=") ?? -1;
+    if (value !== undefined && split > 0 && value.slice(0, split).trim() === key) {
+      if (equals < 0) index++;
+      continue;
+    }
+    kept.push(token);
+    if (equals < 0 && index + 1 < args.length) kept.push(args[++index] ?? "");
+  }
+  return kept;
+}
+
+/** Applies a reasoning effort to an agent's launch options, keeping every other
+ *  option. Returns undefined for runtimes that take no effort. `""` clears it. */
+export function withChatEffort(
+  agent: string,
+  saved: ChatAgentOptions | undefined,
+  effort: string,
+): ChatAgentOptions | undefined {
+  const runtime = chatRuntime(agent);
+  if (runtime === "claude-sdk") {
+    const next = saved?.runtime === "claude-sdk" ? { ...saved.options } : {};
+    if (effort) next.effort = effort as NonNullable<typeof next.effort>;
+    else delete next.effort;
+    return { runtime, options: next };
+  }
+  if (runtime === "pi") {
+    const next = saved?.runtime === "pi" ? { ...saved.options } : {};
+    if (effort) next.thinkingLevel = effort as NonNullable<typeof next.thinkingLevel>;
+    else delete next.thinkingLevel;
+    return { runtime, options: next };
+  }
+  if (runtime === "codex") {
+    const args = withoutSetting(
+      saved?.runtime === "codex" ? saved.args : [],
+      "model_reasoning_effort",
+    );
+    if (effort) args.push("-c", `model_reasoning_effort="${effort}"`);
+    return { runtime, args };
+  }
+  if (runtime === "opencode") {
+    const next = saved?.runtime === "opencode" ? { ...saved.options } : {};
+    if (effort) next.effort = effort;
+    else delete next.effort;
+    return { runtime, options: next };
+  }
+  return undefined;
+}
 export const ChatAgentOptionsMapSchema = z
   .record(z.string().regex(/^[a-z][a-z0-9-]{0,31}$/i), ChatAgentOptionsSchema)
   .superRefine((value, context) => {

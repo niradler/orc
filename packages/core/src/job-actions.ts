@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AgentRunSchema, optionsExceedPermissions } from "./agent-run.js";
+import { agentEffortValues } from "./chat-options.js";
 
 export const JobActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("command"), command: z.string().trim().min(1) }).strict(),
@@ -11,14 +12,25 @@ export const JobActionSchema = z.discriminatedUnion("type", [
     })
     .strict()
     .superRefine((action, context) => {
-      if (!action.options) return;
-      if (["claude-cli", "a2a", "agentapi"].includes(action.agent))
+      const efforts = action.effort
+        ? agentEffortValues(action.agent === "codex-cli" ? "codex" : action.agent)
+        : null;
+      if (action.effort && efforts && !efforts.includes(action.effort))
+        context.addIssue({
+          code: "custom",
+          path: ["effort"],
+          message: "This agent does not support that reasoning effort.",
+        });
+      if (["claude-cli", "a2a", "agentapi"].includes(action.agent)) {
+        if (!action.options) return;
         context.addIssue({
           code: "custom",
           path: ["options"],
           message:
             "This agent does not support job launch options. Choose Claude SDK, Codex CLI or ACPX.",
         });
+      }
+      if (!action.options) return;
       const runtime =
         action.agent === "claude"
           ? "claude-sdk"
