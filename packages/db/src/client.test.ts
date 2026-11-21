@@ -1,15 +1,35 @@
 import { Database } from "bun:sqlite";
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stopChangeTracking } from "./changes.js";
 import { createDb, getSqlite } from "./client.js";
 import * as schema from "./schema.js";
 
+const tempDirs: string[] = [];
+afterEach(async () => {
+  // Release file-backed sqlite handles promptly; Windows can lag the release.
+  Bun.gc(true);
+  // Bun 1.4.4 ignores rmSync maxRetries, so retry the busy trees explicitly.
+  for (const dir of tempDirs.splice(0)) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 100) throw error;
+        await Bun.sleep(100);
+      }
+    }
+  }
+}, 15_000);
+
 describe("createDb", () => {
   test("repairs legacy task search duplicates and missing entries across repeated opens", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "orc-task-search-")), "legacy.db");
+    const dir = mkdtempSync(join(tmpdir(), "orc-task-search-"));
+    tempDirs.push(dir);
+    const path = join(dir, "legacy.db");
     const legacy = getSqlite(createDb(path));
     legacy.exec(`
       INSERT INTO tasks(id,title,body,tags) VALUES
@@ -51,7 +71,9 @@ describe("createDb", () => {
   });
 
   test("keeps task search triggers synchronized after reopening", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "orc-task-search-triggers-")), "tasks.db");
+    const dir = mkdtempSync(join(tmpdir(), "orc-task-search-triggers-"));
+    tempDirs.push(dir);
+    const path = join(dir, "tasks.db");
     const first = getSqlite(createDb(path));
     first.exec("INSERT INTO tasks(id,title) VALUES ('task','originalword')");
     stopChangeTracking(first);
@@ -78,7 +100,9 @@ describe("createDb", () => {
   });
 
   test("replaces the legacy every-update search trigger with a text-only one", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "orc-task-search-legacy-trigger-")), "tasks.db");
+    const dir = mkdtempSync(join(tmpdir(), "orc-task-search-legacy-trigger-"));
+    tempDirs.push(dir);
+    const path = join(dir, "tasks.db");
     const legacy = getSqlite(createDb(path));
     legacy.exec(`DROP TRIGGER tasks_au;
       CREATE TRIGGER tasks_au AFTER UPDATE ON tasks BEGIN
@@ -133,7 +157,9 @@ describe("createDb", () => {
   });
 
   test("should migrate an existing project database without losing data and reopen idempotently", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "orc-project-remote-")), "legacy.db");
+    const dir = mkdtempSync(join(tmpdir(), "orc-project-remote-"));
+    tempDirs.push(dir);
+    const path = join(dir, "legacy.db");
     const legacy = new Database(path);
     legacy.exec(`CREATE TABLE projects (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT, status TEXT NOT NULL DEFAULT 'active',
@@ -179,7 +205,9 @@ describe("schema", () => {
   });
 
   test("merges twin live session rows into one and rejects a new twin", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "orc-live-twins-")), "twins.db");
+    const dir = mkdtempSync(join(tmpdir(), "orc-live-twins-"));
+    tempDirs.push(dir);
+    const path = join(dir, "twins.db");
     const legacy = getSqlite(createDb(path));
     legacy.exec(`
       DROP INDEX gateway_sessions_live_native_idx;

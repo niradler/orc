@@ -1,10 +1,18 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AcpxSession } from "../acpx.js";
 import { ClaudeSession } from "../claude.js";
 import type { AgentEvent, AgentSession } from "../types.js";
+
+const owned: { cwd: string; session: AgentSession }[] = [];
+afterEach(async () => {
+  for (const { cwd, session } of owned.splice(0)) {
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
 // Closes stdout first, then reports the failure on stderr and exits non-zero.
 const FAIL_AFTER_STDOUT_CLOSES =
@@ -22,6 +30,7 @@ describe("backend exit after stdout closes", () => {
     const cwd = mkdtempSync(join(tmpdir(), "orc-claude-drain-"));
     // `bun -p <prompt>` evaluates the prompt, standing in for the claude binary.
     const session = new ClaudeSession({ cwd }, process.execPath, { kind: "local" });
+    owned.push({ cwd, session });
     const events = await collect(session, FAIL_AFTER_STDOUT_CLOSES);
     expect(events).toEqual([{ type: "error", data: "backend exploded" }]);
   });
@@ -31,6 +40,7 @@ describe("backend exit after stdout closes", () => {
     const script = join(cwd, "acpx.ts");
     writeFileSync(script, FAIL_AFTER_STDOUT_CLOSES);
     const session = new AcpxSession({ cwd }, [process.execPath, script], { kind: "local" });
+    owned.push({ cwd, session });
     const events = await collect(session, "probe");
     expect(events).toEqual([{ type: "error", data: "acpx exited with code 3: backend exploded" }]);
   });
@@ -44,6 +54,7 @@ describe("backend exit while a leftover child holds the pipes", () => {
       // The trailing `#` swallows the arguments acpx appends; `sleep` keeps stdout/stderr open.
       const backend = ["sh", "-c", "sleep 6 & echo boom >&2; exit 3; #"];
       const session = new AcpxSession({ cwd }, backend, { kind: "local" });
+      owned.push({ cwd, session });
       const started = Date.now();
       const events = await collect(session, "probe");
       expect(Date.now() - started).toBeLessThan(4500);
@@ -58,6 +69,7 @@ describe("a follow-up prompt sent right after a result", () => {
   test("claude keeps the second turn alive while the first process exits", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "orc-claude-followup-"));
     const session = new ClaudeSession({ cwd }, process.execPath, { kind: "local" });
+    owned.push({ cwd, session });
     const first = `console.log(JSON.stringify({type:"result"}));setTimeout(()=>{},3000)`;
     const second = `setTimeout(()=>{console.log(JSON.stringify({type:"assistant",message:{content:[{type:"text",text:"second"}]}}));console.log(JSON.stringify({type:"result"}))},300)`;
     expect(types(await collect(session, first))).toEqual(["result"]);
@@ -76,6 +88,7 @@ describe("a follow-up prompt sent right after a result", () => {
       if(process.argv.at(-1)==="first"){result();setTimeout(()=>{},3000)}else setTimeout(result,300)`,
     );
     const session = new AcpxSession({ cwd }, [process.execPath, script], { kind: "local" });
+    owned.push({ cwd, session });
     expect(types(await collect(session, "first"))).toEqual(["result"]);
     expect(types(await collect(session, "second"))).toEqual(["result"]);
   });

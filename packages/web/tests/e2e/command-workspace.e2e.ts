@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChatSettingsSchema } from "@orc/core/chat";
@@ -22,11 +22,20 @@ import {
   tid,
 } from "./_helpers";
 
+// Both dirs are handed to the shard API (command cwd, chat workspace with an
+// API-created worktree), so retire them after the whole file has run.
+const tempDirs: string[] = [];
+
+test.afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 test("should edit and run a masked command from Attention after reload", async ({
   page,
   request,
 }) => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-pw-command-"));
+  tempDirs.push(cwd);
   const entry = await apiPost<HumanRequest>(request, "/human-requests", {
     kind: "command",
     prompt: "Check service credentials",
@@ -107,6 +116,7 @@ test("should share recent folders and last selection between chat and terminal, 
   request,
 }) => {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "orc-pw-workspace-")));
+  tempDirs.push(cwd);
   mkdirSync(join(cwd, "nested"));
   const git = (args: string[]) => {
     const result = spawnSync("git", ["-C", cwd, ...args], { timeout: 10000, encoding: "utf8" });

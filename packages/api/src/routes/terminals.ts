@@ -386,7 +386,7 @@ app.openapi(createTerminalRoute, async (c) => {
     if (body.kind && body.kind !== body.setup.backend)
       throw new ValidationError("Terminal backend must match the selected setup");
     manager.assertCapacity();
-    const { plan, argv } = await preparePackageLaunch(body.setup, host);
+    const { plan, argv, staging } = await preparePackageLaunch(body.setup, host);
     const info = manager.create({
       launch: await launchOnHost(host, {
         kind: plan.setup.backend,
@@ -395,6 +395,7 @@ app.openapi(createTerminalRoute, async (c) => {
         resume: false,
       }),
       name: body.name ?? plan.setup.name,
+      staging,
     });
     rememberTerminalFolder(info.cwd, info.host);
     recordAudit(c, {

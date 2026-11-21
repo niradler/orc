@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
@@ -74,6 +74,7 @@ afterAll(() => {
     else process.env[key] = value;
   }
   resetConfig();
+  rmSync(cwd, { recursive: true, force: true });
 });
 
 function native(event: AgentEvent, backend = "codex-cli") {

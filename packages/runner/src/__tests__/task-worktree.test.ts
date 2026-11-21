@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerBackend, type SessionOpts } from "@orc/agent-runtime";
@@ -81,6 +81,18 @@ afterAll(() => {
   delete process.env.ORC_DB_PATH;
   delete process.env.ORC_SSH_HOST;
   resetConfig();
+  Bun.gc(true);
+  // Bun 1.4.4 ignores rmSync maxRetries; Windows releases sqlite/git handles
+  // lazily under load, so retry explicitly until the fixture removes.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(fixture, { recursive: true, force: true });
+      break;
+    } catch (error) {
+      if (attempt >= 50) throw error;
+      Bun.sleepSync(100);
+    }
+  }
 });
 
 async function runTask(folder: string | null, repository: string = repo): Promise<string> {

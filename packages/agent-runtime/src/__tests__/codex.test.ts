@@ -1,9 +1,17 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexSession, resolveCodexLaunch } from "../codex.js";
 import type { AgentEvent } from "../types.js";
+
+const owned: { cwd: string; session: CodexSession }[] = [];
+afterEach(async () => {
+  for (const { cwd, session } of owned.splice(0)) {
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
 for (const inheritedOrc of [false, true]) {
   test(`should start and resume with ${inheritedOrc ? "an inherited" : "no inherited"} ORC MCP entry`, async () => {
@@ -17,6 +25,7 @@ for (const inheritedOrc of [false, true]) {
       process.execPath,
       script,
     ]);
+    owned.push({ cwd, session });
     await session.send("First work unit");
     const first: AgentEvent[] = [];
     for await (const event of session.events()) first.push(event);
@@ -59,6 +68,7 @@ test("should surface a failed exit even when stdout closes first", async () => {
     process.execPath,
     script,
   ]);
+  owned.push({ cwd, session });
   await session.send("probe");
   const events: AgentEvent[] = [];
   for await (const event of session.events()) events.push(event);
@@ -84,6 +94,7 @@ for (const listing of ["invalid-json", "failed-command"]) {
       process.execPath,
       script,
     ]);
+    owned.push({ cwd, session });
     await expect(session.send("Question")).rejects.toThrow(
       listing === "invalid-json"
         ? "Codex returned an invalid MCP configuration listing."
@@ -111,6 +122,7 @@ test("should honor native MCP configuration, deliver operator instructions once 
     { kind: "local" },
     async () => [process.execPath, script],
   );
+  owned.push({ cwd, session });
   await session.send("Question");
   const events: AgentEvent[] = [];
   for await (const event of session.events()) events.push(event);
@@ -151,6 +163,7 @@ test("should deliver offered instructions once on a resumed codex thread", async
     { kind: "local" },
     async () => [process.execPath, script],
   );
+  owned.push({ cwd, session });
   await session.send("Question");
   const events: AgentEvent[] = [];
   for await (const event of session.events()) events.push(event);
@@ -180,6 +193,7 @@ test("should skip offered instructions once delivery is confirmed on a codex thr
     { kind: "local" },
     async () => [process.execPath, script],
   );
+  owned.push({ cwd, session });
   await session.send("Question");
   const events: AgentEvent[] = [];
   for await (const event of session.events()) events.push(event);

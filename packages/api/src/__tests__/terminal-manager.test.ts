@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Launch } from "../terminals/launch.js";
 import { TerminalManager, type TerminalSink } from "../terminals/manager.js";
 import type { PtyHandle, SpawnOptions } from "../terminals/spawn.js";
@@ -94,6 +97,16 @@ function sink() {
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
+const stagingDirs: string[] = [];
+afterEach(() => {
+  for (const dir of stagingDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+function stagingDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "orc-manager-staging-"));
+  stagingDirs.push(dir);
+  return dir;
+}
+
 describe("TerminalManager", () => {
   test("spawns with a PTY env and the launch cwd", () => {
     const { manager, ptys } = setup();
@@ -108,6 +121,27 @@ describe("TerminalManager", () => {
       TERM_PROGRAM: "orc",
     });
     expect(ptys[0]?.options.cwd).toBe("/work/app");
+  });
+
+  test("removes the package-launch staging dir when the terminal exits", async () => {
+    const staging = stagingDir();
+    writeFileSync(join(staging, "launch.ts"), "// launch script");
+    const { manager, ptys } = setup();
+    manager.create({ launch: launch(), staging });
+    expect(existsSync(staging)).toBe(true);
+    ptys[0]?.exit(0);
+    await tick();
+    expect(existsSync(staging)).toBe(false);
+  });
+
+  test("removes the staging dir when a running terminal is removed", async () => {
+    const staging = stagingDir();
+    const { manager, ptys } = setup();
+    const { id } = manager.create({ launch: launch(), staging });
+    manager.remove(id);
+    await tick();
+    expect(ptys[0]?.killed).toBe(1);
+    expect(existsSync(staging)).toBe(false);
   });
 
   test("answers device-attribute and colour queries a shell prints", () => {

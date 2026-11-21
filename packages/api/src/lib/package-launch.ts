@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { readAgent } from "@orc/core/agent-service";
@@ -20,7 +20,7 @@ export async function preparePackageLaunch(
   setup: AgentSetup,
   host: ExecHost,
   transport = { exec: hostExec, writeFile: writeHostFile },
-): Promise<{ plan: PackagePlan; argv: string[] }> {
+): Promise<{ plan: PackagePlan; argv: string[]; staging: string | null }> {
   let plan: PackagePlan;
   let bun: string;
   if (host.kind === "local") {
@@ -113,23 +113,32 @@ export async function preparePackageLaunch(
   }
   const source = packagePlanArgv(plan, bun)[2] as string;
   let script: string;
+  let staging: string | null = null;
   if (host.kind === "local") {
-    script = join(mkdtempSync(join(tmpdir(), "orc-package-launch-")), "launch.ts");
+    staging = mkdtempSync(join(tmpdir(), "orc-package-launch-"));
+    script = join(staging, "launch.ts");
     writeFileSync(script, source, { mode: 0o600, flag: "wx" });
   } else {
     script = remoteTempPath("-package-launch.ts");
     await transport.writeFile(host, script, source);
   }
-  return { plan, argv: [bun, script] };
+  return { plan, argv: [bun, script], staging };
 }
 
 /** Chat has no PTY to answer installer prompts. Fail visibly rather than starting unconfigured. */
 export async function installPackageForChat(setup: AgentSetup, host: ExecHost): Promise<string> {
-  const { plan, argv } = await preparePackageLaunch({ ...setup, operation: "install" }, host);
-  const result = await hostExec(host, argv, { cwd: plan.setup.cwd, timeoutMs: 300000 });
-  if (result.code !== 0)
-    throw new ValidationError(
-      "Package preparation did not finish. Use the terminal option to review installer trust, authentication or file-conflict prompts, then retry chat.",
-    );
-  return plan.setup.cwd;
+  const { plan, argv, staging } = await preparePackageLaunch(
+    { ...setup, operation: "install" },
+    host,
+  );
+  try {
+    const result = await hostExec(host, argv, { cwd: plan.setup.cwd, timeoutMs: 300000 });
+    if (result.code !== 0)
+      throw new ValidationError(
+        "Package preparation did not finish. Use the terminal option to review installer trust, authentication or file-conflict prompts, then retry chat.",
+      );
+    return plan.setup.cwd;
+  } finally {
+    if (staging) rmSync(staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
 }

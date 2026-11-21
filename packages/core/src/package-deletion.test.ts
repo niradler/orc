@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -29,6 +30,7 @@ afterAll(() => {
   if (original === undefined) delete process.env.ORC_PACKAGES_DIR;
   else process.env.ORC_PACKAGES_DIR = original;
   reloadCache();
+  rmSync(root, { recursive: true, force: true });
 });
 
 for (const format of ["apm", "agent-plugin"] as const) {

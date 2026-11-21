@@ -1,12 +1,17 @@
 import { Database } from "bun:sqlite";
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changes, type ResourceChange } from "@orc/core/changes";
 import { installChangeTracking, stopChangeTracking } from "../changes.js";
 import { HumanRequestStore } from "../human-requests.js";
 import { installKnowledgeBases } from "../kb.js";
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 describe("database change notifications", () => {
   test("should publish human request transitions but ignore waiting-owner heartbeats", async () => {
@@ -175,7 +180,9 @@ describe("database change notifications", () => {
     }
   });
   test("should observe writes from a separate database connection through filesystem events", async () => {
-    const path = join(mkdtempSync(join(tmpdir(), "orc-change-watch-")), "state.db");
+    const dir = mkdtempSync(join(tmpdir(), "orc-change-watch-"));
+    tempDirs.push(dir);
+    const path = join(dir, "state.db");
     const sqlite = new Database(path);
     sqlite.exec("PRAGMA journal_mode=WAL; CREATE TABLE tasks(id TEXT PRIMARY KEY,title TEXT)");
     installChangeTracking(sqlite, path);

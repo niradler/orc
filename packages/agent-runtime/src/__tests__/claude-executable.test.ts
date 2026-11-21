@@ -1,8 +1,13 @@
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveClaudeSdkLaunch } from "../claude-executable.js";
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 describe("Claude SDK executable resolution", () => {
   test("preserves the npm SDK executable and rejects missing standalone executables", () => {
@@ -15,6 +20,7 @@ describe("Claude SDK executable resolution", () => {
 
   test("resolves a Windows npm shim to its script and an installed interpreter", () => {
     const root = mkdtempSync(join(tmpdir(), "orc-claude-executable-"));
+    tempDirs.push(root);
     const shim = join(root, "claude.cmd");
     const script = join(root, "node_modules", "@anthropic-ai", "claude-code", "cli.js");
     expect(() => resolveClaudeSdkLaunch(true, () => shim)).toThrow("shell shim");

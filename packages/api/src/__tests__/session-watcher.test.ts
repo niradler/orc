@@ -72,19 +72,21 @@ beforeAll(() => {
 
 afterAll(async () => {
   teardownTestApp();
-  // Windows keeps a just-closed fs.watch handle on the directory for a moment.
-  // Bun ignores rmSync's retry options, so retry the busy ones ourselves. The
-  // loop alone allows 5s, so the hook budget must cover it plus teardown.
+  Bun.gc(true);
+  // Windows keeps a just-closed fs.watch handle on the directory for a moment,
+  // and under full-gate load that release can take several seconds. Bun ignores
+  // rmSync's retry options, so retry the busy ones ourselves; the hook budget
+  // must cover the loop plus teardown.
   for (let attempt = 0; ; attempt++) {
     try {
       rmSync(root, { recursive: true, force: true });
       return;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 50) throw error;
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 100) throw error;
       await Bun.sleep(100);
     }
   }
-}, 15_000);
+}, 25_000);
 
 describe("claude adapter: live registry", () => {
   test("a busy registry file becomes a running session", async () => {

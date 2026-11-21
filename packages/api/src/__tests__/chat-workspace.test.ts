@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, realpathSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatThread } from "@orc/core/chat";
@@ -7,6 +7,7 @@ import { resetConfig } from "@orc/core/config";
 import { req, setupTestApp, teardownTestApp } from "./helpers";
 
 let app: ReturnType<typeof setupTestApp>;
+const tempDirs: string[] = [];
 const previous = { mock: process.env.ORC_E2E_CHAT_MOCK, host: process.env.ORC_SSH_HOST };
 beforeAll(() => {
   process.env.ORC_E2E_CHAT_MOCK = "1";
@@ -24,8 +25,12 @@ afterAll(() => {
   }
   resetConfig();
 });
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 test("should validate messages, host and Git repository before allocating a chat worktree", async () => {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), "orc-chat-workspace-")));
+  tempDirs.push(cwd);
   const git = (args: string[]) => {
     const result = Bun.spawnSync(["git", "-C", cwd, ...args], { timeout: 10000 });
     expect(result.exitCode).toBe(0);
@@ -60,6 +65,7 @@ test("should validate messages, host and Git repository before allocating a chat
     ).status,
   ).toBe(400);
   const nonrepo = mkdtempSync(join(tmpdir(), "orc-chat-nonrepo-"));
+  tempDirs.push(nonrepo);
   expect(
     (
       await req(app, "POST", "/chat/stream", {

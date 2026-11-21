@@ -1,5 +1,5 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
@@ -7,6 +7,11 @@ import * as XLSX from "xlsx";
 import { chunkBlocks } from "../chunker.js";
 import { parseBasic } from "../parsers/basic.js";
 import { KnowledgeStorage } from "../storage.js";
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function pdf() {
   const objects = [
@@ -34,6 +39,7 @@ function pdf() {
 
 test("built-in formats preserve extractable text, checksums and page/sheet source references into chunks", async () => {
   const root = mkdtempSync(join(tmpdir(), "orc-parser-process-"));
+  tempDirs.push(root);
   const workbook = XLSX.utils.book_new();
   for (const name of ["Inventory", "Recovery"])
     XLSX.utils.book_append_sheet(

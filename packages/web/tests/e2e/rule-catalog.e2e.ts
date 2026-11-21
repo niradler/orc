@@ -1,14 +1,22 @@
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { apiGet, gotoView } from "./_helpers";
+
+const tempDirs: string[] = [];
+
+test.afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 
 test("should load a catalog rule as an editable draft and retain the customized copy after reload", async ({
   page,
   request,
 }) => {
   const workspace = mkdtempSync(join(tmpdir(), "orc-rule-catalog-browser-"));
+  tempDirs.push(workspace);
   await gotoView(page, "rules");
   await page.getByTestId("rules-settings-tab").click();
   await page.getByTestId("rules-workspace").fill(workspace);
@@ -47,6 +55,7 @@ test("should load a catalog rule as an editable draft and retain the customized 
 
 test("should save and reopen a customized built-in memory rule", async ({ page }) => {
   const workspace = mkdtempSync(join(tmpdir(), "orc-memory-catalog-browser-"));
+  tempDirs.push(workspace);
   const directory = join(workspace, "shared-notes");
   await gotoView(page, "rules");
   await page.getByTestId("rules-settings-tab").click();

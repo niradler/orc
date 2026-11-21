@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -9,14 +9,24 @@ import { z } from "zod";
 const fixtureHome = process.env.ORC_CODEX_OWNERSHIP_FIXTURE_HOME;
 if (!fixtureHome) {
   const home = mkdtempSync(join(tmpdir(), "orc-codex-ownership-"));
-  const child = Bun.spawn([process.execPath, import.meta.path, ...process.argv.slice(2)], {
-    env: { ...process.env, HOME: home, USERPROFILE: home, ORC_CODEX_OWNERSHIP_FIXTURE_HOME: home },
-    stdin: "ignore",
-    stdout: "inherit",
-    stderr: "inherit",
-    timeout: 45000,
-  });
-  process.exit(await child.exited);
+  try {
+    const child = Bun.spawn([process.execPath, import.meta.path, ...process.argv.slice(2)], {
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        ORC_CODEX_OWNERSHIP_FIXTURE_HOME: home,
+      },
+      stdin: "ignore",
+      stdout: "inherit",
+      stderr: "inherit",
+      timeout: 45000,
+    });
+    process.exitCode = await child.exited;
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+  process.exit();
 }
 assert.equal(homedir(), fixtureHome, "Ownership fixtures must start with their isolated home");
 const home = fixtureHome;
@@ -245,5 +255,6 @@ try {
 } finally {
   stop();
   keeper.kill();
+  await keeper.exited;
   closeDb();
 }

@@ -1,11 +1,15 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { codexQuestionPending, readCodexQuestionPending } from "../sessions/codex-attention.js";
 
 const line = (value: unknown) => JSON.stringify(value);
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 const call = line({
   type: "response_item",
   payload: { type: "function_call", name: "request_user_input", call_id: "q1" },
@@ -43,6 +47,7 @@ test("only an unanswered structured Codex question produces a notice", () => {
 
 test("a bounded transcript tail detects a question and removes it after the matching output", async () => {
   const root = mkdtempSync(join(tmpdir(), "orc-codex-attention-"));
+  tempDirs.push(root);
   const transcript = join(root, "session.jsonl");
   writeFileSync(transcript, `${"x".repeat(300000)}\n${call}\n`);
   expect(await readCodexQuestionPending(hostRuntime(LOCAL_HOST), transcript)).toBe(true);

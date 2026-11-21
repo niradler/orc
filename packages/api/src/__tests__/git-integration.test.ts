@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runGit } from "@orc/core/session-dir";
 import { isInside, removeWorktree, trackedWorktrees } from "../git/worktrees.js";
-import { req, setupTestApp, teardownTestApp } from "./helpers.js";
+import { removeTempTree, req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 const folder = mkdtempSync(join(tmpdir(), "orc-git-integration-"));
 const repo = join(folder, "repo");
@@ -41,7 +41,10 @@ beforeAll(async () => {
   await runGit(["git", "-C", unmerged, "commit", "-am", "wip"]);
   app = setupTestApp();
 });
-afterAll(teardownTestApp);
+afterAll(async () => {
+  teardownTestApp();
+  await removeTempTree(folder);
+}, 20_000);
 
 describe("worktree registry and cleanup", () => {
   test("should detect merged against main even when called from the feature checkout", async () => {

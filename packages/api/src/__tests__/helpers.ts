@@ -66,3 +66,22 @@ export async function req(
   });
   return res as AnyJsonResponse;
 }
+
+/**
+ * Remove a test temp tree, waiting out Windows' asynchronous handle release.
+ * Bun 1.4.4 ignores rmSync's maxRetries, and a just-closed sqlite/fs.watch/child
+ * handle can lock the tree for several seconds under full-gate load, so retry
+ * explicitly. Callers give their hook a budget above the ~10s loop.
+ */
+export async function removeTempTree(path: string): Promise<void> {
+  Bun.gc(true);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 100) throw error;
+      await Bun.sleep(100);
+    }
+  }
+}

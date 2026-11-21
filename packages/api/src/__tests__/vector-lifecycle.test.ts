@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
 import { closeKnowledgeService, getKnowledgeService } from "@orc/knowledge";
 import { closeSessionArchive } from "../sessions/archive.js";
-import { req, setupTestApp, teardownTestApp } from "./helpers.js";
+import { removeTempTree, req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 const saved = {
   HOME: process.env.HOME,
@@ -14,11 +14,12 @@ const saved = {
 };
 let app: ReturnType<typeof setupTestApp>;
 let provider: ReturnType<typeof Bun.serve>;
+let root: string;
 let unavailable = false;
 const requests: string[][] = [];
 
 beforeAll(() => {
-  const root = mkdtempSync(join(tmpdir(), "orc-vector-http-"));
+  root = mkdtempSync(join(tmpdir(), "orc-vector-http-"));
   process.env.HOME = root;
   process.env.USERPROFILE = root;
   process.env.ORC_KNOWLEDGE_ROOT = join(root, "knowledge");
@@ -52,7 +53,8 @@ afterAll(async () => {
     else process.env[key] = value;
   }
   resetConfig();
-});
+  await removeTempTree(root);
+}, 20_000);
 
 test("HTTP lifecycle: authenticated settings, parser upload, vectors, scoped evidence, revisions, failure recovery and deletion", async () => {
   expect(

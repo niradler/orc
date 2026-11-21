@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { devices, expect, type Page, type WebSocketRoute } from "@playwright/test";
@@ -6,6 +6,13 @@ import { apiGet, apiPost, gotoView } from "./_helpers";
 import { test } from "./_terminal-fixture";
 
 test.use({ ...devices["Pixel 7"], viewport: { width: 390, height: 844 } });
+
+const tempDirs: string[] = [];
+
+test.afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 
 async function touch(page: Page, points: { x: number; y: number }[][], holdMs = 0) {
   if (page.context().browser()?.browserType().name() !== "chromium") {
@@ -585,6 +592,7 @@ test("touch swipes scroll full-screen programs and PgUp/PgDn page the terminal",
     "Touch gestures are driven through CDP",
   );
   const dir = mkdtempSync(join(tmpdir(), "orc-screen-"));
+  tempDirs.push(dir);
   const script = join(dir, "screen.js");
   writeFileSync(script, SCREEN_SCRIPT.replaceAll("<ESC>", "\x1b"));
   const terminal = await apiPost<{ id: string }>(request, "/terminals", {
@@ -681,6 +689,7 @@ test("a long press reaches selectable text over the canvas and the text view cop
   );
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   const dir = mkdtempSync(join(tmpdir(), "orc-screen-"));
+  tempDirs.push(dir);
   const script = join(dir, "screen.js");
   writeFileSync(script, SCREEN_SCRIPT.replaceAll("<ESC>", "\x1b"));
   const terminal = await apiPost<{ id: string }>(request, "/terminals", {

@@ -1,10 +1,10 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentSession } from "@orc/agent-runtime";
 
-const home =
-  process.env.ORC_ATTENTION_FIXTURE_HOME ?? mkdtempSync(join(tmpdir(), "orc-attention-e2e-"));
+const externalHome = process.env.ORC_ATTENTION_FIXTURE_HOME;
+const home = externalHome ?? mkdtempSync(join(tmpdir(), "orc-attention-e2e-"));
 Object.assign(process.env, {
   HOME: home,
   USERPROFILE: home,
@@ -141,7 +141,13 @@ const server = Bun.serve({
   },
 });
 console.log(`ATTENTION_FIXTURE ${server.url.origin}`);
-setTimeout(() => {
+function shutdown() {
   server.stop(true);
+  // An injected home belongs to the caller; only retire the one we created.
+  // force keeps this idempotent if the directory is already gone.
+  if (externalHome === undefined) rmSync(home, { recursive: true, force: true });
   process.exit(0);
-}, 300000);
+}
+setTimeout(shutdown, 300000);
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);

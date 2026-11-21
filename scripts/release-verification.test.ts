@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { publishDockerRelease } from "./release-docker.js";
@@ -24,6 +24,10 @@ const bytes = Buffer.from("prepared release archive");
 const revision = "a".repeat(40);
 const digest = `sha256:${"b".repeat(64)}`;
 let sequence = 0;
+
+afterAll(() => {
+  rmSync(folder, { recursive: true, force: true });
+});
 
 function prepared(): ReturnType<typeof npmArtifact> {
   const file = join(folder, `release-${sequence++}.tgz`);

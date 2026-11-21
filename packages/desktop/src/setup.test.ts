@@ -1,14 +1,20 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ensureOnPath, ensureOnWindowsUserPath, installCli, setLinuxAutostart } from "./setup.js";
 
 const win = process.platform === "win32";
 
+const homes: string[] = [];
+afterEach(() => {
+  for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true });
+});
+
 function fixture(content = "binary-v1") {
   const home = mkdtempSync(join(tmpdir(), "orc-setup-"));
+  homes.push(home);
   const bin = join(home, "bundled-orc");
   writeFileSync(bin, content);
   return { home, bin };

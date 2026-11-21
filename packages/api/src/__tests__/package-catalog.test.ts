@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reloadCache } from "@orc/core/skill-service";
@@ -7,11 +7,13 @@ import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof createApp>;
+let home: string;
+const tempDirs: string[] = [];
 const originalDirectory = process.env.ORC_PACKAGES_DIR;
 const originalHome = process.env.HOME;
 const originalProfile = process.env.USERPROFILE;
 beforeAll(() => {
-  const home = mkdtempSync(join(tmpdir(), "orc-catalog-api-"));
+  home = mkdtempSync(join(tmpdir(), "orc-catalog-api-"));
   process.env.HOME = home;
   process.env.USERPROFILE = home;
   process.env.ORC_PACKAGES_DIR = join(home, "packages");
@@ -26,6 +28,10 @@ afterAll(() => {
   else process.env.ORC_PACKAGES_DIR = originalDirectory;
   reloadCache();
   teardownTestApp();
+  rmSync(home, { recursive: true, force: true });
+});
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 test("catalog edits use revisions and preserve binary assets through HTTP", async () => {
@@ -102,6 +108,7 @@ test("authored plugin MCP must match its schema; imported invalid components sta
 
 test("agent launches create a local chat in any working folder and preserve the profile on reopen", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-agent-chat-"));
+  tempDirs.push(cwd);
   const id = `launch-profile-${process.pid}`;
   expect(
     (
