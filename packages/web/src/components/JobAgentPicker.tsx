@@ -8,7 +8,7 @@ import { chipHeading } from "@/components/ComposerChip";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
 import { useComposerPreferences, useEnabledAgents } from "@/hooks/useAgents";
 import { useSsh } from "@/hooks/useSsh";
-import { agentEffortChoices, liveEffortChoices } from "@/lib/composer-chips";
+import { agentEffortChoices, effortFromOptions, liveEffortChoices } from "@/lib/composer-chips";
 
 /** Job permissions have no plan/default row; only the granting modes map. */
 function jobPermission(mode: ComposerProfile["permissionMode"]): AgentPermission | undefined {
@@ -43,20 +43,26 @@ export function JobAgentPicker({
   const capabilities = useAgentCapabilities(agent);
   const fixed = capabilities?.modelSelection === false;
   const models = catalog.data?.models ?? [];
-  const effortChoicesFor = (model: string) => {
-    if (agent === "opencode")
-      return liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices);
+  const effortChoicesFor = (forAgent: string, model: string) => {
+    if (forAgent === "opencode")
+      return forAgent === agent
+        ? liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices)
+        : [];
+    // A different agent's catalog has not been fetched, so fall back to its
+    // runtime's known levels.
+    if (forAgent !== agent) return agentEffortChoices(forAgent);
     const entry = models.find((item) => item.id === model);
     return agentEffortChoices(
-      agent,
+      forAgent,
       entry && (entry.efforts ?? (models.some((item) => item.efforts) ? [] : undefined)),
     );
   };
+  const selectedEffort = value.effort ?? effortFromOptions(value.options);
   const applyProfile = (profile: ComposerProfile) => {
     const permission = jobPermission(profile.permissionMode);
     const nextAgent = profile.agent === "codex" ? "codex-cli" : profile.agent;
     const model = profile.model || undefined;
-    const allowed = effortChoicesFor(model ?? "");
+    const allowed = effortChoicesFor(profile.agent, model ?? "");
     const effort =
       profile.effort && allowed.length && !allowed.some((choice) => choice.value === profile.effort)
         ? undefined
@@ -65,7 +71,7 @@ export function JobAgentPicker({
       ...value,
       agent: nextAgent,
       model,
-      effort,
+      effort: effort ?? "",
       // Launch options belong to the old agent, so they cannot carry over.
       ...(nextAgent !== value.agent ? { options: undefined } : {}),
       ...(permission ? { permissions: permission } : {}),
@@ -87,10 +93,10 @@ export function JobAgentPicker({
           ),
         )
       }
-      efforts={effortChoicesFor(value.model ?? "")}
-      effort={value.effort ?? ""}
-      onEffort={(effort) => onChange({ ...value, effort: effort || undefined })}
-      hasEfforts={(model) => effortChoicesFor(model).length > 0}
+      efforts={effortChoicesFor(agent, value.model ?? "")}
+      effort={selectedEffort}
+      onEffort={(effort) => onChange({ ...value, effort })}
+      hasEfforts={(model) => effortChoicesFor(agent, model).length > 0}
       fetching={catalog.isFetching}
       modelsDisabled={fixed}
       warning={
@@ -137,11 +143,13 @@ export function JobAgentPicker({
         return false;
       }}
       onModel={(model) => {
-        const supported = effortChoicesFor(model).some((choice) => choice.value === value.effort);
+        const supported = effortChoicesFor(agent, model).some(
+          (choice) => choice.value === selectedEffort,
+        );
         onChange({
           ...value,
           model: model || undefined,
-          ...(value.effort && !supported ? { effort: undefined } : {}),
+          ...(selectedEffort && !supported ? { effort: "" } : {}),
         });
       }}
     />

@@ -54,9 +54,13 @@ test("run effort follows the agent's launch options and stays the source of trut
       "high",
     ),
   ).toEqual({ runtime: "codex", args: ["--enable", "x", "-c", 'model_reasoning_effort="high"'] });
-  // An absent effort clears the stored one instead of leaving a hidden value.
+  // An absent effort leaves a stored one alone (channel defaults rely on it);
+  // an explicit empty effort clears it.
   expect(
     withAgentRunEffort("claude", { runtime: "claude-sdk", options: { effort: "max" } }, undefined),
+  ).toEqual({ runtime: "claude-sdk", options: { effort: "max" } });
+  expect(
+    withAgentRunEffort("claude", { runtime: "claude-sdk", options: { effort: "max" } }, ""),
   ).toEqual({ runtime: "claude-sdk", options: {} });
   // Agents without an effort keep their options untouched.
   expect(withAgentRunEffort("a2a", { runtime: "acpx", args: ["--x"] }, undefined)).toEqual({
@@ -76,6 +80,7 @@ test("channel rules accept effort only on agents that take one", () => {
     }).success;
   expect(rule("claude", "high")).toBe(true);
   expect(rule("codex", "high")).toBe(true);
+  expect(rule("claude", "banana")).toBe(false);
   expect(rule("cursor", "high")).toBe(false);
   expect(rule("default", "high")).toBe(true);
 });

@@ -1,5 +1,10 @@
 import type { ChatSettings } from "@orc/core/chat";
-import { chatRuntime, withChatEffort } from "@orc/core/chat-options";
+import {
+  agentEffortValues,
+  type ChatAgentOptions,
+  chatRuntime,
+  withChatEffort,
+} from "@orc/core/chat-options";
 import { agentForSessionBackend, codingAgent } from "@orc/core/coding-agents";
 import { pathLabel } from "@orc/core/display-path";
 import type { AgentCapabilities } from "@orc/core/types";
@@ -155,9 +160,6 @@ const EFFORT_LABELS: Record<string, string> = {
   ultra: "Ultra",
 };
 /** Effort values each adapter accepts, in increasing order. */
-const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
-const PI_EFFORTS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
-const CODEX_EFFORTS = ["minimal", "low", "medium", "high", "xhigh"] as const;
 const CODEX_EFFORT_KEY = "model_reasoning_effort";
 
 export type AgentEffortChoice = { value: string; label: string };
@@ -168,14 +170,7 @@ export function agentEffortChoices(
   modelEfforts?: readonly string[],
 ): AgentEffortChoice[] {
   const runtime = chatRuntime(agent);
-  const known: readonly string[] =
-    runtime === "claude-sdk"
-      ? CLAUDE_EFFORTS
-      : runtime === "pi"
-        ? PI_EFFORTS
-        : runtime === "codex"
-          ? CODEX_EFFORTS
-          : [];
+  const known = agentEffortValues(agent) ?? [];
   const reported =
     runtime === "codex"
       ? (modelEfforts ?? [])
@@ -206,15 +201,19 @@ function codexSetting(args: readonly string[], key: string): string | undefined 
   return undefined;
 }
 
-/** Returns the raw effort value selected for the current agent, or "" for the adapter default. */
-export function agentEffortValue(config: ChatSettings): string {
-  const options = config.agentOptions[config.agent];
+/** Returns the raw effort stored in an agent's launch options, or "" for the adapter default. */
+export function effortFromOptions(options: ChatAgentOptions | undefined): string {
   if (!options) return "";
   if (options.runtime === "claude-sdk") return options.options.effort ?? "";
   if (options.runtime === "pi") return options.options.thinkingLevel ?? "";
   if (options.runtime === "opencode") return options.options.effort ?? "";
   if (options.runtime !== "codex") return "";
   return codexSetting(options.args, CODEX_EFFORT_KEY) ?? "";
+}
+
+/** Returns the raw effort value selected for the current agent, or "" for the adapter default. */
+export function agentEffortValue(config: ChatSettings): string {
+  return effortFromOptions(config.agentOptions[config.agent]);
 }
 
 /** Returns a copy of the chat config with the chosen effort applied to the current agent. */

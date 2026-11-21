@@ -81,14 +81,14 @@ export function agentRunSessionOptions(
 }
 
 /** Applies a run's effort to the launch options the same way chat does.
- *  `codex-cli` shares Codex's runtime, and an empty effort clears the stored one
- *  so the run field stays authoritative. Runtimes without effort keep their
- *  options untouched. */
+ *  `codex-cli` shares Codex's runtime. An absent effort leaves the options
+ *  untouched (channel defaults keep theirs); `""` clears a stored one. Runtimes
+ *  without effort keep their options even if a value slips through. */
 export function withAgentRunEffort(
   agent: string,
   options: ChatAgentOptions | undefined,
   effort: string | undefined,
 ): ChatAgentOptions | undefined {
-  if (!effort && !options) return undefined;
-  return withChatEffort(agent === "codex-cli" ? "codex" : agent, options, effort ?? "") ?? options;
+  if (effort === undefined) return options;
+  return withChatEffort(agent === "codex-cli" ? "codex" : agent, options, effort) ?? options;
 }

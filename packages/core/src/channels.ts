@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { AgentRunSchema, optionsExceedPermissions, withAgentRunEffort } from "./agent-run.js";
+import { AgentRunSchema, optionsExceedPermissions } from "./agent-run.js";
+import { agentEffortValues } from "./chat-options.js";
 import { NotificationFilterSchema } from "./notifications.js";
 
 export const ChannelProviderSchema = z.enum(["telegram", "slack", "slack-user"]);
@@ -243,13 +244,16 @@ export const ChannelRouteSchema = z
           message: "Launch options approve more than the chosen permissions allow",
         })
         .refine(
-          (action) =>
-            !action.effort ||
-            action.agent === "default" ||
-            !!withAgentRunEffort(action.agent, undefined, action.effort),
+          (action) => {
+            if (!action.effort || action.agent === "default") return true;
+            const efforts = agentEffortValues(
+              action.agent === "codex-cli" ? "codex" : action.agent,
+            );
+            return !efforts || efforts.includes(action.effort);
+          },
           {
             path: ["effort"],
-            message: "This agent does not support a reasoning effort.",
+            message: "This agent does not support that reasoning effort.",
           },
         ),
       z.object({ type: z.literal("job"), job_id: z.string().min(1).max(100) }).strict(),

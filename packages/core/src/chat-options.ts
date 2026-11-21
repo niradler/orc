@@ -291,6 +291,17 @@ export function chatRuntime(agent: string): ChatAgentOptions["runtime"] {
   return "acpx";
 }
 
+/** Effort values a runtime accepts, in increasing order. `null` means the agent
+ *  reports its own live values, and an empty list means it takes no effort. */
+export function agentEffortValues(agent: string): readonly string[] | null {
+  const runtime = chatRuntime(agent);
+  if (runtime === "claude-sdk") return ["low", "medium", "high", "xhigh", "max"];
+  if (runtime === "pi") return ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+  if (runtime === "codex") return ["minimal", "low", "medium", "high", "xhigh"];
+  if (runtime === "opencode") return null;
+  return [];
+}
+
 /** Drops every Codex `-c` entry for the key so a new value can replace it cleanly. */
 function withoutSetting(args: readonly string[], key: string): string[] {
   const kept: string[] = [];
