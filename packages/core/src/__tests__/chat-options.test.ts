@@ -135,10 +135,16 @@ test("effort lands in each runtime's launch options and clears cleanly", () => {
   expect(
     withChatEffort(
       "codex",
-      { runtime: "codex", args: ["-c", 'model_reasoning_effort="low"', "--enable", "foo"] },
+      {
+        runtime: "codex",
+        args: ["-c", 'model_reasoning_effort="low"', "-c", "unrelated=1", "--enable", "foo"],
+      },
       "high",
     ),
-  ).toEqual({ runtime: "codex", args: ["--enable", "foo", "-c", 'model_reasoning_effort="high"'] });
+  ).toEqual({
+    runtime: "codex",
+    args: ["-c", "unrelated=1", "--enable", "foo", "-c", 'model_reasoning_effort="high"'],
+  });
   expect(
     withChatEffort("pi", { runtime: "pi", options: { steeringMode: "all" } }, "max"),
   ).toMatchObject({ runtime: "pi", options: { steeringMode: "all", thinkingLevel: "max" } });

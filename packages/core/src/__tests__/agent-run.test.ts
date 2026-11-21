@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { agentRunSessionOptions } from "../agent-run.js";
+import { agentRunSessionOptions, withAgentRunEffort } from "../agent-run.js";
 import { ChannelRouteSchema } from "../channels.js";
 
 const bypass = {
@@ -40,4 +40,42 @@ test("channel rules reject launch options that approve more than their permissio
   expect(rule("accept_edits", { runtime: "acpx", args: ["--approve-all"] })).toBe(false);
   expect(rule("ask", { runtime: "acpx", args: ["--approve-reads"] })).toBe(false);
   expect(rule("auto", bypass)).toBe(true);
+});
+
+test("run effort follows the agent's launch options and stays the source of truth", () => {
+  expect(withAgentRunEffort("claude", undefined, "high")).toEqual({
+    runtime: "claude-sdk",
+    options: { effort: "high" },
+  });
+  expect(
+    withAgentRunEffort(
+      "codex-cli",
+      { runtime: "codex", args: ["-c", 'model_reasoning_effort="low"', "--enable", "x"] },
+      "high",
+    ),
+  ).toEqual({ runtime: "codex", args: ["--enable", "x", "-c", 'model_reasoning_effort="high"'] });
+  // An absent effort clears the stored one instead of leaving a hidden value.
+  expect(
+    withAgentRunEffort("claude", { runtime: "claude-sdk", options: { effort: "max" } }, undefined),
+  ).toEqual({ runtime: "claude-sdk", options: {} });
+  // Agents without an effort keep their options untouched.
+  expect(withAgentRunEffort("a2a", { runtime: "acpx", args: ["--x"] }, undefined)).toEqual({
+    runtime: "acpx",
+    args: ["--x"],
+  });
+  expect(withAgentRunEffort("a2a", undefined, "high")).toBeUndefined();
+});
+
+test("channel rules accept effort only on agents that take one", () => {
+  const rule = (agent: string, effort: string) =>
+    ChannelRouteSchema.safeParse({
+      id: "r",
+      name: "r",
+      condition: { always: true },
+      action: { type: "agent", agent, project_id: "p", effort },
+    }).success;
+  expect(rule("claude", "high")).toBe(true);
+  expect(rule("codex", "high")).toBe(true);
+  expect(rule("cursor", "high")).toBe(false);
+  expect(rule("default", "high")).toBe(true);
 });

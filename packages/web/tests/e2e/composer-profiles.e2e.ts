@@ -129,7 +129,7 @@ for (const width of [1440, 390]) {
     await page.getByRole("button", { name: "Deep review", exact: true }).click();
     await expect(
       page.getByTestId("chat-agent-model-button").filter({ visible: true }),
-    ).toHaveAccessibleName("Agent and model: Claude Code, Opus, Low effort");
+    ).toHaveAccessibleName("Agent and model: Claude Code, Opus, Low effort, profile Deep review");
     await expect(page.getByTestId("chat-permission-chip")).toHaveAttribute("data-mode", "plan");
 
     await openChatAgentModel(page);

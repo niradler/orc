@@ -5,7 +5,7 @@ import { forwardChannelNotifications } from "@orc/channels/notifications";
 import { channelProvider } from "@orc/channels/providers";
 import { ProviderFailure, safeProviderCode } from "@orc/channels/providers/base";
 import { previewTail } from "@orc/channels/providers/markdown";
-import { agentRunSessionOptions } from "@orc/core/agent-run";
+import { agentRunSessionOptions, withAgentRunEffort } from "@orc/core/agent-run";
 import {
   CHANNEL_ANY,
   type ChannelInbound,
@@ -473,6 +473,10 @@ export async function startChannelRuntime(
         },
         named,
       );
+      const chatAgentOptions =
+        record.backend === defaultAgent
+          ? withAgentRunEffort(defaultAgent, run.chatAgentOptions, action.effort)
+          : run.chatAgentOptions;
       session = await openAgentSession(
         record.backend,
         {
@@ -483,7 +487,7 @@ export async function startChannelRuntime(
           autoApprove: run.autoApprove,
           permissionMode: run.permissionMode,
           ...(run.toolAllowlist ? { toolAllowlist: run.toolAllowlist } : {}),
-          ...(run.chatAgentOptions ? { chatAgentOptions: run.chatAgentOptions } : {}),
+          ...(chatAgentOptions ? { chatAgentOptions } : {}),
           humanRequestContext: {
             projectId,
             notify: named ? [provider] : [],

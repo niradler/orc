@@ -1,6 +1,18 @@
 import { expect, test } from "@playwright/test";
 import { AUTH_HEADERS, apiGet, gotoView, tid } from "./_helpers";
 
+test.afterEach(async ({ request }) => {
+  const current = await (await request.get("/api/settings", { headers: AUTH_HEADERS })).json();
+  if (!current.composer_profiles?.length) return;
+  await request.patch("/api/settings", {
+    headers: AUTH_HEADERS,
+    data: {
+      composer_revision: current.composer_revision,
+      composer_profiles: [],
+    },
+  });
+});
+
 for (const [width, theme] of [
   [1440, "dark"],
   [390, "light"],

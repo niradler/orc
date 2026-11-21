@@ -55,11 +55,17 @@ export function JobAgentPicker({
   const applyProfile = (profile: ComposerProfile) => {
     const permission = jobPermission(profile.permissionMode);
     const nextAgent = profile.agent === "codex" ? "codex-cli" : profile.agent;
+    const model = profile.model || undefined;
+    const allowed = effortChoicesFor(model ?? "");
+    const effort =
+      profile.effort && allowed.length && !allowed.some((choice) => choice.value === profile.effort)
+        ? undefined
+        : profile.effort || undefined;
     onChange({
       ...value,
       agent: nextAgent,
-      model: profile.model || undefined,
-      effort: profile.effort || undefined,
+      model,
+      effort,
       // Launch options belong to the old agent, so they cannot carry over.
       ...(nextAgent !== value.agent ? { options: undefined } : {}),
       ...(permission ? { permissions: permission } : {}),

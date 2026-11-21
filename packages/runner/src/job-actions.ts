@@ -1,6 +1,5 @@
 import { type AgentSession, openAgentSession } from "@orc/agent-runtime";
-import { agentRunSessionOptions } from "@orc/core/agent-run";
-import { withChatEffort } from "@orc/core/chat-options";
+import { agentRunSessionOptions, withAgentRunEffort } from "@orc/core/agent-run";
 import { loadConfig } from "@orc/core/config";
 import { execHostFor, hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import { readFlow } from "@orc/core/flow-service";
@@ -124,13 +123,7 @@ export async function runJobAction(
       return;
     }
     const run = agentRunSessionOptions(action, true);
-    const chatAgentOptions = action.effort
-      ? withChatEffort(
-          action.agent === "codex-cli" ? "codex" : action.agent,
-          run.chatAgentOptions,
-          action.effort,
-        )
-      : run.chatAgentOptions;
+    const chatAgentOptions = withAgentRunEffort(action.agent, run.chatAgentOptions, action.effort);
     session = await openAgentSession(action.agent, {
       cwd,
       env: { ...projectWorkspace.env, ...env },

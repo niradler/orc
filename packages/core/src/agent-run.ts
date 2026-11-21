@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { type ChatAgentOptions, ChatAgentOptionsSchema } from "./chat-options.js";
+import { type ChatAgentOptions, ChatAgentOptionsSchema, withChatEffort } from "./chat-options.js";
 
 export const AgentPermissions = ["ask", "read_only", "accept_edits", "auto"] as const;
 export type AgentPermission = (typeof AgentPermissions)[number];
@@ -78,4 +78,17 @@ export function agentRunSessionOptions(
       ? { chatAgentOptions: run.options }
       : {}),
   };
+}
+
+/** Applies a run's effort to the launch options the same way chat does.
+ *  `codex-cli` shares Codex's runtime, and an empty effort clears the stored one
+ *  so the run field stays authoritative. Runtimes without effort keep their
+ *  options untouched. */
+export function withAgentRunEffort(
+  agent: string,
+  options: ChatAgentOptions | undefined,
+  effort: string | undefined,
+): ChatAgentOptions | undefined {
+  if (!effort && !options) return undefined;
+  return withChatEffort(agent === "codex-cli" ? "codex" : agent, options, effort ?? "") ?? options;
 }
