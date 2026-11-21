@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -9,6 +9,11 @@ import {
   resetConfig,
   resolveApiBase,
 } from "./config.js";
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 test("should accept literal shell argv while preserving executable string overrides", () => {
   expect(OrcConfigSchema.parse({ terminals: { shell: "pwsh" } }).terminals.shell).toBe("pwsh");
@@ -34,6 +39,7 @@ test("an explicitly empty environment secret overrides a stored secret", () => {
   const previousDirectory = process.cwd();
   const previousSecret = process.env.ORC_API_SECRET;
   const directory = mkdtempSync(join(tmpdir(), "orc-empty-secret-"));
+  tempDirs.push(directory);
   mkdirSync(join(directory, ".orc"));
   writeFileSync(
     join(directory, ".orc", "config.json"),
@@ -65,8 +71,10 @@ test("ORC_HOME is the data root for config and the database", () => {
     directory: process.cwd(),
   };
   const root = mkdtempSync(join(tmpdir(), "orc-home-"));
+  tempDirs.push(root);
   const data = join(root, "data");
   const cwd = mkdtempSync(join(tmpdir(), "orc-cwd-"));
+  tempDirs.push(cwd);
   try {
     process.chdir(cwd);
     process.env.ORC_HOME = data;

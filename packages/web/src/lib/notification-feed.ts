@@ -1,8 +1,6 @@
 import type { HumanRequest } from "@orc/core/human-requests";
 import type { OrcNotification } from "@orc/core/notifications";
 
-export type NotificationToastEntry = { id: string; items: OrcNotification[] };
-
 /** The open workspace the notifier compares against without importing UI modules. */
 export type NotificationView = {
   active: boolean;
@@ -61,33 +59,6 @@ export function notificationInView(item: OrcNotification, view: NotificationView
     session.host === (origin.execution_host ?? null) &&
     session.session_id === (origin.native_session_id ?? origin.session_id)
   );
-}
-
-export function mergeNotificationToasts(
-  current: readonly NotificationToastEntry[],
-  incoming: readonly OrcNotification[],
-): NotificationToastEntry[] {
-  const needs = incoming
-    .filter((item) => item.level === "needs-you")
-    .map((item) => ({ id: item.id, items: [item] }));
-  const previousNeeds = current.filter((entry) => entry.items[0]?.level === "needs-you");
-  const completed = incoming.filter((item) => item.level === "done");
-  const previousDone = current.filter((entry) => entry.items[0]?.level === "done");
-  const done = [
-    ...new Map(
-      [...completed, ...previousDone.flatMap((entry) => entry.items)].map((item) => [
-        item.id,
-        item,
-      ]),
-    ).values(),
-  ];
-  const result = [...needs, ...previousNeeds];
-  if (done.length)
-    result.push({
-      id: completed[0] ? `done:${completed[0].id}` : (previousDone[0]?.id ?? "done"),
-      items: done,
-    });
-  return result.slice(0, 4);
 }
 
 /** History and delivery share IDs; a reload establishes a baseline rather than replaying it. */

@@ -95,25 +95,29 @@ describe("shQuote", () => {
 describe("remoteCommand", () => {
   test("sources and deletes the env file, records its pid, and runs argv in cwd", async () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "orc-exec-host-")));
-    const envFile = join(dir, "env");
-    const pidFile = join(dir, "pid");
-    writeFileSync(envFile, envScript({ ORC_TEST_VALUE: "it's $not expanded", "BAD-KEY": "x" }));
-    // A relative read proves the cwd without comparing path formats (MSYS pwd prints /tmp/...).
-    writeFileSync(join(dir, "marker"), "in-cwd");
-    const script = remoteCommand(
-      ["/bin/sh", "-c", 'printf "%s|%s" "$ORC_TEST_VALUE" "$(cat marker)"'],
-      {
-        cwd: dir,
-        envFile,
-        pidFile,
-        login: false,
-      },
-    );
-    const { code, stdout } = await runRemote(script);
-    expect(code).toBe(0);
-    expect(stdout).toBe("it's $not expanded|in-cwd");
-    expect(existsSync(envFile)).toBe(false);
-    expect(Number(readFileSync(pidFile, "utf8").trim())).toBeGreaterThan(0);
+    try {
+      const envFile = join(dir, "env");
+      const pidFile = join(dir, "pid");
+      writeFileSync(envFile, envScript({ ORC_TEST_VALUE: "it's $not expanded", "BAD-KEY": "x" }));
+      // A relative read proves the cwd without comparing path formats (MSYS pwd prints /tmp/...).
+      writeFileSync(join(dir, "marker"), "in-cwd");
+      const script = remoteCommand(
+        ["/bin/sh", "-c", 'printf "%s|%s" "$ORC_TEST_VALUE" "$(cat marker)"'],
+        {
+          cwd: dir,
+          envFile,
+          pidFile,
+          login: false,
+        },
+      );
+      const { code, stdout } = await runRemote(script);
+      expect(code).toBe(0);
+      expect(stdout).toBe("it's $not expanded|in-cwd");
+      expect(existsSync(envFile)).toBe(false);
+      expect(Number(readFileSync(pidFile, "utf8").trim())).toBeGreaterThan(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("expands a leading ~ in cwd to the remote home", async () => {

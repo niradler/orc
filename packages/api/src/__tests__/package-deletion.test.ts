@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -12,9 +12,11 @@ import { reloadCache } from "@orc/core/skill-service";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
+let home: string;
 const original = process.env.ORC_PACKAGES_DIR;
 beforeAll(() => {
-  process.env.ORC_PACKAGES_DIR = join(mkdtempSync(join(tmpdir(), "orc-delete-api-")), "packages");
+  home = mkdtempSync(join(tmpdir(), "orc-delete-api-"));
+  process.env.ORC_PACKAGES_DIR = join(home, "packages");
   app = setupTestApp();
 });
 afterAll(() => {
@@ -22,6 +24,7 @@ afterAll(() => {
   if (original === undefined) delete process.env.ORC_PACKAGES_DIR;
   else process.env.ORC_PACKAGES_DIR = original;
   reloadCache();
+  rmSync(home, { recursive: true, force: true });
 });
 
 test("package deletion requires auth and a valid current revision, then removes the catalog entry", async () => {

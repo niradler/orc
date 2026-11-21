@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changes } from "@orc/core/changes";
@@ -29,6 +29,7 @@ afterAll(() => {
     else process.env[key] = value;
   }
   resetConfig();
+  rmSync(home, { recursive: true, force: true });
 });
 const inbound = {
   connection: "test",

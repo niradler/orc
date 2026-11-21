@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copyRuleTemplate } from "@orc/core/rule-catalog";
@@ -37,7 +37,10 @@ beforeAll(async () => {
     "Builtin validation",
   ).id;
 });
-afterAll(teardownTestApp);
+afterAll(() => {
+  teardownTestApp();
+  rmSync(workspace, { recursive: true, force: true });
+});
 const event = (
   id: string,
   phase: string,

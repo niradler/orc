@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
@@ -11,10 +11,19 @@ import { RuleStore } from "@orc/db/rules";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
+const tempDirs: string[] = [];
+const tempDir = (prefix: string) => {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
+};
 beforeAll(() => {
   app = setupTestApp();
 });
 afterAll(teardownTestApp);
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 const input = {
   kind: "question",
   prompt: "Which color?",
@@ -136,7 +145,7 @@ test("should invalidate an unanswered request when its reviewed rule revision ch
   process.env.ORC_RULES_ENABLED = "true";
   resetConfig();
   try {
-    const workspace = mkdtempSync(join(tmpdir(), "orc-human-revision-"));
+    const workspace = tempDir("orc-human-revision-");
     const rules = new RuleStore(getSqlite());
     const policy = {
       workspace,
@@ -181,7 +190,7 @@ test("should invalidate an unanswered request when its reviewed rule revision ch
 });
 
 test("should run once with the host shell, redact values and retain only the result", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-command-"));
+  const cwd = tempDir("orc-command-");
   const secret = "p@ss'\"$()do-not-expand";
   const account = "private-account@example.invalid";
   const entry = await (
@@ -258,7 +267,7 @@ test("should run once with the host shell, redact values and retain only the res
 });
 
 test("should report failed commands without automatically retrying", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-command-failure-"));
+  const cwd = tempDir("orc-command-failure-");
   const entry = await (
     await req(app, "POST", "/human-requests", {
       kind: "command",
@@ -281,7 +290,7 @@ test("should report failed commands without automatically retrying", async () =>
 });
 
 test("should reject cancelled, stale, unknown-argument and invalid-folder executions", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-command-validation-"));
+  const cwd = tempDir("orc-command-validation-");
   const entry = await (
     await req(app, "POST", "/human-requests", {
       kind: "command",
@@ -328,7 +337,7 @@ test("should reject cancelled, stale, unknown-argument and invalid-folder execut
 });
 
 test("should enforce a command timeout and bound/redact large output", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-command-bounds-"));
+  const cwd = tempDir("orc-command-bounds-");
   const create = async (request_id: string, timeout_seconds = 10) =>
     (
       await req(app, "POST", "/human-requests", {
@@ -377,7 +386,7 @@ test("should enforce a command timeout and bound/redact large output", async () 
 }, 15000);
 
 test("should stop command descendants on timeout", async () => {
-  const cwd = mkdtempSync(join(tmpdir(), "orc-command-descendants-"));
+  const cwd = tempDir("orc-command-descendants-");
   const marker = join(cwd, "child-survived.txt").replaceAll("'", "''");
   const script =
     process.platform === "win32"

@@ -9,7 +9,7 @@
  * Backend: ORC_GOAL_PROBE_BACKEND=claude (default) or codex-cli.
  */
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createApp } from "../packages/api/src/server.js";
@@ -206,4 +206,5 @@ try {
     closeLiveSession(row.id);
   await server.stop(true);
   closeDb();
+  rmSync(scope, { recursive: true, force: true });
 }

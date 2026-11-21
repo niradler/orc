@@ -24,6 +24,19 @@ import type { TerminalInfo } from "../terminals/manager.js";
 
 const logger = createLogger("api:workspaces");
 
+let portProber: ((port: number) => boolean | Promise<boolean>) | undefined;
+
+/**
+ * Test seam, like setTerminalManager: allocation tests must not depend on which
+ * ephemeral ports the host happens to hold, so they replace the live bind probe.
+ * Production keeps probing real availability.
+ */
+export function setWorkspacePortProber(
+  prober: ((port: number) => boolean | Promise<boolean>) | null,
+): void {
+  portProber = prober ?? undefined;
+}
+
 export type WorkspaceProject = typeof projects.$inferSelect;
 
 function pathKey(path: string): string {
@@ -161,6 +174,7 @@ export async function ensureWorkspace(input: {
     workspace,
     ...(input.env ? { env: input.env } : {}),
     ...(input.redact ? { redact: input.redact } : {}),
+    ...(portProber ? { isPortFree: portProber } : {}),
     log: (message) => logger.info(message),
   });
 }

@@ -1,8 +1,15 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { apiGet, apiPost, gotoView, tid } from "./_helpers";
+
+const tempDirs: string[] = [];
+
+test.afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 
 function recordRule(id: string) {
   return {
@@ -21,6 +28,7 @@ test("should show only a table by default, offer both add paths, and persist pro
   request,
 }) => {
   const workspace = mkdtempSync(join(homedir(), "orc-rule-settings-browser-"));
+  tempDirs.push(workspace);
   const first = await apiPost<{ id: string }>(request, "/projects", { name: tid("rules-first") });
   const second = await apiPost<{ id: string }>(request, "/projects", { name: tid("rules-second") });
   await apiPost(request, "/rules/activate", {
@@ -71,6 +79,7 @@ test("should preserve a concurrent policy update and show the failed stale edit 
   request,
 }) => {
   const workspace = mkdtempSync(join(homedir(), "orc-rule-concurrent-browser-"));
+  tempDirs.push(workspace);
   const initial = await apiPost<{ id: string }>(request, "/rules/activate", {
     policy: { workspace, project_id: null, rules: [recordRule("existing-rule")] },
     expected_id: null,

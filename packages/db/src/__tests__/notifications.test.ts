@@ -113,28 +113,27 @@ test("should page history and resolve actions without changing read state", () =
   expect(store.list(50, 0, true).notifications).toEqual([]);
 });
 
-test("should retire only the continuing session's completions, preserving history and audit", () => {
+test("should dismiss every alert for a continuing session and its aliases", () => {
   const { db, store, input } = fixture();
+  store.associateSession("session", "runtime:1");
+  store.associateSession("alias", "runtime:1");
   for (const [key, type, source] of [
     ["done:1", "agent.finished", "session"],
     ["other", "agent.finished", "other-session"],
     ["failure", "agent.failed", "session"],
     ["question", "agent.question", "session"],
     ["job", "job.finished", "session"],
+    ["alias-done", "agent.finished", "alias"],
   ] as const)
     store.publish({ ...input, source_key: key, type, source_id: source });
-  expect(store.markFinishedRead("session")).toBe(1);
-  expect(store.markFinishedRead("session")).toBe(0);
-  expect(store.list().notifications).toHaveLength(5);
+  // The alias's finish already superseded the session's older finish.
+  expect(store.dismissSource("session")).toBe(4);
+  expect(store.dismissSource("session")).toBe(0);
+  expect(store.list().notifications.map((item) => item.source_id)).toEqual(["other-session"]);
+  expect(store.list().unread).toBe(1);
   expect(
-    store
-      .list(50, 0, true)
-      .notifications.map((item) => item.type)
-      .sort(),
-  ).toEqual(["agent.failed", "agent.finished", "agent.question", "job.finished"]);
-  expect(
-    db.query("SELECT count(*) AS count FROM audit_log WHERE action='notification.read'").get(),
-  ).toEqual({ count: 1 });
+    db.query("SELECT count(*) AS count FROM audit_log WHERE action='notification.dismissed'").get(),
+  ).toEqual({ count: 4 });
   const next = store.publish({
     ...input,
     source_key: "done:3",
@@ -143,7 +142,8 @@ test("should retire only the continuing session's completions, preserving histor
     created_at: 1100,
   });
   expect(next?.read_at).toBeNull();
-  expect(store.list(50, 0, true).unread).toBe(5);
+  expect(next?.dismissed_at).toBeNull();
+  expect(store.list(50, 0, true).unread).toBe(2);
 });
 
 test("should physically replace older finishes and ignore replay without restoring read or dismissed alerts", () => {

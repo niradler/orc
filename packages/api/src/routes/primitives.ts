@@ -652,6 +652,9 @@ app.openapi(
   async (c) => {
     const setup = c.req.valid("json");
     const host = selectedTerminalHost(loadConfig(), setup.host);
+    // The staging dir is deliberately kept: the saved package command references
+    // its launch script, so it must outlive this request (unlike the chat and
+    // terminal paths, which remove it once the launched process exits).
     const { plan, argv } = await preparePackageLaunch(setup, host);
     if (host.kind === "ssh")
       return c.json({

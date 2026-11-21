@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createChannelsRouter } from "@orc/api/channels-router";
@@ -16,11 +16,11 @@ const saved = Object.fromEntries(
     process.env[k],
   ]),
 );
+const home = mkdtempSync(join(tmpdir(), "orc-channel-mcp-"));
 let service: ChannelService;
 let server: ReturnType<typeof Bun.serve>;
 const sent: Record<string, unknown>[] = [];
 beforeAll(async () => {
-  const home = mkdtempSync(join(tmpdir(), "orc-channel-mcp-"));
   process.env.HOME = home;
   process.env.USERPROFILE = home;
   process.env.ORC_DB_PATH = ":memory:";
@@ -70,6 +70,7 @@ afterAll(async () => {
     else process.env[key] = value;
   }
   resetConfig();
+  rmSync(home, { recursive: true, force: true });
 });
 
 test("MCP discovery/send/status/edit use the real HTTP service and enforce selected projects", async () => {

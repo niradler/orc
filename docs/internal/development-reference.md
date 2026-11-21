@@ -30,6 +30,8 @@ Default ports when `.env` is absent: API → 7700, web → 9742. If you need a t
 
 The web dev server proxies `/api/*` → `http://localhost:$ORC_API_PORT` (the `/api` prefix is kept; the API serves its routes under `/api`, and WebSockets are proxied too). The API auth secret defaults to `""` (open). Set `ORC_API_SECRET` or `api.secret` in `~/.orc/config.json` to require a Bearer token.
 
+**Production port hazard (7700).** Dev and tests must never dial the prod default port: with the daemon down, stray dials hit whatever else owns the port and can cascade into thousands of sockets (Windows ephemeral range ~16k ports, `TIME_WAIT` ~2 min), failing every suite that runs afterwards; with the daemon up, they would act on real production data. The api and mcp suites are isolated by `bunfig.toml` test preloads; see [Build and test → Production port isolation](../development/build-and-test.md#production-port-isolation). Diagnose a recurrence with `netstat -ano | findstr TIME_WAIT` grouped by remote port.
+
 ### Running dev servers
 
 > **Do not use the global `orc daemon`** for development - it runs the published binary on port 7700. Always use `bun dev` which starts from source on the dev port configured in `.env`. For production daemon setup (auto-start on boot, background service), see [Configuration](../docs/configuration.md).

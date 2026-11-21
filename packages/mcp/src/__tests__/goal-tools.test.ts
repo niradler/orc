@@ -6,6 +6,7 @@ import { type AgentEvent, type AgentSession, registerBackend } from "@orc/agent-
 import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb, getDb } from "@orc/db/client";
 import { projects, tasks } from "@orc/db/schema";
+import { listGoals, stopGoal } from "@orc/runner/goal-service";
 import { executeTool } from "../tools.js";
 
 let scope: string;
@@ -55,6 +56,14 @@ beforeAll(() => {
 });
 
 afterAll(async () => {
+  // A failed test can leave its goal looping; each iteration spawns a check
+  // child whose cwd locks the scope directory. Stop active goals first so no
+  // new check children start while we remove it.
+  if (scope) {
+    for (const goal of await listGoals()) {
+      if (goal.status === "active") await stopGoal(goal.id);
+    }
+  }
   closeDb();
   delete process.env.ORC_DB_PATH;
   resetConfig();

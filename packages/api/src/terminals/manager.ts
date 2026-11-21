@@ -1,3 +1,4 @@
+import { rmSync } from "node:fs";
 import { changes } from "@orc/core/changes";
 import { agentForSessionBackend } from "@orc/core/coding-agents";
 import { pathLabel } from "@orc/core/display-path";
@@ -57,6 +58,8 @@ export interface CreateTerminalInput {
   liveSessionId?: string | null | undefined;
   metadata?: TerminalMetadata | undefined;
   notice?: string | null | undefined;
+  /** A local package-launch staging dir to remove once the terminal process exits. */
+  staging?: string | null | undefined;
 }
 
 export interface TerminalManagerOptions {
@@ -80,6 +83,7 @@ interface Entry {
   scrollbackSize: number;
   previewBuffer: string;
   decoder: TextDecoder;
+  staging: string | null;
 }
 
 interface Ticket {
@@ -195,6 +199,7 @@ export class TerminalManager {
       scrollbackSize: 0,
       previewBuffer: "",
       decoder: new TextDecoder(),
+      staging: input.staging ?? null,
     };
     if (input.notice) {
       const notice = new TextEncoder().encode(`\x1b[33m${input.notice}\x1b[0m\r\n`);
@@ -317,6 +322,14 @@ export class TerminalManager {
     if (entry.info.status === "exited") return;
     entry.info.status = "exited";
     entry.info.exit_code = code;
+    if (entry.staging) {
+      // The launch script is gone once its process exits; cleanup must not break
+      // exit notification, and a just-exited child can briefly hold a handle.
+      try {
+        rmSync(entry.staging, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch {}
+      entry.staging = null;
+    }
     changes.publish("terminals");
     if (entry.info.preview_url) this.options.onTerminalClosed?.({ ...entry.info });
     for (const sink of entry.sinks) sink.exit(code);

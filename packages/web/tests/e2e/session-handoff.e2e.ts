@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { SessionHandoff, SessionHandoffUpload } from "@orc/core/session-handoff";
@@ -44,7 +44,10 @@ for (const agent of ["claude", "codex"] as const) {
       !availability.ready || !availability.launchers.includes(agent),
       `${agent} CLI and PTY support are required`,
     );
-    const root = mkdtempSync(join(tmpdir(), "orc-browser-handoff-"));
+    // The resume runs in chat, so its agent CLI outlives this spec and holds the
+    // worktree cwd. The run harness owns this home and removes it after the API
+    // and its children exit (same pattern as session-archive's resume home).
+    const root = mkdtempSync(join(homedir(), "orc-browser-handoff-"));
     const source = join(root, "source");
     const target = join(root, "target");
     const remote = join(root, "remote.git");

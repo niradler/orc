@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type ChatEvent, ChatThreadSchema } from "@orc/core/chat";
@@ -15,6 +15,7 @@ const agents = process.argv.includes("--codex-only")
     ? ["claude"]
     : ["codex", "claude"];
 const cwd = mkdtempSync(join(tmpdir(), "orc-native-attention-api-"));
+const previousDirectory = process.cwd();
 process.chdir(cwd);
 Object.assign(process.env, {
   ORC_DB_PATH: ":memory:",
@@ -300,4 +301,6 @@ try {
   console.log(JSON.stringify({ result: "passed", assertions: evidence, commandsAuthorized }));
 } finally {
   closeDb();
+  process.chdir(previousDirectory);
+  rmSync(cwd, { recursive: true, force: true });
 }

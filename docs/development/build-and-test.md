@@ -96,6 +96,19 @@ cd packages/api && bun test src/__tests__/projects.test.ts  # one file
 
 Tests use real SQLite and real processes, not mocks of the code under test. A test cleans up its own temp folders, including on failure.
 
+### Production port isolation
+
+Tests must never dial the production API port (the config default, `7700`). `setupTestApp` serves the app in-process, but outbound dialers — human-request waiters, built-in rule actions, spec discovery, MCP connections — resolve `ORC_API_BASE` and would otherwise fall back to that default. The `@orc/api` and `@orc/mcp` suites therefore preload an isolated base through their `bunfig.toml` (`src/__tests__/_api-isolation.ts`): a loopback probe that always answers 404 (api) or 503 (mcp), so these calls fail fast instead of retrying. A test that needs a live API sets `ORC_API_BASE` to its own fixture server and restores the previous value afterwards.
+
+This is not hypothetical. While the daemon is down, stray dials hit whatever else owns the prod port; local forwarding rules can amplify each dial into many sockets, exhausting the Windows ephemeral port range (~16k ports, held ~2 minutes in `TIME_WAIT`) so the suites running afterwards fail on unrelated connects. With the daemon up, the same dials would create real human requests and run real rule actions against production.
+
+Two related rules follow from the same shared-state hazard:
+
+- The `@orc/mcp` suite runs serially (`bun test --max-concurrency=1`). `bun test` interleaves files in one process, and several files swap the process-global `ORC_API_BASE` around their fixtures; concurrent files could dial another file's already-stopped server.
+- Workspace port-block tests inject `setWorkspacePortProber` (the `setTerminalManager` pattern) instead of probing live host ports. Their boundary blocks sit at the top of the OS ephemeral range, where the suite's own sockets land; Windows allocates ephemeral ports roughly sequentially, so a live probe fails whenever the suite's socket churn sweeps past the block. Production keeps the real bind probe.
+
+Every package with unit tests also preloads `scripts/test-home-isolation.ts` through its `bunfig.toml`: a direct `bun test` run gets a throwaway `HOME` (and Windows profile variables) under the temp root unless it is already isolated, so no test can open or rewrite the live `~/.orc/orc.db`. The gates isolate `HOME` per test step already; `scripts/test-home-isolation.test.ts` proves the guard trips and runs as its own gate step. The throwaway home is removed when the run ends: an `afterAll`/exit fast path, a detached cleaner that waits for the test process to die (fixtures can hold files open past `afterAll`, and the bun test runner fires no process exit hooks), and a sweep at the next preload that reaps homes whose owner pid is gone — the sweep is the guarantee on Windows, where the `bun run` wrapper's process job kills the cleaner and endpoint policy can block non-bun children.
+
 ### Web e2e (Playwright)
 
 ```bash

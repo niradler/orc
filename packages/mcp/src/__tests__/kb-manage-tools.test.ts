@@ -32,7 +32,8 @@ beforeAll(() => {
 
 afterEach(async () => {
   (await getKnowledgeService()).jobHooks = null;
-  delete process.env.ORC_API_BASE;
+  if (saved.ORC_API_BASE === undefined) delete process.env.ORC_API_BASE;
+  else process.env.ORC_API_BASE = saved.ORC_API_BASE;
 });
 
 afterAll(async () => {

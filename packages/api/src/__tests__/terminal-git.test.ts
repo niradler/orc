@@ -18,11 +18,12 @@ import { getSqlite } from "@orc/db/client";
 import { gitStatus, parseStatus } from "../git/panel.js";
 import { listWorktrees } from "../git/worktrees.js";
 import { shutdownTerminals } from "../terminals/service.js";
-import { req, setupTestApp, teardownTestApp } from "./helpers.js";
+import { removeTempTree, req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
 let terminalId: string;
 const repo = mkdtempSync(join(tmpdir(), "orc-panel-"));
+const tempDirs = [repo];
 beforeAll(async () => {
   for (const args of [
     ["init", "-b", "main"],
@@ -43,10 +44,11 @@ beforeAll(async () => {
   expect(response.status).toBe(201);
   terminalId = (await response.json()).id;
 });
-afterAll(() => {
+afterAll(async () => {
   shutdownTerminals();
   teardownTestApp();
-});
+  for (const dir of tempDirs) await removeTempTree(dir);
+}, 20_000);
 
 describe("terminal git panel", () => {
   test("should read Git from a chat session's folder when no terminal exists", async () => {
@@ -124,6 +126,7 @@ describe("terminal git panel", () => {
   });
   test("should read status and worktrees without refreshing the index", async () => {
     const checkout = mkdtempSync(join(tmpdir(), "orc-index-read-"));
+    tempDirs.push(checkout);
     for (const args of [
       ["init", "-b", "main"],
       ["config", "user.email", "test@example.com"],
@@ -357,6 +360,7 @@ describe("terminal git panel", () => {
   });
   test("file preview refuses directory aliases outside the checkout or into git metadata", async () => {
     const outside = mkdtempSync(join(tmpdir(), "orc-outside-files-"));
+    tempDirs.push(outside);
     writeFileSync(join(outside, "private.txt"), "outside content");
     symlinkSync(
       outside,

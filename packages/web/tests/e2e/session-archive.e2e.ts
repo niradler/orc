@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +22,12 @@ import { test } from "./_terminal-fixture";
 
 const execute = promisify(execFile);
 const python = process.platform === "win32" ? "python" : "python3";
+const tempDirs: string[] = [];
+
+test.afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 const nativeContent = (agent: "claude" | "codex", id: string, cwd: string, text: string) =>
   agent === "codex"
     ? `${JSON.stringify({ type: "session_meta", payload: { id, cwd, source: "cli" } })}\n${JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text }] } })}\n`
@@ -53,6 +59,7 @@ test("all Claude histories map across projects, preserve partial successes and s
   request,
 }) => {
   const root = mkdtempSync(join(tmpdir(), "orc-all-claude-"));
+  tempDirs.push(root);
   const one = tid("claude-one");
   const two = tid("claude-two");
   const p1 = await apiPost<{ id: string }>(request, "/projects", { name: one });
@@ -129,6 +136,7 @@ test("offline project sync via trusted helper is idempotent, incremental and sea
   const name = tid("archive-sync");
   const project = await apiPost<{ id: string }>(request, "/projects", { name });
   const root = mkdtempSync(join(tmpdir(), "orc-archive-browser-"));
+  tempDirs.push(root);
   const downloaded = await apiPost<{ result: string }>(request, "/mcp/tool", {
     name: "skill_read",
     args: { name: "orc-platform", project: name, ref: "scripts/sync-sessions.py", download: true },

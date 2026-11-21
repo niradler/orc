@@ -1,10 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
 import { API_SECRET, apiGet, apiPost, splitTerminalPane, terminalPaneAction } from "./_helpers";
 import { test } from "./_terminal-fixture";
+
+const tempDirs: string[] = [];
+
+test.afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 test("renderer startup preserves actions opened immediately after terminal focus", async ({
   page,
@@ -103,6 +109,7 @@ for (const stage of ["open menu", "focused trigger"] as const) {
 
 test("should show current PR CI states and hide unavailable CI", async ({ page, request }) => {
   const repo = mkdtempSync(join(tmpdir(), "orc-ci-states-"));
+  tempDirs.push(repo);
   execFileSync("git", ["-C", repo, "init", "-b", "main"], { timeout: 15000, windowsHide: true });
   const terminal = await apiPost<{ id: string }>(request, "/terminals", {
     kind: "shell",
@@ -174,6 +181,7 @@ test("should keep the terminal picker compact and reveal checkout links only wit
   request,
 }) => {
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "orc-pane-context-")));
+  tempDirs.push(repo);
   const git = (...args: string[]) =>
     execFileSync("git", ["-C", repo, ...args], { timeout: 15000, windowsHide: true });
   git("init", "-b", "main");
@@ -270,6 +278,7 @@ test("should retain file tabs through view and split changes, focus panes and fi
   request,
 }) => {
   const repo = mkdtempSync(join(tmpdir(), "orc-ui-review-"));
+  tempDirs.push(repo);
   const git = (...args: string[]) =>
     execFileSync("git", ["-C", repo, ...args], { timeout: 15000, windowsHide: true });
   git("init", "-b", "main");
@@ -353,6 +362,7 @@ test("multiplexer splits terminal, Git and file panes, resizes and restores them
   request,
 }) => {
   const repo = mkdtempSync(join(tmpdir(), "orc-panes-"));
+  tempDirs.push(repo);
   for (const args of [
     ["init", "-b", "main"],
     ["config", "user.email", "test@example.com"],
@@ -510,6 +520,7 @@ test("should edit, save and reopen text files while preserving drafts and reject
   request,
 }) => {
   const repo = mkdtempSync(join(tmpdir(), "orc-editor-"));
+  tempDirs.push(repo);
   execFileSync("git", ["-C", repo, "init", "-b", "main"], {
     timeout: 15_000,
     windowsHide: true,

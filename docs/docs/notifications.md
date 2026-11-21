@@ -2,14 +2,15 @@
 
 The bell in the workspace header opens your notification inbox: an anchored
 menu on desktop and a full page at `/notifications` on phones, including while
-the chat is open. New arrivals show an unread indicator without opening it. Use
+the chat is open. New arrivals jump the bell icon a few times and show an unread
+indicator without opening it. Use
 **Alt+N** or **Open notifications** in the command palette to open it; on
 phones both navigate to the page, and its back bar returns to where you were.
 
 Notifications cover human questions, approvals and commands, agent questions and
 outcomes, and job outcomes. Open an item to review the request or visit its source.
 Every alert names where it came from: the owning project, or the session's folder
-when no project owns it. The label appears in inbox rows, toasts, desktop
+when no project owns it. The label appears in inbox rows, desktop
 notifications and browser push, while **By project** grouping and per-project
 muting keep working as before. Labels follow the source: assigning a session to a
 project or renaming that project updates the notifications still in the inbox.
@@ -19,8 +20,7 @@ Dismissal does not approve, answer, cancel or delete a source request.
 
 The inbox shows **unread notifications** by default. Opening an item or choosing
 **Mark read** clears it from the inbox. Clicking a native desktop notification
-opens its destination and marks that item read; a grouped done toast only opens
-its destination. **Show read** includes read history; use
+opens its destination and marks that item read. **Show read** includes read history; use
 **Mark unread** to return an item to the inbox, or **Mark all read** to clear it.
 An opened human request stays available while you answer it.
 
@@ -47,12 +47,15 @@ Saved chat views and the native session share that latest completion using the
 agent backend, execution host and native session ID. The alert opens where the
 latest turn ran; opening another read-only view creates no new completion alert.
 Matching native IDs on different hosts or agent backends stay separate.
-When a session continues, its latest completion alert is automatically marked read.
+When a session continues — a new chat turn starts or an observed session runs
+again — every notification about that session is automatically dismissed: the
+completion, older failures, questions and approvals no longer need you.
+Notifications exist to find the sessions that actually need you, so stale ones
+never pile up.
 A completion for a chat or session that is already open and focused is marked read
 and dismissed as soon as it arrives, so the bell stays quiet while you watch it.
 This applies to workspace chats and observed agent sessions. **Show read** includes
 the retained latest completion, rather than a history of every turn.
-Failures and pending questions or approvals are kept independently.
 
 ![Read history on desktop with demo data](/screens/notification-center-light-1440.png)
 
@@ -90,8 +93,8 @@ snapshots keep their original content until their retention period ends.
 
 ## Sound, push and channels
 
-Desktop browsers show settled toasts; Needs-you alerts can chime and Done alerts
-are silent. **Settings → Notifications → Sound** controls browser-local sound and
+New notifications jump the bell icon a few times; Needs-you alerts can chime and
+Done alerts are silent. **Settings → Notifications → Sound** controls browser-local sound and
 project muting. Browser/PWA push remains separately opt-in for background human
 requests, chat replies and job results; see [Installation](./install.md).
 A device receives job pushes only after **Job results** is enabled there.
