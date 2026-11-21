@@ -523,11 +523,20 @@ Pick the execution host from the SSH row under **Settings → Hosts**: **Change*
 
 Channels are configured only under **Settings → Connections → Channels**;
 there is no config-file `channels` or `gateway` section. `ORC_TELEGRAM_TOKEN`,
-`ORC_SLACK_BOT_TOKEN` and `ORC_SLACK_APP_TOKEN` set up nothing by themselves —
+`ORC_SLACK_BOT_TOKEN`, `ORC_SLACK_APP_TOKEN`, `ORC_SLACK_USER_TOKEN` and
+`ORC_SLACK_USER_COOKIE` set up nothing by themselves —
 reference one as a connection's credential (`env:ORC_TELEGRAM_TOKEN`,
-`env:ORC_SLACK_BOT_TOKEN`, `env:ORC_SLACK_APP_TOKEN`) when saving the
+`env:ORC_SLACK_BOT_TOKEN`, `env:ORC_SLACK_APP_TOKEN`, `env:ORC_SLACK_USER_TOKEN`,
+`env:ORC_SLACK_USER_COOKIE`) when saving the
 connection, so the token stays out of the database. See
 [Notifications → Inbound rules](./notifications.md#inbound-rules) for routing.
+
+Slack has two providers. `slack` runs a Slack app (bot token + Socket Mode app
+token) and posts as the bot. `slack-user` runs on your own Slack session
+(`xoxc` token + `d` cookie, via [earshot](https://github.com/niradler/earshot))
+and posts as you — for workspaces where installing an app is not possible.
+The session cookie is a full-access secret; treat it like a password. See
+[Notifications → Slack user session](./notifications.md#slack-user-session).
 
 ### `speech`, `tts`
 

@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, test } from "bun:test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,6 +13,21 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { bearerAuth } from "../middleware/auth.js";
 import { createChannelsRouter } from "../routes/channels.js";
+
+// Keep the real earshot/session exports for other test files; only the desktop
+// extraction is faked so tests never touch a real Slack installation.
+const realSession = await import("@niradler55/earshot/session");
+let localSession: { token: string; cookie: string } | Error = {
+  token: "xoxc-local-fixture",
+  cookie: "xoxd-local-fixture",
+};
+mock.module("@niradler55/earshot/session", () => ({
+  ...realSession,
+  extractFromDesktop: () => {
+    if (localSession instanceof Error) throw localSession;
+    return localSession;
+  },
+}));
 
 const original = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
 const privateHome = mkdtempSync(join(tmpdir(), "orc-channel-api-"));
@@ -119,6 +134,7 @@ test("channel APIs require authentication, including setup and discovery", async
     ["/channels", "GET"],
     ["/channels/providers", "GET"],
     ["/channels/slack-manifest", "GET"],
+    ["/channels/slack-user/session", "POST"],
     ["/channels/test", "PUT"],
     ["/channels/messages", "POST"],
     ["/channels/pairings/test", "GET"],
@@ -128,6 +144,23 @@ test("channel APIs require authentication, including setup and discovery", async
     ["/channels/notification-deliveries", "GET"],
   ] as const)
     expect((await app.request(`/api${path}`, { method })).status).toBe(401);
+});
+
+test("slack-user session fill reads the local desktop app and reports safe errors", async () => {
+  const ok = await request("/channels/slack-user/session", "POST");
+  expect(ok.status).toBe(200);
+  expect(await ok.json()).toEqual({
+    token: "xoxc-local-fixture",
+    cookie: "xoxd-local-fixture",
+  });
+  localSession = new Error("no xoxc token in the Slack app — are you logged in?");
+  const failed = await request("/channels/slack-user/session", "POST");
+  expect(failed.status).toBe(400);
+  expect(await failed.json()).toEqual({
+    error:
+      "Could not read the local Slack session: no xoxc token in the Slack app — are you logged in?",
+  });
+  localSession = { token: "xoxc-local-fixture", cookie: "xoxd-local-fixture" };
 });
 
 test("configuration persists in SQLite, hides secrets, preserves routing order and rejects stale writes", async () => {

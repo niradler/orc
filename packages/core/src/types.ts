@@ -31,7 +31,13 @@ export const JobStatusSchema = z.enum([
 ]);
 export const JobOverlapSchema = z.enum(["skip", "queue", "kill"]);
 export const MemoryImportanceSchema = z.enum(["low", "normal", "high", "critical"]);
-export const BridgePlatformSchema = z.enum(["telegram", "slack", "discord", "feishu"]);
+export const BridgePlatformSchema = z.enum([
+  "telegram",
+  "slack",
+  "slack-user",
+  "discord",
+  "feishu",
+]);
 export const BridgeModeSchema = z
   .enum(["direct", "multi"])
   .or(z.string().regex(/^agent:.+/))

@@ -21,6 +21,7 @@
     "@hono/swagger-ui": "^0.6.1",
     "@hono/zod-openapi": "^1.6.3",
     "@modelcontextprotocol/sdk": "^1.32.2",
+    "@niradler55/earshot": "^0.0.4",
     "@orc/agent-runtime": "workspace:*",
     "@orc/channels": "workspace:*",
     "@orc/core": "workspace:*",

@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { type ChannelService, getChannelService } from "@orc/channels";
 import { channelProvider, channelProviderInfo } from "@orc/channels/providers";
+import { localSlackSession } from "@orc/channels/providers/slack-user";
 import { routeMessage } from "@orc/channels/routing";
 import {
   ChannelReceiptSchema,
@@ -157,6 +158,17 @@ export function createChannelsRouter(service: () => ChannelService = getChannelS
       responses: { 200: json(z.record(z.string(), z.unknown())) },
     }),
     (c) => c.json(channelProvider("slack").manifest ?? {}),
+  );
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/channels/slack-user/session",
+      tags: ["Channels"],
+      summary:
+        "Read the Slack user session from the local desktop app (macOS/Windows) to fill credentials",
+      responses: { 200: json(z.object({ token: z.string(), cookie: z.string() })) },
+    }),
+    (c) => c.json(localSlackSession()),
   );
   app.openapi(
     createRoute({

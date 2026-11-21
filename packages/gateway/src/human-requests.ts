@@ -82,7 +82,7 @@ export class HumanRequestChannels {
           continue;
         if (
           !request.input.notify.includes(
-            (target.provider ?? target.platform) as "telegram" | "slack",
+            (target.provider ?? target.platform) as "telegram" | "slack" | "slack-user",
           ) ||
           target.project_id !== request.input.project_id
         )
