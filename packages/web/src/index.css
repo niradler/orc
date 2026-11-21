@@ -255,6 +255,20 @@ html[data-chat-font="serif"] {
     display: none;
   }
 
+  [data-chip-help] {
+    display: none;
+  }
+
+  .composer-chip [data-chip-main] {
+    justify-content: center;
+    gap: 0;
+  }
+
+  /* The composite chip's border sits outside the inner button's 32px target. */
+  .composer-chip:has([data-chip-main]) {
+    width: 34px;
+  }
+
   .chat-composer-tools,
   .chat-workspace-controls {
     flex-wrap: nowrap;
@@ -280,6 +294,23 @@ html[data-chat-font="serif"] {
 @media (max-width: 639px), (pointer: coarse) {
   .composer-chip {
     min-width: 44px;
+  }
+}
+
+/* Touch: the truncated model label scrolls sideways inside the chip instead of
+   relying on hover; the scrollbar stays hidden and scrolling does not chain to
+   the composer row. */
+@media (pointer: coarse) {
+  .composer-chip [data-chip-scroll] {
+    overflow-x: auto;
+    text-overflow: clip;
+    scrollbar-width: none;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .composer-chip [data-chip-scroll]::-webkit-scrollbar {
+    display: none;
   }
 }
 

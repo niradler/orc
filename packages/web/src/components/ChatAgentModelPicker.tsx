@@ -24,6 +24,7 @@ import {
   liveEffortChoices,
   permissionModes,
   permissionText,
+  shortModelLabel,
   withAgentEffort,
   withPermissionMode,
 } from "@/lib/composer-chips";
@@ -105,7 +106,7 @@ export function ChatAgentModelPicker() {
     if (thread && options) void chat.applyAgentOptions(config.agent, options).catch(() => {});
   }, [staleEffort, config, setConfig, thread, chat]);
   const name = selectedProvider?.name ?? agentLabel(config.agent);
-  const summary = agentModelLabel(modelName, effort);
+  const summary = agentModelLabel(shortModelLabel(modelName, config.model, config.agent), effort);
   const started = !!thread || streaming;
   const navigate = useNavigate();
   const preferences = useComposerPreferences();

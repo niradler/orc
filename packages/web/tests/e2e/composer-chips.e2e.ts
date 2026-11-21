@@ -1,5 +1,5 @@
 import { ChatSettingsSchema } from "@orc/core/chat";
-import { expect, type Page, test } from "@playwright/test";
+import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
 import { API_SECRET } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
@@ -178,6 +178,161 @@ for (const width of [320, 390, 820, 1440]) {
     }
   });
 }
+
+const MODEL_SCENARIOS = [
+  {
+    agent: "claude",
+    id: "claude-opus-4-6[1m]",
+    label: "Claude Opus 4.6 (1M context) with extended thinking",
+    short: "Opus 4.6",
+  },
+  {
+    agent: "codex",
+    id: "gpt-5.2-codex",
+    label: "GPT-5.2 Codex with max reasoning",
+    short: "GPT-5.2 Codex",
+  },
+  {
+    agent: "opencode",
+    id: "qwen3-max-preview",
+    label: "Qwen3 Max Preview (thinking)",
+    short: "Qwen3 Max Preview",
+  },
+] as const;
+const LONG_MODEL = MODEL_SCENARIOS[0];
+
+async function seedModel(
+  page: Page,
+  request: APIRequestContext,
+  scenario: (typeof MODEL_SCENARIOS)[number],
+) {
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [scenario], warning: null } }),
+  );
+  await request.patch("/api/settings", {
+    headers,
+    data: { chat: { ...defaults, agent: scenario.agent, model: scenario.id } },
+  });
+}
+
+test("@sanity long model names stay readable in the composer chip and picker", async ({
+  page,
+  request,
+}) => {
+  for (const width of [1440, 820, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const scenarios = width === 1440 ? MODEL_SCENARIOS : [LONG_MODEL];
+    for (const scenario of scenarios) {
+      await seedModel(page, request, scenario);
+      await openChat(page);
+      const chip = page.getByTestId("chat-agent-model-button");
+      if (width === 1440) await page.getByTestId("chat-fullscreen-button").click();
+      if (width === 390) {
+        // Compact composer keeps the approved icon-only row; the full name stays
+        // in the accessible name and one tap away in the picker.
+        await expect(chip).toBeVisible();
+        await expect(chip.getByTestId("chat-model-current")).toBeHidden();
+        await expect(page.getByTestId("chat-model-help")).toBeHidden();
+        const bounds = await chip.boundingBox();
+        expect(bounds?.width).toBe(44);
+        expect(bounds?.height).toBeGreaterThanOrEqual(44);
+        expect(await chip.getAttribute("aria-label")).toContain(scenario.label);
+        await page.screenshot({ path: test.info().outputPath(`long-model-${width}.png`) });
+        await chip.click();
+        await expect(page.getByTestId("chat-picker-tab-model")).toHaveAttribute(
+          "aria-label",
+          `Model: ${scenario.label}`,
+        );
+      } else {
+        // Resting chip is clean: core name, no help icon until the menu opens.
+        // Fullscreen remounts the composer; wait for the labeled chip before measuring.
+        await expect(chip.getByTestId("chat-model-current")).toBeVisible();
+        const bounds = await chip.boundingBox();
+        expect(bounds?.width).toBeLessThanOrEqual(256);
+        await expect(chip.getByTestId("chat-model-current")).toHaveText(scenario.short);
+        const help = page.getByTestId("chat-model-help");
+        await expect(help).toBeHidden();
+        // Opening the menu reveals the i inside the chip, beside the model name.
+        await chip.click();
+        await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+        await expect(help).toBeVisible();
+        await help.hover();
+        const content = page.getByTestId("chat-model-help-content");
+        await expect(content).toBeVisible();
+        await expect(page.getByTestId("chat-model-help-name")).toHaveText(scenario.label);
+        // The popover adapts to its text instead of a fixed 320px box.
+        const contentBounds = await content.boundingBox();
+        expect(contentBounds?.width).toBeLessThanOrEqual(320);
+        if (scenario.agent !== "claude") expect(contentBounds?.width).toBeLessThan(300);
+        await page.screenshot({
+          path: test.info().outputPath(`chip-${scenario.agent}-${width}.png`),
+        });
+        // Using the i keeps the menu open (it lives outside the popover content).
+        await help.click();
+        await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+      }
+      const option = page.getByTestId(`chat-model-option-${scenario.id}`);
+      await expect(option).toContainText(scenario.label);
+      expect(
+        await option
+          .locator("span")
+          .first()
+          .evaluate((element) => element.scrollWidth <= element.clientWidth),
+      ).toBe(true);
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("chat-send-button")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+    }
+  }
+});
+
+test.describe("touch composer", () => {
+  test.use({ hasTouch: true });
+  test("long model names scroll sideways in the chip without a scrollbar", async ({
+    page,
+    request,
+  }) => {
+    expect(await page.evaluate(() => matchMedia("(pointer: coarse)").matches)).toBe(true);
+    const raw = {
+      agent: "opencode",
+      id: "some-provider/very-long-custom-model-identifier-with-many-words-0123456789",
+      label: "some-provider/very-long-custom-model-identifier-with-many-words-0123456789",
+    };
+    await page.route("**/api/chat/models?**", (route) =>
+      route.fulfill({ json: { models: [raw], warning: null } }),
+    );
+    await request.patch("/api/settings", {
+      headers,
+      data: { chat: { ...defaults, agent: raw.agent, model: raw.id } },
+    });
+    await page.setViewportSize({ width: 820, height: 900 });
+    await openChat(page);
+    const model = page.getByTestId("chat-model-current");
+    await expect(model).toBeVisible();
+    const state = await model.evaluate((element) => ({
+      overflowX: getComputedStyle(element).overflowX,
+      scrollbarWidth: getComputedStyle(element).scrollbarWidth,
+      scrollable: element.scrollWidth > element.clientWidth,
+    }));
+    expect(state).toEqual({ overflowX: "auto", scrollbarWidth: "none", scrollable: true });
+    await model.evaluate((element) => {
+      element.scrollLeft = 80;
+    });
+    expect(await model.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    await page.screenshot({ path: test.info().outputPath("long-model-touch-820.png") });
+    // The i only exists while the menu is open; tapping it must not close the menu.
+    await expect(page.getByTestId("chat-model-help")).toBeHidden();
+    await page.getByTestId("chat-agent-model-button").tap();
+    await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+    await expect(page.getByTestId("chat-model-help")).toBeVisible();
+    await page.getByTestId("chat-model-help").tap();
+    await expect(page.getByTestId("chat-model-help-name")).toHaveText(raw.label);
+    await expect(page.getByTestId("chat-agent-model-picker")).toBeVisible();
+    await expect(page.getByTestId(`chat-model-option-${raw.id}`)).toContainText(raw.label);
+  });
+});
 
 test("folder changes in two clicks and agent+model change from one pill", async ({ page }) => {
   await openChat(page);
