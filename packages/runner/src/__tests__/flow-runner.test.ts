@@ -463,6 +463,253 @@ describe("recovery from infrastructure failure", () => {
     expect(taskStatus(taskId)).toBe("blocked");
   });
 
+  test("an infrastructure retry resumes the native session when one exists", async () => {
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const build = activeNodeRun(taskId);
+    const { cleanupStaleFlowSessions } = await import("../flow-runner.js");
+
+    const sessionId = ulid();
+    const stale = Math.floor(Date.now() / 1000) - 100_000;
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, runtime_session_id, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, 'native-prev', ?, ?, ?)`,
+      )
+      .run(sessionId, taskId, stale, stale, stale);
+    getSqlite()
+      .query("UPDATE flow_node_runs SET status = 'running', gateway_session_id = ? WHERE id = ?")
+      .run(sessionId, build.id);
+
+    expect(await cleanupStaleFlowSessions()).toBe(1);
+    const retry = activeNodeRun(taskId);
+    expect(retry.retry).toBe(1);
+    const resume = getSqlite()
+      .query("SELECT resume_session FROM flow_node_runs WHERE id = ?")
+      .get(retry.id) as { resume_session: number };
+    // The turn died, not the conversation: the retry loads the native session.
+    expect(resume.resume_session).toBe(1);
+  });
+
+  test("a daemon restart settles orphaned workers, frees the slot and resumes", async () => {
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const build = activeNodeRun(taskId);
+    const { recoverOrphanedFlowSessions, getActiveWorkerCount } = await import("../flow-runner.js");
+
+    // A fresh running session with a native id: only a restart explains the
+    // missing live handle, so the idle sweep must not be what frees the slot.
+    const sessionId = ulid();
+    const now = Math.floor(Date.now() / 1000);
+    const before = getActiveWorkerCount();
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, runtime_session_id, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, 'native-live', ?, ?, ?)`,
+      )
+      .run(sessionId, taskId, now, now, now);
+    getSqlite()
+      .query("UPDATE flow_node_runs SET status = 'running', gateway_session_id = ? WHERE id = ?")
+      .run(sessionId, build.id);
+    expect(getActiveWorkerCount()).toBe(before + 1);
+
+    expect(await recoverOrphanedFlowSessions()).toBe(1);
+
+    const session = getSqlite()
+      .query("SELECT status, last_error FROM gateway_sessions WHERE id = ?")
+      .get(sessionId) as { status: string; last_error: string };
+    expect(session.status).toBe("error");
+    expect(session.last_error).toBe("daemon restarted");
+    expect(getActiveWorkerCount()).toBe(before);
+    const retry = activeNodeRun(taskId);
+    expect(retry).toMatchObject({ node_id: "build", attempt: 1, retry: 1, status: "pending" });
+    const resume = getSqlite()
+      .query("SELECT resume_session FROM flow_node_runs WHERE id = ?")
+      .get(retry.id) as { resume_session: number };
+    expect(resume.resume_session).toBe(1);
+    expect(taskStatus(taskId)).not.toBe("blocked");
+  });
+
+  test("restart recovery releases a claimed task with no node run", async () => {
+    const taskId = await makeTask({ status: "doing", claimed_by: "worker" });
+    const { recoverOrphanedFlowSessions } = await import("../flow-runner.js");
+    const sessionId = ulid();
+    const now = Math.floor(Date.now() / 1000);
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?)`,
+      )
+      .run(sessionId, taskId, now, now);
+
+    expect(await recoverOrphanedFlowSessions()).toBe(1);
+    expect(taskStatus(taskId)).toBe("todo");
+    const claim = getSqlite().query("SELECT claimed_by FROM tasks WHERE id = ?").get(taskId) as {
+      claimed_by: string | null;
+    };
+    expect(claim.claimed_by).toBeNull();
+  });
+});
+
+describe("goal lifetime exemption", () => {
+  /** A worker past the absolute lifetime cap, optionally owned by a goal. */
+  async function agedSession(opts: {
+    goal?: "active" | "stopped" | "none";
+    idle?: boolean;
+  }): Promise<{ taskId: string; sessionId: string }> {
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const build = activeNodeRun(taskId);
+    const run = getActiveFlowRunForTask(taskId);
+    const now = Math.floor(Date.now() / 1000);
+    const born = now - 100_000; // well past the 120-minute ceiling
+    const activity = opts.idle ? born : now;
+    const sessionId = ulid();
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?, ?)`,
+      )
+      .run(sessionId, taskId, activity, born, activity);
+    getSqlite()
+      .query("UPDATE flow_node_runs SET status = 'running', gateway_session_id = ? WHERE id = ?")
+      .run(sessionId, build.id);
+    if (opts.goal !== "none") {
+      getSqlite()
+        .query(
+          `INSERT INTO goals (id, task_id, flow_run_id, objective, spec, status, created_at, updated_at)
+           VALUES (?, ?, ?, 'keep going', '{}', ?, unixepoch(), unixepoch())`,
+        )
+        .run(ulid(), taskId, run?.id ?? null, opts.goal ?? "active");
+    }
+    return { taskId, sessionId };
+  }
+
+  test("an active goal's chatty worker survives the lifetime ceiling", async () => {
+    const { sessionId } = await agedSession({ goal: "active" });
+    const { cleanupStaleFlowSessions } = await import("../flow-runner.js");
+    expect(await cleanupStaleFlowSessions()).toBe(0);
+    const session = getSqlite()
+      .query("SELECT status FROM gateway_sessions WHERE id = ?")
+      .get(sessionId) as { status: string };
+    expect(session.status).toBe("running");
+  });
+
+  test("an idle goal worker is still reaped — a hung loop is a failure", async () => {
+    const { sessionId } = await agedSession({ goal: "active", idle: true });
+    const { cleanupStaleFlowSessions } = await import("../flow-runner.js");
+    expect(await cleanupStaleFlowSessions()).toBe(1);
+    const session = getSqlite()
+      .query("SELECT status FROM gateway_sessions WHERE id = ?")
+      .get(sessionId) as { status: string };
+    expect(session.status).toBe("error");
+  });
+
+  test("a stopped goal no longer exempts its worker", async () => {
+    await agedSession({ goal: "stopped" });
+    const { cleanupStaleFlowSessions } = await import("../flow-runner.js");
+    expect(await cleanupStaleFlowSessions()).toBe(1);
+  });
+
+  test("without a goal the lifetime ceiling still applies", async () => {
+    await agedSession({ goal: "none" });
+    const { cleanupStaleFlowSessions } = await import("../flow-runner.js");
+    expect(await cleanupStaleFlowSessions()).toBe(1);
+  });
+});
+
+describe("command nodes (goal checks)", () => {
+  const checkFlow = (command: string, metricPattern?: string) => ({
+    name: "test-goal-check",
+    entry: "work",
+    nodes: {
+      work: { kind: "agent", skill: "orc-coder", outcomes: ["submitted"] },
+      check: {
+        kind: "command",
+        command,
+        ...(metricPattern ? { metric_pattern: metricPattern } : {}),
+      },
+      done: { kind: "terminal", task_status: "done" },
+    },
+    edges: [
+      { from: "work", to: "check", when: { always: true } },
+      { from: "check", to: "done", when: { outcome: "passed" } },
+      { from: "check", to: "work", when: { outcome: "failed" } },
+    ],
+  });
+
+  test("a failed check loops back to the worker; a passing check completes", async () => {
+    const taskId = await makeTask({ flow_override: checkFlow("exit 0") });
+    await startFlowForTask(taskId);
+    await completeNode(taskId, "submitted");
+    await drainPendingNodes();
+
+    expect(taskStatus(taskId)).toBe("done");
+    const run = getLatestFlowRunForTask(taskId);
+    expect(run?.status).toBe("completed");
+    expect(run?.vars.check_exit).toBe(0);
+    expect(run?.nodes.find((n) => n.node_id === "check")?.outcome).toBe("passed");
+  });
+
+  test("check vars carry the exit code, metric and stall count across iterations", async () => {
+    const taskId = await makeTask({
+      flow_override: checkFlow("echo coverage 80; exit 1", "coverage (\\d+)"),
+    });
+    await startFlowForTask(taskId);
+    await completeNode(taskId, "submitted");
+    await drainPendingNodes();
+
+    // The check failed, so the graph looped back to the worker — same visit
+    // coordinate rules as any loopback, and the check left its vars behind.
+    let run = getLatestFlowRunForTask(taskId);
+    expect(run?.visits.work).toBe(2);
+    expect(run?.vars.check_exit).toBe(1);
+    expect(run?.vars.check_metric).toBe(80);
+    expect(run?.vars.check_stall).toBe(0);
+    expect(run?.vars.check_output).toContain("coverage 80");
+    expect(activeNodeRun(taskId).node_id).toBe("work");
+
+    // Same metric again → one stalled iteration, the ladder's trigger.
+    await completeNode(taskId, "submitted");
+    await drainPendingNodes();
+    run = getLatestFlowRunForTask(taskId);
+    expect(run?.vars.check_stall).toBe(1);
+    expect(run?.visits.work).toBe(3);
+  });
+
+  test("a command node runs even when the worker pool is saturated", async () => {
+    // Occupy the single worker slot with a running worker; the check must still
+    // run because command nodes hold no worker slot.
+    const blocker = ulid();
+    const now = Math.floor(Date.now() / 1000);
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?)`,
+      )
+      .run(blocker, now, now);
+    try {
+      const taskId = await makeTask({
+        flow_override: {
+          name: "test-check-only",
+          entry: "check",
+          nodes: {
+            check: { kind: "command", command: "exit 0" },
+            done: { kind: "terminal", task_status: "done" },
+          },
+          edges: [{ from: "check", to: "done", when: { outcome: "passed" } }],
+        },
+      });
+      await startFlowForTask(taskId);
+      await drainPendingNodes();
+      expect(taskStatus(taskId)).toBe("done");
+    } finally {
+      getSqlite().query("DELETE FROM gateway_sessions WHERE id = ?").run(blocker);
+    }
+  });
+});
+
+describe("halting and revisiting retried nodes", () => {
   test("halting a run cancels the live retry, not the row it replaced", async () => {
     // A visit can own several rows once retried. Cancelling by
     // (run, node, attempt) alone picked one arbitrarily — the already-failed

@@ -142,6 +142,7 @@ async function createShard(index: number): Promise<Shard> {
       ORC_KNOWLEDGE_ROOT: join(home, "knowledge"),
       ORC_API_SECRET: "dev",
       ORC_E2E_CHAT_MOCK: "1",
+      ORC_E2E_GOAL_FIXTURE: "1",
       // The owned Windows config must win over a personal shell override.
       ORC_TERMINALS_SHELL:
         process.platform === "win32" ? "" : (process.env.ORC_TERMINALS_SHELL ?? ""),

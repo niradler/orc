@@ -138,6 +138,7 @@ export type {
   BrokenAgent,
   BrokenFlow,
   Comment,
+  CreateGoalInput,
   CreateJobInput,
   CreateProjectInput,
   CreateSkillInput,
@@ -148,6 +149,10 @@ export type {
   FlowNodeRun,
   FlowRun,
   FlowSource,
+  Goal,
+  GoalCheckVisit,
+  GoalRunStatus,
+  GoalSpec,
   HealthResponse,
   IntegrationAuthorization,
   IntegrationConnection,
@@ -212,6 +217,7 @@ import type {
   BrokenAgent,
   BrokenFlow,
   Comment,
+  CreateGoalInput,
   CreateJobInput,
   CreateProjectInput,
   CreateSkillInput,
@@ -221,6 +227,8 @@ import type {
   FlowMeta,
   FlowRun,
   FlowSource,
+  Goal,
+  GoalCheckVisit,
   HealthResponse,
   IntegrationAuthorization,
   IntegrationConnection,
@@ -1150,6 +1158,16 @@ export const api = {
         params as Record<string, string | number | boolean | undefined>,
       ),
     get: (name: string) => req<FlowFull>("GET", `/flows/${encodeURIComponent(name)}`),
+  },
+
+  goals: {
+    list: () => req<{ goals: Goal[] }>("GET", "/goals"),
+    get: (id: string) => req<{ goal: Goal; history: GoalCheckVisit[] }>("GET", `/goals/${id}`),
+    create: (data: CreateGoalInput) => req<{ goal: Goal }>("POST", "/goals", data),
+    stop: (id: string) => req<{ goal: Goal }>("POST", `/goals/${id}/stop`, {}),
+    // null (not an error) when the task has no goal attached.
+    forTask: (taskId: string) =>
+      req<{ goal: Goal | null }>("GET", `/tasks/${taskId}/goal`).then((r) => r.goal),
   },
 
   memories: {

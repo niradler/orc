@@ -15,6 +15,7 @@ import {
   type GithubSyncState,
   validateGithubTaskEdit,
 } from "@orc/core/github-sync";
+import { GoalSpecSchema } from "@orc/core/goal";
 import {
   CommandSpecSchema,
   HumanRequestInputSchema,
@@ -1111,6 +1112,66 @@ export const toolDefinitions = [
     inputSchema: z.object({
       task: z.string().describe("Task ID"),
     }),
+  },
+  {
+    name: "goal_create",
+    description:
+      "Start a goal: ORC loops a worker agent and an external success check until the check passes, " +
+      "within a budget. A stalled metric switches to the next allowed agent, then a reviewer, then one " +
+      "human request. Returns the goal id; watch it with goal_status.",
+    inputSchema: z.object({
+      objective: z.string().min(1).max(2000).describe("What must become true"),
+      check: z
+        .string()
+        .min(1)
+        .max(4000)
+        .describe("Shell command whose exit 0 means the goal is met; runs in the task's worktree"),
+      metric_pattern: z
+        .string()
+        .max(500)
+        .optional()
+        .describe("Regex with one capture group extracting a progress metric from check stdout"),
+      agents: z
+        .array(z.string())
+        .min(1)
+        .max(4)
+        .optional()
+        .describe("Allowed worker backends in ladder order (default: claude)"),
+      iterations: z
+        .number()
+        .int()
+        .min(1)
+        .max(200)
+        .optional()
+        .describe("Max check iterations (default 30)"),
+      tokens: z.number().int().min(1).optional().describe("Max recorded worker tokens"),
+      hours: z.number().min(0.1).max(168).optional().describe("Max wall-clock hours (default 6)"),
+      stall_limit: z
+        .number()
+        .int()
+        .min(1)
+        .max(20)
+        .optional()
+        .describe("Unchanged-metric iterations before switching agent (default 3)"),
+      skill: z.string().optional().describe("Worker skill (default orc-coder)"),
+      project: projectParam,
+      task: z.string().optional().describe("Attach to an existing task instead of creating one"),
+    }),
+  },
+  {
+    name: "goal_status",
+    description:
+      "A goal's live status: iteration, agent stage, stall count, tokens used, last check output, " +
+      "and the check history. Pass the goal id or the task id.",
+    inputSchema: z.object({
+      id: z.string().optional().describe("Goal ID"),
+      task: z.string().optional().describe("Task ID the goal is attached to"),
+    }),
+  },
+  {
+    name: "goal_stop",
+    description: "Stop a goal's flow and mark it stopped.",
+    inputSchema: z.object({ id: z.string().describe("Goal ID") }),
   },
   {
     name: "flow_list",
@@ -3131,6 +3192,77 @@ export async function executeTool(
           ? ` The flow moved on to: ${result.nextNodes.join(", ")}.`
           : " The flow routes when your session ends — finish up and stop.")
       );
+    }
+
+    case "goal_create": {
+      const a = args as {
+        objective: string;
+        check: string;
+        metric_pattern?: string;
+        agents?: string[];
+        iterations?: number;
+        tokens?: number;
+        hours?: number;
+        stall_limit?: number;
+        skill?: string;
+        project?: string;
+        task?: string;
+      };
+      if (a.task) {
+        const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, a.task) });
+        if (!owner) return `Task not found: ${a.task}`;
+        assertTaskInScope(owner.project_id, options);
+      }
+      const resolved = resolveProjectId(a.project);
+      const spec = GoalSpecSchema.parse({
+        objective: a.objective,
+        check: a.check,
+        ...(a.metric_pattern ? { metric_pattern: a.metric_pattern } : {}),
+        ...(a.agents ? { agents: a.agents } : {}),
+        budget: {
+          ...(a.iterations !== undefined ? { iterations: a.iterations } : {}),
+          ...(a.tokens !== undefined ? { tokens: a.tokens } : {}),
+          ...(a.hours !== undefined ? { hours: a.hours } : {}),
+        },
+        ...(a.stall_limit !== undefined ? { stall_limit: a.stall_limit } : {}),
+        ...(a.skill ? { skill: a.skill } : {}),
+        ...(resolved ? { project_id: resolved.id } : {}),
+        ...(a.task ? { task_id: a.task } : {}),
+      });
+      const { createGoal } = await import("@orc/runner/goal-service");
+      const goal = await createGoal(spec);
+      return `Goal ${goal.id} started on task ${goal.task_id} (${goal.run?.status ?? "active"}). Watch it with goal_status.`;
+    }
+
+    case "goal_status": {
+      const { id, task } = args as { id?: string; task?: string };
+      const { getGoal, getTaskGoal } = await import("@orc/runner/goal-service");
+      if (id) {
+        const found = await getGoal(id);
+        if (!found) return `Goal not found: ${id}`;
+        const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, found.goal.task_id) });
+        assertTaskInScope(owner?.project_id ?? null, options);
+        return JSON.stringify(found);
+      }
+      if (task) {
+        const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, task) });
+        if (!owner) return `Task not found: ${task}`;
+        assertTaskInScope(owner.project_id, options);
+        const goal = await getTaskGoal(task);
+        return goal ? JSON.stringify(goal) : `No goal on task ${task}.`;
+      }
+      return "Pass a goal id or a task id.";
+    }
+
+    case "goal_stop": {
+      const { id } = args as { id: string };
+      const { getGoal, stopGoal } = await import("@orc/runner/goal-service");
+      const found = await getGoal(id);
+      if (!found) return `Goal not found: ${id}`;
+      const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, found.goal.task_id) });
+      assertTaskInScope(owner?.project_id ?? null, options);
+      const goal = await stopGoal(id);
+      return `Goal ${goal.id} stopped.`;
     }
 
     case "flow_status": {

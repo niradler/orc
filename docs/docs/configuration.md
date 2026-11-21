@@ -447,6 +447,22 @@ The task loop picks up `todo` and `changes_requested` tasks and runs agents on t
 | `agent_loop.max_node_retries`             | `2`               | `ORC_AGENT_LOOP_MAX_NODE_RETRIES` |
 | `agent_loop.max_flow_runs_per_task`       | `6`               | `ORC_AGENT_LOOP_MAX_FLOW_RUNS`    |
 
+**Long-running work.** `session_idle_timeout_minutes` reclaims sessions that stop
+reporting activity; `session_max_lifetime_minutes` is a separate absolute ceiling
+so a chatty-but-hung agent cannot hold a worker slot forever. A worker driving an
+**active goal** is exempt from the absolute ceiling while it keeps making
+progress — a goal loop is meant to run for hours — but an idle goal worker is
+still reclaimed. Non-goal sessions keep the ceiling unchanged.
+
+When a worker dies for infrastructure reasons (idle timeout, lifetime cap,
+daemon restart), the node is retried in place up to `max_node_retries`, and the
+retry **resumes the previous native session** when one exists, so the turn is
+lost but the conversation is not; a fresh session starts only when there is
+nothing to resume. Retries do not consume graph visits or loop budget. After a
+daemon restart, orphaned running workers are settled immediately — their slots
+free at once and resume retries are queued without waiting for the idle sweep.
+Command checks hold no worker slot and are never starved by a saturated pool.
+
 Run `orc doctor` to see which backends are usable. See [Task flows](./task-flows.md).
 
 ### `runner` (jobs)

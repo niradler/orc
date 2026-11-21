@@ -14,6 +14,8 @@ import codexModels from "./fixtures/codex-model-list.json";
 import codexSkills from "./fixtures/codex-skills-list.json";
 import opencodeCommands from "./fixtures/opencode-command-list.json";
 
+// Discovery operations allow up to 15s internally (models.ts); these subprocess
+// tests need a budget above that allowance, not Bun's 5s default.
 describe("native command discovery", () => {
   test("Claude initialize commands keep name, alias, hint and source", () => {
     const commands = parseAgentCommands(claudeInitialize.response.response.commands, "claude");
@@ -83,7 +85,7 @@ describe("native command discovery", () => {
       "superpowers:brainstorming",
       "imagegen",
     ]);
-  });
+  }, 20_000);
 
   test("OpenCode commands come from its server's command list, authenticated and scoped to the folder", async () => {
     const server = `const auth="Basic "+btoa("opencode:"+process.env.OPENCODE_SERVER_PASSWORD);const s=Bun.serve({hostname:"127.0.0.1",port:0,fetch(r){const u=new URL(r.url);if(r.headers.get("authorization")!==auth)return new Response("",{status:401});if(u.pathname!=="/command"||u.searchParams.get("directory")!==process.cwd())return new Response("",{status:404});return Response.json(${JSON.stringify(opencodeCommands)});}});console.log("opencode server listening on http://127.0.0.1:"+s.port);`;
@@ -100,7 +102,7 @@ describe("native command discovery", () => {
       { token: "/hello", source: "command", argumentHint: "$1" },
       { token: "/customize-opencode", source: "skill", argumentHint: "" },
     ]);
-  });
+  }, 20_000);
 
   test("OpenCode command discovery fails when the server never starts or refuses the list", async () => {
     await expect(
@@ -118,7 +120,7 @@ describe("native command discovery", () => {
         process.cwd(),
       ),
     ).rejects.toThrow("could not list its commands");
-  });
+  }, 20_000);
 });
 
 describe("native model discovery", () => {
@@ -210,7 +212,7 @@ describe("native model discovery", () => {
       { id: "first", label: "Native model" },
       { id: "second", label: "Native model" },
     ]);
-  });
+  }, 20_000);
 
   test("Claude returns initialization model metadata without a user message", async () => {
     const script = `for await(const chunk of Bun.stdin.stream()){const m=JSON.parse(new TextDecoder().decode(chunk));if(m.type!=="control_request"||m.request.subtype!=="initialize")throw Error("Unexpected user prompt");console.log(JSON.stringify({type:"control_response",response:{request_id:m.request_id,subtype:"success",response:{models:[{value:"sonnet",displayName:"Sonnet"}]}}}));}`;
@@ -222,7 +224,7 @@ describe("native model discovery", () => {
         process.cwd(),
       ),
     ).toEqual([{ id: "sonnet", label: "Sonnet" }]);
-  });
+  }, 20_000);
 
   test("early exit and excessive protocol output fail cleanly", async () => {
     await expect(
@@ -241,7 +243,7 @@ describe("native model discovery", () => {
         process.cwd(),
       ),
     ).rejects.toThrow("size limit");
-  });
+  }, 20_000);
 
   test("OpenCode text catalog validates ids, drops junk and deduplicates", async () => {
     const script = `console.log("provider/model-a");console.log("provider/model-a");console.log("--flag");console.log("");console.log("has space");console.log("custom-provider/example-model");`;
@@ -255,7 +257,7 @@ describe("native model discovery", () => {
       { id: "provider/model-a", label: "provider/model-a" },
       { id: "custom-provider/example-model", label: "custom-provider/example-model" },
     ]);
-  });
+  }, 20_000);
 
   test("text catalog output beyond the size limit fails cleanly", async () => {
     await expect(
@@ -265,7 +267,7 @@ describe("native model discovery", () => {
         process.cwd(),
       ),
     ).rejects.toThrow("size limit");
-  });
+  }, 20_000);
 
   test("should reject failed OpenCode discovery even when it printed a partial catalog", async () => {
     await expect(
@@ -275,5 +277,5 @@ describe("native model discovery", () => {
         process.cwd(),
       ),
     ).rejects.toThrow("could not list its models");
-  });
+  }, 20_000);
 });

@@ -36,6 +36,7 @@ There is no `install-hook` step; OpenCode loads the plugin itself.
 | `session prompt`      | `prompt_submit` | Block prompt admission or add context             |
 | `session compaction`  | `pre_compact`   | Run pre-compaction rules and automation           |
 | `session context`     | —               | Delivers queued rule context to the model         |
+| `experimental.idle`   | —               | Delivers queued context before the session sleeps |
 
 Every hook forwards to `orc rules hook opencode <event>`, the same adapter the other
 agents use, evaluated against the local ORC database. The plugin fetches the workspace
@@ -44,6 +45,13 @@ that carry rules run the hook and ask-user rules get their approval lifetime plu
 grace period as the hook timeout. Rule context is queued per session and delivered on
 the next model request. OpenCode has no session start/end hooks, so rules scoped to
 those events are not delivered here.
+
+`experimental.idle` is the last delivery point before a session goes idle: queued
+ORC context is admitted as a synthetic message that runs in the same execution
+instead of waiting for the next prompt. The hook is experimental in the OpenCode
+SDK — the plugin feature-detects it, and on hosts without it (or without the
+synthetic API) context still delivers on the next model request. A failed
+delivery restores the queue in order; nothing is lost or duplicated.
 
 ## Failure behavior
 

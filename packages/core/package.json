@@ -74,6 +74,7 @@
     "./flow-engine": "./src/flow-engine.ts",
     "./flow-service": "./src/flow-service.ts",
     "./flows/builtin": "./src/flows/builtin.ts",
+    "./goal": "./src/goal.ts",
     "./kb": "./src/kb.ts",
     "./secrets": "./src/secrets.ts",
     "./tags": "./src/tags.ts",

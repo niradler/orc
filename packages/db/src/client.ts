@@ -322,6 +322,19 @@ function setupDb(sqlite: Database): void {
     CREATE INDEX IF NOT EXISTS flow_node_runs_run_idx ON flow_node_runs(flow_run_id, created_at);
     CREATE INDEX IF NOT EXISTS flow_node_runs_status_idx ON flow_node_runs(status);
 
+    CREATE TABLE IF NOT EXISTS goals (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      flow_run_id TEXT REFERENCES flow_runs(id) ON DELETE SET NULL,
+      objective TEXT NOT NULL,
+      spec TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+    CREATE INDEX IF NOT EXISTS goals_task_idx ON goals(task_id);
+    CREATE INDEX IF NOT EXISTS goals_status_idx ON goals(status);
+
     CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
       id UNINDEXED,
       title,

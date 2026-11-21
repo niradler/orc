@@ -12,6 +12,7 @@ const TABLE_RESOURCES: Record<string, ChangeResource> = {
   task_links: "tasks",
   flow_runs: "tasks",
   flow_node_runs: "tasks",
+  goals: "tasks",
   projects: "projects",
   memories: "memories",
   memory_changes: "memories",

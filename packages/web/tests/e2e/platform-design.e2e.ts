@@ -221,12 +221,12 @@ for (const width of [1440, 390]) {
     await gotoView(page, "settings");
     const originalAddress = await page.evaluate(() => localStorage.getItem("orc_api_url"));
     const originalHosts = await page.evaluate(() => localStorage.getItem("orc_api_hosts"));
-    await settingsSection(page, "hosts");
+    await settingsSection(page, "servers");
     await page.getByTestId("api-host-add").click();
     await page.getByTestId("api-host-url").fill("/api/pending-draft");
     await settingsSection(page, "terminals");
     await page.locator("#settings-terminal-font").fill("Draft Mono");
-    await settingsSection(page, "hosts");
+    await settingsSection(page, "servers");
     await expect(page.getByTestId("api-host-url")).toHaveValue("/api/pending-draft");
     await page.getByRole("button", { name: "Close server editor" }).click();
     await settingsSection(page, "terminals");
@@ -239,7 +239,7 @@ for (const width of [1440, 390]) {
     expect((await apiGet<{ terminal_font?: string }>(request, "/settings")).terminal_font).toBe(
       "Draft Mono",
     );
-    await settingsSection(page, "hosts");
+    await settingsSection(page, "servers");
     await expect(page.getByTestId("api-host-url")).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem("orc_api_url"))).toBe(
       originalAddress ?? null,

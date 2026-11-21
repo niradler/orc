@@ -185,6 +185,7 @@
         "zod": "^4.6.7",
       },
       "devDependencies": {
+        "@orc/agent-runtime": "workspace:*",
         "@orc/api": "workspace:*",
         "@orc/channels": "workspace:*",
       },

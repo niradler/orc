@@ -153,7 +153,7 @@ Every method returns `{ data, error }`; `error` is `{ error, code }` and never t
 
 All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lists every route with its schema.
 
-### Projects, tasks and flows
+### Projects, tasks, flows and goals
 
 | Method | Path | Purpose |
 | --- | --- | --- |
@@ -175,6 +175,10 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | `GET` `POST` | `/tasks/{id}/flow` | Get a task's run / attach a flow |
 | `POST` | `/tasks/{id}/flow/resume` | Resolve a human node |
 | `POST` | `/tasks/{id}/flow/halt` | Stop a running flow |
+| `GET` `POST` | `/goals` | List goals / start a goal (worker + external check loop) |
+| `GET` | `/goals/{id}` | Live goal status and check history |
+| `POST` | `/goals/{id}/stop` | Stop a goal's flow |
+| `GET` | `/tasks/{id}/goal` | The goal attached to a task, or null |
 | `GET` | `/tags` | Unique tags across resources |
 | `GET` | `/search` | Search all projects and resources |
 

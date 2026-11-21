@@ -5,9 +5,11 @@ import { readAgent } from "@orc/core/agent-service";
 import { loadConfig } from "@orc/core/config";
 import {
   type ExecHost,
+  type ExecResult,
   execHostFor,
   hostAlias,
   hostExec,
+  hostPlatform,
   resolveExecHost,
 } from "@orc/core/exec-host";
 import type { FlowCondition, FlowDefinition, FlowNode, NumericOperand } from "@orc/core/flow";
@@ -15,12 +17,15 @@ import { declaredOutcomes, resolvePlaceholder } from "@orc/core/flow";
 import type { FlowAction, FlowState, FlowStep } from "@orc/core/flow-engine";
 import { advanceFlow, checkFlowTimeout, describeHalt, startFlow } from "@orc/core/flow-engine";
 import { resolveFlowForTask } from "@orc/core/flow-service";
+import { GOAL_TOKENS_VAR } from "@orc/core/goal";
 import { ulid } from "@orc/core/ids";
+import { jobShellArgv } from "@orc/core/job-settings";
 import { createLogger } from "@orc/core/logger";
 import { excludeOrcWorktrees, gitRunner, repoRoot, worktreePath } from "@orc/core/session-dir";
 import type { SkillFull } from "@orc/core/skill-service";
 import { renderSkillInstructions } from "@orc/core/skill-service";
 import type { TaskStatus } from "@orc/core/types";
+import { resultUsageTokens } from "@orc/core/usage";
 import { getDb, getSqlite } from "@orc/db/client";
 import { flow_runs, gateway_sessions } from "@orc/db/schema";
 import type { EffectiveSkill } from "@orc/db/skill-history";
@@ -124,6 +129,7 @@ type NodeRunRow = {
   flow_run_id: string;
   task_id: string;
   node_id: string;
+  node_kind: string;
   attempt: number;
   status: string;
   outcome: string | null;
@@ -664,7 +670,8 @@ function recordPassiveVisits(
   const sqlite = getSqlite();
   for (const [nodeId, count] of Object.entries(after)) {
     const node = def.nodes[nodeId];
-    if (!node || node.kind === "agent" || node.kind === "human") continue;
+    if (!node || node.kind === "agent" || node.kind === "human" || node.kind === "command")
+      continue;
     const previous = before[nodeId] ?? 0;
     for (let attempt = previous + 1; attempt <= count; attempt++) {
       try {
@@ -1507,6 +1514,7 @@ export async function retireFlowWorktrees(taskId: string): Promise<void> {
 }
 
 async function spawnNodeSession(nodeRun: NodeRunRow): Promise<boolean> {
+  if (nodeRun.node_kind === "command") return runCommandNode(nodeRun);
   const claims: string[] = [];
   try {
     return await startNodeSession(nodeRun, claims);
@@ -1731,10 +1739,28 @@ async function driveNodeSession(opts: {
         }
       }
 
-      if (event.type === "result" && event.data.runtimeSessionId) {
-        sqlite
-          .query("UPDATE gateway_sessions SET runtime_session_id = ? WHERE id = ?")
-          .run(event.data.runtimeSessionId, opts.sessionId);
+      if (event.type === "result") {
+        if (event.data.runtimeSessionId) {
+          sqlite
+            .query("UPDATE gateway_sessions SET runtime_session_id = ? WHERE id = ?")
+            .run(event.data.runtimeSessionId, opts.sessionId);
+        }
+        // Goal token budgets read this var; accumulate under the task lock so
+        // sibling nodes in one run cannot drop each other's usage.
+        const tokens = resultUsageTokens(event.data.usage);
+        if (tokens > 0) {
+          await withTaskLock(opts.taskId, async () => {
+            const loaded = loadRun(opts.flowRunId);
+            if (!loaded) return;
+            const used = ((loaded.state.vars[GOAL_TOKENS_VAR] as number | undefined) ?? 0) + tokens;
+            sqlite
+              .query("UPDATE flow_runs SET vars = ?, updated_at = unixepoch() WHERE id = ?")
+              .run(
+                JSON.stringify({ ...loaded.state.vars, [GOAL_TOKENS_VAR]: used }),
+                opts.flowRunId,
+              );
+          });
+        }
       }
 
       if (event.type === "error") {
@@ -1828,10 +1854,109 @@ async function finishNodeRunUnlocked(nodeRunId: string, error: string | null): P
   });
 }
 
+// ---------------------------------------------------------------------------
+// Command nodes
+// ---------------------------------------------------------------------------
+
+/**
+ * A command node runs a shell command as a flow step — a goal's success check.
+ * It is an active node, so retries, reaping, timeouts and the ledger apply, but
+ * it never opens an agent session and holds no worker slot. Exit 0 reports
+ * "passed", anything else "failed"; the exit code, bounded output and optional
+ * extracted metric land in run vars (`<node>_exit/_output/_metric/_stall`) for
+ * edge guards and the goal status view. `_stall` counts consecutive checks whose
+ * metric did not change — the stall ladder's trigger.
+ */
+async function runCommandNode(nodeRun: NodeRunRow): Promise<boolean> {
+  const loaded = loadRun(nodeRun.flow_run_id);
+  if (!loaded) return false;
+  const task = getTask(nodeRun.task_id);
+  if (!task) return false;
+  const node = loaded.def.nodes[nodeRun.node_id];
+  if (node?.kind !== "command" || !node.command) return false;
+
+  const sqlite = getSqlite();
+  const claimed = sqlite
+    .query(
+      "UPDATE flow_node_runs SET status = 'running', started_at = unixepoch() WHERE id = ? AND status = 'pending'",
+    )
+    .run(nodeRun.id);
+  if (claimed.changes === 0) return false;
+
+  const host = resolveExecHost();
+  // Check where the work happened: the task worktree, else the latest session's
+  // folder in this run (a worker's isolated worktree), else the project scope.
+  const cwd =
+    task.git_worktree ??
+    (
+      sqlite
+        .query(
+          `SELECT gs.cwd FROM flow_node_runs fnr JOIN gateway_sessions gs ON gs.id = fnr.gateway_session_id
+           WHERE fnr.flow_run_id = ? AND gs.cwd IS NOT NULL ORDER BY fnr.created_at DESC LIMIT 1`,
+        )
+        .get(nodeRun.flow_run_id) as { cwd: string } | null
+    )?.cwd ??
+    projectScope(task.project_id) ??
+    (host.kind === "ssh" ? "~" : process.cwd());
+
+  let result: ExecResult;
+  try {
+    result = await hostExec(host, jobShellArgv(null, node.command, hostPlatform(host)), {
+      cwd,
+      timeoutMs: (node.timeout_secs ?? 600) * 1000,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await addTaskComment(
+      task.id,
+      `Check **${nodeRun.node_id}** could not run: ${message}`,
+      "system",
+    );
+    await finishNodeRun(nodeRun.id, message);
+    return false;
+  }
+
+  const exit = result.code ?? -1;
+  const output = `${result.stdout}${result.stderr ? `\n${result.stderr}` : ""}`.slice(-4000);
+  const vars: Record<string, unknown> = {
+    [`${nodeRun.node_id}_exit`]: exit,
+    [`${nodeRun.node_id}_output`]: output,
+  };
+  let metric: number | null = null;
+  if (node.metric_pattern) {
+    const match = new RegExp(node.metric_pattern).exec(result.stdout);
+    const parsed = match?.[1] !== undefined ? Number(match[1]) : Number.NaN;
+    if (Number.isFinite(parsed)) metric = parsed;
+  }
+  // The stall var must always exist: loopback guards read it, and an undefined
+  // var matches no comparator. Without a metric there is no progress signal,
+  // so the check never counts as stalled.
+  const previous = loaded.state.vars[`${nodeRun.node_id}_metric`];
+  vars[`${nodeRun.node_id}_stall`] =
+    metric !== null && typeof previous === "number" && previous === metric
+      ? ((loaded.state.vars[`${nodeRun.node_id}_stall`] as number | undefined) ?? 0) + 1
+      : 0;
+  if (metric !== null) vars[`${nodeRun.node_id}_metric`] = metric;
+
+  const outcome = exit === 0 ? "passed" : "failed";
+  const detail = `exit ${exit}${metric !== null ? `, metric ${metric}` : ""}`;
+  await reportNodeOutcome({
+    taskId: task.id,
+    nodeId: nodeRun.node_id,
+    outcome,
+    summary: detail,
+    vars,
+  });
+  await addTaskComment(task.id, `Check **${nodeRun.node_id}**: ${outcome} (${detail}).`, "system");
+  await finishNodeRun(nodeRun.id, null);
+  return true;
+}
+
 /**
  * A session died for infrastructure reasons (idle timeout, lifetime cap, backend
- * crash) rather than because the agent decided something. Re-queue the same node
- * as a fresh attempt instead of routing `on_error`.
+ * crash, daemon restart) rather than because the agent decided something. Re-queue
+ * the same node, resuming its native session when one exists, instead of routing
+ * `on_error`.
  *
  * The old loop retried these automatically — a worker timeout reset the task to
  * `todo`, a reviewer timeout just unclaimed it. Routing `on_error` instead would
@@ -1873,11 +1998,15 @@ async function retryNodeRun(nodeRunId: string, reason: string): Promise<boolean>
     .run(reason, nodeRunId);
 
   const nextRetry = retriesUsed + 1;
+  // Resume the native session when one exists: an infrastructure death (idle,
+  // lifetime, crash, daemon restart) loses the turn, not the conversation. The
+  // resumeSince prompt carries the ledger and new comments since that session.
+  const resumable = previousNodeSession(row.flow_run_id, row.node_id) !== null;
   sqlite
     .query(
       `INSERT INTO flow_node_runs
          (id, flow_run_id, task_id, node_id, node_kind, attempt, retry, status, skill_name, resume_session, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, unixepoch())`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, unixepoch())`,
     )
     .run(
       ulid(),
@@ -1888,6 +2017,7 @@ async function retryNodeRun(nodeRunId: string, reason: string): Promise<boolean>
       row.attempt,
       nextRetry,
       row.skill_name,
+      resumable ? 1 : 0,
     );
 
   // No engine state changes: same visit, same `attempt`, so the eventual report
@@ -1966,40 +2096,54 @@ async function drainPendingNodesUnlocked(): Promise<string[]> {
   const maxWorkers = config.agent_loop.max_workers;
   const spawned: string[] = [];
 
-  const pending = getSqlite()
-    .query(
-      `SELECT fnr.* FROM flow_node_runs fnr
-       JOIN flow_runs fr ON fr.id = fnr.flow_run_id
-       WHERE fnr.status = 'pending' AND fnr.node_kind = 'agent' AND fr.status = 'running'
-       ORDER BY fnr.created_at ASC`,
-    )
-    .all() as NodeRunRow[];
+  // Command nodes run to completion inside a pass and can queue their successor
+  // (the loopback worker, the next check) before the pass ends, so re-snapshot
+  // while checks keep spawning. Agent sessions are fire-and-forget: their own
+  // completion drains later, outside this call. Calling drainPendingNodes from
+  // inside a pass would deadlock on the drain chain — never do that.
+  let spawnedCommand = true;
+  while (spawnedCommand) {
+    spawnedCommand = false;
+    const pending = getSqlite()
+      .query(
+        `SELECT fnr.* FROM flow_node_runs fnr
+         JOIN flow_runs fr ON fr.id = fnr.flow_run_id
+         WHERE fnr.status = 'pending' AND fnr.node_kind IN ('agent', 'command') AND fr.status = 'running'
+         ORDER BY fnr.created_at ASC`,
+      )
+      .all() as NodeRunRow[];
 
-  for (const nodeRun of pending) {
-    if (runningWorkerCount() >= maxWorkers) break;
+    for (const nodeRun of pending) {
+      // Command nodes are checks, not agents: they hold no worker slot, so a
+      // saturated worker pool must not starve a goal's success check. Skip the
+      // agents rather than breaking — a check may sit behind them in the queue.
+      const isCommand = nodeRun.node_kind === "command";
+      if (!isCommand && runningWorkerCount() >= maxWorkers) continue;
 
-    const task = getTask(nodeRun.task_id);
-    if (!task) continue;
+      const task = getTask(nodeRun.task_id);
+      if (!task) continue;
 
-    if (task.project_id) {
-      const max = projectMaxWorkers(task.project_id);
-      if (max !== null && runningWorkerCount(task.project_id) >= max) continue;
-    }
-
-    const loaded = loadRun(nodeRun.flow_run_id);
-    if (!loaded) continue;
-
-    try {
-      if (runningNodesInFlow(nodeRun.flow_run_id) >= loaded.def.limits.max_parallel) continue;
-      if (await spawnNodeSession(nodeRun)) {
-        spawned.push(`${loaded.def.name}/${nodeRun.node_id} [${nodeRun.task_id}]`);
+      if (!isCommand && task.project_id) {
+        const max = projectMaxWorkers(task.project_id);
+        if (max !== null && runningWorkerCount(task.project_id) >= max) continue;
       }
-    } catch (err) {
-      // One node that cannot be spawned must not stop every other queued node
-      // in this cycle from starting.
-      logger.error(
-        `Spawning node ${nodeRun.node_id} of flow run ${nodeRun.flow_run_id} failed: ${String(err)}`,
-      );
+
+      const loaded = loadRun(nodeRun.flow_run_id);
+      if (!loaded) continue;
+
+      try {
+        if (runningNodesInFlow(nodeRun.flow_run_id) >= loaded.def.limits.max_parallel) continue;
+        if (await spawnNodeSession(nodeRun)) {
+          spawned.push(`${loaded.def.name}/${nodeRun.node_id} [${nodeRun.task_id}]`);
+          if (isCommand) spawnedCommand = true;
+        }
+      } catch (err) {
+        // One node that cannot be spawned must not stop every other queued node
+        // in this cycle from starting.
+        logger.error(
+          `Spawning node ${nodeRun.node_id} of flow run ${nodeRun.flow_run_id} failed: ${String(err)}`,
+        );
+      }
     }
   }
 
@@ -2196,6 +2340,18 @@ export async function sweepFlowTimeouts(): Promise<number> {
   return halted;
 }
 
+/** True while the session belongs to a flow run an active goal is driving. */
+function goalActiveForSession(sessionId: string): boolean {
+  return (
+    getSqlite()
+      .query(
+        `SELECT 1 FROM flow_node_runs fnr JOIN goals g ON g.flow_run_id = fnr.flow_run_id
+         WHERE fnr.gateway_session_id = ? AND g.status = 'active' LIMIT 1`,
+      )
+      .get(sessionId) !== null
+  );
+}
+
 /**
  * Reap sessions that went idle or blew their absolute lifetime, then let the
  * flow react: the node fails, and the graph either routes through on_error or
@@ -2213,7 +2369,7 @@ export async function cleanupStaleFlowSessions(): Promise<number> {
 
   const stale = sqlite
     .query(
-      `SELECT id, task_id, role, created_at FROM gateway_sessions
+      `SELECT id, task_id, role, created_at, last_activity_at, updated_at FROM gateway_sessions
        WHERE role IN ('worker', 'reviewer') AND status = 'running'
          AND ((last_activity_at IS NOT NULL AND last_activity_at < ?
               OR last_activity_at IS NULL AND updated_at < ?)
@@ -2224,12 +2380,20 @@ export async function cleanupStaleFlowSessions(): Promise<number> {
     task_id: string | null;
     role: string;
     created_at: number;
+    last_activity_at: number | null;
+    updated_at: number;
   }[];
 
-  const reapable = stale.filter(
-    (session) =>
-      session.created_at < lifetimeCutoff || !liveSessions.get(session.id)?.waitingForHuman?.(),
-  );
+  const reapable = stale.filter((session) => {
+    const overLifetime = session.created_at < lifetimeCutoff;
+    const waiting = liveSessions.get(session.id)?.waitingForHuman?.() ?? false;
+    // A goal loop is meant to run for hours: while its goal is active and the
+    // session is still making progress, the absolute ceiling must not reap it.
+    // Idle goal workers are still reclaimed — a hung check-loop is a failure.
+    const idleStale = (session.last_activity_at ?? session.updated_at) < idleCutoff;
+    if (overLifetime && !idleStale && goalActiveForSession(session.id)) return false;
+    return overLifetime || !waiting;
+  });
   for (const session of reapable) {
     const reason = session.created_at < lifetimeCutoff ? "max lifetime exceeded" : "idle timeout";
     closeLiveSession(session.id);
@@ -2268,6 +2432,56 @@ export async function cleanupStaleFlowSessions(): Promise<number> {
   }
 
   return reapable.length;
+}
+
+/**
+ * A daemon restart leaves worker rows `running` with no live handle: they would
+ * hold worker slots until the idle sweep reaps them, then retry from scratch.
+ * Settle them at startup instead and queue resume retries, so the native
+ * conversation survives the restart and the slot frees immediately. The retry
+ * budget (max_node_retries) bounds restart loops like any other infrastructure
+ * failure. Runs once per startTaskLoop, before the first cycle.
+ */
+export async function recoverOrphanedFlowSessions(): Promise<number> {
+  const sqlite = getSqlite();
+  const orphans = sqlite
+    .query(
+      `SELECT id, task_id, role FROM gateway_sessions
+       WHERE role IN ('worker', 'reviewer') AND status = 'running'`,
+    )
+    .all() as { id: string; task_id: string | null; role: string }[];
+
+  let recovered = 0;
+  for (const session of orphans) {
+    if (liveSessions.has(session.id)) continue;
+    const reason = "daemon restarted";
+    sqlite
+      .query(
+        "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ?",
+      )
+      .run(reason, session.id);
+
+    const nodeRun = sqlite
+      .query(
+        "SELECT id, task_id FROM flow_node_runs WHERE gateway_session_id = ? AND status = 'running' LIMIT 1",
+      )
+      .get(session.id) as { id: string; task_id: string } | null;
+    if (nodeRun) {
+      const retried = await withTaskLock(nodeRun.task_id, () => retryNodeRun(nodeRun.id, reason));
+      if (!retried) await finishNodeRun(nodeRun.id, reason);
+    } else if (session.task_id) {
+      withTaskAudit(sqlite, [session.task_id], () => {
+        sqlite
+          .query(
+            "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
+          )
+          .run(session.task_id);
+      });
+    }
+    recovered++;
+    logger.warn(`Recovered orphaned ${session.role} session ${session.id} (${reason})`);
+  }
+  return recovered;
 }
 
 // ---------------------------------------------------------------------------

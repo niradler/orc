@@ -702,3 +702,66 @@ export type ResumeFlowInput = {
   vars?: Record<string, unknown>;
   author?: string;
 };
+
+export type GoalBudget = {
+  iterations: number;
+  tokens?: number;
+  hours: number;
+};
+
+export type GoalSpec = {
+  objective: string;
+  check: string;
+  metric_pattern?: string;
+  agents: string[];
+  budget: GoalBudget;
+  stall_limit: number;
+  skill?: string;
+  project_id?: string;
+  task_id?: string;
+};
+
+export type GoalRunStatus = {
+  status: "active" | "passed" | "halted" | "stopped";
+  iteration: number;
+  stage: number;
+  stall: number;
+  tokens_used: number;
+  last_check: { exit: number | null; metric: number | null; output: string | null } | null;
+  halt_reason: string | null;
+  started_at: number | null;
+  ended_at: number | null;
+};
+
+export type Goal = {
+  id: string;
+  task_id: string;
+  flow_run_id: string | null;
+  objective: string;
+  spec: GoalSpec;
+  status: "active" | "stopped";
+  run: GoalRunStatus | null;
+  created_at: number;
+  updated_at: number;
+};
+
+export type GoalCheckVisit = {
+  attempt: number;
+  retry: number;
+  outcome: string | null;
+  summary: string | null;
+  started_at: number | null;
+  ended_at: number | null;
+};
+
+export type CreateGoalInput = {
+  objective: string;
+  check: string;
+  metric_pattern?: string;
+  agents?: string[];
+  budget?: Partial<GoalBudget>;
+  stall_limit?: number;
+  skill?: string;
+  project_id?: string;
+  task_id?: string;
+};

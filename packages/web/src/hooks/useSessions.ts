@@ -151,8 +151,9 @@ export function useSessionSubagents(sessionId: string | null, live = false) {
     // Keep polling while the parent works (a subagent may start at any moment) or
     // any reported subagent still runs; settle to rest once everything is quiet.
     refetchInterval: (query) => {
-      const data = query.state.data as { subagents: { status: string }[] } | undefined;
-      const active = data?.subagents.some((subagent) => subagent.status === "running");
+      const data = query.state.data as { subagents?: { status: string }[] } | undefined;
+      // An unexpected payload must settle polling to rest, never crash the view.
+      const active = data?.subagents?.some((subagent) => subagent.status === "running");
       return live || active ? 3000 : false;
     },
   });
@@ -175,8 +176,8 @@ export function useSessionChildren(sessionId: string | null, live = false) {
     enabled: Boolean(sessionId),
     retry: false,
     refetchInterval: (query) => {
-      const data = query.state.data as { sessions: { status: string }[] } | undefined;
-      const active = data?.sessions.some((session) =>
+      const data = query.state.data as { sessions?: { status: string }[] } | undefined;
+      const active = data?.sessions?.some((session) =>
         ["running", "waiting", "queued"].includes(session.status),
       );
       return live || active ? 3000 : false;
