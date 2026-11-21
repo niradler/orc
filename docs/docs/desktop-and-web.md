@@ -841,13 +841,19 @@ Voice mode talks to an open chat hands-free. The waveform button beside the
 microphone (or **Cmd/Ctrl+Shift+Space** in the composer) appears once the server
 has a voice-mode speech provider. The composer footer becomes a voice bar with a
 live input level and the current state: **Listening**, **Hearing you**,
-**Thinking** or **Speaking**. Spoken replies play as they stream in; start talking
-and playback stops. **Mute** stops sending audio, **Stop** (or **Escape**)
+**Thinking** or **Speaking**. Spoken replies play as they stream in. When the
+microphone hears you while a reply is playing, the reply drops to a quarter
+volume and keeps going; talk for a moment longer and it stops so the next turn can
+start, while a knock or a breath only restores the volume. **Mute** stops sending
+audio, **Stop** (or **Escape**)
 leaves voice mode and releases the microphone and audio. Your words and the spoken
 replies appear in the transcript. Approvals and questions stay on screen and are
 never answered by voice. Voice mode records from the same microphone as
 dictation, chosen in **Settings → General → Voice**, which also sets the
-server-wide reply voice used for spoken answers.
+server-wide reply voice used for spoken answers. Use headphones when you can:
+without echo cancellation, or with speakers loud enough to leak into the
+microphone, set `speech.voice_mode.barge_ms` to `0` to keep voice mode
+half-duplex, so it never interrupts itself.
 
 ## Desktop app only
 

@@ -52,7 +52,13 @@ export async function listVoiceInputs(): Promise<VoiceInput[]> {
 }
 
 export function voiceInputConstraints(deviceId: string): MediaTrackConstraints {
-  const audio: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true };
+  // Auto gain pumps the reply coming out of the speakers back into the
+  // detector, which reads as barge-in, so it stays off.
+  const audio: MediaTrackConstraints = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: false,
+  };
   if (deviceId) audio.deviceId = { exact: deviceId };
   return audio;
 }
@@ -60,7 +66,8 @@ export function voiceInputConstraints(deviceId: string): MediaTrackConstraints {
 /** Opens the chosen microphone. A selection that is no longer connected falls back
  *  to the system default instead of failing the recording. */
 export async function openMicrophone(deviceId: string): Promise<MediaStream> {
-  if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone needs HTTPS.");
+  if (!navigator.mediaDevices?.getUserMedia)
+    throw new Error("Microphone needs HTTPS or localhost.");
   try {
     return await navigator.mediaDevices.getUserMedia({ audio: voiceInputConstraints(deviceId) });
   } catch (err) {

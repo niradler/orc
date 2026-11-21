@@ -592,7 +592,8 @@ mode its own TTS. Unset fields fall back to the shared `speech` / `tts` values:
     "voice_mode": {
       "model": "gpt-4o-transcribe",
       "silence_ms": 800,
-      "threshold_db": -45
+      "threshold_db": -45,
+      "barge_ms": 320
     }
   },
   "tts": {
@@ -619,11 +620,19 @@ The client sends 16 kHz mono 16-bit PCM as binary frames. The server ends a turn
 after `speech.voice_mode.silence_ms` below `threshold_db` (dBFS), transcribes it,
 drops empty and filler-only transcripts ("um", "uh"), stops the running turn and
 sends the transcript as the next message, telling the agent to answer through the
-`speak` MCP tool. Each spoken line arrives as `{"type":"speak","text":...,"format":...}`
-followed by one binary audio frame per sentence. Speech starting while ORC talks
-drops the rest of that speech (barge-in). A turn waiting for an approval or a
-question is not interrupted: voice says "It needs you on screen." and the prompt
-stays in the UI. Other events: `ready`, `speech_start`, `speech_end`, `transcript`,
+`speak` MCP tool. Each spoken line arrives as `{"type":"speak","id":...,"text":...,"format":...}`
+followed by one binary audio frame per sentence; the client confirms each frame it
+played with `{"type":"played","id":...}`.
+
+While a reply plays, the client ducks it to a quarter volume as soon as the
+microphone hears speech. Only sustained speech above `threshold_db` plus 10 dB
+for `speech.voice_mode.barge_ms` interrupts: the server then drops the rest of
+the reply and the client plays `barge`. Anything shorter or quieter — echo from
+the speakers, a knock — sends `speech_cancelled`, and the reply returns to full
+volume. `barge_ms: 0` keeps voice mode half-duplex and never interrupts a reply.
+A turn waiting for an approval or a question is not interrupted: voice says
+"It needs you on screen." and the prompt stays in the UI. Other events: `ready`,
+`speech_start`, `speech_end`, `speech_cancelled`, `barge`, `transcript`,
 `ignored`, `error`.
 
 Channels answer a voice message with a voice reply. With `tts.mode: "always"` they

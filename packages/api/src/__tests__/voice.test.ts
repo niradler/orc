@@ -270,10 +270,58 @@ test("speak streams one audio clip per sentence to the open voice socket", async
   expect(await res.json()).toEqual({ posted: false, spoken: true });
   await until(async () => voice.audio.length === 2);
   expect(voice.messages.filter((m) => m.type === "speak")).toEqual([
-    { type: "speak", text: "Running the tests now.", format: "ogg" },
-    { type: "speak", text: "Back soon!", format: "ogg" },
+    { type: "speak", id: "1", text: "Running the tests now.", format: "ogg" },
+    { type: "speak", id: "2", text: "Back soon!", format: "ogg" },
   ]);
   expect(voice.audio).toEqual(["audio:Running the tests now.", "audio:Back soon!"]);
+  voice.ws.close();
+});
+
+function burst(ms: number, amplitude: number) {
+  const samples = new Int16Array((ms / 20) * 320);
+  samples.fill(amplitude);
+  return samples;
+}
+
+test("a knock during a reply is cancelled without stopping it", async () => {
+  const id = await chat("Reply with exactly: ok");
+  const voice = await connect(id);
+  transcript = "";
+  const res = await app.request(`/api/chat/threads/${id}/speak`, {
+    method: "POST",
+    headers: AUTH,
+    body: JSON.stringify({ text: "First sentence. Second sentence." }),
+  });
+  expect(await res.json()).toEqual({ posted: false, spoken: true });
+  await until(async () => voice.audio.length === 2);
+  voice.say(burst(300, 300));
+  await voice.next("speech_cancelled");
+  expect(voice.messages.map((m) => m.type)).not.toContain("barge");
+  expect(voice.audio).toEqual(["audio:First sentence.", "audio:Second sentence."]);
+  voice.ws.close();
+});
+
+test("once the client played every clip, a normal turn replaces idle playback", async () => {
+  const id = await chat("Reply with exactly: ok");
+  const voice = await connect(id);
+  transcript = "add a retry";
+  await app.request(`/api/chat/threads/${id}/speak`, {
+    method: "POST",
+    headers: AUTH,
+    body: JSON.stringify({ text: "On it." }),
+  });
+  await until(async () => voice.audio.length === 1);
+  const clip = voice.messages.find((m) => m.type === "speak") as { id: string };
+  voice.ws.send(JSON.stringify({ type: "played", id: clip.id }));
+  voice.say(burst(300, 300));
+  await voice.next("transcript");
+  expect(voice.messages.map((m) => m.type)).toEqual([
+    "ready",
+    "speak",
+    "speech_start",
+    "speech_end",
+    "transcript",
+  ]);
   voice.ws.close();
 });
 
@@ -287,12 +335,14 @@ test("barge-in drops the rest of the speech", async () => {
     body: JSON.stringify({ text: "First sentence. Second sentence. Third sentence." }),
   });
   await until(async () => synthesized.length > 0);
+  await voice.next("speak");
   transcript = "";
-  voice.say(speech);
+  voice.say(burst(600, 3000));
   expect(await (await speaking).json()).toEqual({ posted: false, spoken: false });
   await voice.next("ignored");
-  expect(voice.audio).toEqual([]);
-  expect(voice.messages.map((m) => m.type)).toContain("speech_start");
+  // The clip already streaming plays; everything after it is never sent.
+  expect(voice.audio).toEqual(["audio:First sentence."]);
+  expect(voice.messages.map((m) => m.type)).toContain("barge");
   voice.ws.close();
 });
 
@@ -390,7 +440,7 @@ for (const kind of ["approval", "question"] as const)
       await voice.next("transcript");
       await until(async () => voice.messages.some((m) => m.type === "speak"));
       expect(voice.messages.filter((m) => m.type === "speak")).toEqual([
-        { type: "speak", text: "It needs you on screen.", format: "ogg" },
+        { type: "speak", id: "1", text: "It needs you on screen.", format: "ogg" },
       ]);
       const still = (await (await app.request("/api/chat/waiting", { headers: AUTH })).json()) as {
         waiting: { kind: string }[];

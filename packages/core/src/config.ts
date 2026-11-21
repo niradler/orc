@@ -56,7 +56,10 @@ export const SpeechConfigSchema = z.object({
   voice_mode: SpeechSiteSchema.extend({
     silence_ms: z.number().int().min(200).max(5000).default(800),
     threshold_db: z.number().min(-90).max(0).default(-45),
-  }).default({ silence_ms: 800, threshold_db: -45 }),
+    /** Sustained speech that interrupts a reply. 0 keeps voice mode
+     *  half-duplex: it never listens while it speaks. */
+    barge_ms: z.number().int().min(0).max(5000).default(320),
+  }).default({ silence_ms: 800, threshold_db: -45, barge_ms: 320 }),
 });
 
 export const TtsConfigSchema = z.object({
@@ -347,7 +350,7 @@ export const OrcConfigSchema = z.object({
     groq: {},
     qwen: {},
     dictation: {},
-    voice_mode: { silence_ms: 800, threshold_db: -45 },
+    voice_mode: { silence_ms: 800, threshold_db: -45, barge_ms: 320 },
   }),
   tts: TtsConfigSchema.default({
     enabled: false,

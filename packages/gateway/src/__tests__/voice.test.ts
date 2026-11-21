@@ -88,7 +88,11 @@ test("a config written before use sites existed resolves every site to the share
     speech: { enabled: true, provider: "openai", openai: { api_key: "sk-test" } },
     tts: { enabled: true, provider: "openai", voice: "nova" },
   });
-  expect(settings.speech.voice_mode).toEqual({ silence_ms: 800, threshold_db: -45 });
+  expect(settings.speech.voice_mode).toEqual({
+    silence_ms: 800,
+    threshold_db: -45,
+    barge_ms: 320,
+  });
   expect(speechToText(settings, "dictation")).not.toBeNull();
   expect(speechToText(settings, "voice_mode")).not.toBeNull();
   expect(textToSpeech(settings, "voice_mode")).not.toBeNull();
@@ -177,6 +181,56 @@ test("silence never starts a turn and a short click ends one without audio", () 
   const click = new Int16Array(16_000 + 1600 + 16_000);
   click.fill(8000, 16_000, 16_000 + 1600);
   expect(detect(click, 320)).toEqual([{ type: "start" }, { type: "end", audio: null }]);
+});
+
+function burst(ms: number, amplitude: number) {
+  const samples = new Int16Array((ms / 20) * 320);
+  samples.fill(amplitude);
+  return samples;
+}
+
+function concatPcm(...parts: Int16Array[]) {
+  return Int16Array.from(parts.flatMap((part) => [...part]));
+}
+
+function detectSpeaking(chunks: Int16Array[], bargeMs?: number) {
+  const detector = createTurnDetector({
+    silenceMs: 800,
+    thresholdDb: -45,
+    ...(bargeMs === undefined ? {} : { bargeMs }),
+  });
+  detector.setSpeaking(true);
+  const events: TurnEvent[] = [];
+  for (const chunk of chunks) events.push(...detector.push(chunk));
+  return [...events, ...detector.flush()];
+}
+
+test("a quiet knock while a reply plays is not a barge-in", () => {
+  // Above the -45 dBFS floor so it opens a turn, but under the -35 dBFS barge
+  // floor: the reply keeps playing.
+  const events = detectSpeaking([concatPcm(burst(300, 300), new Int16Array(16_000))]);
+  expect(events).toEqual([{ type: "start" }, { type: "end", audio: null }]);
+});
+
+test("sustained speech interrupts a reply once, and its turn survives", () => {
+  const detector = createTurnDetector({ silenceMs: 800, thresholdDb: -45 });
+  detector.setSpeaking(true);
+  const events = detector.push(concatPcm(burst(600, 1000), new Int16Array(16_000)));
+  expect(events.map((event) => event.type)).toEqual(["start", "barge", "end"]);
+  const end = events[2] as Extract<TurnEvent, { type: "end" }>;
+  expect((end.audio?.length ?? 0) / 16_000).toBeGreaterThan(0.5);
+  expect(events.filter((event) => event.type === "barge")).toHaveLength(1);
+});
+
+test("barge_ms 0 keeps voice mode half-duplex", () => {
+  const events = detectSpeaking([concatPcm(burst(600, 3000), new Int16Array(16_000))], 0);
+  expect(events).toEqual([{ type: "start" }, { type: "end", audio: null }]);
+});
+
+test("the same sustained speech is a normal turn when nothing is playing", () => {
+  const events = detect(concatPcm(burst(600, 3000), new Int16Array(16_000)), 320);
+  expect(events.map((event) => event.type)).toEqual(["start", "end"]);
+  expect((events[1] as Extract<TurnEvent, { type: "end" }>).audio).not.toBeNull();
 });
 
 test("a turn audio becomes a 16 kHz mono 16-bit WAV with the samples intact", () => {

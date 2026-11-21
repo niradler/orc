@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { getVoiceInputDevice, openMicrophone } from "@/lib/voice-input";
 
 export type VoiceMode = ReturnType<typeof useVoiceMode>;
-type VoiceEvent = { type: string; text?: string; message?: string };
+type VoiceEvent = { type: string; id?: string; text?: string; message?: string };
 
 export const VOICE_SHORTCUT =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
@@ -88,7 +88,8 @@ export function useVoiceMode(threadId: string | undefined, streaming: boolean) {
       setError(message);
     };
     try {
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Microphone needs HTTPS.");
+      if (!navigator.mediaDevices?.getUserMedia)
+        throw new Error("Microphone needs HTTPS or localhost.");
       const resumed = context.resume();
       stream = await openMicrophone(getVoiceInputDevice());
       await resumed.catch(() => {});
@@ -113,6 +114,8 @@ export function useVoiceMode(threadId: string | undefined, streaming: boolean) {
       const ws = socket;
       track.current = stream.getAudioTracks()[0] ?? null;
       const input = context.createMediaStreamSource(stream);
+      const output = context.createGain();
+      output.connect(context.destination);
       const capture = new AudioWorkletNode(context, "pcm-capture", { numberOfOutputs: 0 });
       capture.port.onmessage = ({ data }: MessageEvent<Float32Array>) => {
         if (ws.readyState !== WebSocket.OPEN || context.sampleRate < DICTATION_RATE) return;
@@ -128,23 +131,34 @@ export function useVoiceMode(threadId: string | undefined, streaming: boolean) {
       let playAt = 0;
       let epoch = 0;
       let decoding = Promise.resolve();
+      const clips: string[] = [];
+      // Duck instead of stopping while we check whether the user is really
+      // talking: it cuts the speaker echo below the barge floor and tells the
+      // user we heard them without amputating the reply.
+      const duck = (level: number) => {
+        output.gain.cancelScheduledValues(context.currentTime);
+        output.gain.setTargetAtTime(level, context.currentTime, 0.03);
+      };
       const silence = () => {
         epoch++;
         playAt = 0;
+        clips.length = 0;
         for (const source of sources) source.stop();
         sources.clear();
+        duck(1);
         setPlaying(false);
       };
       ws.onmessage = ({ data }: MessageEvent<string | ArrayBuffer>) => {
         if (run !== attempt.current) return;
         if (typeof data !== "string") {
+          const clip = clips.shift();
           const turn = epoch;
           decoding = decoding.then(async () => {
             const audio = await context.decodeAudioData(data).catch(() => null);
             if (!audio || turn !== epoch || context.state === "closed") return;
             const source = context.createBufferSource();
             source.buffer = audio;
-            source.connect(context.destination);
+            source.connect(output);
             playAt = Math.max(playAt, context.currentTime);
             source.start(playAt);
             playAt += audio.duration;
@@ -153,6 +167,8 @@ export function useVoiceMode(threadId: string | undefined, streaming: boolean) {
             source.onended = () => {
               sources.delete(source);
               if (!sources.size) setPlaying(false);
+              if (clip && ws.readyState === WebSocket.OPEN)
+                ws.send(JSON.stringify({ type: "played", id: clip }));
             };
           });
           return;
@@ -162,15 +178,26 @@ export function useVoiceMode(threadId: string | undefined, streaming: boolean) {
           setConnecting(false);
           setAnalyser(node);
         } else if (event.type === "speech_start") {
-          silence();
+          duck(0.2);
           setError("");
           setHearing(true);
+        } else if (event.type === "barge") {
+          silence();
+          setHearing(true);
         } else if (event.type === "speech_end") {
+          duck(1);
           setHearing(false);
           setPending(true);
-        } else if (event.type === "ignored" || event.type === "speak") {
+        } else if (event.type === "speech_cancelled") {
+          duck(1);
+          setHearing(false);
           setPending(false);
+        } else if (event.type === "ignored" || event.type === "speak") {
+          duck(1);
+          setPending(false);
+          if (event.type === "speak" && event.id) clips.push(event.id);
         } else if (event.type === "error") {
+          duck(1);
           setPending(false);
           setError(event.message ?? "Voice turn failed.");
         }
