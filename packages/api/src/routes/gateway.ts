@@ -1,8 +1,9 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { loadConfig } from "@orc/core/config";
+import { loadConfig, updateGlobalConfig } from "@orc/core/config";
 import { OrcError, ValidationError } from "@orc/core/errors";
-import { speechToText } from "@orc/gateway";
+import { listSpeechVoices, speechToText } from "@orc/gateway";
 import { bodyLimit } from "hono/body-limit";
+import { recordAudit } from "../lib/audit-actor.js";
 import { createRouter } from "../lib/router.js";
 import { mintVoiceTicket, speak } from "../voice.js";
 
@@ -115,6 +116,108 @@ app.openapi(
 );
 
 const threadParams = z.object({ id: z.string().min(1).max(200) });
+
+const SpeechVoiceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  language: z.string().optional(),
+  gender: z.string().optional(),
+});
+
+const SpeechSettingsSchema = z
+  .object({
+    language: z.string(),
+    voice: z.string(),
+    voices: z.array(SpeechVoiceSchema),
+    voice_source: z.enum(["provider", "catalog", "none"]),
+  })
+  .openapi("SpeechSettings");
+
+const speechSettings = async () => {
+  const config = loadConfig();
+  const catalog = await listSpeechVoices(config);
+  return {
+    language: config.speech.language,
+    voice: config.tts.voice,
+    voices: catalog.voices,
+    voice_source: catalog.source,
+  };
+};
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/speech/settings",
+    tags: ["Speech"],
+    summary: "Transcription language, reply voice and the provider's voice catalog",
+    responses: {
+      200: {
+        content: { "application/json": { schema: SpeechSettingsSchema } },
+        description: "Speech defaults and available voices",
+      },
+    },
+  }),
+  async (c) => c.json(await speechSettings()),
+);
+
+app.openapi(
+  createRoute({
+    method: "patch",
+    path: "/speech/settings",
+    tags: ["Speech"],
+    summary: "Save the transcription language and reply voice in the server config",
+    request: {
+      body: {
+        content: {
+          "application/json": {
+            schema: z.object({
+              language: z
+                .string()
+                .trim()
+                .max(35)
+                .refine(
+                  (value) => value === "" || /^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(value),
+                  "Use a language code like en or he, or empty for auto-detect",
+                )
+                .optional(),
+              voice: z.string().trim().max(100).optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        content: { "application/json": { schema: SpeechSettingsSchema } },
+        description: "Saved speech defaults",
+      },
+    },
+  }),
+  async (c) => {
+    const patch = c.req.valid("json");
+    const before = await speechSettings();
+    const config = updateGlobalConfig((raw) => {
+      if (patch.language !== undefined)
+        raw.speech = { ...(raw.speech as Record<string, unknown>), language: patch.language };
+      if (patch.voice !== undefined)
+        raw.tts = { ...(raw.tts as Record<string, unknown>), voice: patch.voice };
+    });
+    const after = {
+      language: config.speech.language,
+      voice: config.tts.voice,
+    };
+    if (before.language !== after.language || before.voice !== after.voice)
+      recordAudit(c, {
+        action: "settings.speech_changed",
+        subject_ids: [],
+        snapshot: {
+          before: { language: before.language, voice: before.voice },
+          after,
+        },
+      });
+    return c.json({ ...before, ...after });
+  },
+);
 
 app.openapi(
   createRoute({

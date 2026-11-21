@@ -587,6 +587,16 @@ mode its own TTS. Unset fields fall back to the shared `speech` / `tts` values:
 }
 ```
 
+**Settings → General → Voice** edits `speech.language` and `tts.voice` without
+touching the config file: `GET /api/speech/settings` returns both plus the reply
+voice catalog, and `PATCH /api/speech/settings` saves them server-wide. The catalog
+comes from the provider's `GET {base_url}/audio/voices` when an OpenAI-compatible
+server exposes one (Vocal does), from OpenAI's fixed per-model voice list when
+talking to OpenAI itself, and is empty for Qwen, where the voice stays a free-text
+id. With no voice configured, OpenAI itself defaults to `alloy`; a custom
+`base_url` gets no voice field so the server picks its own default — sending
+`alloy` to Vocal would be rejected as an unknown voice.
+
 **Voice mode** talks to a chat hands-free. `POST /api/chat/threads/{id}/voice/ticket`
 returns a single-use ticket for the WebSocket `/api/chat/threads/{id}/voice?ticket=`.
 The client sends 16 kHz mono 16-bit PCM as binary frames. The server ends a turn

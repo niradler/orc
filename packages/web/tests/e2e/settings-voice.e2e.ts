@@ -111,6 +111,7 @@ test("voice settings are reachable and usable on a phone", async ({ page }) => {
   const select = page.getByTestId("settings-voice-input");
   await expect(select).toBeVisible();
   expect((await select.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await expect(page.getByTestId("settings-speech-language")).toBeVisible();
   await expect.poll(() => select.locator("option").count()).toBeGreaterThan(1);
   await scrollToVoice(page);
   await shoot(page, "voice-phone");
@@ -149,4 +150,63 @@ test("voice help opens on tap on a phone and stays in the viewport", async ({ br
   } finally {
     await context.close();
   }
+});
+
+const CATALOG_VOICES = [
+  { id: "af_heart", name: "Heart", language: "en" },
+  { id: "af_sky", name: "Sky", language: "en" },
+];
+
+test("speech defaults save the language and a catalog voice on the server", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const state = { language: "", voice: "" };
+  let saved: { language?: string; voice?: string } | null = null;
+  await page.route("**/api/speech/settings", (route) => {
+    if (route.request().method() === "PATCH") {
+      saved = route.request().postDataJSON() as { language?: string; voice?: string };
+      Object.assign(state, saved);
+    }
+    return route.fulfill({
+      json: { ...state, voices: CATALOG_VOICES, voice_source: "provider" },
+    });
+  });
+  await gotoView(page, "settings");
+  await settingsSection(page, "voice");
+  const language = page.getByTestId("settings-speech-language");
+  await expect(language).toBeVisible();
+  await expect(language).toHaveValue("");
+  await language.selectOption("he");
+  const voice = page.getByTestId("settings-speech-voice");
+  await expect(voice.locator("option")).toHaveCount(3);
+  await voice.selectOption("af_heart");
+  const save = page.getByTestId("settings-speech-save");
+  await expect(save).toBeEnabled();
+  await scrollToVoice(page);
+  await shoot(page, "voice-desktop-speech");
+  await save.click();
+  await expect(page.getByTestId("settings-speech-feedback")).toBeVisible();
+  expect(saved).toEqual({ language: "he", voice: "af_heart" });
+  await expect(save).toBeDisabled();
+});
+
+test("without a voice catalog the reply voice is a free-text id", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  const state = { language: "", voice: "" };
+  let saved: { language?: string; voice?: string } | null = null;
+  await page.route("**/api/speech/settings", (route) => {
+    if (route.request().method() === "PATCH") {
+      saved = route.request().postDataJSON() as { language?: string; voice?: string };
+      Object.assign(state, saved);
+    }
+    return route.fulfill({ json: { ...state, voices: [], voice_source: "none" } });
+  });
+  await gotoView(page, "settings");
+  await settingsSection(page, "voice");
+  const voice = page.getByTestId("settings-speech-voice");
+  await expect(voice).toBeVisible();
+  expect(await voice.evaluate((element) => element.tagName)).toBe("INPUT");
+  await voice.fill("Cherry");
+  await page.getByTestId("settings-speech-save").click();
+  await expect(page.getByTestId("settings-speech-feedback")).toBeVisible();
+  expect(saved).toEqual({ language: "", voice: "Cherry" });
 });
