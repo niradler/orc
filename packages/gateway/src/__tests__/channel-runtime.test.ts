@@ -223,6 +223,7 @@ test("authorized channel invokes selected agent and replies; follow-up resumes o
       autoApprove: false,
       orcMcpMode: "meta",
       systemPromptAppend: expect.stringContaining("skill_read"),
+      systemPromptDelivered: false,
       humanRequestContext: { projectId: "p1", notify: ["telegram"] },
     },
   });
@@ -231,6 +232,10 @@ test("authorized channel invokes selected agent and replies; follow-up resumes o
   expect(JSON.stringify(edited.at(-1)?.body.reply_markup)).toContain("New session");
   await service.receive({ ...message, message_id: "m2", text: "follow up" });
   expect(calls[1]?.resume).toBe(true);
+  // The confirmed first turn pins the native id, which prompt-riding sessions
+  // treat as the delivery mark; the append stays offered for system-slot agents.
+  expect(calls[1]?.opts.systemPromptDelivered).toBe(true);
+  expect(calls[1]?.opts.systemPromptAppend).toContain("skill_read");
   await service.receive({ ...message, message_id: "m3", thread: "123" });
   expect(calls[2]?.resume).toBe(false);
   expect(sent.at(-1)?.message_thread_id).toBe(123);

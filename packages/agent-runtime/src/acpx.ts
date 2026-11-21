@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { AGENT_COMMAND_PATTERN } from "@orc/core/chat";
 import { acpxPermissionArgs, ChatAgentOptionsSchema } from "@orc/core/chat-options";
 import {
   type ExecHost,
@@ -348,6 +349,14 @@ export class AcpxSession implements AgentSession {
   private mcpCleanup: Promise<void> = Promise.resolve();
   private parse = createAcpxParser();
   private gotError = false;
+  /**
+   * ACPX has no system slot: the instructions ride in the first prompt that
+   * reaches the agent and live in its history afterwards. The caller keeps
+   * offering them until a turn confirms delivery (opts.systemPromptDelivered),
+   * so a first turn that never reached the agent is offered them again.
+   */
+  readonly systemPromptOnce = true;
+  private systemPromptPending = true;
 
   constructor(opts: SessionOpts, acpxCmd: string[], host: ExecHost) {
     this.id = ulid();
@@ -520,6 +529,15 @@ export class AcpxSession implements AgentSession {
     this.stderrBuf = "";
     this.eventQueue.length = 0;
 
+    const command = AGENT_COMMAND_PATTERN.test(prompt.trim());
+    const append =
+      !command && this.systemPromptPending && !this.opts.systemPromptDelivered
+        ? this.opts.systemPromptAppend
+        : undefined;
+    // Once submitted, the session's history owns the instructions; a later
+    // send() on this session must not repeat them.
+    if (append) this.systemPromptPending = false;
+    const text = command ? prompt.trim() : [append, prompt].filter(Boolean).join("\n\n");
     const args = [
       ...this.acpxCmd,
       "--format",
@@ -532,7 +550,7 @@ export class AcpxSession implements AgentSession {
       "prompt",
       "-s",
       this.sessionName,
-      prompt,
+      text,
     ];
 
     logger.info("Spawning ACPX process", {

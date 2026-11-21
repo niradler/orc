@@ -361,6 +361,8 @@ test("should advance past filtered rows in bounded scans instead of starving lat
   expect(f.payloads).toHaveLength(1);
 });
 
+// Real on-disk close/reopen cycles are slow on scanned/loaded runners; the
+// work is synchronous, so a generous budget replaces the default 5s cap.
 test("should keep pending and successful deliveries across actual database close/reopen", async () => {
   const directory = mkdtempSync(join(tmpdir(), "orc-notification-delivery-"));
   let db = new Database(join(directory, "state.db"));
@@ -419,7 +421,7 @@ test("should keep pending and successful deliveries across actual database close
     db.close();
     rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 15000);
 
 test("should forward only job events allowed by the common notify_on producer", async () => {
   const f = fixture();

@@ -349,7 +349,12 @@ test("scratchpad diagram renders as an isolated image and invalid content stays 
   await expect(page.getByTestId("chat-input")).toBeVisible();
 });
 
-async function mockApi(page: Page, requests: Request[], messageContent = content) {
+async function mockApi(
+  page: Page,
+  requests: Request[],
+  messageContent = content,
+  userContent = "show me",
+) {
   // Registered first so the chat routes below take precedence.
   await page.route("**/api/**", (route) => {
     const request = route.request();
@@ -422,7 +427,7 @@ async function mockApi(page: Page, requests: Request[], messageContent = content
     sourceId: null,
     backend: "codex-cli",
     messages: [
-      { id: "q", role: "user", content: "show me", timestamp: now - 1 },
+      { id: "q", role: "user", content: userContent, timestamp: now - 1 },
       { id: "a", role: "assistant", content: messageContent, timestamp: now },
     ],
   };
@@ -560,6 +565,38 @@ test("component examples in hidden context and outer code fences remain inert", 
   await expect(message.getByTestId("chat-ui-block")).toHaveCount(0);
   await expect(message.getByTestId("agent-context")).toHaveCount(0);
 });
+
+for (const width of [1440, 390]) {
+  test(`imported turns keep injected system instructions collapsed at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    const preamble =
+      "You are the ORC platform chat assistant.\n\nUse the smallest useful component reply.";
+    await mockApi(
+      page,
+      [],
+      "Here are your tasks.",
+      `${preamble}\n\n<orc-context>\nsource: webchat\nroute: /tasks\n</orc-context>\n\nshow my tasks`,
+    );
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`/tasks?chat=full&chatThread=${THREAD}`);
+    const userMessage = page.locator('[data-testid="chat-message"][data-role="user"]');
+    const instructions = userMessage.getByTestId("chat-instructions");
+    await expect(instructions).toBeVisible();
+    await expect(instructions).not.toHaveAttribute("open", "");
+    await expect(instructions.getByTestId("chat-instructions-content")).toBeHidden();
+    // The typed text reads as the user's own words; the turn context stays hidden.
+    await expect(userMessage).toContainText("show my tasks");
+    await expect(userMessage.getByTestId("agent-context")).toHaveCount(0);
+    await userMessage.screenshot({ path: testInfo.outputPath(`collapsed-${width}.png`) });
+    await instructions.locator("summary").click();
+    await expect(instructions.getByTestId("chat-instructions-content")).toBeVisible();
+    await expect(instructions.getByTestId("chat-instructions-content")).toContainText(
+      "You are the ORC platform chat assistant.",
+    );
+    await userMessage.screenshot({ path: testInfo.outputPath(`expanded-${width}.png`) });
+  });
+}
 
 test("state-bound action parameters resolve on press and do not run on load", async ({ page }) => {
   const requests: Request[] = [];

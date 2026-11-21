@@ -335,6 +335,7 @@ export function withHumanRequests(
   }
   return {
     id: session.id,
+    systemPromptOnce: session.systemPromptOnce,
     get capabilities() {
       return session.capabilities;
     },

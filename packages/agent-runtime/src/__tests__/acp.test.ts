@@ -621,12 +621,14 @@ test("ACP reports the context window from the agent's usage update and omits it 
   expect(result?.type === "result" && "contextWindow" in result.data).toBe(false);
 });
 
-test("ACP sends an agent slash command bare so the agent runs it, and other turns with the ORC preamble", async () => {
+test("ACP sends the ORC preamble once on the first real turn, and slash commands bare", async () => {
   const { session, cwd } = fixture({ systemPromptAppend: "ORC PREAMBLE" }, "effort");
   await session.initialize();
   await session.send("/hello world");
   await run(session);
   await session.send("/var/log/app.log is empty");
+  await run(session);
+  await session.send("any update since then?");
   await run(session);
   const prompts = readFileSync(join(cwd, "wire.ndjson"), "utf8")
     .trim()
@@ -634,7 +636,63 @@ test("ACP sends an agent slash command bare so the agent runs it, and other turn
     .map((line) => JSON.parse(line))
     .filter((message) => message.method === "session/prompt")
     .map((message) => message.params.prompt[0].text);
-  expect(prompts).toEqual(["/hello world", "ORC PREAMBLE\n\n/var/log/app.log is empty"]);
+  expect(prompts).toEqual([
+    "/hello world",
+    "ORC PREAMBLE\n\n/var/log/app.log is empty",
+    "any update since then?",
+  ]);
+});
+
+test("ACP delivers an offered preamble once per session object, including a resume retry", async () => {
+  const { session, cwd } = fixture({
+    runtimeSessionId: "saved-session",
+    systemPromptAppend: "ORC PREAMBLE",
+  });
+  await session.initialize();
+  await session.send("Continue");
+  await run(session);
+  await session.send("And then?");
+  await run(session);
+  const prompts = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((message) => message.method === "session/prompt")
+    .map((message) => message.params.prompt[0].text);
+  expect(prompts).toEqual(["ORC PREAMBLE\n\nContinue", "And then?"]);
+});
+
+test("ACP skips the preamble once delivery is confirmed", async () => {
+  const { session, cwd } = fixture({
+    runtimeSessionId: "saved-session",
+    systemPromptAppend: "ORC PREAMBLE",
+    systemPromptDelivered: true,
+  });
+  expect(session.systemPromptOnce).toBe(true);
+  await session.initialize();
+  await session.send("Continue");
+  await run(session);
+  const prompts = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((message) => message.method === "session/prompt")
+    .map((message) => message.params.prompt[0].text);
+  expect(prompts).toEqual(["Continue"]);
+});
+
+test("ACP sends bare turns when the caller offers no preamble", async () => {
+  const { session, cwd } = fixture({ runtimeSessionId: "saved-session" });
+  await session.initialize();
+  await session.send("Continue");
+  await run(session);
+  const prompts = readFileSync(join(cwd, "wire.ndjson"), "utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line))
+    .filter((message) => message.method === "session/prompt")
+    .map((message) => message.params.prompt[0].text);
+  expect(prompts).toEqual(["Continue"]);
 });
 
 test("ACP keeps a long subagent delegation under the output limit", async () => {

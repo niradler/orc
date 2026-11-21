@@ -124,6 +124,9 @@ export class CodexSession implements AgentSession {
     hasReceivedResult: false,
   };
   private runtimeSessionId: string | undefined;
+  /** Codex exec has no system slot; the interactive app server does. */
+  readonly systemPromptOnce = true;
+  private systemPromptPending = true;
   private stderrLines: string[] = [];
   private readonly cwd: string;
   private readonly host: ExecHost;
@@ -195,9 +198,15 @@ export class CodexSession implements AgentSession {
     });
     this.proc = handle.proc;
     this.killProc = handle.kill;
+    // Codex exec has no system slot: the instructions ride in the first prompt
+    // that reaches the agent. The caller keeps offering them until a turn
+    // confirms delivery, so a failed first turn is offered them again.
+    const append =
+      this.systemPromptPending && !opts.systemPromptDelivered ? opts.systemPromptAppend : undefined;
+    if (append) this.systemPromptPending = false;
     writeToStdin(
       this.proc.stdin,
-      new TextEncoder().encode([opts.systemPromptAppend, prompt].filter(Boolean).join("\n\n")),
+      new TextEncoder().encode([append, prompt].filter(Boolean).join("\n\n")),
     );
     endStdin(this.proc.stdin);
 

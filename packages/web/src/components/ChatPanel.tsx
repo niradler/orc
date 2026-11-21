@@ -150,6 +150,9 @@ const actionButton =
 const textParts = {
   Text: ({ text }: { text: string }) => <AgentMessageText>{text}</AgentMessageText>,
 };
+const userTextParts = {
+  Text: ({ text }: { text: string }) => <AgentMessageText userTurn>{text}</AgentMessageText>,
+};
 const attachmentKeys = new WeakMap<File, string>();
 function attachmentKey(file: File): string {
   let key = attachmentKeys.get(file);
@@ -1330,7 +1333,9 @@ export function ChatPanel({
                                 />
                                 <ChatAttachments value={custom.attachments} />
                                 <AgentTextStreamProvider streaming={live}>
-                                  <MessagePrimitive.Parts components={textParts} />
+                                  <MessagePrimitive.Parts
+                                    components={message.role === "user" ? userTextParts : textParts}
+                                  />
                                 </AgentTextStreamProvider>
                               </div>
                             </div>

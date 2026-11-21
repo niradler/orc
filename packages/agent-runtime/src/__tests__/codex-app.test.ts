@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { CodexAppSession } from "../codex-app";
 import {
   type AgentEvent,
+  type AgentSession,
   type PermissionResult,
   permissionModeAllows,
   type SessionOpts,
@@ -66,6 +67,9 @@ for await (const line of createInterface({input:process.stdin})) {
 
 test("should compact the existing native thread without sending a model prompt", async () => {
   const session = fixture({ runtimeSessionId: "native-fixture" });
+  // The app server owns a system slot: it re-applies the append every turn,
+  // unlike codex exec, which rides the first prompt.
+  expect((session as AgentSession).systemPromptOnce).toBeUndefined();
   try {
     await session.send("/compact");
     const events: AgentEvent[] = [];

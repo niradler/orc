@@ -67,6 +67,9 @@ let parallelRequests = false;
 let slowClose = false;
 let questionAnswers: Record<string, string[]> | undefined;
 let failBeforeResult = false;
+let identityWithoutResult = false;
+let identitylessResult = false;
+let systemSlotInstructions = false;
 let failedTurn = false;
 let resultIdentity: string | undefined;
 let resultDurationMs: number | undefined;
@@ -98,6 +101,8 @@ function session(call: (typeof calls)[number]): AgentSession {
   });
   const s: AgentSession = {
     id: "fixture",
+    // The fixture rides the prompt unless a test exercises a system-slot agent.
+    ...(systemSlotInstructions ? {} : { systemPromptOnce: true }),
     capabilities:
       !interruptCapability && CODEX_CAPABILITIES
         ? { ...CODEX_CAPABILITIES, interrupt: false }
@@ -113,7 +118,12 @@ function session(call: (typeof calls)[number]): AgentSession {
       if (steerAfterClose) await new Promise<void>((done) => (closeGate = done));
       call.prompt = prompt;
     },
-    getRuntimeSessionId: () => (waitPermission || noResumable ? "early-native-fixture" : undefined),
+    getRuntimeSessionId: () =>
+      waitPermission || noResumable
+        ? "early-native-fixture"
+        : identityWithoutResult
+          ? "pinned-native-fixture"
+          : undefined,
     send: async (prompt) => {
       call.prompt = prompt;
     },
@@ -283,10 +293,12 @@ function session(call: (typeof calls)[number]): AgentSession {
         type: "result",
         data: noResumable
           ? { resumable: false, durationMs: resultDurationMs }
-          : {
-              runtimeSessionId: resultIdentity ?? call.id ?? "native-fixture",
-              durationMs: resultDurationMs,
-            },
+          : identitylessResult
+            ? { durationMs: resultDurationMs }
+            : {
+                runtimeSessionId: resultIdentity ?? call.id ?? "native-fixture",
+                durationMs: resultDurationMs,
+              },
       };
     },
   };
@@ -581,6 +593,10 @@ describe("native chat runtime", () => {
       expect(first.response.status).toBe(200);
       expect(first.events.some((event) => event.type === "done")).toBe(true);
       expect(cursorCalls[0]?.opts).toMatchObject({ acpxAgent: "cursor", orcMcp: true });
+      // The instructions travel in the session options for once-per-session
+      // delivery; the turn prompt itself never carries them.
+      expect(cursorCalls[0]?.opts.systemPromptAppend).toContain("Operator instructions");
+      expect(cursorCalls[0]?.prompt).not.toContain("Operator instructions");
       const thread = first.events.find((event) => event.type === "thread");
       if (thread?.type !== "thread") throw new Error("Missing Cursor thread");
       expect(
@@ -597,6 +613,7 @@ describe("native chat runtime", () => {
       });
       expect(next.response.status).toBe(200);
       expect(cursorCalls[1]?.id).toBe("native-fixture");
+      expect(cursorCalls[1]?.prompt).not.toContain("Operator instructions");
     } finally {
       registerBackend("acpx", () => originalAcpx);
     }
@@ -728,6 +745,232 @@ describe("native chat runtime", () => {
     ).toBe(409);
     expect(calls).toHaveLength(count);
     calls.length = 0;
+  });
+  test("a first turn that failed before delivery keeps offering the chat instructions", async () => {
+    identityWithoutResult = true;
+    failBeforeResult = true;
+    try {
+      const failed = await turn({
+        messages: [{ role: "user", content: "first turn dies before delivery" }],
+      });
+      failBeforeResult = false;
+      const opened = failed.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing thread");
+      // The identity is pinned for continuity even though no result arrived,
+      // so the retry resumes; the instructions must still be delivered.
+      const stored = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(stored.runtimeId).toBe("pinned-native-fixture");
+      expect(stored.systemPromptDelivered).toBeUndefined();
+      const retry = await turn({
+        threadId: stored.id,
+        messages: [{ role: "user", content: "retry after the agent was fixed" }],
+      });
+      expect(retry.response.status).toBe(200);
+      expect(calls.at(-1)?.id).toBe("pinned-native-fixture");
+      expect(calls.at(-1)?.opts.systemPromptDelivered).toBeFalsy();
+      expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+      const confirmed = (await (await request(`/chat/threads/${stored.id}`)).json()) as ChatThread;
+      expect(confirmed.systemPromptDelivered).toBe(true);
+      await turn({
+        threadId: stored.id,
+        messages: [{ role: "user", content: "third turn" }],
+      });
+      // The append stays offered; the delivery mark is what stops the session
+      // from prepending it again.
+      expect(calls.at(-1)?.opts.systemPromptDelivered).toBe(true);
+      expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+    } finally {
+      identityWithoutResult = false;
+      failBeforeResult = false;
+      calls.length = 0;
+    }
+  });
+  test("a command-only first turn does not consume the instruction delivery", async () => {
+    const first = await turn({ messages: [{ role: "user", content: "/code-review high" }] });
+    expect(first.response.status).toBe(200);
+    const opened = first.events.find((event) => event.type === "thread");
+    if (opened?.type !== "thread") throw new Error("Missing thread");
+    const stored = (await (
+      await request(`/chat/threads/${opened.thread.id}`)
+    ).json()) as ChatThread;
+    expect(stored.systemPromptDelivered).toBeUndefined();
+    await turn({
+      threadId: stored.id,
+      messages: [{ role: "user", content: "now a real question" }],
+    });
+    expect(calls.at(-1)?.opts.systemPromptDelivered).toBeFalsy();
+    expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+    const confirmed = (await (await request(`/chat/threads/${stored.id}`)).json()) as ChatThread;
+    expect(confirmed.systemPromptDelivered).toBe(true);
+    calls.length = 0;
+  });
+  test("a system-slot agent receives the chat instructions on every turn", async () => {
+    systemSlotInstructions = true;
+    try {
+      const first = await turn({ messages: [{ role: "user", content: "system slot first" }] });
+      const opened = first.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing thread");
+      expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+      await turn({
+        threadId: opened.thread.id,
+        messages: [{ role: "user", content: "system slot second" }],
+      });
+      expect(calls.at(-1)?.id).toBeTruthy();
+      // A system slot re-applies the append idempotently; gating it would strip
+      // the instructions from every turn after the first.
+      expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+      const stored = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(stored.systemPromptDelivered).toBeUndefined();
+    } finally {
+      systemSlotInstructions = false;
+      calls.length = 0;
+    }
+  });
+  test("a context fork delivers the chat instructions to its fresh native session", async () => {
+    const first = await turn({ messages: [{ role: "user", content: "fork source turn" }] });
+    const opened = first.events.find((event) => event.type === "thread");
+    if (opened?.type !== "thread") throw new Error("Missing thread");
+    const source = (await (
+      await request(`/chat/threads/${opened.thread.id}`)
+    ).json()) as ChatThread;
+    expect(source.systemPromptDelivered).toBe(true);
+    const assistant = source.messages.find((message) => message.role === "assistant");
+    if (!assistant) throw new Error("Missing assistant response");
+    // The fixture backend cannot fork natively, so this is a context replay
+    // into a fresh session that never saw the instructions.
+    const forked = (await (
+      await request(`/chat/threads/${source.id}/fork`, { messageId: assistant.id })
+    ).json()) as ChatThread;
+    expect(forked.forkedFrom?.mode).toBe("context");
+    expect(forked.systemPromptDelivered).toBeUndefined();
+    calls.length = 0;
+    await turn({ threadId: forked.id, messages: [{ role: "user", content: "fork first turn" }] });
+    expect(calls.at(-1)?.id).toBeNull();
+    expect(calls.at(-1)?.opts.systemPromptDelivered).toBeFalsy();
+    expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+    const confirmed = (await (await request(`/chat/threads/${forked.id}`)).json()) as ChatThread;
+    expect(confirmed.systemPromptDelivered).toBe(true);
+    await turn({ threadId: forked.id, messages: [{ role: "user", content: "fork second turn" }] });
+    expect(calls.at(-1)?.opts.systemPromptDelivered).toBe(true);
+    calls.length = 0;
+  });
+  test("a native fork that falls back to context replay delivers the instructions again", async () => {
+    const fixtureBackend = createBackend("codex-cli");
+    registerBackend("codex-cli", () => ({
+      ...fixtureBackend,
+      forkSession: async () => {
+        throw new Error("fixture fork rejected");
+      },
+    }));
+    try {
+      const first = await turn({ messages: [{ role: "user", content: "native fork source" }] });
+      const opened = first.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing thread");
+      const source = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(source.systemPromptDelivered).toBe(true);
+      const assistant = source.messages.find((message) => message.role === "assistant");
+      if (!assistant) throw new Error("Missing assistant response");
+      const forked = (await (
+        await request(`/chat/threads/${source.id}/fork`, { messageId: assistant.id })
+      ).json()) as ChatThread;
+      // Eligible for a native fork, so the delivery mark is inherited; the
+      // fallback at turn time must clear it for the fresh session.
+      expect(forked.forkedFrom?.mode).toBe("native");
+      expect(forked.systemPromptDelivered).toBe(true);
+      calls.length = 0;
+      await turn({
+        threadId: forked.id,
+        messages: [{ role: "user", content: "fork fallback turn" }],
+      });
+      expect(calls.at(-1)?.id).toBeNull();
+      expect(calls.at(-1)?.opts.systemPromptDelivered).toBeFalsy();
+      expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+      const confirmed = (await (await request(`/chat/threads/${forked.id}`)).json()) as ChatThread;
+      expect(confirmed.forkedFrom?.mode).toBe("context");
+      expect(confirmed.systemPromptDelivered).toBe(true);
+    } finally {
+      registerBackend("codex-cli", () => fixtureBackend);
+      calls.length = 0;
+    }
+  });
+  test("a native fork that never establishes an identity delivers the instructions on the retry", async () => {
+    const fixtureBackend = createBackend("codex-cli");
+    registerBackend("codex-cli", () => ({
+      ...fixtureBackend,
+      forkSession: async (_sourceRuntimeId: string, opts: SessionOpts) => {
+        const call = { id: null, opts };
+        calls.push(call);
+        return session(call);
+      },
+    }));
+    try {
+      const first = await turn({
+        messages: [{ role: "user", content: "identityless fork source" }],
+      });
+      const opened = first.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing thread");
+      const source = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      expect(source.systemPromptDelivered).toBe(true);
+      const assistant = source.messages.find((message) => message.role === "assistant");
+      if (!assistant) throw new Error("Missing assistant response");
+      const forked = (await (
+        await request(`/chat/threads/${source.id}/fork`, { messageId: assistant.id })
+      ).json()) as ChatThread;
+      expect(forked.forkedFrom?.mode).toBe("native");
+      expect(forked.systemPromptDelivered).toBe(true);
+      calls.length = 0;
+      // The fork resolves but the turn returns no identity: finalize degrades
+      // the fork to a context replay into a fresh session on the next turn.
+      identitylessResult = true;
+      await turn({
+        threadId: forked.id,
+        messages: [{ role: "user", content: "fork dies identityless" }],
+      });
+      identitylessResult = false;
+      const degraded = (await (await request(`/chat/threads/${forked.id}`)).json()) as ChatThread;
+      expect(degraded.forkedFrom?.mode).toBe("context");
+      expect(degraded.runtimeId).toBeFalsy();
+      expect(degraded.systemPromptDelivered).toBeUndefined();
+      await turn({
+        threadId: forked.id,
+        messages: [{ role: "user", content: "retry the degraded fork" }],
+      });
+      expect(calls.at(-1)?.id).toBeNull();
+      expect(calls.at(-1)?.opts.systemPromptDelivered).toBeFalsy();
+      expect(calls.at(-1)?.opts.systemPromptAppend).toContain("Operator instructions");
+      const confirmed = (await (await request(`/chat/threads/${forked.id}`)).json()) as ChatThread;
+      expect(confirmed.systemPromptDelivered).toBe(true);
+    } finally {
+      identitylessResult = false;
+      registerBackend("codex-cli", () => fixtureBackend);
+      calls.length = 0;
+    }
+  });
+  test("a result without a session identity does not mark the instructions delivered", async () => {
+    identitylessResult = true;
+    try {
+      const result = await turn({ messages: [{ role: "user", content: "identityless turn" }] });
+      const opened = result.events.find((event) => event.type === "thread");
+      if (opened?.type !== "thread") throw new Error("Missing thread");
+      expect(result.events.some((event) => event.type === "error")).toBe(true);
+      const stored = (await (
+        await request(`/chat/threads/${opened.thread.id}`)
+      ).json()) as ChatThread;
+      // No resumable history exists, so nothing owns the instructions yet.
+      expect(stored.runtimeId).toBeFalsy();
+      expect(stored.systemPromptDelivered).toBeUndefined();
+    } finally {
+      identitylessResult = false;
+      calls.length = 0;
+    }
   });
   test("streams structured activity, applies server settings and persists a resumable conversation", async () => {
     const result = await turn({
