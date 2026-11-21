@@ -41,8 +41,11 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
    and run `cmd /c wrapper.cmd`:
    `$env:PW_SHARDS="1"; $env:PW_RETRIES="1";
    $env:NPM_CONFIG_USERCONFIG="<scratch>/npmrc"; $null | cmd /c <scratch>/release.cmd`.
-   The wrapper holds `autho exec --map "NPM_TOKEN=npm token" -- bun run release --yes`;
-   the npmrc contains only `//registry.npmjs.org/:_authToken=${NPM_TOKEN}`.
+   The wrapper holds `autho exec --map "NPM_TOKEN=npm token" -- cmd /c <scratch>/inner.cmd`,
+   and the **inner** `.cmd` does `cd /d <release-worktree>` then `bun run release ...`:
+   `autho exec` runs the child in the autho service's cwd, so a `cd` made before
+   `autho` is discarded. The npmrc contains only
+   `//registry.npmjs.org/:_authToken=${NPM_TOKEN}`.
    Watch `.orc/release-state.json` `completed[]`, because the log stays empty while
    autho buffers. Resume after a failure with `--resume --yes`.
    Accepting the npm archive without serving it ("npm publication is not public yet")
@@ -77,9 +80,11 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
      Absent `daemon.pid`/`daemon.json`/`orc.db-wal`/`-shm` in the listing are
      expected: graceful stop removes them. Then start orc again.
    - Tell Nir not to touch orc during the window: a manual Cockpit restart mid-tar
-     fails it with "file changed as we read it" and leaves orc down. Keep an ERR trap
-     that restarts orc on any abort, and prove consistency by hashing the archived
-     `orc.db` against `migration-check.db` (a start after the copy is harmless).
+     fails it with "file changed as we read it" and leaves orc down. Restore orc
+     with a `trap 'start_orc' EXIT` (idempotent), **not** `trap ... ERR`: `exit 1`
+     inside a `||` chain ends the script without firing ERR, which left orc down
+     for 40 s in 0.1.71. Prove consistency by hashing the archived `orc.db` against
+     `migration-check.db` (a start after the copy is harmless).
 6. **Lab rollout after Docker publishes.**
    - Pull `niradler/orc:<v>@sha256:<digest>`; check `arch=amd64` and label
      `org.opencontainers.image.revision` == the release commit.
@@ -130,12 +135,17 @@ Speed rules:
 | npm step "Unexpected npm release archive" | package.json changed under a shared checkout | Dedicated worktree, then `--resume` |
 | npm PUT 202 and the version is not visible yet | Registry processing lag (up to 15 min or more) | `--resume` later; it won't republish |
 | Desktop verify timeout | `~/.orc/bin/orc.exe` locked by editor `orc mcp` processes | Ask Nir to close them, then `--resume --yes` |
+| Desktop health verify says `unknown` while both CLIs match | A `netsh portproxy` on the API port (`0.0.0.0:7700 → 127.0.0.1:7700`) holds the wildcard bind, so the daemon falls back to another port and probes to 7700 loop into the proxy until timeout | Delete the rule (elevated `netsh interface portproxy delete v4tov4 listenaddress=0.0.0.0 listenport=7700`), relaunch the desktop, re-verify. A same-port proxy can never work; lab exposure needs a LAN host bind plus the lab-scoped firewall rule |
 | Lab `docker build`/`docker compose` prints usage or not found | Lab docker CLI has no build/compose subcommands | buildx plugin path for builds; `homelab-code-server` helper container with docker socket for compose |
 | Bump collides with an existing npm version | Previous release commit never reached master | Preflight version check (step 1) |
 | Fix PR's `changed` check sits queued | Homelab runner session went stale (container replaced) | Cancel the run, then `gh run rerun <id>`; check `gha-runner-pool.service` on the lab |
 | mac-arm64 job `cancelled` after ~15 min with empty steps | GitHub never provisioned a macos runner; `--failed`/`--job` rerun refuse cancelled jobs | Whole-run `gh run rerun <id>`, then `--resume --yes` |
 | Backup tar prints `socket ignored` | SSH control sockets in `/data/.orc/ssh` | Harmless; sockets don't need backing up |
 | Backup verify claims `orc.db` missing though the archive is fine | grep/pipefail SIGPIPE. `tar -tzf \| grep -q` kills tar; `printf '%s\n' "$listing" \| grep -qx` kills printf on the FIRST match, so a present file reads as missing | Materialize the listing once, then `grep -qxF -- ./orc.db <<<"$listing"`. Directory entries carry a trailing slash (`./knowledge/`), so match that form |
+| Backup script exits "MISSING ./skills" and leaves orc down | The membership list was guessed; `/srv/docker-data/orc` has no `skills`/`agents` directories (skills and agents live in the DB/`.orc`) | Require `./orc.db ./knowledge ./config.json ./secret.key` and assert `daemon.pid`/`daemon.json`/`-wal`/`-shm` are absent. Re-read the actual `ls` before writing the list |
+| orc stays down after a backup aborts | `trap ... ERR` does not fire on `exit 1` in a `\|\|` chain | Use `trap 'start_orc' EXIT`; `start_orc` is idempotent |
+| Helper compose: "env file /opt/homelab/secrets/orc.env not found" | The stack's `env_file` uses the host absolute path, but the helper only had `orc.env` mounted elsewhere | Mount `-v /opt/homelab/secrets:/opt/homelab/secrets:ro` into `homelab-code-server` and pass `--env-file /opt/homelab/secrets/orc.env`. Make the pin idempotent: never re-copy `compose.yaml.before-<v>` over an existing one |
+| `autho exec` child runs in the wrong directory | It spawns in the **autho service's** cwd, not the caller's, so a wrapper that `cd`s before `autho` is ignored | Put the `cd` inside the exec'd command (an inner `.cmd` passed as `cmd /c <scratch>/inner.cmd`) |
 | Canonical gate fails with `connect ETIMEDOUT 127.0.0.1:<port>` in unrelated specs | `bun run release --yes` inherits no overrides and runs the default four shards (#336) | Export `PW_SHARDS=2 PW_RETRIES=1` before `bun run release`; with a clean tree a failed pre-flight gate needs no resume |
 | Remote script mangles itself, or a *later* step of it runs early | PowerShell expands `$(...)`/backticks inside a double-quoted `ssh` argument locally, so the remote gets a broken string that can still execute its leading commands (this restarted orc inside the backup window once) | Ship scripts as files: `echo <base64> \| base64 -d > /tmp/x.sh && bash /tmp/x.sh` |
 | Smoke counts are missing or `no such table: skills` | There are no `skills`/`agents` SQL tables, and the API collections are objects (`{skills:[…]}`), not arrays | Count through the API: `/api/skills`, `/api/agents`, `/api/projects`, then `.skills.length` etc. |
