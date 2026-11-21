@@ -163,7 +163,7 @@ export function AgentModelPicker({
           aria-label={`Agent and model: ${name}, ${accessibleSummary ?? summary}`}
           title={`${name} · ${summary}`}
           disabled={!ready}
-          className={cn(composerChip, "max-w-64 text-on-surface")}
+          className={cn(composerChip, "text-on-surface")}
         >
           <AgentIcon agent={agent} decorative size={14} />
           <span
@@ -366,7 +366,7 @@ export function AgentModelPicker({
                     className={chipOption}
                   >
                     <span className="flex min-w-0 flex-1 flex-col py-1">
-                      <span className="truncate">{label}</span>
+                      <span className="wrap-break-word">{label}</span>
                       {descriptions?.get(id) && (
                         <span className="line-clamp-2 text-xs text-muted-foreground">
                           {descriptions.get(id)}

@@ -179,6 +179,67 @@ for (const width of [320, 390, 820, 1440]) {
   });
 }
 
+const LONG_MODEL = {
+  id: "claude-opus-4-6-1m",
+  label: "Claude Opus 4.6 (1M context) with extended thinking",
+};
+
+test("@sanity long model names stay readable in the composer chip and picker", async ({
+  page,
+  request,
+}) => {
+  await page.route("**/api/chat/models?**", (route) =>
+    route.fulfill({ json: { models: [LONG_MODEL], warning: null } }),
+  );
+  await request.patch("/api/settings", {
+    headers,
+    data: { chat: { ...defaults, agent: "claude", model: LONG_MODEL.id } },
+  });
+  for (const width of [1440, 820, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await openChat(page);
+    const chip = page.getByTestId("chat-agent-model-button");
+    if (width === 1440) await page.getByTestId("chat-fullscreen-button").click();
+    if (width === 390) {
+      // Compact composer keeps the approved icon-only row; the full name stays
+      // in the accessible name and one tap away in the picker.
+      await expect(chip.getByTestId("chat-model-current")).toBeHidden();
+      const bounds = await chip.boundingBox();
+      expect(bounds?.width).toBe(44);
+      expect(bounds?.height).toBeGreaterThanOrEqual(44);
+      expect(await chip.getAttribute("aria-label")).toContain(LONG_MODEL.label);
+      await page.screenshot({ path: test.info().outputPath(`long-model-${width}.png`) });
+      await chip.click();
+      await expect(page.getByTestId("chat-picker-tab-model")).toHaveAttribute(
+        "aria-label",
+        `Model: ${LONG_MODEL.label}`,
+      );
+    } else {
+      const model = chip.getByTestId("chat-model-current");
+      await expect(model).toHaveText(LONG_MODEL.label);
+      expect(await model.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      await page.screenshot({ path: test.info().outputPath(`long-model-${width}.png`) });
+      await chip.click();
+    }
+    const option = page.getByTestId(`chat-model-option-${LONG_MODEL.id}`);
+    await expect(option).toContainText(LONG_MODEL.label);
+    expect(
+      await option
+        .locator("span")
+        .first()
+        .evaluate((element) => element.scrollWidth <= element.clientWidth),
+    ).toBe(true);
+    await page.screenshot({ path: test.info().outputPath(`long-model-picker-${width}.png`) });
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("chat-send-button")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+  }
+});
+
 test("folder changes in two clicks and agent+model change from one pill", async ({ page }) => {
   await openChat(page);
   const folder = page.getByTestId("chat-workspace-folder");
