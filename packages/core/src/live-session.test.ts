@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,8 +24,14 @@ async function lockRegistration(file: string, milliseconds: number) {
   return process;
 }
 
+const fixtureDirs: string[] = [];
+afterEach(() => {
+  for (const dir of fixtureDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 function fixture() {
   const dir = mkdtempSync(join(tmpdir(), "orc-registration-race-"));
+  fixtureDirs.push(dir);
   const record: LiveRegistration = {
     backend: "codex",
     externalId: "reader",

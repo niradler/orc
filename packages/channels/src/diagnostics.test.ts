@@ -1,8 +1,13 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { safeProviderCode } from "./providers/base.js";
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 test("provider diagnostics accept only known codes and never raw errors or credentials", () => {
   expect(safeProviderCode("Channel provider: network_or_timeout")).toBe("network_or_timeout");
@@ -18,6 +23,7 @@ test("provider diagnostics accept only known codes and never raw errors or crede
 
 test("polling failure and recovery persist safe JSON log entries without repeating every poll", () => {
   const home = mkdtempSync(join(tmpdir(), "orc-channel-diagnostics-"));
+  tempDirs.push(home);
   const program = `
     import { Database } from 'bun:sqlite';
     import { ChannelService } from ${JSON.stringify(new URL("./service.ts", import.meta.url).href)};

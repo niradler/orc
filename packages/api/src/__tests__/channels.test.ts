@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, expect, mock, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ChannelService } from "@orc/channels";
@@ -9,6 +9,7 @@ import { ChannelReceiptSchema, ChannelViewSchema } from "@orc/core/channels";
 import { resetConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
 import { ChannelStore } from "@orc/db/channels";
+import { closeDb } from "@orc/db/client";
 import { Hono } from "hono";
 import { z } from "zod";
 import { bearerAuth } from "../middleware/auth.js";
@@ -122,12 +123,27 @@ beforeAll(() => {
 afterAll(async () => {
   await service.stop();
   db.close();
+  // The router opens the default-path db singleton under HOME; close it and
+  // release handles before removing the home (Windows lags the release).
+  closeDb();
+  Bun.gc(true);
   for (const [key, value] of Object.entries(original)) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
   }
   resetConfig();
-});
+  // Bun 1.4.4 ignores rmSync maxRetries; Windows releases the db handle lazily
+  // under load, so retry explicitly until the home removes.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(privateHome, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 100) throw error;
+      await Bun.sleep(100);
+    }
+  }
+}, 25_000);
 
 test("channel APIs require authentication, including setup and discovery", async () => {
   for (const [path, method] of [

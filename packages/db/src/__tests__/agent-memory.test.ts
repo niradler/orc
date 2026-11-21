@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RuleEventSchema } from "@orc/core/rules";
@@ -8,8 +8,14 @@ import { syncClaudeMemory } from "../agent-memory.js";
 import { createDb, getSqlite } from "../client.js";
 import { MemoryStore } from "../memories.js";
 
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 test("should refuse source escapes and large files without reading arbitrary files", () => {
   const root = mkdtempSync(join(tmpdir(), "orc-memory-path-"));
+  tempDirs.push(root);
   const source = join(root, "memory");
   mkdirSync(source);
   const outside = join(root, "outside.md");
@@ -44,6 +50,7 @@ test("should refuse source escapes and large files without reading arbitrary fil
 
 test("should upsert Claude memory files by name and report files that cannot be memories", () => {
   const root = mkdtempSync(join(tmpdir(), "orc-memory-sync-"));
+  tempDirs.push(root);
   const source = join(root, "memory");
   mkdirSync(source);
   const db = getSqlite(createDb(":memory:"));
@@ -83,6 +90,7 @@ test("should upsert Claude memory files by name and report files that cannot be 
 
 test("should skip files whose names map to the same memory instead of overwriting it", () => {
   const root = mkdtempSync(join(tmpdir(), "orc-memory-collide-"));
+  tempDirs.push(root);
   const source = join(root, "memory");
   mkdirSync(source);
   const db = getSqlite(createDb(":memory:"));

@@ -1,5 +1,5 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -20,16 +20,19 @@ import {
 import { listSkills, reloadCache } from "./skill-service.js";
 
 const priorDirectory = process.env.ORC_PACKAGES_DIR;
+const catalogRoot = mkdtempSync(join(tmpdir(), "orc-catalog-tests-"));
+const tempDirs: string[] = [];
 beforeAll(() => {
-  process.env.ORC_PACKAGES_DIR = join(
-    mkdtempSync(join(tmpdir(), "orc-catalog-tests-")),
-    "packages",
-  );
+  process.env.ORC_PACKAGES_DIR = join(catalogRoot, "packages");
+});
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 afterAll(() => {
   if (priorDirectory === undefined) delete process.env.ORC_PACKAGES_DIR;
   else process.env.ORC_PACKAGES_DIR = priorDirectory;
   reloadCache();
+  rmSync(catalogRoot, { recursive: true, force: true });
 });
 
 describe("personal package catalog", () => {
@@ -111,6 +114,7 @@ describe("personal package catalog", () => {
     const name = `install-check-${crypto.randomUUID()}`;
     createPackage(name, `name: ${name}\nversion: 1.0.0\n`, []);
     const cwd = mkdtempSync(join(tmpdir(), "orc-install-check-"));
+    tempDirs.push(cwd);
     const plan = buildPackagePlan(
       {
         name: "install-check",

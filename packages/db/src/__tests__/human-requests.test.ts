@@ -1,10 +1,15 @@
 import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, resetConfig } from "@orc/core/config";
 import { HumanRequestStore } from "../human-requests.js";
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function fixture() {
   const db = new Database(":memory:");
@@ -285,7 +290,9 @@ test("should dismiss only obsolete requests from the continuing session and back
 });
 
 test("should reopen pending and answered requests from a closed SQLite database", () => {
-  const path = join(mkdtempSync(join(tmpdir(), "orc-human-reopen-")), "requests.db");
+  const dir = mkdtempSync(join(tmpdir(), "orc-human-reopen-"));
+  tempDirs.push(dir);
+  const path = join(dir, "requests.db");
   let db = new Database(path);
   let store = new HumanRequestStore(db);
   const request = store.create(question);

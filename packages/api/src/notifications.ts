@@ -88,12 +88,12 @@ export function syncFinishedNotificationSessions(sqlite: Database): void {
   }
 }
 
-export function retireChatFinishedNotifications(thread: ChatThread): void {
+export function retireChatNotifications(thread: ChatThread): void {
   if (thread.runtimeId)
     associateSessionSources(getSqlite(), thread.id, thread.backend, thread.host, thread.runtimeId);
   const notifications = new NotificationStore(getSqlite());
-  let count = notifications.markFinishedRead(thread.id);
-  if (thread.sourceId) count += notifications.markFinishedRead(thread.sourceId);
+  let count = notifications.dismissSource(thread.id);
+  if (thread.sourceId) count += notifications.dismissSource(thread.sourceId);
   if (count) changes.publish("notifications");
 }
 
@@ -157,8 +157,9 @@ export function recordObservedNotification(
   const sqlite = getSqlite();
   if (event.status === "running" && event.previous !== "running") {
     associateSessionSources(sqlite, event.id, event.backend, event.host, event.nativeId);
+    // The agent continued: every alert about this session is stale now.
     const notifications = new NotificationStore(sqlite);
-    const count = notifications.markFinishedRead(event.id);
+    const count = notifications.dismissSource(event.id);
     if (count) changes.publish("notifications");
   }
   if (!event.waiting) new NotificationStore(sqlite).resolveSource("agent.question", event.id);
@@ -205,9 +206,11 @@ export function recordObservedNotification(
         kind === "question" &&
         sqlite
           .query(
-            "SELECT 1 FROM notifications WHERE type='agent.question' AND source_id=? AND requires_action=1 LIMIT 1",
+            // A dismissed or expired alert must not suppress a genuinely new
+            // question for the same session (e.g. after a stopped->running flap).
+            "SELECT 1 FROM notifications WHERE type='agent.question' AND source_id=? AND requires_action=1 AND dismissed_at IS NULL AND expires_at>? LIMIT 1",
           )
-          .get(event.id)
+          .get(event.id, Date.now())
       )
         return;
       if (kind === "finished")

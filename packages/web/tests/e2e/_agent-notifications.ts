@@ -188,6 +188,11 @@ export async function notificationScenario(page: Page, initial: ScenarioState) {
           dismissed_at: null,
         });
     }
+    // The server dismisses every alert about a session once its agent continues.
+    for (const session of state.sessions.filter((session) => session.status === "running")) {
+      const item = notifications.get(`notification-${session.id}`);
+      if (item && !item.dismissed_at) item.dismissed_at = now;
+    }
     return [...notifications.values()].filter((item) => !item.dismissed_at);
   };
   const responses: Array<{ id: string; body: unknown }> = [];

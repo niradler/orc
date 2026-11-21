@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
   await page.clock.install();
 });
 
-test("Needs you: a permission prompt chimes without stealing focus and opens its review form", async ({
+test("Needs you: a permission prompt chimes and jumps the bell without stealing focus", async ({
   page,
 }) => {
   const scenario = await notificationScenario(page, {
@@ -32,30 +32,41 @@ test("Needs you: a permission prompt chimes without stealing focus and opens its
   scenario.state.requests = [approvalRequest(0)];
   await poll(page);
 
-  const toast = page.getByTestId("agent-toast");
-  await expect(toast).toHaveCount(1, { timeout: 2_000 });
-  await expect(toast).toHaveAttribute("data-level", "needs-you");
-  await expect(toast).toContainText("Migrate billing tables");
-  await expect(toast).toContainText("Run the database migration");
+  const bellIcon = page.getByTestId("notification-bell-icon").first();
+  await expect(bellIcon).toHaveAttribute("data-pulse", "1", { timeout: 2_000 });
+  await expect(page.getByTestId("notification-unread").first()).toHaveText("1");
   await expect(page.getByTestId("agent-notification-live")).toHaveText(
     "Run the database migration",
   );
   await expect(page.getByTestId("agent-notification-live")).toHaveAttribute("aria-live", "polite");
   expect(await scenario.chimeNotes()).toBe(2);
   expect(
-    await page.evaluate(() => !!document.activeElement?.closest('[data-testid="agent-toasts"]')),
+    await page.evaluate(
+      () => !!document.activeElement?.closest('[data-testid="notification-menu"]'),
+    ),
   ).toBe(false);
 
   await page.clock.fastForward(30_000);
-  await expect(toast).toHaveCount(1);
+  await expect(bellIcon).toHaveAttribute("data-pulse", "1");
+  await page.screenshot({
+    path: "../../output/playwright/notifications-bell-desktop-1440.png",
+    animations: "disabled",
+  });
 
   await page.keyboard.press("Alt+KeyN");
   await expect(page.getByTestId("notification-menu")).toBeVisible();
+  await page.screenshot({
+    path: "../../output/playwright/notifications-menu-desktop-1440.png",
+    animations: "disabled",
+  });
   const card = page.getByTestId("attention-request-notify-approval-0");
   await card.getByTestId("attention-review").click();
   await card.getByTestId("attention-approve").click();
   await poll(page);
-  await expect(toast).toHaveCount(0);
+  // Reviewing marked the notification read; the answered request stays in history.
+  await expect(page.getByTestId("notification-unread")).toHaveCount(0);
+  await page.getByTestId("notifications-show-read").click();
+  await expect(page.getByTestId("notification-item")).toHaveCount(1);
   expect(scenario.responses).toEqual([
     {
       id: "notify-approval-0",
@@ -64,7 +75,7 @@ test("Needs you: a permission prompt chimes without stealing focus and opens its
   ]);
 });
 
-test("Needs you: no toast or chime for the session already in view", async ({ page }) => {
+test("Needs you: no bell jump or chime for the session already in view", async ({ page }) => {
   const scenario = await notificationScenario(page, {
     sessions: [liveSession(0, "running")],
     requests: [],
@@ -81,11 +92,14 @@ test("Needs you: no toast or chime for the session already in view", async ({ pa
   await poll(page);
   await page.clock.runFor(2_500);
 
-  await expect(page.getByTestId("agent-toast")).toHaveCount(0);
+  await expect(page.getByTestId("notification-bell-icon").first()).toHaveAttribute(
+    "data-pulse",
+    "0",
+  );
   expect(await scenario.chimeNotes()).toBe(0);
 });
 
-test("Needs you: no toast for the session in view when it is older than the 50 newest", async ({
+test("Needs you: no bell jump for the session in view when it is older than the 50 newest", async ({
   page,
 }) => {
   const newer = Array.from({ length: 50 }, (_, index) => ({
@@ -108,11 +122,14 @@ test("Needs you: no toast for the session in view when it is older than the 50 n
   await poll(page);
   await page.clock.runFor(2_500);
 
-  await expect(page.getByTestId("agent-toast")).toHaveCount(0);
+  await expect(page.getByTestId("notification-bell-icon").first()).toHaveAttribute(
+    "data-pulse",
+    "0",
+  );
   expect(await scenario.chimeNotes()).toBe(0);
 });
 
-test("Done: a finished session lands silently in the bell without a toast", async ({ page }) => {
+test("Done: a finished session jumps the bell silently", async ({ page }) => {
   const scenario = await notificationScenario(page, {
     sessions: [liveSession(1, "running")],
     requests: [],
@@ -126,11 +143,40 @@ test("Done: a finished session lands silently in the bell without a toast", asyn
   await poll(page);
   await page.clock.runFor(1_500);
 
-  await expect(page.getByTestId("agent-toast")).toHaveCount(0);
+  await expect(page.getByTestId("notification-bell-icon").first()).toHaveAttribute(
+    "data-pulse",
+    "1",
+  );
   expect(await scenario.chimeNotes()).toBe(0);
   await expect(page.getByTestId("notification-bell").first()).toHaveAccessibleName(
     "Notifications: 1 unread",
   );
+});
+
+test("a continuing session dismisses its stale notification automatically", async ({ page }) => {
+  const scenario = await notificationScenario(page, {
+    sessions: [liveSession(1, "running")],
+    requests: [],
+  });
+  const loaded = sourcesLoaded(page);
+  await page.goto("/tasks");
+  await loaded;
+
+  scenario.state.sessions = [liveSession(1, "idle")];
+  await poll(page);
+  await expect(page.getByTestId("notification-bell").first()).toHaveAccessibleName(
+    "Notifications: 1 unread",
+  );
+
+  // The agent starts a new turn; the finished alert is no longer relevant.
+  scenario.state.sessions = [liveSession(1, "running")];
+  await poll(page);
+  await expect(page.getByTestId("notification-bell").first()).toHaveAccessibleName(
+    "Notifications: 0 unread",
+  );
+  await page.getByTestId("notification-bell").first().click();
+  await expect(page.getByTestId("notification-menu")).toBeVisible();
+  await expect(page.getByTestId("notifications-empty")).toBeVisible();
 });
 
 test("Done: sessions finishing together open from the bell on the chat page", async ({ page }) => {
@@ -156,7 +202,10 @@ test("Done: sessions finishing together open from the bell on the chat page", as
   await poll(page);
   await page.clock.runFor(1_500);
 
-  await expect(page.getByTestId("agent-toast")).toHaveCount(0);
+  await expect(page.getByTestId("notification-bell-icon").first()).toHaveAttribute(
+    "data-pulse",
+    "1",
+  );
   await page.getByTestId("notification-bell").first().click();
   await expect(page.getByTestId("notification-menu")).toBeVisible();
   await page.getByTestId("notification-menu").getByTestId("notification-open").first().click();
@@ -164,7 +213,7 @@ test("Done: sessions finishing together open from the bell on the chat page", as
   await expect(page.getByText("Resumed.").first()).toBeVisible();
 });
 
-test("Done: the open chat clears its completion without a toast", async ({ page }) => {
+test("Done: the open chat clears its completion without a bell jump", async ({ page }) => {
   const scenario = await notificationScenario(page, { sessions: [], requests: [] });
   await mockChatThread(page);
   const loaded = sourcesLoaded(page);
@@ -177,7 +226,10 @@ test("Done: the open chat clears its completion without a toast", async ({ page 
   await poll(page);
   await page.clock.runFor(2_000);
 
-  await expect(page.getByTestId("agent-toast")).toHaveCount(0);
+  await expect(page.getByTestId("notification-bell-icon").first()).toHaveAttribute(
+    "data-pulse",
+    "0",
+  );
   expect(scenario.updates).toContainEqual({
     id: `notification-chat-${NOTIFY_CHAT_THREAD}`,
     body: { read: true, dismissed: true },
@@ -206,7 +258,6 @@ test("phone notifications stay closed during chat and open over the chat page", 
   await poll(page);
   await page.clock.runFor(1500);
   await expect(page.getByTestId("notification-menu")).toHaveCount(0);
-  await expect(page.getByTestId("agent-toasts")).not.toBeVisible();
   await expect(page.getByTestId("notification-bell")).toHaveAccessibleName(
     "Notifications: 2 unread",
   );
@@ -247,15 +298,18 @@ test("review uses the current approval version after source changes", async ({ p
   scenario.state.sessions = [liveSession(0, "running", true)];
   scenario.state.requests = [approvalRequest(0)];
   await poll(page);
-  await expect(page.getByTestId("agent-toast")).toHaveCount(1);
+  await expect(page.getByTestId("notification-bell-icon").first()).toHaveAttribute(
+    "data-pulse",
+    "1",
+  );
   const replacement = { ...approvalRequest(0), version: 2 };
   scenario.state.requests = [replacement];
   await poll(page);
-  await page.getByTestId("agent-toast-open").click();
-  await page
-    .getByTestId("attention-request-notify-approval-0")
-    .getByTestId("attention-approve")
-    .click();
+  await page.getByTestId("notification-bell").first().click();
+  await expect(page.getByTestId("notification-menu")).toBeVisible();
+  const card = page.getByTestId("attention-request-notify-approval-0");
+  await card.getByTestId("attention-review").click();
+  await card.getByTestId("attention-approve").click();
   expect(scenario.responses[0]).toEqual({
     id: "notify-approval-0",
     body: { version: 2, response: { kind: "approval", approved: true } },
@@ -294,7 +348,10 @@ test("an unfocused desktop still receives updates for its selected session", asy
   scenario.state.requests = [approvalRequest(0)];
   await poll(page);
   await page.clock.runFor(1500);
-  await expect(page.getByTestId("agent-toast")).toHaveCount(1);
+  await expect(page.getByTestId("notification-bell-icon").first()).toHaveAttribute(
+    "data-pulse",
+    "1",
+  );
 });
 
 test("sound preferences persist after reload and disabling sound keeps alerts silent", async ({
@@ -316,7 +373,10 @@ test("sound preferences persist after reload and disabling sound keeps alerts si
   scenario.state.sessions = [liveSession(0, "running", true)];
   scenario.state.requests = [approvalRequest(0)];
   await poll(page);
-  await expect(page.getByTestId("agent-toast")).toHaveCount(1);
+  await expect(page.getByTestId("notification-bell-icon").first()).toHaveAttribute(
+    "data-pulse",
+    "1",
+  );
   expect(await scenario.chimeNotes()).toBe(0);
 });
 

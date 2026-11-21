@@ -1,6 +1,6 @@
 /** Paid real-agent flow validation. Uses a private API and retained isolated database. */
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -86,6 +86,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 }
 const MEMORY_LOOKUP = ["memory_list", "memory_read"];
 const results: unknown[] = [];
+const scopes: string[] = [];
 const durable = process.env.ORC_VALIDATE_DURABLE === "1";
 const backends = (process.env.ORC_VALIDATE_BACKENDS ?? "claude,codex-cli").split(",");
 if (backends.some((backend) => !["claude", "codex-cli"].includes(backend)))
@@ -94,6 +95,7 @@ try {
   for (const backend of backends) {
     const callStart = calls.length;
     const scope = mkdtempSync(join(tmpdir(), "orc-sdlc-runtime-"));
+    scopes.push(scope);
     writeFileSync(
       join(scope, "subject.ts"),
       "export function active(expires:number|null, now:number){return false;}\n",
@@ -374,4 +376,5 @@ try {
     closeLiveSession(row.id);
   await server.stop(true);
   closeDb();
+  for (const scope of scopes) rmSync(scope, { recursive: true, force: true });
 }

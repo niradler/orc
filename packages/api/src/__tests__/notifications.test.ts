@@ -11,7 +11,7 @@ import {
   maintainNotifications,
   recordChatNotification,
   recordObservedNotification,
-  retireChatFinishedNotifications,
+  retireChatNotifications,
 } from "../notifications.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -98,9 +98,15 @@ test("should keep one completion at the last active chat, isolating backend and 
   expect(completions().find((item) => item.source_id === viewed.id)?.path).toContain(
     `chatThread=${viewed.id}`,
   );
-  retireChatFinishedNotifications(first);
-  expect(completions().find((item) => item.source_id === viewed.id)?.read_at).not.toBeNull();
-  expect(completions().filter((item) => item.read_at === null)).toHaveLength(2);
+  retireChatNotifications(first);
+  // Continuing the native session dismisses the alias view's completion too.
+  expect(completions().some((item) => item.source_id === viewed.id)).toBe(false);
+  expect(
+    completions()
+      .map((item) => item.source_id)
+      .sort(),
+  ).toEqual([otherBackend.id, remote.id].sort());
+  expect(completions().every((item) => item.read_at === null)).toBe(true);
   expect(
     sqlite
       .query<{ count: number }, [string]>(
@@ -211,7 +217,8 @@ test("should leave a completed turn linked to its active chat and move the next 
     { ...event, previous: "idle", status: "running", activity: Date.now() },
     () => true,
   );
-  expect(items()[0]?.read_at).not.toBeNull();
+  // The agent continued, so the previous completion is dismissed, not just read.
+  expect(items()).toHaveLength(0);
   await Bun.sleep(2);
   recordObservedNotification({ ...event, activity: Date.now() + 60_000 }, () => true);
   await Bun.sleep(1100);
@@ -257,18 +264,34 @@ test("should store only the latest managed turn completion", async () => {
   }
 });
 
-test("should retire observed completion alerts when the same session runs again", () => {
+test("should dismiss every alert for an observed session that runs again", () => {
   const store = new NotificationStore(getSqlite());
   const now = Date.now();
-  const item = store.publish({
-    type: "agent.finished",
-    source_key: "observed:continued:old",
+  const base = {
     source_id: "continued",
-    title: "Finished",
-    level: "done",
+    title: "Continued",
     path: "/sessions",
     created_at: now,
     expires_at: now + 60000,
+  };
+  const item = store.publish({
+    ...base,
+    type: "agent.finished",
+    source_key: "observed:continued:old",
+    level: "done",
+  });
+  store.publish({
+    ...base,
+    type: "agent.question",
+    source_key: "observed:continued:question",
+    level: "needs-you",
+    requires_action: true,
+  });
+  store.publish({
+    ...base,
+    type: "agent.failed",
+    source_key: "observed:continued:failed",
+    level: "needs-you",
   });
   recordObservedNotification(
     {
@@ -286,8 +309,49 @@ test("should retire observed completion alerts when the same session runs again"
     },
     () => true,
   );
-  expect(store.list().notifications.find((entry) => entry.id === item?.id)?.read_at).not.toBeNull();
-  expect(store.list(50, 0, true).notifications.some((entry) => entry.id === item?.id)).toBe(false);
+  expect(item).not.toBeNull();
+  expect(store.list().notifications.some((entry) => entry.source_id === "continued")).toBe(false);
+  expect(
+    store.list(50, 0, true).notifications.some((entry) => entry.source_id === "continued"),
+  ).toBe(false);
+});
+
+test("a dismissed question alert does not suppress a new question for the same session", async () => {
+  const store = new NotificationStore(getSqlite());
+  const now = Date.now();
+  store.publish({
+    type: "agent.question",
+    source_key: "observed:flapped:question:old",
+    source_id: "flapped",
+    title: "Flapped",
+    level: "needs-you",
+    requires_action: true,
+    path: "/sessions",
+    created_at: now,
+    expires_at: now + 60000,
+  });
+  // dismissSource leaves requires_action set; the dedup must still ignore the row.
+  store.dismissSource("flapped");
+  recordObservedNotification(
+    {
+      id: "flapped",
+      backend: "codex",
+      host: null,
+      nativeId: "native-flapped",
+      title: "Flapped",
+      projectId: null,
+      previous: "running",
+      status: "running",
+      waiting: true,
+      wasWaiting: false,
+      activity: now,
+    },
+    () => true,
+  );
+  await Bun.sleep(1100);
+  const active = store.list().notifications.filter((item) => item.source_id === "flapped");
+  expect(active).toHaveLength(1);
+  expect(active[0]?.type).toBe("agent.question");
 });
 
 test("should authenticate notification operations and reject invalid inputs", async () => {

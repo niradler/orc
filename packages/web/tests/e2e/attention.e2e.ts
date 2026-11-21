@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { HumanRequest } from "@orc/core/human-requests";
@@ -16,6 +16,13 @@ import {
   reviewAttentionRequest,
   tid,
 } from "./_helpers";
+
+const tempDirs: string[] = [];
+
+test.afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 
 test("should show dated unavailable questions and contextual help on desktop and phone", async ({
   page,
@@ -341,6 +348,7 @@ test("should preserve Ask user expiry and notification settings when editing its
   request,
 }) => {
   const workspace = mkdtempSync(join(tmpdir(), "orc-ask-rule-browser-"));
+  tempDirs.push(workspace);
   await apiPost(request, "/rules/activate", {
     expected_id: null,
     reason: "Human pause setup",

@@ -38,6 +38,7 @@ const steps: Step[] = [
   ["Push hook tests", ["bun", "test", "scripts/pre-push.test.ts"]],
   ["Dependency security regressions", ["bun", "test", "scripts/dependency-security.test.ts"]],
   ["Gate env isolation", ["bun", "test", "scripts/gate-env.test.ts"]],
+  ["Test home isolation", ["bun", "test", "scripts/test-home-isolation.test.ts"]],
   ["Knip dependency hygiene", ["bun", "run", "knip:deps"]],
 ];
 

@@ -319,7 +319,7 @@ export interface paths {
         put?: never;
         /**
          * Add or update a remote ORC host in ~/.orc/config.json
-         * @description A blank token keeps the saved one while the address is unchanged. Omitted headers keep the saved ones.
+         * @description A blank token keeps the saved one while the address is unchanged. Omitted headers keep the saved ones; a blank header value keeps the stored value for the same name.
          */
         post: {
             parameters: {

@@ -1,10 +1,17 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { writeRegistration } from "@orc/core/live-session";
 import { expect, test } from "@playwright/test";
 import { showSessionSection } from "./_chat-ui";
 import { apiGet, apiPost, gotoView } from "./_helpers";
+
+const tempDirs: string[] = [];
+
+test.afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 
 for (const width of [1440, 390]) {
   test(`500-turn native history pages, continues and reopens at ${width}px`, async ({
@@ -15,6 +22,7 @@ for (const width of [1440, 390]) {
     // most of the ordinary 60-second case budget rendering the history alone.
     test.setTimeout(120_000);
     const cwd = mkdtempSync(join(tmpdir(), "orc-chat-history-"));
+    tempDirs.push(cwd);
     const externalId = crypto.randomUUID();
     const transcript = join(cwd, "history.jsonl");
     writeFileSync(

@@ -37,7 +37,21 @@ export function teardownTestApp() {
   else process.env.ORC_ACTIVE_PROJECT = originalActiveProject;
   if (originalOrcHome === undefined) delete process.env.ORC_HOME;
   else process.env.ORC_HOME = originalOrcHome;
-  if (testHome) rmSync(testHome, { recursive: true, force: true });
+  if (testHome) {
+    // Sync variant of removeTempTree for the many sync teardown callers: Bun
+    // ignores rmSync maxRetries and Windows can lag a just-closed handle's
+    // release, so retry EBUSY within the default hook budget.
+    Bun.gc(true);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(testHome, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 30) throw error;
+        Bun.sleepSync(100);
+      }
+    }
+  }
   testHome = null;
   resetConfig();
 }
@@ -65,4 +79,23 @@ export async function req(
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
   return res as AnyJsonResponse;
+}
+
+/**
+ * Remove a test temp tree, waiting out Windows' asynchronous handle release.
+ * Bun 1.4.4 ignores rmSync's maxRetries, and a just-closed sqlite/fs.watch/child
+ * handle can lock the tree for several seconds under full-gate load, so retry
+ * explicitly. Callers give their hook a budget above the ~10s loop.
+ */
+export async function removeTempTree(path: string): Promise<void> {
+  Bun.gc(true);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 100) throw error;
+      await Bun.sleep(100);
+    }
+  }
 }

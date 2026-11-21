@@ -10,6 +10,7 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix, relative } from "node:path";
 import { NotFoundError, ValidationError } from "./errors.js";
+import { removeTreeBestEffort } from "./fs-cleanup.js";
 import { packageToolCommands, qualifyPackageCommand } from "./package-launch.js";
 import { createPackage, parseApmManifest, readPackage } from "./package-service.js";
 import { parsePluginManifest, validatePluginMcp } from "./plugin-service.js";
@@ -93,32 +94,42 @@ export async function acquireApmSource(
 ): Promise<{ token: string; source: string; packages: PackageCandidate[] }> {
   const value = validateApmSource(source);
   for (const [token, item] of acquisitions)
-    if (item.expires < Date.now()) acquisitions.delete(token);
+    if (item.expires < Date.now()) {
+      removeTreeBestEffort(item.root);
+      // Keep the token until the tree is actually gone, so a locked root stays
+      // tracked and is retried on the next acquisition instead of leaking.
+      if (!existsSync(item.root)) acquisitions.delete(token);
+    }
   if (acquisitions.size >= 8)
     throw new ValidationError("Too many pending imports; finish one or try again in 15 minutes");
   const root = mkdtempSync(join(tmpdir(), "orc-apm-source-"));
-  await runApm(["install", value, "--target", "copilot", "--only", "apm"], root);
   const packages: PackageCandidate[] = [];
-  for (const path of acquiredPackageFolders(join(root, "apm_modules"))) {
-    const format = existsSync(join(path, "apm.yml")) ? "apm" : "agent-plugin";
-    try {
-      const content = readSkillFile(
-        path,
-        format === "apm" ? "apm.yml" : "plugin.json",
-        false,
-      ).content;
-      const manifest =
-        format === "apm" ? parseApmManifest(content) : parsePluginManifest(content).manifest;
-      packages.push({
-        name: manifest.name,
-        description: manifest.description ?? "",
-        format,
-        path: relative(root, path).replaceAll("\\", "/"),
-        installed: Boolean(readPackage(manifest.name)),
-      });
-    } catch {
-      /* Runtime-native plugin formats are not portable catalog formats. */
+  try {
+    await runApm(["install", value, "--target", "copilot", "--only", "apm"], root);
+    for (const path of acquiredPackageFolders(join(root, "apm_modules"))) {
+      const format = existsSync(join(path, "apm.yml")) ? "apm" : "agent-plugin";
+      try {
+        const content = readSkillFile(
+          path,
+          format === "apm" ? "apm.yml" : "plugin.json",
+          false,
+        ).content;
+        const manifest =
+          format === "apm" ? parseApmManifest(content) : parsePluginManifest(content).manifest;
+        packages.push({
+          name: manifest.name,
+          description: manifest.description ?? "",
+          format,
+          path: relative(root, path).replaceAll("\\", "/"),
+          installed: Boolean(readPackage(manifest.name)),
+        });
+      } catch {
+        /* Runtime-native plugin formats are not portable catalog formats. */
+      }
     }
+  } catch (error) {
+    removeTreeBestEffort(root);
+    throw error;
   }
   const token = crypto.randomUUID();
   acquisitions.set(token, { root, packages, expires: Date.now() + 15 * 60_000 });
@@ -140,6 +151,7 @@ export function importAcquiredPackage(token: string, path: string): PackageFull 
   });
   const pkg = createPackage(selected.name, content, files, selected.format, true);
   acquisitions.delete(token);
+  removeTreeBestEffort(acquired.root);
   return pkg;
 }
 
@@ -265,46 +277,50 @@ export async function importRepositoryPackage(input: {
     );
   if (chosen.installed) throw new ValidationError("This package already exists in your catalog");
   const root = mkdtempSync(join(tmpdir(), "orc-package-import-"));
-  const reference = `${origin.repository}${input.path ? `/${input.path}` : ""}#${input.commit}`;
-  await runApm(["install", reference, "--target", "copilot", "--only", "apm"], root);
-  const candidates: string[] = [];
-  function walk(path: string, depth: number) {
-    if (depth > 12 || candidates.length > 128)
-      throw new ValidationError("APM package tree exceeds the discovery limit");
-    for (const entry of readdirSync(path, { withFileTypes: true })) {
-      if (!entry.isDirectory() || entry.isSymbolicLink() || entry.name === ".git") continue;
-      const directory = join(path, entry.name);
-      const file = input.format === "apm" ? "apm.yml" : "plugin.json";
-      if (existsSync(join(directory, file))) candidates.push(directory);
-      walk(directory, depth + 1);
+  try {
+    const reference = `${origin.repository}${input.path ? `/${input.path}` : ""}#${input.commit}`;
+    await runApm(["install", reference, "--target", "copilot", "--only", "apm"], root);
+    const candidates: string[] = [];
+    function walk(path: string, depth: number) {
+      if (depth > 12 || candidates.length > 128)
+        throw new ValidationError("APM package tree exceeds the discovery limit");
+      for (const entry of readdirSync(path, { withFileTypes: true })) {
+        if (!entry.isDirectory() || entry.isSymbolicLink() || entry.name === ".git") continue;
+        const directory = join(path, entry.name);
+        const file = input.format === "apm" ? "apm.yml" : "plugin.json";
+        if (existsSync(join(directory, file))) candidates.push(directory);
+        walk(directory, depth + 1);
+      }
     }
-  }
-  walk(join(root, "apm_modules"), 0);
-  const manifestFile = input.format === "apm" ? "apm.yml" : "plugin.json";
-  for (const directory of candidates) {
-    const content = readSkillFile(directory, manifestFile, false).content;
-    let name: string;
-    try {
-      name =
-        input.format === "apm"
-          ? parseApmManifest(content).name
-          : parsePluginManifest(content).manifest.name;
-    } catch {
-      continue;
+    walk(join(root, "apm_modules"), 0);
+    const manifestFile = input.format === "apm" ? "apm.yml" : "plugin.json";
+    for (const directory of candidates) {
+      const content = readSkillFile(directory, manifestFile, false).content;
+      let name: string;
+      try {
+        name =
+          input.format === "apm"
+            ? parseApmManifest(content).name
+            : parsePluginManifest(content).manifest.name;
+      } catch {
+        continue;
+      }
+      if (name !== chosen.name) continue;
+      const refs = listSkillFiles(directory, manifestFile).filter(
+        (file) => !file.name.startsWith(".git/"),
+      );
+      const files = refs.map((ref) => {
+        const file = readSkillFile(directory, ref.name, false);
+        return { path: ref.name, content: file.content, encoding: file.encoding };
+      });
+      return createPackage(name, content, files, input.format, true);
     }
-    if (name !== chosen.name) continue;
-    const refs = listSkillFiles(directory, manifestFile).filter(
-      (file) => !file.name.startsWith(".git/"),
+    throw new ValidationError(
+      "APM did not acquire the selected package. Check its target and trust requirements.",
     );
-    const files = refs.map((ref) => {
-      const file = readSkillFile(directory, ref.name, false);
-      return { path: ref.name, content: file.content, encoding: file.encoding };
-    });
-    return createPackage(name, content, files, input.format, true);
+  } finally {
+    removeTreeBestEffort(root);
   }
-  throw new ValidationError(
-    "APM did not acquire the selected package. Check its target and trust requirements.",
-  );
 }
 
 export async function exportPackageArtifact(
@@ -317,61 +333,65 @@ export async function exportPackageArtifact(
     validatePluginMcp([{ path: "mcp.json", content: file.content, encoding: file.encoding }]);
   }
   const stage = mkdtempSync(join(tmpdir(), "orc-package-export-"));
-  const project = join(stage, "project");
-  mkdirSync(project);
-  for (const ref of pkg.files) {
-    const file = readSkillFile(pkg.path, ref.name, false);
-    const stagedName =
-      pkg.format === "agent-plugin" && ref.name.startsWith("skills/")
-        ? `.apm/${ref.name}`
-        : ref.name;
-    const destination = join(project, stagedName);
-    mkdirSync(dirname(destination), { recursive: true });
-    writeFileSync(destination, Buffer.from(file.content, file.encoding), { flag: "wx" });
-  }
-  // APM requires apm.yml even when authoring a portable plugin. This adapter is
-  // isolated from the original source and preserves its portable components.
-  let manifest: Record<string, unknown> =
-    pkg.format === "apm"
-      ? parseApmManifest(pkg.content)
-      : {
-          name: pkg.name,
-          version: pkg.version || "1.0.0",
-          description: pkg.description,
-          dependencies: {},
-        };
-  if (pkg.format === "agent-plugin" && existsSync(join(project, "mcp.json"))) {
-    const mcp = JSON.parse(readSkillFile(project, "mcp.json", false).content);
-    if (!mcp.mcpServers || typeof mcp.mcpServers !== "object" || Array.isArray(mcp.mcpServers))
-      throw new ValidationError("Fix the plugin MCP configuration before exporting");
-    manifest.dependencies = {
-      mcp: Object.entries(mcp.mcpServers).map(([name, value]) => {
-        const config = value as Record<string, unknown>;
-        return {
-          ...config,
-          name,
-          registry: false,
-          transport: config.type === "streamable-http" ? "http" : config.type,
-        };
-      }),
+  try {
+    const project = join(stage, "project");
+    mkdirSync(project);
+    for (const ref of pkg.files) {
+      const file = readSkillFile(pkg.path, ref.name, false);
+      const stagedName =
+        pkg.format === "agent-plugin" && ref.name.startsWith("skills/")
+          ? `.apm/${ref.name}`
+          : ref.name;
+      const destination = join(project, stagedName);
+      mkdirSync(dirname(destination), { recursive: true });
+      writeFileSync(destination, Buffer.from(file.content, file.encoding), { flag: "wx" });
+    }
+    // APM requires apm.yml even when authoring a portable plugin. This adapter is
+    // isolated from the original source and preserves its portable components.
+    let manifest: Record<string, unknown> =
+      pkg.format === "apm"
+        ? parseApmManifest(pkg.content)
+        : {
+            name: pkg.name,
+            version: pkg.version || "1.0.0",
+            description: pkg.description,
+            dependencies: {},
+          };
+    if (pkg.format === "agent-plugin" && existsSync(join(project, "mcp.json"))) {
+      const mcp = JSON.parse(readSkillFile(project, "mcp.json", false).content);
+      if (!mcp.mcpServers || typeof mcp.mcpServers !== "object" || Array.isArray(mcp.mcpServers))
+        throw new ValidationError("Fix the plugin MCP configuration before exporting");
+      manifest.dependencies = {
+        mcp: Object.entries(mcp.mcpServers).map(([name, value]) => {
+          const config = value as Record<string, unknown>;
+          return {
+            ...config,
+            name,
+            registry: false,
+            transport: config.type === "streamable-http" ? "http" : config.type,
+          };
+        }),
+      };
+    }
+    manifest = { ...manifest, dependencies: manifest.dependencies ?? {} };
+    writeFileSync(join(project, "apm.yml"), Bun.YAML.stringify(manifest), { flag: "wx" });
+    await runApm(["install", "--target", "copilot"], project);
+    const format = pkg.format === "agent-plugin" ? "agent-plugin" : "claude-plugin";
+    const output = join(stage, "output");
+    await runApm(["pack", "--format", format, "--archive", "--output", output], project);
+    const archives = readdirSync(output).filter((file) => file.endsWith(".zip"));
+    if (archives.length !== 1) throw new ValidationError("APM did not produce one package archive");
+    const archive = join(output, archives[0] as string);
+    if (lstatSync(archive).isSymbolicLink() || lstatSync(archive).size > 32 * 1024 * 1024)
+      throw new ValidationError("Invalid or oversized APM export");
+    return {
+      filename: `${pkg.name}-${format}.zip`,
+      content: readFileSync(archive).toString("base64"),
+      format,
     };
+  } finally {
+    removeTreeBestEffort(stage);
   }
-  manifest = { ...manifest, dependencies: manifest.dependencies ?? {} };
-  writeFileSync(join(project, "apm.yml"), Bun.YAML.stringify(manifest), { flag: "wx" });
-  await runApm(["install", "--target", "copilot"], project);
-  const format = pkg.format === "agent-plugin" ? "agent-plugin" : "claude-plugin";
-  const output = join(stage, "output");
-  await runApm(["pack", "--format", format, "--archive", "--output", output], project);
-  const archives = readdirSync(output).filter((file) => file.endsWith(".zip"));
-  if (archives.length !== 1) throw new ValidationError("APM did not produce one package archive");
-  const archive = join(output, archives[0] as string);
-  if (lstatSync(archive).isSymbolicLink() || lstatSync(archive).size > 32 * 1024 * 1024)
-    throw new ValidationError("Invalid or oversized APM export");
-  return {
-    filename: `${pkg.name}-${format}.zip`,
-    content: readFileSync(archive).toString("base64"),
-    format,
-  };
 }
 
 export function writePackageCommand(

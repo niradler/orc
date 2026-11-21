@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { workspaceEnvironmentByPath } from "@orc/db/workspaces";
 import { prepareJobWorkspace } from "../job-workspace.js";
-import { workspaceEnvFor } from "../workspace-env.js";
+import { setWorkspacePortProber, workspaceEnvFor } from "../workspace-env.js";
 
 const repository = mkdtempSync(join(tmpdir(), "orc-job-worktree-"));
 function git(args: string[], cwd = repository): string {
@@ -14,6 +14,9 @@ function git(args: string[], cwd = repository): string {
   return result.stdout.toString().trim();
 }
 beforeAll(() => {
+  // Exact-port assertions must not depend on host port availability: Windows
+  // can hold wide ranges under gate load, moving the allocator off its base.
+  setWorkspacePortProber(() => true);
   git(["init"]);
   git(["config", "user.name", "Job Fixture"]);
   git(["config", "user.email", "fixture@example.invalid"]);
@@ -22,6 +25,7 @@ beforeAll(() => {
   git(["commit", "-m", "Fixture"]);
 });
 afterAll(() => {
+  setWorkspacePortProber(null);
   closeDb();
   rmSync(repository, { recursive: true, force: true });
 });

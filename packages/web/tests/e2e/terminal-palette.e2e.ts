@@ -1,10 +1,16 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import AxeBuilder from "@axe-core/playwright";
 import { expect } from "@playwright/test";
 import { API_SECRET, apiGet, apiPost, splitTerminalPane } from "./_helpers";
 import { test } from "./_terminal-fixture";
+
+const tempDirs: string[] = [];
+
+test.afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 for (const width of [1440, 390]) {
   test(`should find and focus existing terminals from the shared palette at ${width}px`, async ({
@@ -21,6 +27,7 @@ for (const width of [1440, 390]) {
         });
     });
     const cwd = mkdtempSync(join(tmpdir(), "orc-palette-review-"));
+    tempDirs.push(cwd);
     const first = await apiPost<{ id: string; pid: number }>(request, "/terminals", {
       kind: "shell",
       cwd,

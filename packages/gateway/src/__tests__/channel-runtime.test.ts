@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -197,6 +197,7 @@ afterAll(async () => {
     else process.env[key] = value;
   }
   resetConfig();
+  rmSync(home, { recursive: true, force: true });
 });
 const message = {
   connection: "test",

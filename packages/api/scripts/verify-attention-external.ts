@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { type HumanRequest, HumanRequestSchema } from "@orc/core/human-requests";
@@ -261,7 +261,10 @@ try {
         `PASS external ${agent} ${approved ? "approve" : "deny"}: native command hook -> Attention -> native decision -> receipt -> dismissed`,
       );
     } finally {
-      if (child.exitCode === null) child.kill();
+      if (child.exitCode === null) {
+        child.kill();
+        await child.exited;
+      }
     }
   }
   console.log(
@@ -277,4 +280,5 @@ try {
 } finally {
   server.stop(true);
   closeDb();
+  rmSync(root, { recursive: true, force: true });
 }

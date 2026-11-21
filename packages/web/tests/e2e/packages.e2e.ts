@@ -1,15 +1,23 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { unzipSync } from "fflate";
 import { gotoView, tid } from "./_helpers";
 
+const tempDirs: string[] = [];
+
+test.afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
+
 test("portable package import, tabbed files, lossless export and edit/use flow survive reopening", async ({
   page,
 }) => {
   const name = tid("portable-package");
   const root = mkdtempSync(join(tmpdir(), "orc-portable-browser-"));
+  tempDirs.push(root);
   const folder = join(root, "different-folder-name");
   mkdirSync(join(folder, "skills", "portable-check"), { recursive: true });
   const manifest = JSON.stringify(

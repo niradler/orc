@@ -15,6 +15,20 @@ import { workspaceEnvironmentStore } from "@orc/db/workspaces";
 
 const logger = createLogger("runner:workspace");
 
+let portProber: ((port: number) => boolean | Promise<boolean>) | undefined;
+
+/**
+ * Test seam, like the api workspaces service's: allocation tests must not depend
+ * on which ports the host happens to hold (Windows can reserve wide ranges under
+ * load), so they replace the live bind probe. Production keeps probing real
+ * availability.
+ */
+export function setWorkspacePortProber(
+  prober: ((port: number) => boolean | Promise<boolean>) | null,
+): void {
+  portProber = prober ?? undefined;
+}
+
 type ProjectRow = {
   id: string;
   name: string;
@@ -62,6 +76,7 @@ export async function workspaceEnvFor(
       env: resolved.env,
       redact: resolved.redact,
       log: (message) => logger.info(message),
+      ...(portProber ? { isPortFree: portProber } : {}),
     });
   } catch (error) {
     logger.error(`Workspace environment failed for ${path}: ${String(error)}`);

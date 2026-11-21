@@ -111,6 +111,62 @@ describe("remote ORC hosts", () => {
       headers: [{ name: "Authorization", value: "x" }],
     });
     expect(blocked.status).toBe(400);
+
+    // Names are trimmed before the blocklist check, and invalid tokens are
+    // rejected here instead of failing opaquely at dial time.
+    const padded = await req(app, "POST", "/remote-hosts", {
+      label: "Bad",
+      url: destUrl,
+      headers: [{ name: "  Authorization  ", value: "x" }],
+    });
+    expect(padded.status).toBe(400);
+    const invalid = await req(app, "POST", "/remote-hosts", {
+      label: "Bad",
+      url: destUrl,
+      headers: [{ name: "X Bad Name", value: "x" }],
+    });
+    expect(invalid.status).toBe(400);
+  });
+
+  test("editing headers keeps a blank stored value, adds new ones, and never returns values", async () => {
+    const kept = await req(app, "POST", "/remote-hosts", {
+      id,
+      label: "Devbox",
+      url: destUrl,
+      headers: [
+        { name: "CF-Access-Client-Id", value: "" },
+        { name: "CF-Access-Client-Secret", value: "cfast_secret" },
+      ],
+    });
+    expect(kept.status).toBe(200);
+    const { hosts } = await kept.json<{ hosts: { header_names: string[] }[] }>();
+    expect(hosts[0]?.header_names).toEqual(["CF-Access-Client-Id", "CF-Access-Client-Secret"]);
+    expect(JSON.stringify(hosts)).not.toContain("cfast_secret");
+    const config = readFileSync(globalConfigPath(), "utf8");
+    expect(config).toContain('"value": "client"');
+    expect(config).toContain('"value": "cfast_secret"');
+
+    const missingValue = await req(app, "POST", "/remote-hosts", {
+      id,
+      label: "Devbox",
+      url: destUrl,
+      headers: [
+        { name: "CF-Access-Client-Id", value: "" },
+        { name: "X-New", value: "" },
+      ],
+    });
+    expect(missingValue.status).toBe(400);
+
+    const removed = await req(app, "POST", "/remote-hosts", {
+      id,
+      label: "Devbox",
+      url: destUrl,
+      headers: [{ name: "CF-Access-Client-Id", value: "" }],
+    });
+    expect(removed.status).toBe(200);
+    const after = await removed.json<{ hosts: { header_names: string[] }[] }>();
+    expect(after.hosts[0]?.header_names).toEqual(["CF-Access-Client-Id"]);
+    expect(readFileSync(globalConfigPath(), "utf8")).not.toContain("cfast_secret");
   });
 
   test("tests the connection and lists the remote's hosts and projects", async () => {

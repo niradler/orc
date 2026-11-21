@@ -121,7 +121,8 @@ function RemoteHostRows() {
     setPending(true);
     setError("");
     try {
-      refresh(await api.remoteHosts.save(draft));
+      const headers = draft.headers?.filter((header) => header.name.trim() || header.value.trim());
+      refresh(await api.remoteHosts.save({ ...draft, headers }));
       setDraft(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -146,7 +147,12 @@ function RemoteHostRows() {
               <span className="truncate text-sm font-medium">{host.label}</span>
             </div>
             <div className="truncate text-xs text-muted-foreground">
-              {status[host.id] ?? `${host.url}${host.has_token ? " · token saved" : ""}`}
+              {status[host.id] ??
+                `${host.url}${host.has_token ? " · token saved" : ""}${
+                  host.header_names.length > 0
+                    ? ` · ${host.header_names.length} ${host.header_names.length === 1 ? "header" : "headers"}`
+                    : ""
+                }`}
             </div>
           </div>
           <Button
@@ -165,7 +171,13 @@ function RemoteHostRows() {
             className="min-h-11 md:min-h-8"
             onClick={() => {
               setError("");
-              setDraft({ id: host.id, label: host.label, url: host.url, token: "" });
+              setDraft({
+                id: host.id,
+                label: host.label,
+                url: host.url,
+                token: "",
+                headers: host.header_names.map((name) => ({ name, value: "" })),
+              });
             }}
           >
             Edit
@@ -248,15 +260,22 @@ function RemoteHostRows() {
                 onChange={(token) => setDraft({ ...draft, token })}
               />
             </div>
-            {!draft.id && (
-              <div className="space-y-2">
+            <div className="space-y-2">
+              <div className="flex items-center gap-1">
                 <Label>Headers</Label>
-                <HeaderFields
-                  headers={draft.headers ?? []}
-                  onChange={(headers) => setDraft({ ...draft, headers })}
-                />
+                <HelpPopover label="remote host headers" testId="remote-host-headers-help">
+                  Extra request headers for a reverse proxy, for example Cloudflare Access. Values
+                  are stored on this server and never shown again: leave a saved header's value
+                  blank to keep it, or delete its row to remove it. Authorization comes from the
+                  access token.
+                </HelpPopover>
               </div>
-            )}
+              <HeaderFields
+                headers={draft.headers ?? []}
+                onChange={(headers) => setDraft({ ...draft, headers })}
+                savedNames={editing?.header_names}
+              />
+            </div>
             <Button data-testid="remote-host-save" disabled={pending} onClick={() => void save()}>
               <Save className="size-4" />
               {pending ? "Saving…" : "Save"}
@@ -1198,12 +1217,18 @@ function TokenField({
 function HeaderFields({
   headers,
   onChange,
+  savedNames,
 }: {
   headers: ApiHostHeader[];
   onChange: (headers: ApiHostHeader[]) => void;
+  savedNames?: string[];
 }) {
   const update = (index: number, patch: Partial<ApiHostHeader>) =>
     onChange(headers.map((header, i) => (i === index ? { ...header, ...patch } : header)));
+  const valuePlaceholder = (header: ApiHostHeader) =>
+    !header.value && savedNames?.includes(header.name)
+      ? "Saved value; leave blank to keep"
+      : "Value";
   return (
     <div className="space-y-2">
       {headers.map((header, index) => (
@@ -1224,7 +1249,7 @@ function HeaderFields({
             autoComplete="off"
             spellCheck={false}
             value={header.value}
-            placeholder="Value"
+            placeholder={valuePlaceholder(header)}
             onChange={(event) => update(index, { value: event.target.value })}
             className={`${inputClass} min-w-0 flex-1 font-mono`}
           />

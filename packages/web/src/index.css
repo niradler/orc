@@ -55,6 +55,37 @@
 
   --tracking-widest: 0.06em;
 
+  --animate-bell-jump: bell-jump 0.9s ease-in-out 1 both;
+
+  /* A few quick hops and rings, then rest; one burst plays it once. */
+  @keyframes bell-jump {
+    0%,
+    100% {
+      transform: translateY(0) rotate(0deg);
+    }
+    12% {
+      transform: translateY(-4px) rotate(-14deg);
+    }
+    24% {
+      transform: translateY(0) rotate(12deg);
+    }
+    36% {
+      transform: translateY(-4px) rotate(-12deg);
+    }
+    48% {
+      transform: translateY(0) rotate(10deg);
+    }
+    60% {
+      transform: translateY(-2px) rotate(-6deg);
+    }
+    72% {
+      transform: translateY(0) rotate(4deg);
+    }
+    84% {
+      transform: rotate(-2deg);
+    }
+  }
+
   --font-headline: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-label: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;

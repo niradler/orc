@@ -1,11 +1,7 @@
 import { expect, test } from "bun:test";
 import { HumanRequestSchema } from "@orc/core/human-requests";
 import type { OrcNotification } from "@orc/core/notifications";
-import {
-  mergeNotificationToasts,
-  NotificationFeed,
-  notificationInView,
-} from "../../src/lib/notification-feed";
+import { NotificationFeed, notificationInView } from "../../src/lib/notification-feed";
 
 const item = (id: string, type = "future.type"): OrcNotification => ({
   id,
@@ -56,23 +52,6 @@ test("should recheck resolved, dismissed, expired and viewed alerts before deliv
     1500,
   );
   expect(feed.flush(2000, (item) => item.id === "viewed").map((item) => item.id)).toEqual(["job"]);
-});
-
-test("should collapse mixed completion bursts while keeping urgent notices separate", () => {
-  const result = mergeNotificationToasts(
-    [],
-    [
-      item("needs"),
-      { ...item("job", "job.finished"), level: "done" },
-      { ...item("agent", "agent.finished"), level: "done" },
-    ],
-  );
-  expect(result).toHaveLength(2);
-  expect(result[1]?.items.map((item) => item.type)).toEqual(["job.finished", "agent.finished"]);
-  const next = mergeNotificationToasts(result, [
-    { ...item("another", "future.completed"), level: "done" },
-  ]);
-  expect(next[1]?.items).toHaveLength(3);
 });
 
 const view = {

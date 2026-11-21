@@ -1,6 +1,6 @@
 /** Paid real-agent flow validation. Uses a private API and retained isolated database. */
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createApp } from "../packages/api/src/server.js";
@@ -84,10 +84,12 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 }
 const MEMORY_LOOKUP = ["memory_list", "memory_read"];
 const results: unknown[] = [];
+const scopes: string[] = [];
 try {
   for (const defective of [true, false]) {
     const callStart = calls.length;
     const scope = mkdtempSync(join(tmpdir(), "orc-evidence-review-"));
+    scopes.push(scope);
     writeFileSync(
       join(scope, "subject.ts"),
       `export function active(expires:number|null, now:number){return expires===null || expires ${defective ? ">=" : ">"} now;}\n`,
@@ -178,4 +180,5 @@ try {
     closeLiveSession(row.id);
   await server.stop(true);
   closeDb();
+  for (const scope of scopes) rmSync(scope, { recursive: true, force: true });
 }

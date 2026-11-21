@@ -22,7 +22,7 @@ import { createApp } from "../server.js";
 import { TerminalManager } from "../terminals/manager.js";
 import { setTerminalManager } from "../terminals/service.js";
 import type { PtyHandle, SpawnOptions } from "../terminals/spawn.js";
-import { req, setupTestApp, teardownTestApp } from "./helpers.js";
+import { removeTempTree, req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "orc-handoff-")));
 const remote = join(root, "remote.git");
@@ -226,7 +226,7 @@ beforeAll(async () => {
   setTerminalManager(manager);
 });
 
-afterAll(() => {
+afterAll(async () => {
   if (originalPath === undefined) delete process.env.PATH;
   else process.env.PATH = originalPath;
   manager.shutdown();
@@ -236,7 +236,8 @@ afterAll(() => {
   else process.env.ORC_API_BASE = originalApiBase;
   delete process.env.ORC_TERMINALS_ENABLED;
   teardownTestApp();
-});
+  await removeTempTree(root);
+}, 20_000);
 
 describe("native session handoff", () => {
   test("should create and inspect a handoff without a bearer token in open mode", async () => {

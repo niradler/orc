@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { createRoute, z } from "@hono/zod-openapi";
-import { loadConfig, REMOTE_HOST_ID, RemoteHostSchema, updateGlobalConfig } from "@orc/core/config";
+import {
+  loadConfig,
+  REMOTE_HOST_ID,
+  type RemoteHost,
+  RemoteHostSchema,
+  updateGlobalConfig,
+} from "@orc/core/config";
 import { ValidationError } from "@orc/core/errors";
 import { SEND_BLOCKED_HEADERS } from "@orc/core/session-send";
 import { recordAudit } from "../lib/audit-actor.js";
@@ -29,7 +35,19 @@ const RemoteHostDraftSchema = z
     token: z.string().max(8192).optional(),
     clear_token: z.boolean().optional(),
     headers: z
-      .array(z.object({ name: z.string().trim().min(1).max(256), value: z.string().max(8192) }))
+      .array(
+        z.object({
+          // Same token shape the send path enforces; reject invalid names here
+          // instead of storing one that fails opaquely at dial time.
+          name: z
+            .string()
+            .trim()
+            .min(1)
+            .max(128)
+            .regex(/^[A-Za-z0-9-]{1,128}$/, "Expected a valid header name"),
+          value: z.string().max(8192),
+        }),
+      )
       .max(32)
       .optional(),
   })
@@ -59,6 +77,41 @@ const publicHost = (host: z.infer<typeof RemoteHostSchema>) => ({
   has_token: Boolean(host.token),
   header_names: host.headers.map((header) => header.name),
 });
+
+/**
+ * Blank header values keep the stored secret for the same name, mirroring the access
+ * token. Stored values are only carried over while the address is unchanged; a new
+ * header name must come with a value.
+ */
+function resolveHeaders(
+  draft: { name: string; value: string }[] | undefined,
+  saved: RemoteHost | undefined,
+  url: string,
+): { name: string; value: string }[] {
+  if (!draft) return saved?.headers ?? [];
+  const addressUnchanged = saved !== undefined && saved.url === url;
+  const kept = addressUnchanged ? (saved?.headers ?? []) : [];
+  const keptByName = new Map(kept.map((header) => [header.name.toLowerCase(), header]));
+  const savedNames = new Set((saved?.headers ?? []).map((header) => header.name.toLowerCase()));
+  const headers: { name: string; value: string }[] = [];
+  for (const header of draft) {
+    const name = header.name.trim();
+    if (!name) continue;
+    if (header.value.trim()) {
+      headers.push({ name, value: header.value });
+      continue;
+    }
+    const prior = keptByName.get(name.toLowerCase());
+    if (prior) {
+      headers.push({ name: prior.name, value: prior.value });
+      continue;
+    }
+    // A stored header left blank after an address change is dropped, like the token.
+    if (savedNames.has(name.toLowerCase())) continue;
+    throw new ValidationError(`Enter a value for the ${name} header`);
+  }
+  return headers;
+}
 
 const list = () => ({ hosts: loadConfig().remote_hosts.map(publicHost) });
 
@@ -103,7 +156,7 @@ app.openapi(
     tags: ["System"],
     summary: "Add or update a remote ORC host in ~/.orc/config.json",
     description:
-      "A blank token keeps the saved one while the address is unchanged. Omitted headers keep the saved ones.",
+      "A blank token keeps the saved one while the address is unchanged. Omitted headers keep the saved ones; a blank header value keeps the stored value for the same name.",
     request: { body: { content: { "application/json": { schema: RemoteHostDraftSchema } } } },
     responses: {
       200: {
@@ -129,7 +182,7 @@ app.openapi(
       label: draft.label,
       url,
       token,
-      headers: draft.headers ?? saved?.headers ?? [],
+      headers: resolveHeaders(draft.headers, saved, url),
     });
     updateGlobalConfig((raw) => {
       const current = Array.isArray(raw.remote_hosts)

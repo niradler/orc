@@ -198,18 +198,28 @@ async function cleanup(): Promise<void> {
     ...shards.flatMap((shard) => (shard.api ? [stopOwnedProcess(shard.api)] : [])),
   ]);
   for (const result of stops) if (result.status === "rejected") failures.push(result.reason);
+  // Bun 1.4.4 ignores rmSync maxRetries, and Windows releases child-process file
+  // handles asynchronously after exit, so retry explicitly until the tree removes.
+  const removeTree = async (path: string) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(path, { recursive: true, force: true });
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 50) throw error;
+        await Bun.sleep(200);
+      }
+    }
+  };
   for (const shard of shards) {
     try {
       if (shard.api) await shard.api.exited;
-      if (explicitDb)
-        rmSync(shard.dbPath, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+      if (explicitDb) await removeTree(shard.dbPath);
     } catch (error) {
       failures.push(error);
     }
     try {
-      // Windows releases child-process file handles asynchronously after exit; a ~1s retry
-      // budget loses that race and fails teardown with EBUSY even when every test passed.
-      rmSync(shard.home, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
+      await removeTree(shard.home);
     } catch (error) {
       failures.push(error);
     }

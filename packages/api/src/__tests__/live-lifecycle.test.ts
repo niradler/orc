@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { zstdCompressSync } from "node:zlib";
@@ -26,6 +26,18 @@ beforeAll(() => {
 });
 afterAll(() => {
   teardownTestApp();
+  Bun.gc(true);
+  // Bun 1.4.4 ignores rmSync maxRetries, and Windows releases sqlite/child
+  // handles lazily under load, so retry explicitly until the home removes.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      rmSync(root, { recursive: true, force: true });
+      break;
+    } catch (error) {
+      if (attempt >= 40) throw error;
+      Bun.sleepSync(50);
+    }
+  }
 });
 
 describe("native ownership", () => {

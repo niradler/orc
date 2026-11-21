@@ -1,12 +1,18 @@
-import { expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { afterEach, expect, test } from "bun:test";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installEmbeddedSkills } from "./builtin-skills.js";
 import { validateAuthoredSkillDescription } from "./skill-service.js";
 
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
 test("embedded skills preserve supporting bytes and stable baseline across restarts", () => {
   const root = mkdtempSync(join(tmpdir(), "orc-embedded-skills-"));
+  tempDirs.push(root);
   const assets = {
     "orc-sample/SKILL.md": Buffer.from(
       "---\nname: orc-sample\ndescription: Sample\n---\nInstructions",

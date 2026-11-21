@@ -9,6 +9,7 @@ import type { createApp } from "../server.js";
 import { TerminalManager } from "../terminals/manager.js";
 import { getTerminalManager, setTerminalManager } from "../terminals/service.js";
 import type { PtyHandle, SpawnOptions } from "../terminals/spawn.js";
+import { setWorkspacePortProber } from "../workspaces/service.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "orc-workspace-launch-")));
@@ -66,6 +67,9 @@ async function shell(cwd: string) {
 
 beforeAll(() => {
   process.env.ORC_TERMINALS_ENABLED = "1";
+  // The boundary blocks sit at the top of the OS ephemeral range, where the
+  // suite's own sockets land; probe deterministically instead of the live host.
+  setWorkspacePortProber(() => true);
   app = setupTestApp();
   setTerminalManager(
     new TerminalManager({
@@ -80,6 +84,7 @@ beforeAll(() => {
 afterAll(() => {
   getTerminalManager().shutdown();
   setTerminalManager(null);
+  setWorkspacePortProber(null);
   delete process.env.ORC_TERMINALS_ENABLED;
   teardownTestApp();
   resetConfig();

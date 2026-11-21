@@ -10,6 +10,7 @@ import {
   LOCAL_HOST,
   listHostDirectories,
 } from "@orc/core/exec-host";
+import { removeTreeBestEffort } from "@orc/core/fs-cleanup";
 import { jobShellArgv } from "@orc/core/job-settings";
 import { AgentSetupSchema } from "@orc/core/package-launch";
 import { ProviderIdSchema } from "@orc/core/providers";
@@ -386,16 +387,25 @@ app.openapi(createTerminalRoute, async (c) => {
     if (body.kind && body.kind !== body.setup.backend)
       throw new ValidationError("Terminal backend must match the selected setup");
     manager.assertCapacity();
-    const { plan, argv } = await preparePackageLaunch(body.setup, host);
-    const info = manager.create({
-      launch: await launchOnHost(host, {
-        kind: plan.setup.backend,
-        argv,
-        cwd: plan.setup.cwd,
-        resume: false,
-      }),
-      name: body.name ?? plan.setup.name,
-    });
+    const { plan, argv, staging } = await preparePackageLaunch(body.setup, host);
+    let info: ReturnType<typeof manager.create>;
+    try {
+      info = manager.create({
+        launch: await launchOnHost(host, {
+          kind: plan.setup.backend,
+          argv,
+          cwd: plan.setup.cwd,
+          resume: false,
+        }),
+        name: body.name ?? plan.setup.name,
+        staging,
+      });
+    } catch (error) {
+      // Creation failed (capacity race, spawn failure): the manager never took
+      // ownership of the staging dir, so remove it here instead of leaking it.
+      if (staging) removeTreeBestEffort(staging);
+      throw error;
+    }
     rememberTerminalFolder(info.cwd, info.host);
     recordAudit(c, {
       action: "terminal.created",

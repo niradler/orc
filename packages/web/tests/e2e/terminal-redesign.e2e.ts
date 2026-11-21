@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { expect } from "@playwright/test";
@@ -14,6 +14,12 @@ import {
   toggleThemeInPlace,
 } from "./_helpers";
 import { test } from "./_terminal-fixture";
+
+const tempDirs: string[] = [];
+
+test.afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 for (const width of [1440, 320]) {
   test(`should preserve a shared file pane when focusing another saved pane at ${width}px`, async ({
@@ -167,6 +173,7 @@ for (const width of [1440, 320]) {
             )
             .toBe(false);
       }
+      rmSync(repo, { recursive: true, force: true });
       // run-e2e.ts retires the owned home after API checkout watchers and children exit.
     }
   });
@@ -206,6 +213,7 @@ for (const theme of ["dark", "light"] as const) {
       browser,
     }, testInfo) => {
       const repo = mkdtempSync(join(tmpdir(), "orc-redesign-terminal-"));
+      tempDirs.push(repo);
       execFileSync("git", ["-C", repo, "init", "-b", "main"], {
         timeout: 15000,
         windowsHide: true,
@@ -430,6 +438,7 @@ test("first pane transition restores its default on Back and terminal actions re
   request,
 }) => {
   const repo = mkdtempSync(join(tmpdir(), "orc-terminal-history-"));
+  tempDirs.push(repo);
   execFileSync("git", ["-C", repo, "init", "-b", "main"], { timeout: 15000, windowsHide: true });
   const project = await apiPost<{ id: string }>(request, "/projects", {
     name: `terminal-scope-${Date.now()}`,

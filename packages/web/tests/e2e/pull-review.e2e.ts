@@ -1,10 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "@playwright/test";
 import { API_SECRET, apiGet, apiPost } from "./_helpers";
 import { test } from "./_terminal-fixture";
+
+const tempDirs: string[] = [];
+
+test.afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
 
 const head = "a".repeat(40);
 const filePatch =
@@ -33,6 +39,7 @@ for (const [theme, width] of [
   }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     const repo = mkdtempSync(join(tmpdir(), "orc-review-ui-"));
+    tempDirs.push(repo);
     const git = (...args: string[]) =>
       execFileSync("git", ["-C", repo, ...args], { timeout: 15000, windowsHide: true });
     git("init", "-b", "main");

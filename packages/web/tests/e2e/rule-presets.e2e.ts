@@ -1,14 +1,22 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import { apiPost, gotoView } from "./_helpers";
+
+const tempDirs: string[] = [];
+
+test.afterEach(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  tempDirs.length = 0;
+});
 
 test("should autofill an explicit template, save unchanged, customize its pattern and retain it after reload", async ({
   page,
   request,
 }) => {
   const workspace = mkdtempSync(join(tmpdir(), "orc-explicit-template-"));
+  tempDirs.push(workspace);
   await gotoView(page, "rules");
   await page.getByTestId("rules-settings-tab").click();
   await page.getByTestId("rules-workspace").fill(workspace);

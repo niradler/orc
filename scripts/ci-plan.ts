@@ -48,9 +48,18 @@ export function packageTestSteps(
       }
       const files = affectedTestFiles(root, domain.folder, selection.changedPaths);
       if (files.length === 0) continue;
+      // A direct `bun test` never reads the package's test script, so a package
+      // that serializes there (process-global fixture state) must serialize here too.
       steps.push([
         `Test ${domain.name} affected files`,
-        ["bun", "--cwd", `packages/${domain.folder}`, "test", ...files],
+        [
+          "bun",
+          "--cwd",
+          `packages/${domain.folder}`,
+          "test",
+          ...(domain.serialTests ? ["--max-concurrency=1"] : []),
+          ...files,
+        ],
       ]);
     }
   }

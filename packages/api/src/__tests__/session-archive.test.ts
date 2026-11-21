@@ -10,7 +10,7 @@ import type { EmbeddingProvider } from "@orc/knowledge/embeddings";
 import { closeSessionArchive, getSessionArchive, SessionArchive } from "../sessions/archive.js";
 import { indexDiscoveredSessions } from "../sessions/archive-local.js";
 import { LIVE_CHAT_ID } from "../sessions/common.js";
-import { req, setupTestApp, teardownTestApp } from "./helpers.js";
+import { removeTempTree, req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
 let root: string;
@@ -62,7 +62,8 @@ afterEach(async () => {
   teardownTestApp();
   if (oldRoot === undefined) delete process.env.ORC_KNOWLEDGE_ROOT;
   else process.env.ORC_KNOWLEDGE_ROOT = oldRoot;
-});
+  await removeTempTree(root);
+}, 20_000);
 
 describe("session archive storage and identities", () => {
   test("search combines selected projects before ranking and pagination", async () => {

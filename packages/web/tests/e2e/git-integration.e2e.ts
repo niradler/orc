@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { expect } from "@playwright/test";
@@ -18,6 +18,13 @@ const repo = join(folder, "repo");
 const checkout = join(folder, "checkout");
 const squash = join(folder, "squash");
 const openPr = join(folder, "open-pr");
+const tempDirs: string[] = [];
+
+test.afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+  rmSync(folder, { recursive: true, force: true });
+});
+
 async function git(cwd: string, ...args: string[]): Promise<void> {
   execFileSync("git", ["-C", cwd, ...args], {
     timeout: 15_000,
@@ -275,6 +282,7 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
   request,
 }) => {
   const local = mkdtempSync(join(tmpdir(), "orc-pw-git-ux-"));
+  tempDirs.push(local);
   for (const args of [
     ["init", "-b", "main"],
     ["config", "user.email", "test@example.com"],
@@ -286,6 +294,7 @@ test("Git pane selects all, switches branches and worktrees, and shows the curre
   await git(local, "commit", "-m", "initial");
   await git(local, "branch", "feature");
   const other = `${local}-other`;
+  tempDirs.push(other);
   await git(local, "worktree", "add", "-b", "other", other);
   const terminal = await apiPost<{ id: string }>(request, "/terminals", {
     kind: "shell",
