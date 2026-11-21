@@ -22320,6 +22320,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/speech/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transcription language, reply voice and the provider's voice catalog */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Speech defaults and available voices */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SpeechSettings"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Save the transcription language and reply voice in the server config */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        language?: string;
+                        voice?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Saved speech defaults */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SpeechSettings"];
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/api/chat/threads/{id}/voice/ticket": {
         parameters: {
             query?: never;
@@ -25857,6 +25920,18 @@ export interface components {
         };
         SpeechTranscript: {
             text: string;
+        };
+        SpeechSettings: {
+            language: string;
+            voice: string;
+            voices: {
+                id: string;
+                name: string;
+                language?: string;
+                gender?: string;
+            }[];
+            /** @enum {string} */
+            voice_source: "provider" | "catalog" | "none";
         };
         VoiceTicket: {
             ticket: string;

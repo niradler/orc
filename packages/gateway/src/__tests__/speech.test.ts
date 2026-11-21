@@ -3,6 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, type OrcConfig, resetConfig } from "@orc/core/config";
+import { openAiTtsVoice } from "../speech/openai.js";
+import { listSpeechVoices } from "../speech/voices.js";
 import { speechText, speechToText, textToSpeech } from "../speech.js";
 
 const home = mkdtempSync(join(tmpdir(), "orc-speech-"));
@@ -65,6 +67,12 @@ const provider = Bun.serve({
     if (pathname.endsWith("/audio/speech")) {
       ttsRequests.push((await request.json()) as Record<string, unknown>);
       return new Response(voiceNote, { headers: { "Content-Type": "audio/ogg" } });
+    }
+    if (pathname.endsWith("/audio/voices")) {
+      return Response.json({
+        voices: [{ id: "af_heart", name: "Heart", language: "en", gender: "female" }],
+        total: 1,
+      });
     }
     if (pathname === "/qwen-tts") {
       ttsRequests.push((await request.json()) as Record<string, unknown>);
@@ -174,11 +182,69 @@ test("OpenAI speech is requested as an OGG/Opus voice note", async () => {
     } as unknown as Partial<OrcConfig>),
   );
   const speech = await tts?.synthesize("deploy finished");
+  // A custom OpenAI-compatible endpoint picks its own default voice; sending
+  // OpenAI's "alloy" would be rejected by servers such as Vocal.
   expect(ttsRequests).toEqual([
-    { model: "tts-1", input: "deploy finished", voice: "alloy", response_format: "opus" },
+    { model: "tts-1", input: "deploy finished", response_format: "opus" },
   ]);
   expect(speech?.format).toBe("ogg");
   expect(new TextDecoder().decode(speech?.audio.slice(0, 4))).toBe("OggS");
+});
+
+test("a configured voice reaches a custom endpoint, and OpenAI itself defaults to alloy", async () => {
+  ttsRequests = [];
+  const tts = textToSpeech(
+    loadConfig({
+      tts: {
+        enabled: true,
+        provider: "openai",
+        voice: "af_heart",
+        openai: { api_key: "k", base_url: `${origin}/v1` },
+      },
+    } as unknown as Partial<OrcConfig>),
+  );
+  await tts?.synthesize("deploy finished");
+  expect(ttsRequests).toMatchObject([{ voice: "af_heart" }]);
+  expect(openAiTtsVoice("", undefined)).toBe("alloy");
+  expect(openAiTtsVoice("", `${origin}/v1`)).toBe("");
+  expect(openAiTtsVoice("nova", `${origin}/v1`)).toBe("nova");
+});
+
+test("the voice catalog comes from the provider, OpenAI's fixed list, or nowhere", async () => {
+  const withTts = (tts: Record<string, unknown>) =>
+    loadConfig({ tts: { enabled: true, ...tts } } as unknown as Partial<OrcConfig>);
+  const live = await listSpeechVoices(
+    withTts({ provider: "openai", openai: { api_key: "k", base_url: `${origin}/v1` } }),
+  );
+  expect(live).toEqual({
+    voices: [{ id: "af_heart", name: "Heart", language: "en", gender: "female" }],
+    source: "provider",
+  });
+  const fixed = await listSpeechVoices(withTts({ provider: "openai", openai: { api_key: "k" } }));
+  expect(fixed.source).toBe("catalog");
+  expect(fixed.voices.map((voice) => voice.id)).toContain("nova");
+  const silent = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    fetch: () => new Response("gone", { status: 404 }),
+  });
+  try {
+    const missing = await listSpeechVoices(
+      withTts({ provider: "openai", openai: { base_url: `http://127.0.0.1:${silent.port}/v1` } }),
+    );
+    expect(missing).toEqual({ voices: [], source: "none" });
+  } finally {
+    silent.stop(true);
+  }
+  expect(await listSpeechVoices(withTts({ provider: "qwen", qwen: { api_key: "k" } }))).toEqual({
+    voices: [],
+    source: "none",
+  });
+  expect(
+    await listSpeechVoices(
+      loadConfig({ tts: { enabled: false } } as unknown as Partial<OrcConfig>),
+    ),
+  ).toEqual({ voices: [], source: "none" });
 });
 
 const qwenTts = (base_url: string) =>

@@ -31,6 +31,10 @@ async function expectNoHorizontalScroll(page: Page) {
   ).toBe(true);
 }
 
+function micAudio(call: MediaStreamConstraints | undefined): MediaTrackConstraints {
+  return (call?.audio ?? {}) as MediaTrackConstraints;
+}
+
 for (const [label, size] of [
   ["desktop", { width: 1440, height: 900 }],
   ["phone", { width: 390, height: 844 }],
@@ -259,6 +263,72 @@ for (const [label, size] of [
       await shoot(page, `denied-${label}`);
       await page.getByTestId("chat-dictation-cancel").click();
       await expect(page.getByTestId("chat-dictation-pill")).toHaveCount(0);
+    });
+
+    test("dictation records from the microphone chosen in settings", async ({ page }) => {
+      await page.addInitScript(() => {
+        const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        const w = window as unknown as { micCalls: MediaStreamConstraints[] };
+        w.micCalls = [];
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          w.micCalls.push(constraints ?? {});
+          return original(constraints);
+        };
+      });
+      await openComposer(page, true);
+      await page.route("**/api/speech/transcribe", (route) =>
+        route.fulfill({ json: { text: "hello" } }),
+      );
+      // Save the choice the way Settings → General → Voice does. Chromium's fake
+      // device ids regenerate on navigation, so pick from this document's list.
+      const deviceId = await page.evaluate(async () => {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputs = devices.filter(
+          (device) => device.kind === "audioinput" && device.deviceId !== "default",
+        );
+        const id = inputs[inputs.length - 1]?.deviceId ?? "";
+        localStorage.setItem("orc_voice_input_device", id);
+        return id;
+      });
+      expect(deviceId).not.toBe("");
+      await page.getByTestId("chat-dictation-button").click();
+      const pill = page.getByTestId("chat-dictation-pill");
+      await expect(pill).toHaveAttribute("data-phase", "recording", { timeout: 20_000 });
+      const calls = await page.evaluate(
+        () => (window as unknown as { micCalls: MediaStreamConstraints[] }).micCalls,
+      );
+      expect(calls).toHaveLength(1);
+      expect(micAudio(calls[0]).deviceId).toEqual({ exact: deviceId });
+      await page.getByTestId("chat-dictation-stop").click();
+      await expect(page.getByTestId("chat-input")).toHaveValue("hello");
+    });
+
+    test("a missing selected microphone falls back to the system default", async ({ page }) => {
+      await page.addInitScript(() => {
+        const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+        const w = window as unknown as { micCalls: MediaStreamConstraints[] };
+        w.micCalls = [];
+        navigator.mediaDevices.getUserMedia = async (constraints) => {
+          w.micCalls.push(constraints ?? {});
+          return original(constraints);
+        };
+      });
+      await openComposer(page, true);
+      await page.route("**/api/speech/transcribe", (route) =>
+        route.fulfill({ json: { text: "fallback" } }),
+      );
+      await page.evaluate(() => localStorage.setItem("orc_voice_input_device", "unplugged-mic"));
+      await page.getByTestId("chat-dictation-button").click();
+      const pill = page.getByTestId("chat-dictation-pill");
+      await expect(pill).toHaveAttribute("data-phase", "recording", { timeout: 20_000 });
+      const calls = await page.evaluate(
+        () => (window as unknown as { micCalls: MediaStreamConstraints[] }).micCalls,
+      );
+      expect(calls).toHaveLength(2);
+      expect(micAudio(calls[0]).deviceId).toEqual({ exact: "unplugged-mic" });
+      expect(micAudio(calls[1]).deviceId).toBeUndefined();
+      await page.getByTestId("chat-dictation-stop").click();
+      await expect(page.getByTestId("chat-input")).toHaveValue("fallback");
     });
   });
 }

@@ -117,7 +117,7 @@ test("an OpenAI-compatible base_url needs no key and voice mode can choose its o
     {
       path: "/openai/audio/speech",
       auth: "Bearer sk-test",
-      body: { model: "tts-1", input: "Deploy finished.", voice: "alloy", response_format: "opus" },
+      body: { model: "tts-1", input: "Deploy finished.", response_format: "opus" },
     },
     {
       path: "/openai/audio/speech",
@@ -132,7 +132,7 @@ test("an OpenAI-compatible base_url needs no key and voice mode can choose its o
     {
       path: "/local/audio/speech",
       auth: null,
-      body: { model: "tts-1", input: "Hi.", voice: "alloy", response_format: "opus" },
+      body: { model: "tts-1", input: "Hi.", response_format: "opus" },
     },
   ]);
 });

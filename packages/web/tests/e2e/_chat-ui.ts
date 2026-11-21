@@ -141,6 +141,7 @@ const settingsTargets: Record<
   connection: { group: "hosts" },
   appearance: { group: "general" },
   terminals: { group: "general" },
+  voice: { group: "general" },
   browser: { group: "general" },
   execution: { group: "hosts" },
   agents: { group: "agents" },

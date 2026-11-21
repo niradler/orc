@@ -83,9 +83,16 @@ export const openaiSpeechToText = (config: OrcConfig) =>
     model: "whisper-1",
   });
 
+/** OpenAI requires a voice, so its endpoint defaults to alloy. OpenAI-compatible
+ *  servers (Vocal) reject unknown ids, so a custom endpoint gets no voice unless
+ *  one is configured and picks its own default. */
+export function openAiTtsVoice(configured: string, baseUrl: string | undefined): string {
+  return configured || (baseUrl ? "" : "alloy");
+}
+
 export const openaiTextToSpeech = (config: OrcConfig) =>
   speechEndpoint(
     { ...config.tts.openai, api_key: config.tts.openai.api_key ?? config.speech.openai.api_key },
-    config.tts.voice || "alloy",
+    openAiTtsVoice(config.tts.voice, config.tts.openai.base_url),
     { baseUrl: "https://api.openai.com/v1", model: "tts-1", format: "opus" },
   );
