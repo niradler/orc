@@ -208,7 +208,7 @@ describe("remote ORC hosts", () => {
   test("forwards the requested host, including an empty one, to the remote server", async () => {
     const original = globalThis.fetch;
     const requested: string[] = [];
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
+    globalThis.fetch = (async (input: string | URL | Request) => {
       requested.push(String(input));
       return new Response(
         JSON.stringify({ host: null, path: destHome, parent: null, directories: [] }),

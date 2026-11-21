@@ -26,6 +26,12 @@ test.describe("Projects CRUD", () => {
     await page.getByTestId("new-project-button").click();
     await revealFormField(page, page.getByTestId("project-name-input"));
     await page.getByTestId("project-name-input").fill(name);
+    const newProjectPick = page.getByTestId("project-pick-folder");
+    await revealFormField(page, newProjectPick);
+    await newProjectPick.click();
+    await expect(page.getByTestId("folder-picker-dialog")).toBeVisible();
+    await page.getByTestId("remote-folder-cancel").click();
+    await expect(page.getByTestId("folder-picker-dialog")).toBeHidden();
     await revealFormField(page, page.getByTestId("project-first-task"));
     await page.getByTestId("project-first-task").uncheck();
     await revealFormField(page, page.getByTestId("project-git-remote-url"));
