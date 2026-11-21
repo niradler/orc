@@ -227,7 +227,6 @@ export function AgentModelPicker({
   const effortChoices = efforts ?? [];
   const shown = tab === "effort" && !effortChoices.length ? "model" : tab;
   const effortLabel = effortChoices.find((choice) => choice.value === (effort ?? ""))?.label;
-  const summary = effortLabel ? `${modelName} · ${effortLabel}` : modelName;
   const modelRows = [["", "Agent default"] as const, ...choices]
     .filter(([id, label]) =>
       `${id} ${label} ${descriptions?.get(id) ?? ""}`
@@ -300,13 +299,22 @@ export function AgentModelPicker({
           </span>
         </>
       )}
-      <span
-        data-chip-label
-        data-chip-scroll
-        data-testid={`${testIdPrefix}-model-current`}
-        className="min-w-0 truncate"
-      >
-        {summary}
+      <span data-chip-label className="flex min-w-0 items-center gap-1">
+        <span
+          data-chip-scroll
+          data-testid={`${testIdPrefix}-model-current`}
+          className="min-w-0 truncate"
+        >
+          {modelName}
+        </span>
+        {effortLabel && (
+          <span
+            data-testid={`${testIdPrefix}-model-effort`}
+            className="shrink-0 text-muted-foreground"
+          >
+            · {effortLabel}
+          </span>
+        )}
       </span>
       <ChevronDown
         data-chip-label
