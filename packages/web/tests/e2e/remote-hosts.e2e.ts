@@ -99,15 +99,42 @@ async function addRemote(page: Page, url: string) {
   await page.getByTestId("remote-host-name").fill("Devbox");
   await page.getByTestId("remote-host-url").fill(url);
   await page.getByTestId("remote-host-token").fill("remote-secret");
+  await page.getByTestId("api-host-header-add").click();
+  await page.getByTestId("api-host-header-name-0").fill("CF-Access-Client-Id");
+  await page.getByTestId("api-host-header-value-0").fill("client-id");
   await page.getByTestId("remote-host-save").click();
   const row = page.locator('[data-testid^="remote-host-"]').filter({ hasText: "Devbox" });
   await expect(row).toContainText("token saved");
+  await expect(row).toContainText("1 header");
   const { hosts } = await apiGet<{ hosts: { id: string; label: string }[] }>(
     page.request,
     "/remote-hosts",
   );
   const id = hosts.find((host) => host.label === "Devbox")?.id;
   if (!id) throw new Error("Devbox was not saved");
+
+  await page.getByTestId(`remote-host-edit-${id}`).click();
+  const editor = page.getByTestId("remote-host-editor");
+  await expect(editor.getByTestId("api-host-header-name-0")).toHaveValue("CF-Access-Client-Id");
+  await expect(editor.getByTestId("api-host-header-value-0")).toHaveValue("");
+  await expect(editor.getByTestId("api-host-header-value-0")).toHaveAttribute(
+    "placeholder",
+    "Saved value; leave blank to keep",
+  );
+  await editor.getByTestId("api-host-header-add").click();
+  await editor.getByTestId("api-host-header-name-1").fill("CF-Access-Client-Secret");
+  await editor.getByTestId("api-host-header-value-1").fill("client-secret");
+  await page.getByTestId("remote-host-save").click();
+  await expect(page.getByTestId("remote-host-editor")).toHaveCount(0);
+  const edited = await apiGet<{ hosts: { id: string; header_names: string[] }[] }>(
+    page.request,
+    "/remote-hosts",
+  );
+  expect(edited.hosts.find((host) => host.id === id)?.header_names).toEqual([
+    "CF-Access-Client-Id",
+    "CF-Access-Client-Secret",
+  ]);
+
   await page.getByTestId(`remote-host-test-${id}`).click();
   await expect(page.getByTestId(`remote-host-${id}`)).toContainText("Connected to ORC");
   return id;
