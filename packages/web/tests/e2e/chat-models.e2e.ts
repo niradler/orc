@@ -120,7 +120,7 @@ test("choosing a custom model does not submit an existing composer draft", async
   await page.getByTestId("chat-custom-model").fill("fixture-custom");
   await page.getByTestId("chat-custom-model-apply").click();
   await page.keyboard.press("Escape");
-  await expect(page.getByTestId("chat-model-current")).toHaveText("fixture-custom");
+  await expect(page.getByTestId("chat-model-current")).toHaveText("Fixture Custom");
   await expect(page.getByTestId("chat-input")).toHaveValue("Unsent draft while choosing a model");
   expect(posts).toBe(0);
 });

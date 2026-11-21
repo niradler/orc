@@ -17,6 +17,7 @@ import {
   pathName,
   permissionModes,
   resolveAgentId,
+  shortModelLabel,
   shouldAttachPaste,
   withAgentEffort,
   withPermissionMode,
@@ -288,6 +289,32 @@ test("Pi legacy automatic approval displays full access consistently with the na
   expect(effectivePermissionMode({ ...defaults, agent: "pi", autoApprove: true })).toBe(
     "bypassPermissions",
   );
+});
+
+describe("shortModelLabel", () => {
+  test("moves qualifiers and duplicated brand words out of the chip", () => {
+    expect(
+      shortModelLabel(
+        "Claude Opus 4.6 (1M context) with extended thinking",
+        "claude-opus-4-6[1m]",
+        "claude",
+      ),
+    ).toBe("Opus 4.6");
+    expect(shortModelLabel("GPT-5.2 Codex with max reasoning", "gpt-5.2-codex", "codex")).toBe(
+      "GPT-5.2 Codex",
+    );
+    expect(shortModelLabel("Qwen3 Max Preview (thinking)", "qwen3-max-preview", "opencode")).toBe(
+      "Qwen3 Max Preview",
+    );
+  });
+  test("keeps clean labels and formats raw ids with the shared display name", () => {
+    expect(shortModelLabel("claude deep", "claude-deep", "claude")).toBe("claude deep");
+    expect(shortModelLabel("GPT-5.2 Codex", "gpt-5.2-codex", "codex")).toBe("GPT-5.2 Codex");
+    expect(shortModelLabel("Agent default", "", "claude")).toBe("Agent default");
+    expect(shortModelLabel("provider/custom-model", "provider/custom-model", "opencode")).toBe(
+      "Custom Model",
+    );
+  });
 });
 
 test("Pi thinking level is visible in the selected model label", () => {

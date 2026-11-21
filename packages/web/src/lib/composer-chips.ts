@@ -306,6 +306,23 @@ export function agentModelLabel(model: string, effort: string | null): string {
   return effort ? `${model} · ${effort}` : model;
 }
 
+const MODEL_QUALIFIERS = /[(,–—]|\s+-\s+|\s+with\s+|\s+featuring\s+/i;
+const MODEL_BRAND_PREFIX: Record<string, string> = { claude: "Claude " };
+
+/** Core model name for the composer chip; qualifiers and duplicated brand words
+ *  move to the model help popover. Raw IDs use the shared display formatter. */
+export function shortModelLabel(label: string, id: string, agent: string): string {
+  if (!id) return label;
+  if (label === id) return modelDisplayName(id);
+  const core = (label.split(MODEL_QUALIFIERS)[0] ?? label).trim();
+  const brand = MODEL_BRAND_PREFIX[agent];
+  const short =
+    brand && core.startsWith(brand) && core.length > brand.length
+      ? core.slice(brand.length).trim()
+      : core;
+  return short || label;
+}
+
 export function resolveAgentId(id: string | null | undefined): string | null {
   if (!id) return null;
   return codingAgent(id)?.id ?? agentForSessionBackend(id)?.id ?? null;

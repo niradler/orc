@@ -255,6 +255,10 @@ html[data-chat-font="serif"] {
     display: none;
   }
 
+  [data-chip-help] {
+    display: none;
+  }
+
   .chat-composer-tools,
   .chat-workspace-controls {
     flex-wrap: nowrap;
