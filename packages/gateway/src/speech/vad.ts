@@ -9,19 +9,23 @@ const MAX_TURN_MS = 60_000;
 export type TurnEvent =
   | { type: "start" }
   | { type: "barge" }
-  | { type: "end"; audio: Int16Array | null };
+  /** `peakDb` is the loudest frame of the turn: the number that decides whether
+   *  barge-in can ever fire in this room. */
+  | { type: "end"; audio: Int16Array | null; peakDb: number };
 
 export function createTurnDetector({
   silenceMs,
   thresholdDb,
   bargeMs = 320,
-  bargeMarginDb = 10,
+  bargeMarginDb = 0,
 }: {
   silenceMs: number;
   thresholdDb: number;
   /** Sustained speech above `thresholdDb + bargeMarginDb` that interrupts a
    *  spoken reply. 0 disables barge-in (half-duplex). */
   bargeMs?: number;
+  /** Extra headroom over `thresholdDb` a barge must clear. Ducking already
+   *  cuts the speaker echo, so the default keeps the normal floor. */
   bargeMarginDb?: number;
 }) {
   let pending = new Int16Array(0);
@@ -33,6 +37,7 @@ export function createTurnDetector({
   let bargeVoiced = 0;
   let bargeSent = false;
   let speaking = false;
+  let peakDb = Number.NEGATIVE_INFINITY;
 
   const level = (frame: Int16Array) => {
     let sum = 0;
@@ -47,6 +52,7 @@ export function createTurnDetector({
     voicedMs = 0;
     bargeVoiced = 0;
     bargeSent = false;
+    peakDb = Number.NEGATIVE_INFINITY;
   };
 
   const finish = (): TurnEvent => {
@@ -59,8 +65,9 @@ export function createTurnDetector({
     // Anything quieter is echo or a stray knock: the client unducks and the
     // reply carries on.
     const voiced = voicedMs >= MIN_VOICED_MS && (!speaking || (bargeMs > 0 && bargeSent));
+    const loudest = Number.isFinite(peakDb) ? Math.round(peakDb * 10) / 10 : -Infinity;
     resetTurn();
-    return { type: "end", audio: voiced ? audio : null };
+    return { type: "end", audio: voiced ? audio : null, peakDb: loudest };
   };
 
   return {
@@ -81,6 +88,7 @@ export function createTurnDetector({
         const frame = samples.slice(offset, offset + FRAME);
         const db = level(frame);
         const loud = db > thresholdDb;
+        if (db > peakDb) peakDb = db;
         if (!turn) {
           preroll.push(frame);
           if (preroll.length > PREROLL_FRAMES) preroll.shift();

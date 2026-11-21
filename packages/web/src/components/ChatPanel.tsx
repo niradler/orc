@@ -314,6 +314,7 @@ export function ChatPanel({
     cancel,
     projectId,
     openThread,
+    followTurn,
   } = useChat();
   const session = useQuery({
     queryKey: ["chat-threads", "session", thread?.id],
@@ -766,7 +767,7 @@ export function ChatPanel({
   const input = useRef<HTMLTextAreaElement>(null);
   const promptMenu = useChatPromptMenu(draft, setDraft, input, projectId);
   const dictation = useDictation(input, setDraft);
-  const voice = useVoiceMode(thread?.id, streaming);
+  const voice = useVoiceMode(thread?.id, streaming, followTurn);
   const activeCommandOption = promptMenu.matches[promptMenu.index];
   const promptMenuOpen = useRef(false);
   promptMenuOpen.current = promptMenu.open;

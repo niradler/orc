@@ -34,8 +34,15 @@ export function isVoiceShortcut(event: {
   );
 }
 
-export function useVoiceMode(threadId: string | undefined, streaming: boolean) {
+export function useVoiceMode(
+  threadId: string | undefined,
+  streaming: boolean,
+  followTurn?: () => void,
+) {
   const status = useQuery({ queryKey: ["speech-status"], queryFn: api.speech.status });
+  // The socket handler is built once per session; keep the newest callback.
+  const followTurnRef = useRef(followTurn);
+  followTurnRef.current = followTurn;
   const [active, setActive] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [hearing, setHearing] = useState(false);
@@ -196,6 +203,10 @@ export function useVoiceMode(threadId: string | undefined, streaming: boolean) {
           duck(1);
           setPending(false);
           if (event.type === "speak" && event.id) clips.push(event.id);
+        } else if (event.type === "turn_started") {
+          // The turn runs on the server; this tab follows it so spoken words
+          // appear in the transcript without a refresh.
+          followTurnRef.current?.();
         } else if (event.type === "error") {
           duck(1);
           setPending(false);

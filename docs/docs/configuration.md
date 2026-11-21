@@ -591,9 +591,10 @@ mode its own TTS. Unset fields fall back to the shared `speech` / `tts` values:
     "dictation": { "model": "gpt-4o-mini-transcribe" },
     "voice_mode": {
       "model": "gpt-4o-transcribe",
-      "silence_ms": 800,
+      "silence_ms": 1200,
       "threshold_db": -45,
-      "barge_ms": 320
+      "barge_ms": 320,
+      "barge_margin_db": 0
     }
   },
   "tts": {
@@ -620,18 +621,25 @@ The client sends 16 kHz mono 16-bit PCM as binary frames. The server ends a turn
 after `speech.voice_mode.silence_ms` below `threshold_db` (dBFS), transcribes it,
 drops empty and filler-only transcripts ("um", "uh"), stops the running turn and
 sends the transcript as the next message, telling the agent to answer through the
-`speak` MCP tool. Each spoken line arrives as `{"type":"speak","id":...,"text":...,"format":...}`
+`speak` MCP tool. Voice mode defaults to a longer 1200 ms silence than dictation,
+so a thinking pause inside a sentence does not become its own request. Each
+spoken line arrives as `{"type":"speak","id":...,"text":...,"format":...}`
 followed by one binary audio frame per sentence; the client confirms each frame it
 played with `{"type":"played","id":...}`.
 
 While a reply plays, the client ducks it to a quarter volume as soon as the
-microphone hears speech. Only sustained speech above `threshold_db` plus 10 dB
-for `speech.voice_mode.barge_ms` interrupts: the server then drops the rest of
-the reply and the client plays `barge`. Anything shorter or quieter — echo from
-the speakers, a knock — sends `speech_cancelled`, and the reply returns to full
-volume. `barge_ms: 0` keeps voice mode half-duplex and never interrupts a reply.
+microphone hears speech. Only sustained speech above `threshold_db` (plus
+`speech.voice_mode.barge_margin_db` dB of headroom, 0 by default) for
+`speech.voice_mode.barge_ms` interrupts: the server then drops the rest of
+the reply and the client plays `barge`. Anything shorter sends
+`speech_cancelled`, and the reply returns to full volume. `barge_ms: 0` keeps
+voice mode half-duplex and never interrupts a reply. Raise `barge_margin_db`
+when a loud speaker keeps interrupting, or lower `threshold_db` when a quiet
+microphone cannot reach the barge at all.
 A turn waiting for an approval or a question is not interrupted: voice says
-"It needs you on screen." and the prompt stays in the UI. Other events: `ready`,
+"It needs you on screen." and the prompt stays in the UI. A turn that starts in
+voice sends `turn_started` on the socket, so the chat view follows that turn's
+live stream and the reply appears as it is spoken. Other events: `ready`,
 `speech_start`, `speech_end`, `speech_cancelled`, `barge`, `transcript`,
 `ignored`, `error`.
 

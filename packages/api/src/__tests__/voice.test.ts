@@ -53,6 +53,9 @@ function configure(speechEnabled = true) {
         enabled: speechEnabled,
         provider: "openai",
         openai: { base_url: `http://127.0.0.1:${provider.port}/v1` },
+        // The clip ends with under a second of silence; keep the turn short
+        // instead of depending on the product's conversational default.
+        voice_mode: { silence_ms: 400 },
       },
       tts: {
         enabled: true,
@@ -202,6 +205,7 @@ test("a spoken clip ends the turn on silence and is sent to the conversation", a
     "speech_start",
     "speech_end",
     "transcript",
+    "turn_started",
   ]);
   expect(heard).toHaveLength(1);
   expect(heard[0]?.header).toBe("WAVEfmt ");
@@ -283,7 +287,7 @@ function burst(ms: number, amplitude: number) {
   return samples;
 }
 
-test("a knock during a reply is cancelled without stopping it", async () => {
+test("a brief burst during a reply is cancelled without stopping it", async () => {
   const id = await chat("Reply with exactly: ok");
   const voice = await connect(id);
   transcript = "";
@@ -294,7 +298,7 @@ test("a knock during a reply is cancelled without stopping it", async () => {
   });
   expect(await res.json()).toEqual({ posted: false, spoken: true });
   await until(async () => voice.audio.length === 2);
-  voice.say(burst(300, 300));
+  voice.say(burst(200, 3000));
   await voice.next("speech_cancelled");
   expect(voice.messages.map((m) => m.type)).not.toContain("barge");
   expect(voice.audio).toEqual(["audio:First sentence.", "audio:Second sentence."]);

@@ -833,6 +833,14 @@ function useChatController() {
     [attach, find, update],
   );
 
+  /** Follow a turn this browser did not start, such as one dictated in voice mode. */
+  const followTurn = useCallback(() => {
+    const key = activeRef.current;
+    const tab = find(key);
+    if (!tab?.thread || tab.streaming) return;
+    void attach(key, tab.thread.id);
+  }, [attach, find]);
+
   const openThread = useCallback(
     (
       next: ChatThread,
@@ -1654,6 +1662,7 @@ function useChatController() {
     reconnecting: tab.reconnecting,
     refreshing: tab.refreshing,
     refresh,
+    followTurn,
     setChildWork,
     streamText: tab.streamText,
     activity: tab.activity,
