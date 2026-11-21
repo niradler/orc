@@ -435,12 +435,16 @@ final argument, so a custom interpreter needs its command option, such as `-c`.
 The interpreter must be installed on the destination. Host default uses sh on Unix
 and Windows PowerShell on Windows; jobs saved before this setting retain sh.
 
-Agent jobs save a prompt, backend, optional model, explicit automatic tool approval
-and supported launch options. Agent and model use the same picker as Chat: enabled
-agents, models reported by the provider on the job's selected host/directory,
-Agent default and an explicit Custom model option. A saved model remains selectable
-if discovery is temporarily unavailable. Changing agents clears the previous model
-and launch options. New agent jobs default to an isolated, detached Git
+Agent jobs save a prompt, backend, optional model and reasoning effort, the
+permission level and supported launch options. Agent and model use the same picker
+as Chat: enabled agents, models reported by the provider on the job's selected
+host/directory, the model's effort values, Agent default and an explicit Custom
+model option. The picker also lists saved composer profiles; choosing one applies
+its agent, model and effort, and maps its permission mode onto the job's level
+(Allow edits to `accept_edits`, Auto or Full access to `auto`; Ask in chat and Plan
+leave the job level unchanged). A saved model remains selectable if discovery is
+temporarily unavailable. Changing agents clears the previous model, effort and
+launch options. New agent jobs default to an isolated, detached Git
 worktree for each run. `HEAD` inherits the project checkout's current commit; override
 it with a branch or remote-tracking ref. ORC does not fetch, reset or push the base.
 **Clean up worktree after a successful run** is off by default. When enabled, cleanup

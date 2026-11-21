@@ -11,14 +11,22 @@ export const JobActionSchema = z.discriminatedUnion("type", [
     })
     .strict()
     .superRefine((action, context) => {
-      if (!action.options) return;
-      if (["claude-cli", "a2a", "agentapi"].includes(action.agent))
+      if (["claude-cli", "a2a", "agentapi"].includes(action.agent)) {
+        if (action.effort)
+          context.addIssue({
+            code: "custom",
+            path: ["effort"],
+            message: "This agent does not support a reasoning effort.",
+          });
+        if (!action.options) return;
         context.addIssue({
           code: "custom",
           path: ["options"],
           message:
             "This agent does not support job launch options. Choose Claude SDK, Codex CLI or ACPX.",
         });
+      }
+      if (!action.options) return;
       const runtime =
         action.agent === "claude"
           ? "claude-sdk"

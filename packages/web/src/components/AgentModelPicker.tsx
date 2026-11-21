@@ -170,6 +170,7 @@ export function AgentModelPicker({
   started = false,
   testIdPrefix = "chat",
   showAgent = false,
+  wide = false,
   providers,
   providerId,
   onProvider,
@@ -203,6 +204,8 @@ export function AgentModelPicker({
   /** Keep the agent name in the chip when nothing else in that surface names it
    *  (the job action form); the composer chip focuses on the model alone. */
   showAgent?: boolean;
+  /** Let the chip fill its container instead of the compact composer width. */
+  wide?: boolean;
   providers?: { id: string; name: string; agent: string }[];
   providerId?: string | undefined;
   onProvider?: (id: string) => boolean;
@@ -332,7 +335,8 @@ export function AgentModelPicker({
     <span
       className={cn(
         composerChip,
-        "max-w-[min(16rem,100%)] gap-1 text-on-surface max-[767px]:min-h-[46px] max-[767px]:min-w-[46px] pointer-coarse:min-h-[46px] pointer-coarse:min-w-[46px] any-pointer-coarse:min-h-[46px] any-pointer-coarse:min-w-[46px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus has-[:disabled]:opacity-40 has-[[data-state=open]]:bg-surface-highest has-[[data-state=open]]:text-on-surface",
+        wide ? "max-w-full" : "max-w-[min(16rem,100%)]",
+        "gap-1 text-on-surface max-[767px]:min-h-[46px] max-[767px]:min-w-[46px] pointer-coarse:min-h-[46px] pointer-coarse:min-w-[46px] any-pointer-coarse:min-h-[46px] any-pointer-coarse:min-w-[46px] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus has-[:disabled]:opacity-40 has-[[data-state=open]]:bg-surface-highest has-[[data-state=open]]:text-on-surface",
       )}
     >
       <Popover

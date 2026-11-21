@@ -6,6 +6,7 @@ import {
   ChatAgentOptionsSchema,
   chatRuntime,
   terminalLaunchArgs,
+  withChatEffort,
 } from "../chat-options";
 
 test("should accept ACPX permission and timeout arguments without shell parsing", () => {
@@ -120,4 +121,30 @@ test("terminal launch flags cover Cursor and reject what a CLI lacks", () => {
   expect(() => terminalLaunchArgs("cursor", { permissionMode: "acceptEdits" })).toThrow(
     "acceptEdits",
   );
+});
+
+test("effort lands in each runtime's launch options and clears cleanly", () => {
+  expect(withChatEffort("claude", undefined, "high")).toEqual({
+    runtime: "claude-sdk",
+    options: { effort: "high" },
+  });
+  expect(withChatEffort("claude", undefined, "")).toEqual({
+    runtime: "claude-sdk",
+    options: {},
+  });
+  expect(
+    withChatEffort(
+      "codex",
+      { runtime: "codex", args: ["-c", 'model_reasoning_effort="low"', "--enable", "foo"] },
+      "high",
+    ),
+  ).toEqual({ runtime: "codex", args: ["--enable", "foo", "-c", 'model_reasoning_effort="high"'] });
+  expect(
+    withChatEffort("pi", { runtime: "pi", options: { steeringMode: "all" } }, "max"),
+  ).toMatchObject({ runtime: "pi", options: { steeringMode: "all", thinkingLevel: "max" } });
+  expect(withChatEffort("opencode", undefined, "high")).toEqual({
+    runtime: "opencode",
+    options: { effort: "high" },
+  });
+  expect(withChatEffort("a2a", undefined, "high")).toBeUndefined();
 });

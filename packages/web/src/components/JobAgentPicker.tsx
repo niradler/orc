@@ -1,10 +1,21 @@
+import type { AgentPermission } from "@orc/core/agent-run";
+import type { ComposerProfile } from "@orc/core/chat";
 import type { JobAction } from "@orc/core/job-actions";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { AgentModelPicker } from "@/components/AgentModelPicker";
+import { chipHeading } from "@/components/ComposerChip";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
-import { useEnabledAgents } from "@/hooks/useAgents";
+import { useComposerPreferences, useEnabledAgents } from "@/hooks/useAgents";
 import { useSsh } from "@/hooks/useSsh";
+import { agentEffortChoices, liveEffortChoices } from "@/lib/composer-chips";
+
+/** Job permissions have no plan/default row; only the granting modes map. */
+function jobPermission(mode: ComposerProfile["permissionMode"]): AgentPermission | undefined {
+  if (mode === "acceptEdits") return "accept_edits";
+  if (mode === "auto" || mode === "bypassPermissions") return "auto";
+  return undefined;
+}
 
 export function JobAgentPicker({
   value,
@@ -20,6 +31,7 @@ export function JobAgentPicker({
   const agent = value.agent === "codex-cli" ? "codex" : value.agent;
   const { data: ssh } = useSsh();
   const agents = Array.from(new Set([...useEnabledAgents(), agent]));
+  const preferences = useComposerPreferences();
   const catalog = useQuery({
     queryKey: ["job-models", agent, host === undefined ? ssh?.host : host, cwd],
     queryFn: () => api.chat.models(agent, undefined, host, cwd),
@@ -28,11 +40,36 @@ export function JobAgentPicker({
   });
   const choices = new Map((catalog.data?.models ?? []).map((entry) => [entry.id, entry.label]));
   if (value.model && !choices.has(value.model)) choices.set(value.model, value.model);
-  const fixed = useAgentCapabilities(agent)?.modelSelection === false;
+  const capabilities = useAgentCapabilities(agent);
+  const fixed = capabilities?.modelSelection === false;
+  const models = catalog.data?.models ?? [];
+  const effortChoicesFor = (model: string) => {
+    if (agent === "opencode")
+      return liveEffortChoices(capabilities?.effortChoices ?? catalog.data?.effortChoices);
+    const entry = models.find((item) => item.id === model);
+    return agentEffortChoices(
+      agent,
+      entry && (entry.efforts ?? (models.some((item) => item.efforts) ? [] : undefined)),
+    );
+  };
+  const applyProfile = (profile: ComposerProfile) => {
+    const permission = jobPermission(profile.permissionMode);
+    const nextAgent = profile.agent === "codex" ? "codex-cli" : profile.agent;
+    onChange({
+      ...value,
+      agent: nextAgent,
+      model: profile.model || undefined,
+      effort: profile.effort || undefined,
+      // Launch options belong to the old agent, so they cannot carry over.
+      ...(nextAgent !== value.agent ? { options: undefined } : {}),
+      ...(permission ? { permissions: permission } : {}),
+    });
+  };
   return (
     <AgentModelPicker
       testIdPrefix="job"
       showAgent
+      wide
       agent={agent}
       selectedModel={value.model ?? ""}
       agents={agents}
@@ -44,6 +81,10 @@ export function JobAgentPicker({
           ),
         )
       }
+      efforts={effortChoicesFor(value.model ?? "")}
+      effort={value.effort ?? ""}
+      onEffort={(effort) => onChange({ ...value, effort: effort || undefined })}
+      hasEfforts={(model) => effortChoicesFor(model).length > 0}
       fetching={catalog.isFetching}
       modelsDisabled={fixed}
       warning={
@@ -52,17 +93,51 @@ export function JobAgentPicker({
           : catalog.data?.warning
       }
       note={fixed ? "This agent picks its own model." : undefined}
+      footer={(close) =>
+        preferences.profiles.length ? (
+          <div data-testid="job-profiles" className="mt-1.5 border-t border-border pt-1.5">
+            <p className={chipHeading}>Profiles</p>
+            <div className="flex flex-wrap items-center gap-1 px-1">
+              {preferences.profiles.map((profile) => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  data-testid={`job-profile-${profile.id}`}
+                  onClick={() => {
+                    applyProfile(profile);
+                    close();
+                  }}
+                  title={[profile.model || "Agent default", profile.effort, profile.permissionMode]
+                    .filter(Boolean)
+                    .join(" · ")}
+                  className="inline-flex min-h-8 max-w-full items-center truncate rounded-md border border-border px-2 text-xs hover:bg-surface-highest focus-visible:outline-2 focus-visible:outline-focus max-sm:min-h-11"
+                >
+                  {profile.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null
+      }
       onAgent={(next) => {
         if (next !== agent)
           onChange({
             ...value,
             agent: next === "codex" ? "codex-cli" : next,
             model: undefined,
+            effort: undefined,
             options: undefined,
           });
         return false;
       }}
-      onModel={(model) => onChange({ ...value, model: model || undefined })}
+      onModel={(model) => {
+        const supported = effortChoicesFor(model).some((choice) => choice.value === value.effort);
+        onChange({
+          ...value,
+          model: model || undefined,
+          ...(value.effort && !supported ? { effort: undefined } : {}),
+        });
+      }}
     />
   );
 }

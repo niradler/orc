@@ -1,5 +1,5 @@
 import type { ChatSettings } from "@orc/core/chat";
-import { type ChatAgentOptions, type ClaudeChatOptions, chatRuntime } from "@orc/core/chat-options";
+import { chatRuntime, withChatEffort } from "@orc/core/chat-options";
 import { agentForSessionBackend, codingAgent } from "@orc/core/coding-agents";
 import { pathLabel } from "@orc/core/display-path";
 import type { AgentCapabilities } from "@orc/core/types";
@@ -217,57 +217,10 @@ export function agentEffortValue(config: ChatSettings): string {
   return codexSetting(options.args, CODEX_EFFORT_KEY) ?? "";
 }
 
-/** Drops every Codex `-c` entry for the key so a new effort can replace it cleanly. */
-function withoutCodexSetting(args: readonly string[], key: string): string[] {
-  const kept: string[] = [];
-  for (let index = 0; index < args.length; index++) {
-    const token = args[index] ?? "";
-    const equals = token.indexOf("=");
-    const flag = equals >= 0 ? token.slice(0, equals) : token;
-    if (flag !== "-c" && flag !== "--config") {
-      kept.push(token);
-      continue;
-    }
-    const value = equals >= 0 ? token.slice(equals + 1) : args[index + 1];
-    const split = value?.indexOf("=") ?? -1;
-    if (value !== undefined && split > 0 && value.slice(0, split).trim() === key) {
-      if (equals < 0) index++;
-      continue;
-    }
-    kept.push(token);
-    if (equals < 0 && index + 1 < args.length) kept.push(args[++index] ?? "");
-  }
-  return kept;
-}
-
 /** Returns a copy of the chat config with the chosen effort applied to the current agent. */
 export function withAgentEffort(config: ChatSettings, value: string): ChatSettings {
-  const runtime = chatRuntime(config.agent);
-  const saved = config.agentOptions[config.agent];
-  let options: ChatAgentOptions;
-  if (runtime === "claude-sdk") {
-    const next = saved?.runtime === "claude-sdk" ? { ...saved.options } : {};
-    if (value) next.effort = value as NonNullable<ClaudeChatOptions["effort"]>;
-    else delete next.effort;
-    options = { runtime, options: next };
-  } else if (runtime === "pi") {
-    const next = saved?.runtime === "pi" ? { ...saved.options } : {};
-    if (value) next.thinkingLevel = value as NonNullable<typeof next.thinkingLevel>;
-    else delete next.thinkingLevel;
-    options = { runtime, options: next };
-  } else if (runtime === "codex") {
-    const args = withoutCodexSetting(
-      saved?.runtime === "codex" ? saved.args : [],
-      CODEX_EFFORT_KEY,
-    );
-    if (value) args.push("-c", `${CODEX_EFFORT_KEY}="${value}"`);
-    options = { runtime, args };
-  } else if (runtime === "opencode") {
-    const next = saved?.runtime === "opencode" ? { ...saved.options } : {};
-    if (value) next.effort = value;
-    else delete next.effort;
-    options = { runtime, options: next };
-  } else return config;
+  const options = withChatEffort(config.agent, config.agentOptions[config.agent], value);
+  if (!options) return config;
   return {
     ...config,
     agentOptions: { ...config.agentOptions, [config.agent]: options },

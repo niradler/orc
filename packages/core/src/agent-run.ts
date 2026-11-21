@@ -19,6 +19,13 @@ export const AgentRunSchema = z.object({
     .max(200)
     .regex(/^[a-z0-9][a-z0-9._:/@+-]*$/i)
     .optional(),
+  /** Reasoning effort for runtimes that take one; "" or absent means the
+   *  adapter default. Applied through the same launch options as chat. */
+  effort: z
+    .string()
+    .trim()
+    .regex(/^$|^[a-z][a-z0-9_-]{0,31}$/i)
+    .optional(),
   profile: z.string().min(1).max(100).optional(),
   options: ChatAgentOptionsSchema.optional(),
   permissions: z.enum(AgentPermissions).default("ask"),

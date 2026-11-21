@@ -9986,6 +9986,7 @@ export interface paths {
                                     type: "agent";
                                     agent: string;
                                     model?: string;
+                                    effort?: string;
                                     profile?: string;
                                     options?: {
                                         /** @enum {string} */
@@ -10167,6 +10168,7 @@ export interface paths {
                                 type: "agent";
                                 agent: string;
                                 model?: string;
+                                effort?: string;
                                 profile?: string;
                                 options?: {
                                     /** @enum {string} */
@@ -10303,6 +10305,7 @@ export interface paths {
                                     type: "agent";
                                     agent: string;
                                     model?: string;
+                                    effort?: string;
                                     profile?: string;
                                     options?: {
                                         /** @enum {string} */
@@ -25510,6 +25513,7 @@ export interface components {
                 prompt: string;
                 agent: string;
                 model?: string;
+                effort?: string;
                 profile?: string;
                 options?: {
                     /** @enum {string} */
@@ -25643,6 +25647,7 @@ export interface components {
                 prompt: string;
                 agent: string;
                 model?: string;
+                effort?: string;
                 profile?: string;
                 options?: {
                     /** @enum {string} */
@@ -25780,6 +25785,7 @@ export interface components {
                 prompt: string;
                 agent: string;
                 model?: string;
+                effort?: string;
                 profile?: string;
                 options?: {
                     /** @enum {string} */
