@@ -45,7 +45,7 @@ const schemas={
   unsupported:{type:'object',properties:{choice:{type:'external',title:'Unsupported input'}}},
   cancel:{type:'object',required:['target'],properties:{target:{type:'string',title:'Target',oneOf:[{const:'local-value',title:'This machine'}]}}},
 };
-const ask=(scenario,sessionId)=>{const id='elicitation-'+(++forms);emit({id,method:'elicitation/create',params:{mode:'form',sessionId,message:'Agent question',_meta:{kind:'question'},requestedSchema:schemas[scenario]}});return id};
+const ask=(scenario,sessionId,toolCallId)=>{if(toolCallId){update(sessionId,{sessionUpdate:'tool_call',toolCallId,name:'question',title:'question',kind:'other',status:'pending',locations:[],rawInput:{}});update(sessionId,{sessionUpdate:'tool_call_update',toolCallId,status:'in_progress',kind:'other',title:'question',locations:[],rawInput:{}});}const id='elicitation-'+(++forms);emit({id,method:'elicitation/create',params:{mode:'form',sessionId,...(toolCallId?{toolCallId}:{}),message:'Agent question',_meta:{kind:'question'},requestedSchema:schemas[scenario]}});return id};
 for await (const line of createInterface({input:process.stdin})) {
   const m=JSON.parse(line);appendFileSync(${JSON.stringify(`${argvFile}.wire`)},line+'\\n');
   if(m.method==='initialize')emit({id:m.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true,promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
@@ -58,6 +58,8 @@ for await (const line of createInterface({input:process.stdin})) {
     else if(text.includes('STEER-REJECT')){emit({id:m.id,error:{code:-32000,message:'a prompt is already running'}});update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'STILL RUNNING'}});}
     else if(text.includes('STEER-LATE')){setTimeout(()=>emit({id:m.id,error:{code:-32000,message:'late turn failure'}}),2300);}
     else if(text.includes('STEER-APPLY')){update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'STEERED'}});const target=held.get('hold');held.delete('hold');emit({id:m.id,result:{stopReason:'end_turn'}});if(target)emit({id:target,result:{stopReason:'end_turn'}});}
+    else if(text.includes('STALL-QUESTION')){const tc='call_stall_1';update('oc-ses-1',{sessionUpdate:'tool_call',toolCallId:tc,name:'question',title:'question',kind:'other',status:'pending',locations:[],rawInput:{}});update('oc-ses-1',{sessionUpdate:'tool_call_update',toolCallId:tc,status:'in_progress',kind:'other',title:'question',locations:[],rawInput:{questions:[{header:'Color',question:'Pick a color',options:[{label:'Red',description:''},{label:'Blue',description:''}]}]}});held.set('stall',m.id);}
+    else if(text.includes('GUARDED-QUESTION')){prompts.set(String(ask('single','oc-ses-1','call_guard_1')),{promptId:m.id,scenario:'single'});}
     else{
       const scenario=['single','multi','free','custom','unsupported','cancel'].find(name=>text.includes(name));
       if(!scenario){update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OPENCODE REPLY'}});emit({id:m.id,result:{stopReason:'end_turn'}});}
@@ -549,6 +551,64 @@ test("should cancel a pending ACP question when the turn is interrupted", async 
     rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
   }
 });
+
+test("a native question that never surfaces over ACP fails the turn visibly", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-question-stall-"));
+  try {
+    const { session } = await startPeer(cwd, { acpQuestionSurfaceMs: 250 });
+    try {
+      await session.send("STALL-QUESTION");
+      const events: AgentEvent[] = [];
+      for await (const event of session.events()) {
+        events.push(event);
+        if (event.type === "result" || event.type === "error") break;
+      }
+      expect(
+        events.some((event) => event.type === "tool_use" && event.data.name === "question"),
+      ).toBe(true);
+      expect(events.some((event) => event.type === "question_request")).toBe(false);
+      const error = events.find((event) => event.type === "error");
+      expect(typeof error?.data === "string" ? error.data : "").toContain("never reached ORC");
+      expect(session.alive()).toBe(false);
+      expect(session.waitingForHuman?.()).toBe(false);
+    } finally {
+      await session.close();
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+}, 30_000);
+
+test("an elicited question clears the surface guard while the answer outlasts the grace", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-question-guard-"));
+  try {
+    const { argvFile, session } = await startPeer(cwd, { acpQuestionSurfaceMs: 250 });
+    try {
+      await session.send("GUARDED-QUESTION");
+      const events: AgentEvent[] = [];
+      for await (const event of session.events()) {
+        events.push(event);
+        if (event.type === "question_request") {
+          // Answer later than the grace: the elicitation already cleared the guard.
+          await Bun.sleep(600);
+          session.respondQuestion?.(event.data.requestId, { target: ["Remote host"] });
+        }
+        if (event.type === "result" || event.type === "error") break;
+      }
+      expect(events.some((event) => event.type === "error")).toBe(false);
+      expect(events.some((event) => event.type === "result")).toBe(true);
+      expect(lastAnswer(argvFile)).toEqual({
+        scenario: "single",
+        result: { action: "accept", content: { target: "remote-value" } },
+      });
+      expect(session.alive()).toBe(true);
+    } finally {
+      await session.close();
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+}, 30_000);
 
 test("opencode preflight reports a missing install with actionable guidance", async () => {
   const backend = createBackend("opencode");

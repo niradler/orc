@@ -328,6 +328,14 @@ form schema is not guessed: ORC reports that the agent needs input in its native
 client and declines the form. ACP agents that do not use elicitation keep working
 unchanged.
 
+OpenCode's native `question` tool surfaces as an ACP form elicitation, so a
+question asked in any OpenCode chat — including a channel-originated one — becomes
+the same answerable card and durable inbox request (verified against OpenCode
+2.2.6 and 2.3.0). If a pending OpenCode question never reaches ORC over ACP (an
+older build that does not forward it), ORC stops the turn with a visible reason
+after a short grace period instead of waiting forever; update OpenCode on the
+execution host to restore answerable questions.
+
 Configure and authenticate providers in OpenCode on the execution host. In ORC, leave
 **Default model** blank to use OpenCode's selection, or enter the exact
 `provider/model` ID returned by `opencode models`. The profile model is applied to
