@@ -34,6 +34,7 @@ const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
 const update=(sessionId,u)=>emit({method:'session/update',params:{sessionId,update:u}});
 const answerFile=${JSON.stringify(`${argvFile}.answers`)};
 writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));
+writeFileSync(${JSON.stringify(`${argvFile}.env`)}, JSON.stringify({config:process.env.OPENCODE_CONFIG_CONTENT??null,db:process.env.ORC_DB_PATH??null,command:process.env.ORC_COMMAND??null}));
 let forms=0;
 const prompts=new Map();
 const held=new Map();
@@ -153,6 +154,31 @@ async function startPeer(
   });
   return { argvFile, session };
 }
+
+test("opencode spawns with the session-scoped rule configuration", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-env-"));
+  const config = JSON.stringify({
+    permissions: [{ action: "shell", resource: "*", effect: "ask" }],
+    plugins: [{ package: "C:/orc/opencode-plugin" }],
+  });
+  const { argvFile, session } = await startPeer(cwd, {
+    env: {
+      OPENCODE_CONFIG_CONTENT: config,
+      ORC_DB_PATH: join(cwd, "orc.db"),
+      ORC_COMMAND: '"C:/orc.exe"',
+    },
+  });
+  try {
+    expect(JSON.parse(readFileSync(`${argvFile}.env`, "utf8"))).toEqual({
+      config,
+      db: join(cwd, "orc.db"),
+      command: '"C:/orc.exe"',
+    });
+  } finally {
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
 test("opencode backend runs the builtin ACP command with a provider executable override", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-backend-"));
