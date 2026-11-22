@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { isAbsolute, join, posix, sep } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import {
@@ -21,7 +21,10 @@ import {
   AGENT_COMMAND_PATTERN,
   appendChatActivity,
   CHAT_HISTORY_PAGE_SIZE,
+  CHAT_PROVIDER_REFS_MAX,
+  CHAT_SESSION_BUSY_CODE,
   CHAT_SUBAGENT_DONE,
+  CHAT_TURN_HARD_LIMIT_MS,
   type ChatAgentCommands,
   ChatAgentCommandsSchema,
   ChatAnswersSchema,
@@ -34,6 +37,7 @@ import {
   type ChatModels,
   ChatModelsSchema,
   ChatPermissionModeSchema,
+  type ChatProviderRefSource,
   type ChatQuestion,
   ChatSettingsSchema,
   type ChatSpawn,
@@ -55,6 +59,7 @@ import {
   VOICE_TURN_INSTRUCTION,
   withOrcContext,
 } from "@orc/core/chat-context";
+import { chatTurnLeaseIsLive } from "@orc/core/chat-lease";
 import { ChatAgentOptionsMapSchema, unsupportedPermissionMode } from "@orc/core/chat-options";
 import { supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
@@ -113,6 +118,7 @@ import { queuedAnswers } from "../human-request-delivery.js";
 import { installPackageForChat } from "../lib/package-launch.js";
 import { createRouter } from "../lib/router.js";
 import { unbufferedSSE } from "../lib/sse.js";
+import { isDraining } from "../lifecycle.js";
 import {
   recordChatNotification,
   resolveChatNotification,
@@ -182,6 +188,15 @@ interface ChatRun {
   key: string;
   runId: string;
   startedAt: number;
+  /** Identity this turn resumed, so a shutdown flush never swaps it silently. */
+  runtimeIdAtStart?: string | null;
+  /** This turn continued on a fresh session because the pinned one was gone. */
+  handedOff?: boolean;
+  /** Resolves once the turn has settled its transcript and terminal lease, or
+   *  failed to save; either way it no longer holds the thread. A confirmed push
+   *  waits on this rather than `ended`. */
+  finalized: Promise<void>;
+  markFinalized: () => void;
   events: string[];
   /** Events from here on reconstruct the live turn; earlier prose is already stored. */
   replayFrom?: number;
@@ -212,12 +227,22 @@ const runs = new Map<string, ChatRun>();
  * never runs past `hardMs`. After a cooperative Stop, `stopGraceMs` bounds how long
  * we wait for the agent to end the turn before forcing the transport closed. Tests
  * shorten these through setChatTurnLimits.
+ *
+ * `leaseHeartbeatMs` debounces the durable liveness beat of a running turn lease.
+ * `shutdownWaitMs`/`shutdownStopMs` bound the daemon-shutdown drain: how long
+ * active turns get to finish on their own, then how long a cooperative Stop gets
+ * to record their outcome before the resumable identity is flushed as-is.
  */
 const turnLimits = {
   idleMs: 15 * 60000,
   recheckMs: 60_000,
-  hardMs: 4 * 60 * 60000,
+  hardMs: CHAT_TURN_HARD_LIMIT_MS,
   stopGraceMs: 10_000,
+  leaseHeartbeatMs: 15_000,
+  shutdownWaitMs: 3_000,
+  shutdownStopMs: 3_000,
+  /** How long a confirmed push waits for the running turn to stop and finalize. */
+  confirmBusyGraceMs: 12_000,
 };
 export function setChatTurnLimits(limits: Partial<typeof turnLimits>): () => void {
   const previous = { ...turnLimits };
@@ -321,6 +346,176 @@ function threadRun(threadId: string): [string, ChatRun] | undefined {
   return [...runs].find(([, run]) => run.threadId === threadId);
 }
 const active = activeTurns;
+
+type BusyTurn =
+  | { kind: "local"; run: ChatRun }
+  | { kind: "other-daemon"; pid: number | null }
+  | { kind: "reserved" };
+
+/**
+ * Who currently owns a turn for this thread. Only a turn this daemon is running
+ * can be taken over: a lease held by another live daemon on this machine cannot
+ * be stopped from here, and writing into its native session from a second
+ * process would open the same conversation twice.
+ */
+function busyTurnFor(thread: ChatThread, key: string): BusyTurn | undefined {
+  const local = threadRun(thread.id)?.[1];
+  if (local) return { kind: "local", run: local };
+  const lease = thread.turn;
+  if (lease && chatTurnLeaseIsLive(lease)) return { kind: "other-daemon", pid: lease.pid ?? null };
+  if (active.has(key)) return { kind: "reserved" };
+  return undefined;
+}
+
+/** Resolves true when the promise settles, false when the budget runs out. */
+function withTimeout(promise: Promise<void>, ms: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), Math.max(1, ms));
+    void promise.then(() => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
+}
+
+/**
+ * Settles a live turn before a new send starts. Without `confirmBusy` it answers
+ * the client's SESSION_BUSY contract; with it, the turn this daemon owns is
+ * stopped and this waits for its transcript and terminal lease to be saved. The
+ * returned thread is the one the caller must continue from: the stopped turn's
+ * assistant message and final lease are only on disk after that save.
+ *
+ * A turn owned by another live daemon cannot be stopped from here, and writing
+ * into its native session from a second process would open the conversation
+ * twice, so it is refused either way.
+ */
+async function settleBusyTurn(
+  thread: ChatThread,
+  confirmBusy: boolean | undefined,
+): Promise<ChatThread> {
+  const keyOf = (value: ChatThread) =>
+    value.runtimeId ? turnKey(value.host, value.backend, value.runtimeId) : value.id;
+  const busy = busyTurnFor(thread, keyOf(thread));
+  if (!busy) return thread;
+  const busyError = () =>
+    new ConflictError("This session is already responding.", CHAT_SESSION_BUSY_CODE, {
+      canTakeOver: busy.kind === "local",
+      reason: busy.kind,
+      ...(busy.kind === "other-daemon" && busy.pid ? { pid: busy.pid } : {}),
+    });
+  if (!confirmBusy) throw busyError();
+  if (busy.kind !== "local")
+    throw new ConflictError(
+      busy.kind === "other-daemon"
+        ? `Another ORC daemon${busy.pid ? ` (pid ${busy.pid})` : ""} owns the live turn in this conversation. Pushing in would open a second agent session on the same conversation. Wait for it to finish, or stop that daemon first.`
+        : "This session is reserved by another request. Wait for it to finish.",
+      CHAT_SESSION_BUSY_CODE,
+      { canTakeOver: false },
+    );
+  busy.run.stop();
+  // `finalized`, not `ended`: the turn has saved its transcript and lease.
+  if (!(await withTimeout(busy.run.finalized, turnLimits.confirmBusyGraceMs)))
+    throw new ConflictError(
+      "The running turn did not stop in time. Try again; the conversation stays resumable.",
+      CHAT_SESSION_BUSY_CODE,
+      { canTakeOver: true },
+    );
+  const settled = store().get(thread.id) ?? thread;
+  // Another request may have claimed the thread while the stop was finalizing.
+  const still = busyTurnFor(settled, keyOf(settled));
+  if (still)
+    throw new ConflictError("This session is already responding.", CHAT_SESSION_BUSY_CODE, {
+      canTakeOver: still.kind === "local",
+    });
+  return settled;
+}
+
+/** A native identity must look like one before it is trusted on disk. */
+const NATIVE_SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
+
+/** Written into the transcript when a turn continues on a fresh session. */
+const CHAT_RECOVERY_NOTICE =
+  "This conversation's agent session was no longer available, so it continues on a fresh session with the stored transcript.";
+
+/** A ref is `resumed` only when this turn continued the identity it started with. */
+function providerRefSource(
+  runtimeIdAtStart: string | null | undefined,
+  handedOff: boolean | undefined,
+): ChatProviderRefSource {
+  return runtimeIdAtStart && !handedOff ? "resumed" : "started";
+}
+
+/**
+ * Records an attachment to a native session in the thread's ref history. Refs
+ * are deduplicated by identity and kept most-recent-last: a resume refreshes
+ * the entry instead of growing the array, while a provider switch keeps the old
+ * ref because it may still be resumable.
+ */
+function attachProviderRef(
+  thread: ChatThread,
+  runtimeId: string,
+  source: ChatProviderRefSource,
+): void {
+  const refs = (thread.providerRefs ?? []).filter(
+    (ref) =>
+      !(
+        ref.backend === thread.backend &&
+        (ref.host ?? null) === (thread.host ?? null) &&
+        ref.runtimeId === runtimeId
+      ),
+  );
+  refs.push({
+    backend: thread.backend,
+    host: thread.host,
+    runtimeId,
+    cwd: thread.cwd,
+    attachedAt: Date.now(),
+    source,
+  });
+  thread.providerRefs = refs.slice(-CHAT_PROVIDER_REFS_MAX);
+}
+
+/**
+ * Write-through of the resumable identity: the moment a backend exposes its
+ * native id it goes to disk (targeted json_set, no message rewrite), so a crash
+ * before the terminal result can never orphan the thread from its session. A
+ * failed write is logged, not fatal: the turn-end save retries it.
+ */
+function persistProviderRef(thread: ChatThread, runId: string): void {
+  try {
+    store().setRuntimeRef(
+      thread.id,
+      runId,
+      thread.turn?.epoch ?? 0,
+      thread.runtimeId,
+      thread.providerRefs ?? [],
+    );
+  } catch (error) {
+    logger.warn("Provider ref write-through failed", { error, threadId: thread.id, runId });
+  }
+}
+
+/**
+ * Pins the session's current native id (if the backend already exposes one)
+ * into the thread and writes it through. `source` records how this turn
+ * attached: resuming the pinned identity, or starting/forking a fresh one.
+ * A session that reports a DIFFERENT id than the thread's pinned one never
+ * overwrites it here: the result-event guard owns identity replacement, so a
+ * silent provider swap cannot steal the durable ref mid-turn.
+ */
+function writeThroughRuntimeId(
+  thread: ChatThread,
+  runId: string,
+  session: AgentSession | null,
+  source: ChatProviderRefSource,
+): void {
+  const nativeId = session?.getRuntimeSessionId?.();
+  if (!nativeId || !NATIVE_SESSION_ID_PATTERN.test(nativeId)) return;
+  if (thread.runtimeId && thread.runtimeId !== nativeId) return;
+  thread.runtimeId = nativeId;
+  attachProviderRef(thread, nativeId, source);
+  persistProviderRef(thread, runId);
+}
 const params = z.object({ id });
 const modelCatalogs = new Map<string, { at: number; result: Promise<ChatModels> }>();
 let modelRequests = 0;
@@ -1113,7 +1308,7 @@ type Continuation = {
 
 function buildContinuation(
   messages: ChatMessage[],
-  kind: "switch" | "fork" = "switch",
+  kind: "switch" | "fork" | "recovery" = "switch",
 ): Continuation {
   const entries = messages
     .map(continuationEntry)
@@ -1163,7 +1358,9 @@ function buildContinuation(
   const intro =
     kind === "fork"
       ? "[ORC fork] This chat was forked from another ORC conversation. It starts without the previous native session. Continue the same work from the history below, then handle the new user message. Tool calls are summarized; do not repeat the history unless asked."
-      : "[ORC account switch] This chat moved to another provider account, so the previous native session is unavailable. Continue the same work from the history below, then handle the new user message. Tool calls are summarized; do not repeat the history unless asked.";
+      : kind === "recovery"
+        ? "[ORC recovery] This conversation could not resume its previous agent session, so it continues on a fresh one. The history below is the conversation so far. Continue the same work, then handle the new user message. Tool calls are summarized; do not repeat the history unless asked. Before repeating an external side effect (a push, a filed issue, a sent message), check whether it already happened."
+        : "[ORC account switch] This chat moved to another provider account, so the previous native session is unavailable. Continue the same work from the history below, then handle the new user message. Tool calls are summarized; do not repeat the history unless asked.";
   const prompt = [
     intro,
     "",
@@ -1184,7 +1381,7 @@ function buildContinuation(
 
 function continuationPrompt(
   messages: ChatMessage[],
-  kind: "switch" | "fork" = "switch",
+  kind: "switch" | "fork" | "recovery" = "switch",
 ): string | undefined {
   return buildContinuation(messages, kind).prompt;
 }
@@ -2161,6 +2358,8 @@ const requestSchema = z
     permissionMode: ChatPermissionModeSchema.optional(),
     // The composer's send preference, so a change made before the first message sticks.
     sendWhileRunning: z.enum(["steer", "queue"]).optional(),
+    // Confirms pushing into a session whose turn is still live (SESSION_BUSY contract).
+    confirmBusy: z.boolean().optional(),
     agentOptions: ChatAgentOptionsMapSchema.optional(),
     // Where the user is chatting from. Sent to the agent only; the stored message stays the user's text.
     context: ChatTurnContextSchema.optional(),
@@ -2254,11 +2453,20 @@ app.openapi(
 
 const startingMessages = new Set<string>();
 
+function drainingError(): OrcError {
+  return new OrcError(
+    "The daemon is shutting down and stopped accepting new turns. Send this again once it restarts; the conversation stays resumable.",
+    "DAEMON_DRAINING",
+    503,
+  );
+}
+
 async function streamChat(
   c: Context,
   body: z.infer<typeof requestSchema>,
   uploads: UploadFile[] = [],
 ) {
+  if (isDraining()) throw drainingError();
   const remote = body.threadId ? null : parseRemoteTarget(body.workspace?.host);
   if (remote) {
     if (uploads.length)
@@ -2298,10 +2506,20 @@ async function openChat(
   spawnedBy?: ChatSpawn,
   toolAllowlist?: string[],
 ): Promise<ChatRun> {
-  const thread = body.threadId
+  let thread = body.threadId
     ? requireThread(body.threadId)
     : await newThread(body.agent, body.model, undefined, body.workspace, body.providerId);
   if (!body.threadId && body.projectId) thread.projectId = body.projectId;
+  // Settle a confirmed push into a live turn before anything below reads the
+  // transcript: the stopped turn's own save lands first, and this request starts
+  // from the reloaded thread instead of a snapshot taken before the wait.
+  if (body.threadId) {
+    // A provider switch cannot ride a live turn whatever the send mode: reject it
+    // with the switch reason the client shows, not the generic busy answer.
+    if (body.providerId && body.providerId !== thread.config.providerId && threadRun(thread.id))
+      throw new ConflictError("Wait for the current response before switching providers.");
+    thread = await settleBusyTurn(thread, body.confirmBusy);
+  }
   if (!body.threadId && spawnedBy) thread.spawnedBy = spawnedBy;
   if (!body.threadId && toolAllowlist) thread.toolAllowlist = toolAllowlist;
   if (body.threadId && body.projectId && body.projectId !== thread.projectId)
@@ -2339,8 +2557,9 @@ async function openChat(
   if (!body.threadId && body.sendWhileRunning !== undefined)
     thread.config.sendWhileRunning = body.sendWhileRunning;
   // The switch mutates the shared thread, so every check that can reject the request
-  // runs first: from the busy check below to beginTurn's reservation there must be no
-  // await, or concurrent sends could move the conversation under each other.
+  // runs first — including the live-turn settlement above. From here to beginTurn's
+  // reservation there must be no await, or concurrent sends could move the
+  // conversation under each other.
   let continuation: string | undefined;
   if (body.threadId && body.providerId && body.providerId !== thread.config.providerId) {
     const profile = providerForAgent(thread.config.agent, body.providerId);
@@ -2387,16 +2606,20 @@ async function openChat(
     continuation ??= continuationPrompt(thread.messages, "fork");
   // The handoff briefing rides the first real turn; /compact must not consume it.
   if (body.threadId) continuation = consumeHandoffBriefing(thread, input, continuation);
-  // A turn that ended cleanly without establishing a native session — a Pi
-  // extension-command turn, which Pi only persists once the transcript holds a
-  // message — is safe to continue: the next send starts a fresh native session and
-  // there is no prior native context to lose. A turn that failed holding no session
-  // is still treated as unsafe to resume.
+  // A turn that ended without establishing a native session — a Pi
+  // extension-command turn, an interrupted daemon, a provider that never
+  // reported an id — leaves no native context to lose, but the conversation is
+  // still worth continuing. Replay the stored transcript into a fresh session
+  // instead of refusing the send. A turn that failed holding no session takes
+  // the same path: there is nothing to corrupt, and the alternative is a chat
+  // that can never be used again. Only a clean stop or completion that left no
+  // session (a slash-command turn) skips the replay.
   const lastAssistant = [...thread.messages]
     .reverse()
     .find((message) => message.role === "assistant");
   const cleanSessionlessTurn =
     lastAssistant?.turn?.outcome === "completed" || lastAssistant?.turn?.outcome === "stopped";
+  let transcriptHandoffNow = false;
   if (
     body.threadId &&
     thread.messages.length &&
@@ -2405,16 +2628,22 @@ async function openChat(
     !cleanSessionlessTurn &&
     !thread.forkedFrom &&
     !thread.forkPending
-  )
-    throw new ConflictError(
-      "The previous turn did not establish a resumable session. Start a new chat.",
-    );
+  ) {
+    continuation ??= continuationPrompt(thread.messages, "recovery");
+    transcriptHandoffNow = true;
+    thread.recovery = {
+      at: Date.now(),
+      mode: "transcript_handoff",
+      reason: "The previous turn ended without a provider session.",
+    };
+  }
   if (body.model !== undefined) thread.config.model = body.model;
   if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
   const { run } = await beginTurn(thread, input, {
     context: body.context,
     messageId: body.clientMessageId,
     continuation,
+    recoveryNotice: transcriptHandoffNow,
     prepare: async () => {
       if (!body.threadId && body.workspace?.worktree) {
         const host = selectedTerminalHost(loadConfig(), thread.host);
@@ -2445,6 +2674,8 @@ type TurnSetup = {
   reserved?: boolean;
   messageId?: string | undefined;
   continuation?: string | undefined;
+  /** The turn continues on a fresh session and must say so in the transcript. */
+  recoveryNotice?: boolean | undefined;
   prepare?: () => Promise<SessionFile[]>;
 };
 
@@ -2453,6 +2684,9 @@ async function beginTurn(
   input: string,
   setup: TurnSetup = {},
 ): Promise<{ run: ChatRun; done: Promise<void> }> {
+  // A draining daemon finishes the turns it has and refuses new ones; the
+  // thread's resumable identity survives, so the retry after a restart lands.
+  if (isDraining()) throw drainingError();
   if (input.trim() === "/compact") {
     if (!thread.runtimeId)
       throw new ValidationError("Start a conversation before compacting context.");
@@ -2473,8 +2707,17 @@ async function beginTurn(
   if (JSON.stringify(thread.messages.slice(thread.importedMessages ?? 0)).length > 5000000)
     throw new ValidationError("This chat reached its history size limit. Start a new chat.");
   const key = thread.runtimeId ? turnKey(thread.host, thread.backend, thread.runtimeId) : thread.id;
-  if (!setup.reserved && (active.has(key) || threadRun(thread.id)))
-    throw new ConflictError("This session is already responding.");
+  if (!setup.reserved) {
+    // A confirmed push was settled before this thread was loaded; anything still
+    // live here is a race with another request, and the claim below is the last
+    // word — it refuses a lease that moved since this request observed it.
+    const busy = busyTurnFor(thread, key);
+    if (busy)
+      throw new ConflictError("This session is already responding.", CHAT_SESSION_BUSY_CODE, {
+        canTakeOver: busy.kind === "local",
+        reason: busy.kind,
+      });
+  }
   if (thread.spawnedBy?.prompt)
     throw new ConflictError("This session is queued to start; wait for it or stop it first.");
   if (runs.size >= 4)
@@ -2495,6 +2738,10 @@ async function beginTurn(
     finish = (failure) => (failure ? reject(new Error(failure)) : resolve());
   });
   done.catch(() => {});
+  let markFinalized = () => {};
+  const finalized = new Promise<void>((resolve) => {
+    markFinalized = resolve;
+  });
   const run: ChatRun = {
     session: null,
     permissions: new Map(),
@@ -2505,6 +2752,8 @@ async function beginTurn(
     key,
     runId,
     startedAt: Date.now(),
+    finalized,
+    markFinalized: () => markFinalized(),
     events: [],
     pending: new Map(),
     listeners: new Set(),
@@ -2553,6 +2802,7 @@ async function beginTurn(
     active.delete(key);
     runs.delete(runId);
     quietStops.delete(thread.id);
+    run.markFinalized();
     throw error;
   }
   thread.messages.push({
@@ -2607,15 +2857,40 @@ async function beginTurn(
     assistant.content = sealed.content + (assistant.content ? `\n\n${assistant.content}` : "");
     assistant.activity = [...(sealed.activity ?? []), ...(assistant.activity ?? [])].slice(-200);
   };
+  // The lease claims the turn durably before any provider work starts: a crash
+  // from here on is reconciled to `interrupted` at the next boot, never lost.
+  // `epoch` is the fence: every later write of this turn carries it, so a
+  // resurrected process or a second daemon on the same database cannot
+  // overwrite a newer turn's lease.
+  const runtimeIdAtStart = thread.runtimeId;
+  run.runtimeIdAtStart = runtimeIdAtStart;
   thread.updatedAt = Date.now();
+  // The epoch this request observed on the thread it loaded. The claim is a
+  // compare-and-set against exactly this value, so a competing request that
+  // lands first wins and this one starts no turn. A lease still recorded as
+  // `running` here is a leftover the busy check found no live owner for.
+  const observedEpoch = thread.turn?.epoch ?? 0;
+  let leaseEpoch: number;
   try {
-    store().save(thread);
+    leaseEpoch = store().claimTurn(
+      thread,
+      {
+        runId,
+        startedAt,
+        status: "running",
+        pid: process.pid,
+        host: hostname(),
+        lastHeartbeatAt: startedAt,
+      },
+      observedEpoch,
+    );
     retireChatNotifications(thread);
     changes.publish("sessions");
   } catch (error) {
     active.delete(key);
     runs.delete(runId);
     quietStops.delete(thread.id);
+    run.markFinalized();
     throw error;
   }
   let failure: string | null = null;
@@ -2624,6 +2899,8 @@ async function beginTurn(
   let noResumableSession = false;
   let agentDurationMs: number | undefined;
   let agentOutcome: "completed" | "stopped" | "failed" | undefined;
+  /** This turn continued on a fresh session because the old one was gone. */
+  let handedOff = false;
   let agentContextWindow: number | undefined;
   const execute = async () => {
     // Activity watchdog: a quiet turn is stopped, but a turn waiting for a
@@ -2647,9 +2924,24 @@ async function beginTurn(
       timedOut = true;
       run.stop();
     };
+    let lastLeaseBeat = startedAt;
     const touch = () => {
       clearTimeout(timer);
       timer = setTimeout(expire, turnLimits.idleMs);
+      // Debounced durable heartbeat so a lease's freshness survives a crash of
+      // this process; the beat is a targeted write, streaming never pays a save.
+      const now = Date.now();
+      if (now - lastLeaseBeat >= turnLimits.leaseHeartbeatMs) {
+        lastLeaseBeat = now;
+        if (thread.turn?.runId === runId && thread.turn.status === "running") {
+          thread.turn.lastHeartbeatAt = now;
+          try {
+            store().heartbeatTurnLease(thread.id, runId, thread.turn.epoch ?? 0, now);
+          } catch {
+            // A missed beat is harmless; the next activity retries.
+          }
+        }
+      }
     };
     touch();
     // Tracks whether a tool call interrupted the prose, so the next text starts a
@@ -2717,6 +3009,10 @@ async function beginTurn(
         runId,
       });
       await emit({ type: "turn", turn: { startedAt } });
+      // Say in the transcript that this turn continues on a fresh session, not
+      // only in the prompt: the user must be able to see why the agent has the
+      // history but not the session.
+      if (setup.recoveryNotice) await emit({ type: "system_status", text: CHAT_RECOVERY_NOTICE });
       if (ruleGap && !hasRuleGapNote(thread, ruleGap.message))
         await emit({ type: "system_status", text: ruleGap.message });
       if (mock) {
@@ -2863,11 +3159,47 @@ async function beginTurn(
               runId,
             });
         }
-        if (!run.session)
-          run.session = thread.runtimeId
-            ? await backend.resumeSession(thread.runtimeId, opts)
-            : await backend.startSession(opts);
+        if (!run.session) {
+          const resumeId = thread.runtimeId;
+          if (resumeId) {
+            try {
+              run.session = await backend.resumeSession(resumeId, opts);
+            } catch (error) {
+              if (stopped) return;
+              // The provider no longer has that session (deleted state, a
+              // different account, a worktree that moved). Keeping the id would
+              // fail every future send, so continue on a fresh session with the
+              // stored transcript as context — visibly, and only once per send.
+              const reason = error instanceof Error ? error.message : String(error);
+              thread.runtimeId = null;
+              delete thread.systemPromptDelivered;
+              setup.continuation ??= continuationPrompt(thread.messages.slice(0, -1), "recovery");
+              thread.recovery = {
+                at: Date.now(),
+                mode: "transcript_handoff",
+                reason: reason.slice(0, 500),
+              };
+              handedOff = true;
+              run.handedOff = true;
+              logger.warn("Chat session could not resume; continuing from the transcript", {
+                error,
+                threadId: thread.id,
+                runtimeId: resumeId,
+              });
+              await emit({ type: "system_status", text: CHAT_RECOVERY_NOTICE });
+              run.session = await backend.startSession(opts);
+            }
+          } else run.session = await backend.startSession(opts);
+        }
         if (stopped) return;
+        // Write the resumable identity through before the prompt is even sent:
+        // a crash from here on must find the native session on disk.
+        writeThroughRuntimeId(
+          thread,
+          runId,
+          run.session,
+          providerRefSource(runtimeIdAtStart, handedOff),
+        );
         // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
         const message =
@@ -2902,18 +3234,34 @@ async function beginTurn(
             if (agentOutcome === "failed") failure ??= "The agent could not complete the response.";
             if (
               event.data.runtimeSessionId &&
-              !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(event.data.runtimeSessionId)
+              !NATIVE_SESSION_ID_PATTERN.test(event.data.runtimeSessionId)
             )
               throw new Error("The agent returned an invalid session identity.");
+            // Compare against the identity this turn actually resumed: a fresh
+            // id pinned by the mid-turn write-through is this same session, and
+            // only a silent replacement of the RESUMED identity is a swap. A
+            // deliberate transcript handoff already cleared the old identity.
             if (
-              thread.runtimeId &&
+              runtimeIdAtStart &&
+              !handedOff &&
               event.data.runtimeSessionId &&
-              thread.runtimeId !== event.data.runtimeSessionId
+              runtimeIdAtStart !== event.data.runtimeSessionId
             )
               throw new Error(
                 "The agent returned a different session instead of resuming this conversation. The original session identity was kept.",
               );
             thread.runtimeId = event.data.runtimeSessionId ?? thread.runtimeId;
+            if (event.data.runtimeSessionId) {
+              // The result's identity is authoritative: write any correction
+              // (e.g. a compacted session roll) through at once, so a crash
+              // during finalization cannot lose it.
+              attachProviderRef(
+                thread,
+                event.data.runtimeSessionId,
+                providerRefSource(runtimeIdAtStart, handedOff),
+              );
+              persistProviderRef(thread, runId);
+            }
             if (!thread.sourceId && event.data.runtimeSessionId) await linkNativeSource(thread);
             // A backend may have resumed the session in a folder it moved to (an
             // OpenCode worktree); follow it so the next turn loads from there.
@@ -2933,6 +3281,14 @@ async function beginTurn(
               nativeKey = turnKey(thread.host, thread.backend, nativeId);
               if (nativeKey === key || active.has(nativeKey)) nativeKey = key;
               else active.add(nativeKey);
+              // Backends that expose their native id only once events flow get
+              // their write-through here, still before this event is emitted.
+              writeThroughRuntimeId(
+                thread,
+                runId,
+                run.session,
+                providerRefSource(runtimeIdAtStart, handedOff),
+              );
             }
           }
           if (event.type === "tool_use") toolsPending++;
@@ -2999,11 +3355,13 @@ async function beginTurn(
           await emit({
             type: "error",
             message:
-              "The agent ended before completing the turn. Start a new chat if the session cannot be resumed.",
+              "The agent ended before completing the turn. Your next message resumes the same session, or continues on a fresh one if the agent no longer has it.",
           });
         const sessionId = noResumableSession ? undefined : run.session?.getRuntimeSessionId?.();
-        if (!thread.runtimeId && sessionId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(sessionId))
+        if (!thread.runtimeId && sessionId && NATIVE_SESSION_ID_PATTERN.test(sessionId)) {
           thread.runtimeId = sessionId;
+          attachProviderRef(thread, sessionId, providerRefSource(runtimeIdAtStart, handedOff));
+        }
         // A backend may explicitly finish with no resumable native session (Pi only
         // persists a session once its transcript has a message). That is a valid
         // completion: there is no native history to lose, so the next send starts fresh.
@@ -3070,11 +3428,27 @@ async function beginTurn(
         ...(frozenUsage ? { usage: frozenUsage } : {}),
       };
       assistant.timestamp = finishedAt;
+      // The lease mirrors the turn's outcome. A lease this process no longer
+      // owns (a shutdown flush already wrote through) is left alone; the save
+      // below persists the terminal state with the transcript.
+      if (thread.turn?.runId === runId && thread.turn.status === "running")
+        thread.turn = {
+          ...thread.turn,
+          status: assistant.turn.outcome ?? "failed",
+          lastHeartbeatAt: finishedAt,
+        };
       // Do not pin a native id the backend explicitly reported as non-resumable;
       // there is no persisted session behind it, so the next send starts fresh.
       const nativeId = noResumableSession ? undefined : run.session?.getRuntimeSessionId?.();
-      if (!thread.runtimeId && nativeId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(nativeId))
+      if (noResumableSession && !runtimeIdAtStart && thread.runtimeId)
+        // The optimistic mid-turn write-through pinned an id the backend then
+        // disowned; drop the pin so the next send starts a fresh session. The
+        // providerRefs entry stays as honest attachment history.
+        thread.runtimeId = null;
+      if (!thread.runtimeId && nativeId && NATIVE_SESSION_ID_PATTERN.test(nativeId)) {
         thread.runtimeId = nativeId;
+        attachProviderRef(thread, nativeId, providerRefSource(runtimeIdAtStart, handedOff));
+      }
       // A confirmed non-command turn owns the instructions in the history of a
       // prompt-riding session, so later turns stop delivering them. A turn that
       // never reached the agent (no result), ran only a slash command, or left
@@ -3135,7 +3509,9 @@ async function beginTurn(
       // the turn died instead of finding a silently frozen conversation.
       if (timedOut) recordChatNotification(thread, runId, "failed");
       try {
-        store().save(thread);
+        // Fenced by the lease epoch: a newer turn that claimed this thread while
+        // this one was finalizing keeps its state instead of being overwritten.
+        store().saveTurn(thread, leaseEpoch);
         if (!stopped) publish(run, { type: "session", runtimeId: thread.runtimeId });
         if (!stopped && assistant.content)
           notify("chat", chatPush(thread, "Reply ready", truncate(assistant.content, 180)));
@@ -3144,7 +3520,8 @@ async function beginTurn(
         if (!stopped)
           publish(run, {
             type: "error",
-            message: "This response could not be saved. Start a new chat before continuing.",
+            message:
+              "This response could not be saved. The conversation up to its last saved turn is intact; send again to continue.",
           });
       } finally {
         active.delete(key);
@@ -3162,6 +3539,10 @@ async function beginTurn(
               ? "The response was stopped."
               : (failure ?? "The agent ended before completing the turn."),
         );
+        // Last step: a confirmed push waits on this, so the stopped turn's
+        // transcript and terminal lease are on disk before the next one claims
+        // the thread. `run.ended` is set much earlier and is not enough.
+        run.markFinalized();
       }
     }
   };
@@ -3361,6 +3742,9 @@ async function queueChild(
 let spawnsPending = true;
 
 function startPendingChildren(): void {
+  // A draining daemon leaves queued children queued: their prompt stays on the
+  // thread, so the next boot starts them instead of recording a start error.
+  if (isDraining()) return;
   if (runs.size >= 4 || !spawnsPending) return;
   let pending: ChatThread[];
   try {
@@ -3387,6 +3771,73 @@ function startPendingChildren(): void {
       store().save(saved);
       if (!saved.spawnedBy.cancelled) notifySpawner(saved, "start", "failed");
     });
+  }
+}
+
+/**
+ * Daemon-shutdown drain: active turns get a short window to finish on their
+ * own, then a cooperative Stop so the normal turn-end path records their
+ * transcript and terminal lease. A turn that will not end in time gets its
+ * resumable identity flushed as-is; its lease stays `running` on purpose so
+ * the next boot's reconcile records the interruption exactly once.
+ */
+export async function drainChatTurns(): Promise<void> {
+  if (runs.size === 0) return;
+  const quietUntil = Date.now() + turnLimits.shutdownWaitMs;
+  while (runs.size > 0 && Date.now() < quietUntil) await Bun.sleep(100);
+  if (runs.size === 0) return;
+  logger.info("Daemon shutdown stopping active chat turns", { count: runs.size });
+  for (const run of runs.values()) run.stop();
+  const stoppedUntil = Date.now() + turnLimits.shutdownStopMs;
+  while (runs.size > 0 && Date.now() < stoppedUntil) await Bun.sleep(100);
+  for (const run of runs.values()) flushTurnForShutdown(run);
+}
+
+function flushTurnForShutdown(run: ChatRun): void {
+  const thread = run.thread;
+  if (thread.turn?.runId !== run.runId || thread.turn.status !== "running") return;
+  try {
+    const nativeId = run.session?.getRuntimeSessionId?.();
+    // A handed-off turn abandoned its old identity on purpose: the new session is
+    // the one the next send must resume, so it is not a pin to protect.
+    const pinned = run.handedOff ? null : (run.runtimeIdAtStart ?? null);
+    // A shutdown must never swap the identity this turn resumed: the next send
+    // would continue a different native conversation than the transcript shows.
+    // Only a fresh turn (nothing pinned) adopts what the session reports, and a
+    // session that reports the pinned id is the same conversation.
+    if (nativeId && NATIVE_SESSION_ID_PATTERN.test(nativeId) && (!pinned || pinned === nativeId)) {
+      if (thread.runtimeId !== nativeId) thread.runtimeId = nativeId;
+      // A known ref stays exactly as it was: attachProviderRef would re-stamp
+      // attachedAt and move it to the end, claiming a re-attach that never happened.
+      const known = (thread.providerRefs ?? []).some(
+        (ref) =>
+          ref.backend === thread.backend &&
+          (ref.host ?? null) === (thread.host ?? null) &&
+          ref.runtimeId === nativeId,
+      );
+      if (!known) attachProviderRef(thread, nativeId, pinned ? "resumed" : "started");
+    } else if (nativeId && pinned && pinned !== nativeId) {
+      logger.warn("Shutdown kept the pinned session identity over a different reported id", {
+        runId: run.runId,
+        pinned,
+        reported: nativeId,
+      });
+      thread.runtimeId = pinned;
+    }
+    thread.turn = { ...thread.turn, lastHeartbeatAt: Date.now() };
+    store().persistTurnForShutdown(
+      thread.id,
+      run.runId,
+      thread.turn.epoch ?? 0,
+      thread.runtimeId,
+      thread.providerRefs ?? [],
+      thread.turn,
+      thread.messages,
+    );
+  } catch (error) {
+    // Durability does not depend on this flush: the mid-turn write-through
+    // already pinned the identity, and the next boot reconciles the lease.
+    logger.error("Shutdown could not persist the chat turn state", { error, runId: run.runId });
   }
 }
 

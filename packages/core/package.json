@@ -25,6 +25,7 @@
     "./coding-agents": "./src/coding-agents.ts",
     "./chat-commands": "./src/chat-commands.ts",
     "./chat-context": "./src/chat-context.ts",
+    "./chat-lease": "./src/chat-lease.ts",
     "./chat-options": "./src/chat-options.ts",
     "./chat-ui": "./src/chat-ui.ts",
     "./mcp-prompts": "./src/mcp-prompts.ts",

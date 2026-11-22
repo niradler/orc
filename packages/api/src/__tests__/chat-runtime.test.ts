@@ -9,7 +9,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AgentBackend,
@@ -34,7 +34,8 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
-import { setChatTurnLimits } from "../routes/chat";
+import { reconcileChatTurnLeases } from "../chat-recovery";
+import { drainChatTurns, setChatTurnLimits } from "../routes/chat";
 import type { createApp } from "../server";
 import { LIVE_CHAT_ID } from "../session-watcher";
 import { activeTurns, runChatTurn, turnKey } from "../sessions/turns";
@@ -726,7 +727,7 @@ describe("native chat runtime", () => {
       calls.length = 0;
     }
   });
-  test("a failed first turn cannot silently start a fresh agent on follow-up", async () => {
+  test("a failed first turn continues on a fresh agent with the transcript, not silently", async () => {
     failBeforeResult = true;
     const failed = await turn({
       messages: [{ role: "user", content: "fail before native identity" }],
@@ -735,15 +736,65 @@ describe("native chat runtime", () => {
     const opened = failed.events[0];
     if (opened?.type !== "thread") throw new Error("Missing thread");
     const count = calls.length;
+    // No native session was ever established, so nothing can be resumed; the
+    // follow-up replays the transcript into a fresh session instead of leaving
+    // the chat permanently unusable. The replay is explicit, and recorded on the
+    // thread so the UI can say the session was replaced.
+    const retried = await turn({
+      threadId: opened.thread.id,
+      messages: [{ role: "user", content: "follow up" }],
+    });
+    expect(retried.response.status).toBe(200);
+    expect(calls).toHaveLength(count + 1);
+    expect(calls[calls.length - 1]?.prompt).toContain("[ORC recovery]");
     expect(
-      (
-        await request("/chat/stream", {
-          threadId: opened.thread.id,
-          messages: [{ role: "user", content: "follow up" }],
-        })
-      ).status,
-    ).toBe(409);
-    expect(calls).toHaveLength(count);
+      retried.events.some(
+        (event) => event.type === "system_status" && event.text.includes("fresh session"),
+      ),
+    ).toBe(true);
+    const stored = (await (
+      await request(`/chat/threads/${opened.thread.id}`)
+    ).json()) as ChatThread;
+    expect(stored.recovery?.mode).toBe("transcript_handoff");
+    calls.length = 0;
+  });
+
+  test("a turn interrupted before it had a session replays the transcript", async () => {
+    const first = await turn({ messages: [{ role: "user", content: "start here" }] });
+    const opened = first.events.find((event) => event.type === "thread") as Extract<
+      ChatEvent,
+      { type: "thread" }
+    >;
+    // The next turn's user message and the daemon crash left no native session.
+    getSqlite()
+      .query(
+        `UPDATE chat_threads
+           SET data = json_set(data, '$.runtimeId', NULL, '$.turn', json(?))
+         WHERE id = ?`,
+      )
+      .run(
+        JSON.stringify({
+          runId: crypto.randomUUID(),
+          startedAt: Date.now() - 1_000,
+          status: "running",
+          pid: 2_147_483_647,
+          host: hostname(),
+          lastHeartbeatAt: Date.now() - 1_000,
+          epoch: 9,
+        }),
+        opened.thread.id,
+      );
+    await reconcileChatTurnLeases({ db: getSqlite() });
+    calls.length = 0;
+    const retried = await turn({
+      threadId: opened.thread.id,
+      messages: [{ role: "user", content: "continue after the crash" }],
+    });
+    expect(retried.response.status).toBe(200);
+    // `interrupted` is not "clean": with no session to resume, the stored
+    // transcript is the only context the fresh agent gets.
+    expect(calls[calls.length - 1]?.prompt).toContain("[ORC recovery]");
+    expect(calls[calls.length - 1]?.prompt).toContain("start here");
     calls.length = 0;
   });
   test("a first turn that failed before delivery keeps offering the chat instructions", async () => {
@@ -1752,13 +1803,30 @@ describe("native chat runtime", () => {
     });
     failResume = true;
     const count = calls.length;
-    const failed = await turn({
+    // A provider that lost the session no longer bricks the chat: the turn
+    // continues on a fresh session seeded with the stored transcript, and the
+    // recovery is recorded on the thread.
+    const recovered = await turn({
       threadId: prepared.id,
-      messages: [{ role: "user", content: "do not start fresh" }],
+      messages: [{ role: "user", content: "continue after a lost session" }],
     });
-    expect(failed.events).toContainEqual({ type: "error", message: "Native resume rejected" });
-    expect(calls.length).toBe(count);
     failResume = false;
+    expect(recovered.events).not.toContainEqual({
+      type: "error",
+      message: "Native resume rejected",
+    });
+    expect(calls.length).toBe(count + 1);
+    expect(calls[calls.length - 1]?.prompt).toContain("[ORC recovery]");
+    expect(calls[calls.length - 1]?.prompt).toContain("continue native work");
+    // The handoff is visible in the transcript, not only in the prompt.
+    expect(
+      recovered.events.some(
+        (event) => event.type === "system_status" && event.text.includes("fresh session"),
+      ),
+    ).toBe(true);
+    const handedOff = (await (await request(`/chat/threads/${prepared.id}`)).json()) as ChatThread;
+    expect(handedOff.recovery?.mode).toBe("transcript_handoff");
+    expect(handedOff.runtimeId).not.toBe("discovered-native");
   });
 
   test("rejects a stale stopped record when the Codex writer is still owned", async () => {
@@ -1983,6 +2051,145 @@ describe("native chat runtime", () => {
       ).toBe(true);
     } finally {
       hangTurn = undefined;
+      restore();
+    }
+  });
+
+  test("a busy session refuses an unconfirmed push and takes over on a confirmed one", async () => {
+    const restore = setChatTurnLimits({ confirmBusyGraceMs: 5_000 });
+    // The turn blocks on an approval with its native identity already pinned.
+    waitPermission = true;
+    let cancelReader: (() => Promise<void>) | undefined;
+    try {
+      const first = await request("/chat/stream", {
+        messages: [{ role: "user", content: "long job" }],
+      });
+      expect(first.status).toBe(200);
+      const reader = first.body?.getReader();
+      if (!reader) throw new Error("missing stream");
+      cancelReader = () => reader.cancel().catch(() => {});
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let threadId: string | undefined;
+      while (!threadId) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value);
+        for (const line of buffer.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          const event = JSON.parse(line.slice(5)) as ChatEvent;
+          if (event.type === "thread") threadId = event.thread.id;
+        }
+      }
+      expect(threadId).toBeDefined();
+      // Wait until the live turn has pinned its native identity, so the push has
+      // a session to resume instead of a fresh start.
+      // (activeTurns also holds the native key once the first event flows, so
+      // only the pin is asserted here, not the key count.)
+      let stored: ChatThread | undefined;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        stored = (await (await request(`/chat/threads/${threadId}`)).json()) as ChatThread;
+        if (stored.runtimeId) break;
+        await Bun.sleep(20);
+      }
+      // Assert the pin here: without it the confirmed push starts a fresh
+      // session, and the failure would surface later as a misleading id diff.
+      expect(stored?.runtimeId).toBe("early-native-fixture");
+
+      // Unconfirmed: the client's queue contract — a plain SESSION_BUSY it can
+      // recognize — and the turn keeps running.
+      const refused = await request("/chat/stream", {
+        threadId,
+        messages: [{ role: "user", content: "push in" }],
+      });
+      expect(refused.status).toBe(409);
+      expect(((await refused.json()) as { error: string }).error).toBe(
+        "This session is already responding.",
+      );
+
+      // Confirmed: the live turn is stopped and this send resumes the same native
+      // session instead of opening a second one.
+      waitPermission = false;
+      const takenOver = await turn({
+        threadId,
+        messages: [{ role: "user", content: "push in" }],
+        confirmBusy: true,
+      });
+      expect(takenOver.response.status).toBe(200);
+      expect(calls[calls.length - 1]?.id).toBe("early-native-fixture");
+      expect(takenOver.events.some((event) => event.type === "error")).toBe(false);
+      // The stopped turn's record is not lost: it was finalized and saved before
+      // the new turn claimed the thread, and its assistant message stays above
+      // the pushed message.
+      const afterTakeover = (await (
+        await request(`/chat/threads/${threadId}`)
+      ).json()) as ChatThread;
+      const assistants = afterTakeover.messages.filter((entry) => entry.role === "assistant");
+      expect(assistants.length).toBe(2);
+      expect(assistants[0]?.turn?.outcome).toBe("stopped");
+      const lastUser = [...afterTakeover.messages].reverse().find((entry) => entry.role === "user");
+      expect(lastUser?.content).toBe("push in");
+      expect(afterTakeover.runtimeId).toBe("early-native-fixture");
+      // The stopped turn released the thread: the next test starts with no run.
+      for (let attempt = 0; attempt < 100 && activeTurns.size > 0; attempt++) await Bun.sleep(20);
+      expect(activeTurns.size).toBe(0);
+    } finally {
+      waitPermission = false;
+      await cancelReader?.();
+      calls.length = 0;
+      restore();
+    }
+  });
+
+  test("a daemon drain stops the live turn and keeps its pinned session", async () => {
+    const restore = setChatTurnLimits({ shutdownWaitMs: 50, shutdownStopMs: 2_000 });
+    waitPermission = true;
+    let cancelReader: (() => Promise<void>) | undefined;
+    try {
+      const first = await request("/chat/stream", {
+        messages: [{ role: "user", content: "long job" }],
+      });
+      expect(first.status).toBe(200);
+      const reader = first.body?.getReader();
+      if (!reader) throw new Error("missing stream");
+      cancelReader = () => reader.cancel().catch(() => {});
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let threadId: string | undefined;
+      while (!threadId) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value);
+        for (const line of buffer.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          const event = JSON.parse(line.slice(5)) as ChatEvent;
+          if (event.type === "thread") threadId = event.thread.id;
+        }
+      }
+      expect(threadId).toBeDefined();
+      let stored: ChatThread | undefined;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        stored = (await (await request(`/chat/threads/${threadId}`)).json()) as ChatThread;
+        if (stored.runtimeId) break;
+        await Bun.sleep(20);
+      }
+      const pinned = stored?.runtimeId;
+      if (!pinned) throw new Error("the live turn did not pin its native session");
+
+      // A daemon stop drains the live turn instead of leaving its lease running.
+      await drainChatTurns();
+
+      const drained = (await (await request(`/chat/threads/${threadId}`)).json()) as ChatThread;
+      expect(drained.turn?.status).not.toBe("running");
+      // The identity the turn resumed survives the drain: the next send continues
+      // that native session rather than starting a second conversation.
+      expect(drained.runtimeId).toBe(pinned);
+      for (let attempt = 0; attempt < 100 && activeTurns.size > 0; attempt++) await Bun.sleep(20);
+      expect(activeTurns.size).toBe(0);
+    } finally {
+      waitPermission = false;
+      await cancelReader?.();
+      calls.length = 0;
       restore();
     }
   });
@@ -2479,10 +2686,12 @@ describe("native chat runtime", () => {
       expect(stoppedThread.runtimeId).toBe("native-fixture");
       // The next send continues the same native session instead of starting a new one.
       waitPermission = false;
+      calls.length = 0;
       await turn({
         threadId: opened.thread.id,
         messages: [{ role: "user", content: "continue after interrupt" }],
       });
+      // The resumed id is the one the terminal result recorded, not the early pin.
       expect(calls[calls.length - 1]?.id).toBe("native-fixture");
     } finally {
       interruptible = false;
@@ -2592,10 +2801,12 @@ describe("native chat runtime", () => {
       expect(stoppedThread.messages.at(-1)?.turn?.outcome).toBe("stopped");
       expect(stoppedThread.runtimeId).toBe("native-fixture");
       waitPermission = false;
+      calls.length = 0;
       await turn({
         threadId: opened.thread.id,
         messages: [{ role: "user", content: "continue after claude stop" }],
       });
+      // The result's identity is the one the next turn resumes.
       expect(calls[calls.length - 1]?.id).toBe("native-fixture");
     } finally {
       registerBackend("claude", () => originalClaude);
@@ -2776,7 +2987,8 @@ describe("native chat runtime", () => {
       expect(result.response.status).toBe(200);
       expect(result.events).toContainEqual({
         type: "error",
-        message: "This response could not be saved. Start a new chat before continuing.",
+        message:
+          "This response could not be saved. The conversation up to its last saved turn is intact; send again to continue.",
       });
     }
   });

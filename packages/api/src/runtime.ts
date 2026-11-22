@@ -11,12 +11,19 @@ import {
   startKnowledgeMaintenance,
 } from "@orc/knowledge";
 import type { Server, ServerWebSocket, WebSocketHandler } from "bun";
+import { reconcileChatTurnLeases } from "./chat-recovery.js";
 import { startGithubIssueSync } from "./git/issue-sync.js";
 import { startHumanRequestDelivery } from "./human-request-delivery.js";
 import { withKbJobHooks } from "./kb-jobs.js";
-import { registerRestartHandler, runShutdownHooks } from "./lifecycle.js";
+import {
+  beginDrain,
+  registerRestartHandler,
+  registerShutdownHandler,
+  runShutdownHooks,
+} from "./lifecycle.js";
 import { startNotificationMaintenance } from "./notifications.js";
 import { startAttentionPush, startJobPush } from "./push/service.js";
+import { drainChatTurns } from "./routes/chat.js";
 import { createApp } from "./server.js";
 import { startSessionMessageDelivery } from "./session-message-delivery.js";
 import { reconcileSessionProjects, startSessionWatcher } from "./session-watcher.js";
@@ -39,6 +46,23 @@ try {
 // Browser e2e only: a deterministic goal worker so the loop test needs no paid agent.
 if (process.env.ORC_E2E_GOAL_FIXTURE === "1") await import("./e2e-goal-fixture.js");
 const app = createApp();
+
+// Settle chat turn leases the previous daemon left running BEFORE the port
+// opens. A turn the previous daemon could not finish is recorded as
+// interrupted, and its native session stays resumable. Doing this after
+// `Bun.serve` would let an early client read a `running` lease it can never
+// observe finishing, and send into it. Idempotent, so repeated boots are safe.
+// A failure here must not keep the daemon down: the send path settles a stale
+// lease on its own, so the API still comes up.
+try {
+  const leaseReconcile = await reconcileChatTurnLeases();
+  if (leaseReconcile.interrupted > 0)
+    logger.info(
+      `Reconciled ${leaseReconcile.interrupted} chat turn(s) interrupted by the previous daemon`,
+    );
+} catch (error) {
+  logger.error("Chat turn lease reconcile failed; the send path will settle them", error);
+}
 
 type SocketData = TerminalSocketData | VoiceSocketData;
 const socketHandler = (ws: ServerWebSocket<SocketData>) =>
@@ -106,11 +130,16 @@ async function shutdown(signal: string, exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info(`Received ${signal}, shutting down…`);
-  const forceExit = setTimeout(
-    () => process.exit(exitCode === RESTART_EXIT_CODE ? RESTART_EXIT_CODE : 1),
-    10000,
-  );
+  // Draining first: new turns are refused while active ones finish and persist
+  // their resumable identity, so a stop can never orphan a conversation.
+  beginDrain();
+  // A stop that overruns its drain budget is still an intentional stop: exiting
+  // non-zero here would make a supervisor (or systemd's Restart=on-failure)
+  // resurrect a daemon the operator asked to stop. The resumable state is
+  // already durable, so the requested code is always the honest one.
+  const forceExit = setTimeout(() => process.exit(exitCode), 10000);
   forceExit.unref();
+  await drainChatTurns().catch((error) => logger.error("Chat turn drain failed", error));
   stopSessionWatcher();
   stopAttentionPush();
   stopJobPush();
@@ -155,6 +184,7 @@ process.on("message", (message: unknown) => {
     void shutdown("supervisor");
 });
 registerRestartHandler(() => shutdown("restart", RESTART_EXIT_CODE));
+registerShutdownHandler(() => shutdown("api-shutdown"));
 
 // Unhandled rejections are usually recoverable (a stray fire-and-forget promise)
 // — log and keep serving rather than crash on an opaque trace.

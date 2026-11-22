@@ -484,7 +484,11 @@ export const ChatTurnSchema = z.object({
   startedAt: z.number().finite().nonnegative(),
   finishedAt: z.number().finite().nonnegative().optional(),
   durationMs: z.number().finite().nonnegative().optional(),
-  outcome: z.enum(["completed", "stopped", "failed"]).optional(),
+  // `interrupted` is a turn the daemon could not finish (restart, crash, killed
+  // process). It is distinct from `stopped` (the user stopped it) and `failed`
+  // (the agent errored): the turn record tells the reader that the work was cut
+  // off and that the conversation resumes where it left off.
+  outcome: z.enum(["completed", "stopped", "failed", "interrupted"]).optional(),
   // Frozen at turn end so a finished turn's token figure does not keep drifting
   // as the session records later requests.
   usage: z
@@ -642,6 +646,76 @@ export const ChatSpawnSchema = z.object({
 });
 export type ChatSpawn = z.infer<typeof ChatSpawnSchema>;
 
+/**
+ * The thread-level lease over the current turn. Written at turn start, made
+ * terminal at turn end, and reconciled at daemon boot: a `running` lease whose
+ * pid/host is gone is `interrupted`, never `failed` — the native session behind
+ * it survives and the next send resumes it.
+ */
+export const ChatTurnLeaseStatusSchema = z.enum([
+  "running",
+  "completed",
+  "failed",
+  "stopped",
+  "interrupted",
+]);
+export type ChatTurnLeaseStatus = z.infer<typeof ChatTurnLeaseStatusSchema>;
+/** A chat turn is force-ended at this age, whatever the agent is doing. */
+export const CHAT_TURN_HARD_LIMIT_MS = 4 * 60 * 60 * 1000;
+/**
+ * A `running` lease older than this cannot still have a live writer: the daemon
+ * has already force-ended the turn at its hard limit, so anything older is a
+ * leftover from a process that died. Recovery also uses it to discount a
+ * recycled OS pid, which would otherwise present a dead lease as live forever.
+ */
+export const CHAT_TURN_LEASE_STALE_MS = CHAT_TURN_HARD_LIMIT_MS + 61_000;
+export const ChatTurnLeaseSchema = z.object({
+  runId: z.string().uuid(),
+  startedAt: z.number().finite().nonnegative(),
+  status: ChatTurnLeaseStatusSchema,
+  lastHeartbeatAt: z.number().finite().nonnegative().optional(),
+  /** Daemon that owns the turn; with `pid` it proves or disproves liveness. */
+  host: z.string().max(255).optional(),
+  pid: z.number().int().positive().optional(),
+  /**
+   * Monotonic fencing token, bumped by every turn that claims the thread. A
+   * mid-turn or terminal write carries the epoch it was issued under, so a
+   * resurrected process or a second daemon sharing this database cannot
+   * overwrite a newer turn's lease. Records written before the field existed
+   * read as epoch 0.
+   */
+  epoch: z.number().int().nonnegative().optional(),
+});
+export type ChatTurnLease = z.infer<typeof ChatTurnLeaseSchema>;
+
+/**
+ * A native session identity this thread attached to. The history is kept: an
+ * older ref may still be resumable after a provider switch or a failed resume,
+ * so recovery can try it instead of starting from nothing. Most recent last.
+ */
+export const CHAT_PROVIDER_REFS_MAX = 20;
+export const ChatProviderRefSourceSchema = z.enum(["started", "resumed"]);
+export type ChatProviderRefSource = z.infer<typeof ChatProviderRefSourceSchema>;
+export const ChatProviderRefSchema = z.object({
+  backend: z.string(),
+  host: z.string().nullable(),
+  runtimeId: z.string(),
+  cwd: z.string(),
+  attachedAt: z.number().finite().nonnegative(),
+  source: ChatProviderRefSourceSchema,
+});
+export type ChatProviderRef = z.infer<typeof ChatProviderRefSchema>;
+
+/** The last recovery this thread went through, for the UI's recovery notice. */
+export const ChatRecoveryModeSchema = z.enum(["transcript_handoff"]);
+export type ChatRecoveryMode = z.infer<typeof ChatRecoveryModeSchema>;
+export const ChatRecoverySchema = z.object({
+  at: z.number().finite().nonnegative(),
+  mode: ChatRecoveryModeSchema,
+  reason: z.string().max(500),
+});
+export type ChatRecovery = z.infer<typeof ChatRecoverySchema>;
+
 export const ChatThreadSchema = z.object({
   id: z.string().uuid(),
   title: z.string(),
@@ -677,6 +751,14 @@ export const ChatThreadSchema = z.object({
   // A moved session's one-time handoff briefing; the first turn delivers it and
   // clears it, so later turns never repeat it.
   handoffBriefing: z.string().max(16000).optional(),
+  // The current/last turn's lease. A daemon crash leaves it `running`; the next
+  // boot reconciles it to `interrupted` without touching the resumable identity.
+  turn: ChatTurnLeaseSchema.optional(),
+  // Every native identity this thread attached to, most recent last. Never lose
+  // a ref that may still be resumable.
+  providerRefs: z.array(ChatProviderRefSchema).max(CHAT_PROVIDER_REFS_MAX).optional(),
+  // The last recovery applied to this thread (resume, discovery, transcript handoff).
+  recovery: ChatRecoverySchema.optional(),
   spawnedBy: ChatSpawnSchema.optional(),
   updatedAt: z.number(),
 });
@@ -702,6 +784,13 @@ export function parseChatThread(value: unknown): ChatThread {
     }),
   });
 }
+/**
+ * The only send refusal the always-resumable contract allows: a genuinely live
+ * run owns the session and the client did not confirm pushing into it. Clients
+ * recognize it by this code and decide whether to offer the confirmation.
+ */
+export const CHAT_SESSION_BUSY_CODE = "SESSION_BUSY";
+
 export const ChatEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn"), turn: ChatTurnSchema }),
   z.object({ type: z.literal("narration"), text: z.string() }),
