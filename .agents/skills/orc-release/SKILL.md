@@ -19,7 +19,9 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
    - Check `gh auth status` and `docker info`. Check `autho status --json` shows the
      vault unlocked.
 2. **Dedicated worktree.** `git worktree add --detach .orc/worktrees/release-<v> origin/master`
-   then `bun install` in it. Never release from the main checkout.
+   then `bun install` in it. Never release from the main checkout. Reusing the previous
+   release worktree is cheaper and allowed: `git -C .orc/worktrees/release-<old> fetch`,
+   `git checkout --detach origin/master`, `bun install` (a no-op when deps did not move).
 3. **Gate locally before tagging.** Run `bunx biome check ./packages ./scripts` and
    `bun run ci:full` with the gate overrides below. Fix failures in a PR, merge it,
    then reset the worktree to the new origin/master.
@@ -30,7 +32,11 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
    `bun install --lockfile-only`, `git commit -m "chore: release v<v>"`), write
    `.orc/release-state.json` with `completed: ["checks","bump"]`, `commit`, `target`,
    then `--resume --yes`. `validate()` only runs on a fresh start, so the suite is not
-   repeated.
+   repeated. The same waiver applies to the tag push, because a version bump makes the
+   pre-push `ci:pr` treat every package as changed and run everything: skip only that
+   process's hooks with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath
+   GIT_CONFIG_VALUE_0=<empty dir>` exported in the release shell. Never edit
+   `core.hooksPath` in git config, and never skip the hook when the suite was not run.
 4. **Release** from PowerShell, in the background, with output going to a scratchpad log.
    Export the gate overrides for the release process too — `bun run release` inherits
    the environment and otherwise runs the default four shards, which is where the
@@ -77,8 +83,9 @@ Read `.claude/docs/releases.md` (last handoff) for the previous release's state.
      Absent `daemon.pid`/`daemon.json`/`orc.db-wal`/`-shm` in the listing are
      expected: graceful stop removes them. Then start orc again.
    - Tell Nir not to touch orc during the window: a manual Cockpit restart mid-tar
-     fails it with "file changed as we read it" and leaves orc down. Keep an ERR trap
-     that restarts orc on any abort, and prove consistency by hashing the archived
+     fails it with "file changed as we read it" and leaves orc down. Keep an `EXIT` trap
+     that restarts orc (idempotent `docker start`; an `ERR` trap also fires on probe
+      failures), and prove consistency by hashing the archived
      `orc.db` against `migration-check.db` (a start after the copy is harmless).
 6. **Lab rollout after Docker publishes.**
    - Pull `niradler/orc:<v>@sha256:<digest>`; check `arch=amd64` and label
@@ -146,7 +153,11 @@ Speed rules:
 | Smoke health 404 or anonymous requests return 200 | Probed `/health` instead of `/api/health`; or ran without `--env-file orc.env` → open mode | Use `/api/health`; pass the env-file so auth matches prod |
 | Public origin check returns a Cloudflare login page | `orc.niradler.com` sits behind CF Access | Send `CF-Access-Client-Id`/`-Secret` from autho `homelab-access` |
 | Log stays empty during the release | autho buffers child output | Watch `.orc/release-state.json` `completed[]` |
-| `tar: .: file changed as we read it`, orc left down | Someone restarted orc (Cockpit) inside the stopped window | ERR trap restarts orc on abort; hash archived `orc.db` vs `migration-check.db` to prove the copy predates the restart; ask Nir for hands-off |
+| `tar: .: file changed as we read it`, orc left down | Someone restarted orc (Cockpit) inside the stopped window | Restart orc from an `EXIT` trap (idempotent `docker start`); hash archived `orc.db` vs `migration-check.db` to prove the copy predates the restart; ask Nir for hands-off |
+| orc restarts mid-backup even though its stop was fine | `trap ... ERR` also fires on a failing *probe*, not just an abort | `trap ... EXIT` in the remote backup script and make the restart idempotent |
+| `pragma integrity_check` on the copied DB: `SQLITE_READONLY_DIRECTORY` | The copy is WAL, so opening it writes the directory; a `chmod 644` copy in a root-owned dir cannot | Extract/copy to a writable dir (`chmod 777`), open the copy read-write |
+| Backup membership says `orc.db` or `knowledge.db` missing though both are archived | The tar is built with `-C /srv/docker-data orc`, so the paths are `orc/orc.db`, and the knowledge DB is `orc/.orc/knowledge.db` (there is no top-level `orc/knowledge.db`) | Match the real paths (`orc/orc.db`, `orc/.orc/knowledge.db`, `orc/config.json`, `orc/secret.key`) |
+| `docker events --since <ISO Z> --until <ISO Z>` streams until the tool times out, or returns only `exec_*` lines | Docker parses offset-less/timestamp bounds in host local time and its history is incomplete | Don't wait on events: prove the window with `docker inspect orc --format '{{.State.StartedAt}} {{.RestartCount}}'` plus the archive-vs-`migration-check.db` hash |
 | Full gate fails a different random subset each run (hook timeout, `idle` vs `ended`, row counts) | Cross-shard load on one Windows box; per-shard failure lists look like retry passes | `PW_SHARDS=1` for the release gate; read both shards' final lists, not just the last summary |
 | Unchanged specs red after a UI wave (copy, popover geometry, dialog confirmation, exact counts) | Tests assert pre-wave behavior; PR CI only runs `@sanity` | Reproduce the failing cases in isolation, A/B against the pre-wave tag, then follow the intended behavior (HelpPopover content, outside-point geometry, dialog submit, seeded-title assertions) |
 | Backup warns `start events in window: 2` | `docker events --filter container=orc` also matches helpers such as `orc-backup-<v>-db`, whose `create/start/die` sit in the same window | Look at the raw event list: one `start` for `orc` plus a create/die pair for the counts container is normal. Anything else is a real restart — inspect before trusting the archive |
