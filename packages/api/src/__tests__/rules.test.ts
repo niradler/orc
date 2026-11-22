@@ -183,11 +183,11 @@ test("should administer and evaluate policies without a token in open mode", asy
   }
 });
 
-test("protected chat starts an unverified backend and reports the gap", async () => {
+test("protected codex chat starts an unverified backend and reports the gap", async () => {
   const store = new RuleStore(getSqlite());
   const revision = store.activate(
     { ...policy, workspace: homedir() },
-    null,
+    store.history(homedir()).find((row) => row.current)?.id ?? null,
     "Protect the default chat workspace",
   );
   loadConfig({ rules: { enabled: true } });
@@ -195,7 +195,7 @@ test("protected chat starts an unverified backend and reports the gap", async ()
   process.env.ORC_E2E_CHAT_MOCK = "1";
   try {
     const response = await req(app, "POST", "/chat/stream", {
-      agent: "opencode",
+      agent: "codex",
       messages: [{ role: "user", content: "Start anyway" }],
     });
     expect(response.status).toBe(200);
@@ -219,6 +219,33 @@ test("protected chat starts an unverified backend and reports the gap", async ()
     if (previousMock === undefined) delete process.env.ORC_E2E_CHAT_MOCK;
     else process.env.ORC_E2E_CHAT_MOCK = previousMock;
     store.revert(revision.id, "End isolated chat fixture");
+    getSqlite().query("DELETE FROM rule_heads WHERE workspace=?").run(realpathSync(homedir()));
+    loadConfig({ rules: { enabled: false } });
+  }
+});
+
+test("protected opencode chat refuses to start when enforcement cannot run", async () => {
+  const store = new RuleStore(getSqlite());
+  const revision = store.activate(
+    { ...policy, workspace: homedir() },
+    store.history(homedir()).find((row) => row.current)?.id ?? null,
+    "Protect the default opencode workspace",
+  );
+  loadConfig({ rules: { enabled: true } });
+  const previousMock = process.env.ORC_E2E_CHAT_MOCK;
+  process.env.ORC_E2E_CHAT_MOCK = "1";
+  try {
+    const response = await req(app, "POST", "/chat/stream", {
+      agent: "opencode",
+      messages: [{ role: "user", content: "Start anyway" }],
+    });
+    expect(response.status).toBe(503);
+    expect(await response.text()).toContain("in-memory rule database");
+  } finally {
+    if (previousMock === undefined) delete process.env.ORC_E2E_CHAT_MOCK;
+    else process.env.ORC_E2E_CHAT_MOCK = previousMock;
+    store.revert(revision.id, "End isolated opencode fixture");
+    getSqlite().query("DELETE FROM rule_heads WHERE workspace=?").run(realpathSync(homedir()));
     loadConfig({ rules: { enabled: false } });
   }
 });

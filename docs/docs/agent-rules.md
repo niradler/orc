@@ -226,7 +226,10 @@ plugin forwards OpenCode `execute.before`, `execute.after`, `prompt` and `compac
 hooks. Both run `orc rules hook <backend> <event>` per event and fail closed on blocking
 events when the hook cannot produce a decision. OpenCode tool denials surface as tool
 errors the model sees; prompt denials reject admission as a session error (qualified on
-OpenCode 2.3.0), with the reason recorded in the audit trail. When Pi cannot load the rules plan (ORC
+OpenCode 2.3.0), with the reason recorded in the audit trail. ORC injects the
+`@orc/opencode` plugin into its own OpenCode sessions, so no manual install is needed
+for a chat or worker started by ORC; the install section of [OpenCode](./opencode.md)
+covers OpenCode sessions started outside ORC. When Pi cannot load the rules plan (ORC
 offline or the fetch failed), blocking events still run the hook against the local DB, and
 the plan refreshes periodically so later policy changes apply. OpenCode has no session
 start/end hooks; rules scoped to those events are not delivered there. See
@@ -234,14 +237,34 @@ start/end hooks; rules scoped to those events are not delivered there. See
 
 Other managed backends start in policy-protected workspaces but do not claim
 ACP-level enforcement. ORC adds one conversation status note that names the gap, then
-runs the session without rule interception. OpenCode can enforce the same policies
-inside its own process when the `@orc/opencode` plugin is installed in the workspace
-([OpenCode](./opencode.md)), but ORC cannot verify that from an ACP chat session, so it
-reports the chat as unverified and points at the plugin. `GET /api/rules` reports these
-adapters as `opencode_plugin_requires_install` or `unsupported`. Protected package
-setups and unqualified native agent terminals are still refused; human shell terminals
-remain available. Native Codex protocol support does not qualify ORC-managed
-Codex/ACPX/A2A/AgentAPI blocking.
+runs the session without rule interception. `GET /api/rules` reports those adapters as
+`unsupported`. Protected package setups and unqualified native agent terminals are still
+refused; human shell terminals remain available. Native Codex protocol support does not
+qualify ORC-managed Codex/ACPX/A2A/AgentAPI blocking.
+
+### OpenCode session permissions
+
+An ORC-managed OpenCode session receives a session-scoped `OPENCODE_CONFIG_CONTENT`
+document at spawn. It appends ORC's entries after the user's global and project
+configuration, and ORC never edits the global `opencode.json`:
+
+- `plugins` gets the bundled `@orc/opencode` package, so OpenCode's `execute.before`
+  hook runs the workspace policy before the tool executes.
+- `permissions` gets the dangerous-command baseline: `daemon stop`/`restart`, process
+  kills, `sudo`, destructive `rm`/`rd`/`del`/`format`/`mkfs`, forced pushes, hard resets,
+  `shutdown` and `reboot` ask the human. Ordinary commands keep OpenCode's own policy,
+  so a normal coding session does not start prompting for every shell call.
+- `ORC_COMMAND`, `ORC_DB_PATH`, `ORC_API_BASE` and `ORC_API_SECRET` make the hook child
+  read the same ORC database and API as the session.
+
+The baseline is defense in depth. A matching `deny` workspace rule still blocks before
+OpenCode's permission layer, and `autoApprove` cannot bypass it. An approvable rule uses
+`ask_user`, which creates the normal ORC human request and returns the human's decision
+to the hook. When rules are enabled and a policy covers the session folder, ORC refuses
+to start the session if the bundled plugin is missing, the database is in memory, or the
+session runs on a remote execution host that cannot load this machine's plugin. The error
+names the plugin and `ORC_OPENCODE_PLUGIN`. ORC never downgrades such a session to
+advisory enforcement.
 
 Hooks are not an OS sandbox. A human able to edit configuration, a process outside ORC,
 an unmediated remote execution channel, or another concurrent filesystem writer remains

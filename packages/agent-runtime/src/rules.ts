@@ -1,5 +1,7 @@
-import { loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig, resolveApiBase } from "@orc/core/config";
 import type { RuleDecision, RuleEvent } from "@orc/core/rules";
+import { sessionExecHost } from "./execution-host.js";
+import { openCodeSessionEnv, resolveOpenCodePluginDir } from "./opencode-config.js";
 import type { SessionOpts } from "./types.js";
 
 export type SessionRuleGuard = {
@@ -24,15 +26,12 @@ export type RuleGap = {
 };
 
 function gapMessage(agent: string): string {
-  const hint =
-    agent === "opencode"
-      ? "Install the @orc/opencode plugin in this workspace to enforce the same policies inside OpenCode."
-      : "Use Claude when a session must be enforced.";
-  return `${agent} has no ACP-level pre-tool hook in ORC, so active workspace rules cannot be enforced in this session. ORC still shows the agent's tool activity, but it cannot block or rewrite it. ${hint}`;
+  return `${agent} has no ACP-level pre-tool hook in ORC, so active workspace rules cannot be enforced in this session. ORC still shows the agent's tool activity, but it cannot block or rewrite it. Use Claude when a session must be enforced.`;
 }
 
 export async function sessionRules(backend: string, opts: SessionOpts): Promise<SessionOpts> {
-  if (!loadConfig().rules.enabled) return opts;
+  const config = loadConfig();
+  if (!config.rules.enabled) return opts;
   const [{ getSqlite }, { RuleStore }] = await Promise.all([
     import("@orc/db/client"),
     import("@orc/db/rules"),
@@ -73,7 +72,7 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
         },
       };
     }
-    if (!policies.length) return opts;
+    if (!policies.length && agent !== "opencode") return opts;
     if (
       backend === "codex-cli" &&
       policies.every((policy) =>
@@ -87,6 +86,21 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
       )
     )
       return { ...opts, interactive: true };
+    if (agent === "opencode") {
+      const pluginDir = policies.length ? resolveOpenCodePluginDir() : undefined;
+      return {
+        ...opts,
+        env: openCodeSessionEnv({
+          policies: policies.map((policy) => policy.id),
+          pluginDir,
+          remote: sessionExecHost(opts).kind !== "local",
+          dbPath: store.db.filename,
+          apiBase: resolveApiBase(config),
+          apiSecret: configuredApiSecret(config.api.secret),
+          existingEnv: opts.env,
+        }),
+      };
+    }
     return {
       ...opts,
       ruleGap: {

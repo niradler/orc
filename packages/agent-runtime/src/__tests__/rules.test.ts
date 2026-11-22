@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
@@ -221,6 +221,60 @@ test("sessions created before policy activation pick it up; unsupported adapters
   store.revert(revision.id, "Human revert");
   expect(opts.ruleGuard?.evaluate({ ...event, id: "after-revert" }).decision).toBe("abstain");
   expect((await sessionRules("codex-cli", { cwd: root })).ruleGap).toBeUndefined();
+});
+
+test("opencode sessions get ORC's session config and fail loudly when enforcement cannot run", async () => {
+  const workspace = join(root, "opencode-session");
+  mkdirSync(workspace, { recursive: true });
+  const baseline = await sessionRules("opencode", { cwd: workspace });
+  expect(baseline.ruleGap).toBeUndefined();
+  const content = JSON.parse(baseline.env?.OPENCODE_CONFIG_CONTENT ?? "{}") as {
+    permissions?: unknown[];
+    plugins?: unknown[];
+  };
+  expect(content.permissions?.length).toBeGreaterThan(0);
+  expect(content.plugins).toBeUndefined();
+  expect(baseline.env?.ORC_DB_PATH).toBe(process.env.ORC_DB_PATH as string);
+
+  const store = new RuleStore(getSqlite());
+  const revision = store.activate(
+    {
+      workspace,
+      project_id: null,
+      rules: [
+        {
+          id: "open-code-shell",
+          kind: "event",
+          enabled: true,
+          reason: "No shell",
+          scope: { agents: ["opencode"], events: ["pre_tool"] },
+          filter: {
+            match: "all",
+            conditions: [{ predicate: { field: "tool", operator: "in", value: ["bash"] } }],
+          },
+          target: { type: "block" },
+        },
+      ],
+    },
+    null,
+    "OpenCode enforcement",
+  );
+  // The test database is in-memory, so no child process could read it. A
+  // protected session must refuse to start rather than fall back to advisory.
+  const previousPlugin = process.env.ORC_OPENCODE_PLUGIN;
+  process.env.ORC_OPENCODE_PLUGIN = join(root, "missing-opencode-plugin");
+  try {
+    await expect(sessionRules("opencode", { cwd: workspace })).rejects.toThrow(
+      "ORC_OPENCODE_PLUGIN",
+    );
+  } finally {
+    if (previousPlugin === undefined) delete process.env.ORC_OPENCODE_PLUGIN;
+    else process.env.ORC_OPENCODE_PLUGIN = previousPlugin;
+  }
+  await expect(sessionRules("opencode", { cwd: workspace })).rejects.toThrow(
+    "in-memory rule database",
+  );
+  store.revert(revision.id, "Test cleanup");
 });
 
 test("SDK pre-tool callback fails closed on evaluator errors and malformed input", async () => {

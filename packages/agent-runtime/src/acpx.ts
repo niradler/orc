@@ -366,7 +366,7 @@ export class AcpxSession implements AgentSession {
     this.sessionName = opts.runtimeSessionId ?? `orc-${this.id}`;
     this.cwd = opts.cwd;
     this.model = opts.model;
-    this.autoApprove = opts.autoApprove ?? true;
+    this.autoApprove = opts.autoApprove ?? false;
     const options = opts.chatAgentOptions
       ? ChatAgentOptionsSchema.parse(opts.chatAgentOptions)
       : undefined;

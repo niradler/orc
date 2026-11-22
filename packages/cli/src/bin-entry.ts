@@ -1,7 +1,12 @@
 #!/usr/bin/env bun
+import {
+  EMBEDDED_PLUGIN_GLOBAL,
+  installEmbeddedOpenCodePlugin,
+} from "../../agent-runtime/src/opencode-config.js";
 import { installEmbeddedSkills } from "../../core/src/builtin-skills.js";
 import { registerCodeWorkerAssets } from "../../mcp/src/code-runner.js";
 import { CODE_WORKER_ASSETS } from "./_code-worker.generated.js";
+import { OPENCODE_PLUGIN_ASSETS } from "./_opencode-plugin.generated.js";
 import { SKILL_ASSETS } from "./_skills-manifest.generated.js";
 import { VEC0_ASSET } from "./_vec0.generated.js";
 /**
@@ -21,6 +26,8 @@ import { extractNativeAsset } from "./native-assets.js";
 (globalThis as { __ORC_EMBEDDED_WEB__?: typeof WEB_ASSETS }).__ORC_EMBEDDED_WEB__ = WEB_ASSETS;
 (globalThis as { __ORC_BUILTIN_SKILLS_DIR__?: string }).__ORC_BUILTIN_SKILLS_DIR__ =
   installEmbeddedSkills(SKILL_ASSETS);
+(globalThis as Record<string, string | undefined>)[EMBEDDED_PLUGIN_GLOBAL] =
+  installEmbeddedOpenCodePlugin(OPENCODE_PLUGIN_ASSETS);
 registerCodeWorkerAssets(CODE_WORKER_ASSETS);
 
 // Knowledge vector search loads sqlite-vec from ORC_SQLITE_VEC_PATH; without it, it scans exactly.
