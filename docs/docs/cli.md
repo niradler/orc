@@ -112,6 +112,16 @@ See [Human requests](./human-requests.md).
 | `orc attention acknowledge <id>` | `--version <n>` |
 | `orc attention cancel <id>` | `--version <n>` |
 
+## Desktop buddy
+
+See [Desktop buddy](./buddy.md) for the protocol and the hardware roadmap.
+
+| Command | Main flags |
+| --- | --- |
+| `orc buddy` | `--port <path>` or `--simulate`, `--baud` (default 115200), `--url`, `--token`, `--project <id>`, `--list-ports` |
+| `orc buddy token` | `--days <n>` (default 30), `--url` |
+| `orc buddy config` | `--port <path>` (required), `--url`, `--token`, `--ssid`, `--pass`, `--name`, `--baud` |
+
 ## Memory
 
 Memories are short project facts. Every subcommand takes `-p, --project` (default: active project).
