@@ -279,6 +279,8 @@ export async function readSetupAgents(
 
 const SUGGESTION_LIMIT = 12;
 const CANDIDATE_LIMIT = 300;
+/** POST /projects accepts names of at most 100 characters. */
+const PROJECT_NAME_MAX = 100;
 
 /** Folder name -> a project name POST /projects accepts. */
 export function suggestedProjectName(path: string): string {
@@ -288,8 +290,23 @@ export function suggestedProjectName(path: string): string {
   const base = folder
     .replace(/[^a-zA-Z0-9_-]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 100);
+    .slice(0, PROJECT_NAME_MAX);
   return base || "project";
+}
+
+/**
+ * `base` made unique against `used`, staying within the project-name cap. The
+ * suffix needs room inside the cap: slicing after the append would truncate a
+ * max-length base back to itself and the search would never terminate. Cut
+ * first and every candidate is distinct, so a free name is always found.
+ */
+function uniqueProjectName(base: string, used: Set<string>): string {
+  let name = base;
+  for (let suffix = 2; used.has(name.toLowerCase()); suffix++) {
+    const tail = `-${suffix}`;
+    name = `${base.slice(0, PROJECT_NAME_MAX - tail.length)}${tail}`;
+  }
+  return name;
 }
 
 /**
@@ -338,9 +355,7 @@ export async function suggestSetupProjects(
     .sort((a, b) => b.last - a.last)
     .slice(0, limit)
     .map((entry) => {
-      let name = suggestedProjectName(entry.path);
-      for (let suffix = 2; used.has(name.toLowerCase()); suffix++)
-        name = `${suggestedProjectName(entry.path)}-${suffix}`.slice(0, 100);
+      const name = uniqueProjectName(suggestedProjectName(entry.path), used);
       used.add(name.toLowerCase());
       return {
         path: entry.path,
