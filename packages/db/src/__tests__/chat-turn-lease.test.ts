@@ -88,6 +88,54 @@ test("targeted lease writes are dropped when runId, epoch or status no longer ma
   chats.heartbeatTurnLease(live.id, runId, 4, 123);
   expect(chats.get(live.id)?.turn?.lastHeartbeatAt).toBe(99);
 });
+
+test("shutdown flush keeps the prose and the running lease, and refuses a stale epoch", () => {
+  const chats = store();
+  const live = thread(crypto.randomUUID());
+  const runId = crypto.randomUUID();
+  live.turn = { runId, startedAt: 10, status: "running", epoch: 5 };
+  chats.saveTurn(live, 5);
+
+  const messages = [
+    { id: "u1", role: "user" as const, content: "Ship it", timestamp: 11 },
+    {
+      id: "a1",
+      role: "assistant" as const,
+      content: "Halfway through.",
+      timestamp: 12,
+      turn: { startedAt: 10 },
+    },
+  ];
+  chats.persistTurnForShutdown(
+    live.id,
+    runId,
+    5,
+    "ses_ok",
+    [
+      {
+        backend: "opencode",
+        host: null,
+        runtimeId: "ses_ok",
+        cwd: "C:/repo",
+        attachedAt: 11,
+        source: "started",
+      },
+    ],
+    { ...live.turn, lastHeartbeatAt: 13 },
+    messages,
+  );
+  const flushed = chats.get(live.id);
+  expect(flushed?.messages.map((message) => message.content)).toEqual([
+    "Ship it",
+    "Halfway through.",
+  ]);
+  // The lease stays running so the next boot's reconcile records the interruption once.
+  expect(flushed?.turn?.status).toBe("running");
+  expect(flushed?.runtimeId).toBe("ses_ok");
+
+  chats.persistTurnForShutdown(live.id, runId, 4, null, [], { ...live.turn }, []);
+  expect(chats.get(live.id)?.messages).toHaveLength(2);
+});
 test("claimTurn accepts one writer per observed epoch and refuses the rest", () => {
   const chats = store();
   const live = thread(crypto.randomUUID());

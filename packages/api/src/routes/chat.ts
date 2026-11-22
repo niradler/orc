@@ -3832,6 +3832,7 @@ function flushTurnForShutdown(run: ChatRun): void {
       thread.runtimeId,
       thread.providerRefs ?? [],
       thread.turn,
+      thread.messages,
     );
   } catch (error) {
     // Durability does not depend on this flush: the mid-turn write-through

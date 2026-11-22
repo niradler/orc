@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import {
+  type ChatMessage,
   type ChatProviderRef,
   type ChatThread,
   type ChatTurnLease,
@@ -164,8 +165,10 @@ export class ChatStore {
       .run(at, id, runId, epoch);
   }
   /** Daemon-exit flush for a turn that would not finish: persist the resumable
-    identity and the lease as-is. The lease stays `running` on purpose — the
-    next boot's reconcile records the interruption exactly once. */
+    identity, the prose recorded so far and the lease as-is. The lease stays
+    `running` on purpose - the next boot's reconcile records the interruption
+    exactly once. Without the messages, a stop that overruns its drain window
+    would throw away everything the agent had already written. */
   persistTurnForShutdown(
     id: string,
     runId: string,
@@ -173,10 +176,11 @@ export class ChatStore {
     runtimeId: string | null,
     providerRefs: ChatProviderRef[],
     turn: ChatTurnLease,
+    messages: ChatMessage[],
   ): void {
     this.db
       .query(
-        `UPDATE chat_threads SET data = json_set(data, '$.runtimeId', json(?), '$.providerRefs', json(?), '$.turn', json(?))
+        `UPDATE chat_threads SET data = json_set(data, '$.runtimeId', json(?), '$.providerRefs', json(?), '$.messages', json(?), '$.turn', json(?))
           WHERE id = ? AND json_valid(data)
             AND json_extract(data, '$.turn.runId') = ?
             AND json_extract(data, '$.turn.epoch') = ?
@@ -185,6 +189,7 @@ export class ChatStore {
       .run(
         JSON.stringify(runtimeId),
         JSON.stringify(providerRefs),
+        JSON.stringify(messages),
         JSON.stringify(turn),
         id,
         runId,
