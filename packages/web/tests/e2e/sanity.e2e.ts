@@ -157,6 +157,50 @@ test.describe("@sanity critical flows", () => {
     }
   });
 
+  test("first-run setup detects agents and creates a suggested project", async ({ page }) => {
+    // Mock the fresh-workspace world so the flow does not depend on the host's
+    // installed agents or on the shared e2e database having zero projects.
+    await page.route("**/api/setup", (route) =>
+      route.fulfill({
+        json: {
+          agents: [
+            {
+              agent: "claude",
+              label: "Claude Code",
+              installed: true,
+              path: "/bin/claude",
+              version: "2.0.0",
+              signed_in: true,
+              account_label: null,
+              fix: null,
+            },
+          ],
+          suggestions: [
+            {
+              path: "C:/dev/demo",
+              name: "demo",
+              agents: ["claude"],
+              sessions: 4,
+              last_activity_at: new Date().toISOString(),
+            },
+          ],
+          default_agent: "claude",
+        },
+      }),
+    );
+    await page.route("**/api/projects*", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({ json: { projects: [], offset: 0, limit: 100, next_offset: null } })
+        : route.fulfill({ status: 201, json: { id: "p-demo", name: "demo", status: "active" } }),
+    );
+    await gotoView(page, "activity");
+    await expect(page.getByTestId("first-run-setup")).toBeVisible();
+    await expect(page.getByTestId("first-run-agent-claude")).toBeVisible();
+    await expect(page.getByTestId("first-run-suggestion-0")).toContainText("demo");
+    await page.getByTestId("first-run-create").click();
+    await expect(page.getByTestId("first-run-suggestion-created-0")).toBeVisible();
+  });
+
   test.describe("phone", () => {
     test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
 
