@@ -244,26 +244,41 @@ function removePid() {
 }
 
 /**
- * Ask the running daemon to drain and exit over HTTP. This is the only graceful
- * path that works for every launch mode (supervisor, desktop app, scheduled task,
- * npx) and the only one that works on Windows, where a signal is a hard kill.
- * Returns true once the process is gone.
+ * Where the running daemon answers: the discovery record's bound port wins over
+ * the configured one, and a wildcard bind is reached over loopback.
  */
-async function requestGracefulStop(pid: number, timeoutSeconds: number): Promise<boolean> {
+export function daemonApiTarget(): { host: string; port: number; secret: string | undefined } {
   const runtime = readDaemonRuntime();
   const config = loadConfig();
   const configuredHost = config.api.host;
   const host =
     configuredHost === "0.0.0.0" || configuredHost === "::" ? "127.0.0.1" : configuredHost;
-  const port = runtime?.port ?? config.api.port;
-  const secret = configuredApiSecret(config.api.secret);
+  return {
+    host,
+    port: runtime?.port ?? config.api.port,
+    secret: configuredApiSecret(config.api.secret),
+  };
+}
+
+/**
+ * Ask the running daemon to drain and exit over HTTP. This is the only graceful
+ * path that works for every launch mode (supervisor, desktop app, scheduled task,
+ * npx) and the only one that works on Windows, where a signal is a hard kill.
+ * Returns true once the process is gone.
+ */
+export async function requestGracefulStop(
+  pid: number,
+  timeoutSeconds: number,
+  target = daemonApiTarget(),
+  alive: (pid: number) => boolean = isProcessAlive,
+): Promise<boolean> {
   const deadline = Date.now() + Math.max(1, timeoutSeconds) * 1000;
   try {
-    const response = await fetch(`http://${host}:${port}/api/system/shutdown`, {
+    const response = await fetch(`http://${target.host}:${target.port}/api/system/shutdown`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...(secret ? { authorization: `Bearer ${secret}` } : {}),
+        ...(target.secret ? { authorization: `Bearer ${target.secret}` } : {}),
       },
       body: "{}",
       signal: AbortSignal.timeout(5000),
@@ -274,13 +289,13 @@ async function requestGracefulStop(pid: number, timeoutSeconds: number): Promise
     // the pid check so a finished shutdown still reports success.
   }
   while (Date.now() < deadline) {
-    if (!isProcessAlive(pid)) {
+    if (!alive(pid)) {
       removePid();
       return true;
     }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
-  return !isProcessAlive(pid);
+  return !alive(pid);
 }
 
 /** Last resort: kill the pid. The resumable chat state is already on disk. */
