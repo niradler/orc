@@ -473,6 +473,7 @@ hidden rows unless asked with `include_hidden=true`.
 | `GET` `PUT` | `/ssh` | SSH execution host |
 | `GET` | `/system/about` | Server version, platform, runtime, data folder, start time |
 | `POST` | `/system/restart` | Restart ORC |
+| `POST` | `/system/shutdown` | Stop ORC gracefully: refuse new chat turns, drain the active ones, persist their session identity, then exit |
 | `POST` | `/mcp/tool` | Run any MCP tool: `{ "name", "args" }` |
 | `GET` | `/audit` | Central lifecycle and knowledge audit log |
 | `GET` `POST` | `/integrations/connections` | spec-cli connections |

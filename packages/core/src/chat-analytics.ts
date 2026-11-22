@@ -18,7 +18,7 @@ export const ChatTurnStatSchema = z.object({
   index: z.number().int().positive(),
   startedAt: z.number().finite().nonnegative(),
   durationMs: z.number().finite().nonnegative().nullable(),
-  outcome: z.enum(["completed", "stopped", "failed", "running"]),
+  outcome: z.enum(["completed", "stopped", "interrupted", "failed", "running"]),
   toolCalls: z.number().int().nonnegative(),
   toolFailures: z.number().int().nonnegative(),
   responseChars: z.number().int().nonnegative(),
@@ -47,6 +47,7 @@ export const ChatAnalyticsSchema = z.object({
   outcomes: z.object({
     completed: z.number().int().nonnegative(),
     stopped: z.number().int().nonnegative(),
+    interrupted: z.number().int().nonnegative(),
     failed: z.number().int().nonnegative(),
     running: z.number().int().nonnegative(),
   }),

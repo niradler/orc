@@ -717,6 +717,8 @@ launchctl list | grep orc             # macOS
 systemctl --user status orc-daemon    # Linux
 ```
 
+`orc daemon stop` asks the running API to shut down (`POST /api/system/shutdown`) instead of signaling the process, because on Windows a signal terminates the daemon without running its handler. The daemon first refuses new chat turns, gives active ones a few seconds to finish, and writes through the provider session identity of any turn that cannot finish, so a stopped or restarted daemon never leaves a conversation that cannot continue. The process exits with code 0, so a supervising launcher does not start it again. `--force` skips the drain and kills the process; in-flight turns resume from their saved state on the next start. `--timeout <seconds>` bounds the wait (default 30).
+
 `orc daemon install` refuses an `orc` that lives under nvm, fnm, volta, asdf or nodenv paths. Install a [pre-built binary](./install.md#pre-built-binary), or pass `--force`.
 
 `orc daemon start` merges your login shell's `PATH` on macOS and Linux, so agent CLIs such as `claude`, `codex` and `cursor-agent` are found when the daemon runs as a service.

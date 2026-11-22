@@ -28,7 +28,8 @@ Commands that take a project (`task`, `job`, `mem`, `kb`) default to the active 
 | Command | Purpose |
 | --- | --- |
 | `orc daemon start` | Run API, scheduler, file watchers, channels and task loop as one process |
-| `orc daemon stop` | Stop the daemon |
+| `orc daemon stop [--force]` | Stop the daemon gracefully: active chat turns drain and their session identity is saved, then the process exits. `--force` kills it instead |
+| `orc daemon restart [--force]` | Stop gracefully, then start again in the background |
 | `orc daemon status` | Scheduler state and next run times of active jobs |
 | `orc daemon install [--force]` | Register the daemon to start on login/boot and start it now |
 | `orc daemon uninstall` | Remove the auto-start registration |

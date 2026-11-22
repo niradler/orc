@@ -4,7 +4,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { globalConfigPath } from "@orc/core/config";
 import { ORC_VERSION } from "@orc/core/version";
 import { createRouter } from "../lib/router.js";
-import { instanceId, requestRestart } from "../lifecycle.js";
+import { instanceId, requestRestart, requestShutdown } from "../lifecycle.js";
 
 const app = createRouter();
 const startedAt = new Date().toISOString();
@@ -75,6 +75,42 @@ app.openapi(
   (c) => {
     requestRestart();
     return c.json({ instance_id: instanceId, restarting: true as const }, 202);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/system/shutdown",
+    tags: ["System"],
+    summary:
+      "Stop the daemon gracefully: refuse new chat turns, let active ones finish and persist their resumable session state, then exit",
+    request: {
+      body: { required: true, content: { "application/json": { schema: z.object({}).strict() } } },
+    },
+    responses: {
+      202: {
+        description: "Shutdown accepted; the process exits once active work is durable",
+        content: {
+          "application/json": {
+            schema: z
+              .object({ instance_id: z.string(), shutting_down: z.literal(true) })
+              .openapi("ShutdownResponse"),
+          },
+        },
+      },
+      503: {
+        description:
+          "This runtime has no shutdown handler (for example `orc api` without the daemon)",
+        content: {
+          "application/json": { schema: z.object({ error: z.string(), code: z.string() }) },
+        },
+      },
+    },
+  }),
+  (c) => {
+    requestShutdown();
+    return c.json({ instance_id: instanceId, shutting_down: true as const }, 202);
   },
 );
 

@@ -1,5 +1,11 @@
 import type { Database } from "bun:sqlite";
-import { type ChatThread, parseChatThread } from "@orc/core/chat";
+import {
+  type ChatProviderRef,
+  type ChatThread,
+  type ChatTurnLease,
+  parseChatThread,
+} from "@orc/core/chat";
+import { ConflictError } from "@orc/core/errors";
 
 type ChatSummary = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   agent: string | null;
@@ -123,6 +129,137 @@ export class ChatStore {
             AND coalesce(json_extract(data, '$.sourceId'), '') = ''`,
       )
       .run(sourceId, id);
+  }
+  /** Write-through of the resumable identity: pins runtimeId and the provider
+    ref history mid-turn without rewriting messages, so a crash before the
+    terminal result can never orphan the thread from its native session. The
+    runId guard keeps a late write of a dead turn from clobbering a newer one. */
+  setRuntimeRef(
+    id: string,
+    runId: string,
+    epoch: number,
+    runtimeId: string | null,
+    providerRefs: ChatProviderRef[],
+  ): void {
+    this.db
+      .query(
+        `UPDATE chat_threads SET data = json_set(data, '$.runtimeId', json(?), '$.providerRefs', json(?))
+          WHERE id = ? AND json_valid(data)
+            AND json_extract(data, '$.turn.runId') = ?
+            AND json_extract(data, '$.turn.epoch') = ?
+            AND json_extract(data, '$.turn.status') = 'running'`,
+      )
+      .run(JSON.stringify(runtimeId), JSON.stringify(providerRefs), id, runId, epoch);
+  }
+  /** Debounced liveness beat for a running lease; never resurrects a terminal one. */
+  heartbeatTurnLease(id: string, runId: string, epoch: number, at: number): void {
+    this.db
+      .query(
+        `UPDATE chat_threads SET data = json_set(data, '$.turn.lastHeartbeatAt', ?)
+          WHERE id = ? AND json_valid(data)
+            AND json_extract(data, '$.turn.runId') = ?
+            AND json_extract(data, '$.turn.epoch') = ?
+            AND json_extract(data, '$.turn.status') = 'running'`,
+      )
+      .run(at, id, runId, epoch);
+  }
+  /** Daemon-exit flush for a turn that would not finish: persist the resumable
+    identity and the lease as-is. The lease stays `running` on purpose — the
+    next boot's reconcile records the interruption exactly once. */
+  persistTurnForShutdown(
+    id: string,
+    runId: string,
+    epoch: number,
+    runtimeId: string | null,
+    providerRefs: ChatProviderRef[],
+    turn: ChatTurnLease,
+  ): void {
+    this.db
+      .query(
+        `UPDATE chat_threads SET data = json_set(data, '$.runtimeId', json(?), '$.providerRefs', json(?), '$.turn', json(?))
+          WHERE id = ? AND json_valid(data)
+            AND json_extract(data, '$.turn.runId') = ?
+            AND json_extract(data, '$.turn.epoch') = ?
+            AND json_extract(data, '$.turn.status') = 'running'`,
+      )
+      .run(
+        JSON.stringify(runtimeId),
+        JSON.stringify(providerRefs),
+        JSON.stringify(turn),
+        id,
+        runId,
+        epoch,
+      );
+  }
+  /**
+   * Claims the thread for a turn and returns the lease epoch this turn owns.
+   * The write is a strict compare-and-set against the epoch the caller observed
+   * on the thread it loaded (`expectedEpoch`, 0 for a thread with no lease), so
+   * two daemons — or a resurrected process — can never both acquire the same
+   * state: the loser sees the stored epoch had moved and gets no turn. That is
+   * what keeps two turns off one native session.
+   *
+   * The caller must have established that no live turn owns the observed lease
+   * (the busy check): the CAS promises one writer per observed state, not that
+   * the observed state was safe to take.
+   */
+  claimTurn(thread: ChatThread, lease: Omit<ChatTurnLease, "epoch">, expectedEpoch = 0): number {
+    const existing = this.get(thread.id);
+    const epoch = expectedEpoch + 1;
+    const claimed: ChatThread = { ...thread, turn: { ...lease, epoch } };
+    if (!existing) {
+      if (expectedEpoch !== 0)
+        throw new ConflictError(
+          "Another turn claimed this conversation; this message was not started.",
+          "TURN_SUPERSEDED",
+        );
+      this.save(claimed);
+    } else {
+      const result = this.db
+        .query(
+          `UPDATE chat_threads SET title = ?, updated_at = ?, data = ?
+            WHERE id = ? AND json_valid(data)
+              AND coalesce(json_extract(data, '$.turn.epoch'), 0) = ?`,
+        )
+        .run(claimed.title, claimed.updatedAt, JSON.stringify(claimed), claimed.id, expectedEpoch);
+      if (result.changes === 0)
+        throw new ConflictError(
+          "Another turn claimed this conversation; this message was not started.",
+          "TURN_SUPERSEDED",
+        );
+    }
+    thread.turn = claimed.turn;
+    return epoch;
+  }
+  /**
+   * Full thread save fenced by the turn this writer owns: the row must still
+   * hold this runId, and its epoch must not have advanced past this turn. A
+   * resurrected process or a second daemon on the same database therefore
+   * cannot overwrite a newer turn, and a stale turn cannot finalize into one.
+   * A missing row is inserted: a conversation created by this writer has no
+   * lease to fence against.
+   */
+  saveTurn(thread: ChatThread, epoch: number): void {
+    const runId = thread.turn?.runId;
+    if (!runId) throw new Error("saveTurn requires the turn's runId");
+    const result = this.db
+      .query(
+        `UPDATE chat_threads SET title = ?, updated_at = ?, data = ?
+          WHERE id = ? AND json_valid(data)
+            AND json_extract(data, '$.turn.runId') = ?
+            AND coalesce(json_extract(data, '$.turn.epoch'), 0) <= ?`,
+      )
+      .run(thread.title, thread.updatedAt, JSON.stringify(thread), thread.id, runId, epoch);
+    if (result.changes > 0) return;
+    const exists = this.db
+      .query<{ id: string }, [string]>("SELECT id FROM chat_threads WHERE id = ?")
+      .get(thread.id);
+    if (exists)
+      throw new ConflictError(
+        "Another turn claimed this conversation; this response was not saved.",
+        "TURN_SUPERSEDED",
+      );
+    this.save(thread);
   }
   save(thread: ChatThread): void {
     this.db
