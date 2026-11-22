@@ -121,3 +121,25 @@ test("claimTurn replaces a leftover lease from the epoch it observed and advance
   expect(chats.get(live.id)?.turn?.runId).toBe(next);
   expect(chats.get(live.id)?.turn?.epoch).toBe(2);
 });
+test("claimTurn refuses a lease a boot reconcile settled at the same epoch", () => {
+  const chats = store();
+  const live = thread(crypto.randomUUID());
+  chats.claimTurn(live, { runId: crypto.randomUUID(), startedAt: 10, status: "running" });
+  // This request loaded the lease as running; reconcile then settled it.
+  const stale = chats.get(live.id);
+  if (!stale?.turn) throw new Error("missing lease");
+  chats.saveTurn(
+    { ...stale, turn: { ...stale.turn, status: "interrupted" } },
+    stale.turn.epoch ?? 0,
+  );
+
+  expect(() =>
+    chats.claimTurn(
+      { ...live, turn: { ...(stale.turn as NonNullable<typeof stale.turn>), status: "running" } },
+      { runId: crypto.randomUUID(), startedAt: 20, status: "running" },
+      1,
+    ),
+  ).toThrow("Another turn claimed");
+  // The interrupted record survives, so the next request starts from it.
+  expect(chats.get(live.id)?.turn?.status).toBe("interrupted");
+});

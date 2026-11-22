@@ -298,6 +298,22 @@ export async function requestGracefulStop(
   return !alive(pid);
 }
 
+/**
+ * Wait for a pid to disappear. Used after a forced kill so the replacement
+ * daemon does not race the old process for its port.
+ */
+async function waitForExit(pid: number, timeoutSeconds: number): Promise<boolean> {
+  const deadline = Date.now() + Math.max(1, timeoutSeconds) * 1000;
+  while (Date.now() < deadline) {
+    if (!isProcessAlive(pid)) {
+      removePid();
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return !isProcessAlive(pid);
+}
+
 /** Last resort: kill the pid. The resumable chat state is already on disk. */
 function killDaemon(pid: number, why: "force" | "signal"): void {
   const signal = why === "force" ? "SIGKILL" : "SIGTERM";
@@ -452,8 +468,15 @@ export function daemonCommand() {
     .action(async (opts) => {
       const daemonPid = readDaemonPid();
       if (daemonPid) {
-        if (opts.force) killDaemon(daemonPid, "force");
-        else if (!(await requestGracefulStop(daemonPid, Number(opts.timeout)))) {
+        if (opts.force) {
+          killDaemon(daemonPid, "force");
+          // The replacement must not race the old process for its port.
+          if (!(await waitForExit(daemonPid, Number(opts.timeout)))) {
+            console.error(`The daemon did not exit within ${opts.timeout}s; not restarting.`);
+            process.exitCode = 1;
+            return;
+          }
+        } else if (!(await requestGracefulStop(daemonPid, Number(opts.timeout)))) {
           console.error(`The daemon did not stop within ${opts.timeout}s; not restarting.`);
           process.exitCode = 1;
           return;

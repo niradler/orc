@@ -9,7 +9,7 @@ import {
   utimesSync,
   writeFileSync,
 } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type AgentBackend,
@@ -34,6 +34,7 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
+import { reconcileChatTurnLeases } from "../chat-recovery";
 import { setChatTurnLimits } from "../routes/chat";
 import type { createApp } from "../server";
 import { LIVE_CHAT_ID } from "../session-watcher";
@@ -746,10 +747,54 @@ describe("native chat runtime", () => {
     expect(retried.response.status).toBe(200);
     expect(calls).toHaveLength(count + 1);
     expect(calls[calls.length - 1]?.prompt).toContain("[ORC recovery]");
+    expect(
+      retried.events.some(
+        (event) => event.type === "system_status" && event.text.includes("fresh session"),
+      ),
+    ).toBe(true);
     const stored = (await (
       await request(`/chat/threads/${opened.thread.id}`)
     ).json()) as ChatThread;
     expect(stored.recovery?.mode).toBe("transcript_handoff");
+    calls.length = 0;
+  });
+
+  test("a turn interrupted before it had a session replays the transcript", async () => {
+    const first = await turn({ messages: [{ role: "user", content: "start here" }] });
+    const opened = first.events.find((event) => event.type === "thread") as Extract<
+      ChatEvent,
+      { type: "thread" }
+    >;
+    // The next turn's user message and the daemon crash left no native session.
+    getSqlite()
+      .query(
+        `UPDATE chat_threads
+           SET data = json_set(data, '$.runtimeId', NULL, '$.turn', json(?))
+         WHERE id = ?`,
+      )
+      .run(
+        JSON.stringify({
+          runId: crypto.randomUUID(),
+          startedAt: Date.now() - 1_000,
+          status: "running",
+          pid: 2_147_483_647,
+          host: hostname(),
+          lastHeartbeatAt: Date.now() - 1_000,
+          epoch: 9,
+        }),
+        opened.thread.id,
+      );
+    await reconcileChatTurnLeases({ db: getSqlite() });
+    calls.length = 0;
+    const retried = await turn({
+      threadId: opened.thread.id,
+      messages: [{ role: "user", content: "continue after the crash" }],
+    });
+    expect(retried.response.status).toBe(200);
+    // `interrupted` is not "clean": with no session to resume, the stored
+    // transcript is the only context the fresh agent gets.
+    expect(calls[calls.length - 1]?.prompt).toContain("[ORC recovery]");
+    expect(calls[calls.length - 1]?.prompt).toContain("start here");
     calls.length = 0;
   });
   test("a first turn that failed before delivery keeps offering the chat instructions", async () => {
@@ -1773,6 +1818,12 @@ describe("native chat runtime", () => {
     expect(calls.length).toBe(count + 1);
     expect(calls[calls.length - 1]?.prompt).toContain("[ORC recovery]");
     expect(calls[calls.length - 1]?.prompt).toContain("continue native work");
+    // The handoff is visible in the transcript, not only in the prompt.
+    expect(
+      recovered.events.some(
+        (event) => event.type === "system_status" && event.text.includes("fresh session"),
+      ),
+    ).toBe(true);
     const handedOff = (await (await request(`/chat/threads/${prepared.id}`)).json()) as ChatThread;
     expect(handedOff.recovery?.mode).toBe("transcript_handoff");
     expect(handedOff.runtimeId).not.toBe("discovered-native");
@@ -2063,6 +2114,18 @@ describe("native chat runtime", () => {
       expect(takenOver.response.status).toBe(200);
       expect(calls[calls.length - 1]?.id).toBe("early-native-fixture");
       expect(takenOver.events.some((event) => event.type === "error")).toBe(false);
+      // The stopped turn's record is not lost: it was finalized and saved before
+      // the new turn claimed the thread, and its assistant message stays above
+      // the pushed message.
+      const afterTakeover = (await (
+        await request(`/chat/threads/${threadId}`)
+      ).json()) as ChatThread;
+      const assistants = afterTakeover.messages.filter((entry) => entry.role === "assistant");
+      expect(assistants.length).toBe(2);
+      expect(assistants[0]?.turn?.outcome).toBe("stopped");
+      const lastUser = [...afterTakeover.messages].reverse().find((entry) => entry.role === "user");
+      expect(lastUser?.content).toBe("push in");
+      expect(afterTakeover.runtimeId).toBe("early-native-fixture");
     } finally {
       waitPermission = false;
       await cancelReader?.();

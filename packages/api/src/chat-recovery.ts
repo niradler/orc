@@ -103,6 +103,10 @@ export async function reconcileChatTurnLeases(
  */
 function leaseHolderAlive(lease: ChatTurnLease, me: string, now: number): boolean {
   if (now - lease.startedAt > CHAT_TURN_LEASE_STALE_MS) return false;
+  // This process is the one asking, and it runs no such turn: a pid match is a
+  // recycled pid left by a previous daemon, not a live writer. Same rule as the
+  // send path, so boot and send agree on what is live.
+  if (lease.pid === process.pid) return false;
   if (lease.pid !== undefined) {
     if (lease.host !== undefined && lease.host !== me) return false;
     return isProcessAlive(lease.pid);

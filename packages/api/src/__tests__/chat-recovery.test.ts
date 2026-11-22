@@ -67,10 +67,29 @@ test("a lease with no provider session says so instead of claiming a resume", as
   });
 });
 
-test("a live lease on this host is left running", async () => {
+test("a lease held by another live process on this host is left running", async () => {
+  // A real second process stands in for a second daemon: only a live pid that is
+  // not this one may keep a lease running.
+  const child = Bun.spawn([process.execPath, "-e", "setTimeout(() => {}, 10000)"], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
+  });
+  try {
+    await Bun.sleep(200);
+    const { db } = seed({ ...deadLease, pid: child.pid });
+    const summary = await reconcileChatTurnLeases({ db, now: 5_000 });
+    expect(summary).toMatchObject({ scanned: 1, interrupted: 0, live: 1 });
+  } finally {
+    child.kill();
+    await child.exited;
+  }
+});
+
+test("a lease carrying this process's pid is a recycled pid, not a writer", async () => {
   const { db } = seed({ ...deadLease, pid: process.pid });
   const summary = await reconcileChatTurnLeases({ db, now: 5_000 });
-  expect(summary).toMatchObject({ scanned: 1, interrupted: 0, live: 1 });
+  expect(summary).toMatchObject({ interrupted: 1, live: 0 });
 });
 
 test("a lease from another host is never assumed live", async () => {

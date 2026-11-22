@@ -193,11 +193,13 @@ export class ChatStore {
   }
   /**
    * Claims the thread for a turn and returns the lease epoch this turn owns.
-   * The write is a strict compare-and-set against the epoch the caller observed
-   * on the thread it loaded (`expectedEpoch`, 0 for a thread with no lease), so
-   * two daemons — or a resurrected process — can never both acquire the same
-   * state: the loser sees the stored epoch had moved and gets no turn. That is
-   * what keeps two turns off one native session.
+   * The write is a strict compare-and-set against the lease state the caller
+   * observed on the thread it loaded — its epoch and its status — so two daemons
+   * or a resurrected process can never both acquire the same state: the loser
+   * sees the stored lease moved and gets no turn. A boot reconcile that settled
+   * the lease as `interrupted` therefore wins over a request that loaded it as
+   * `running`, instead of being overwritten by its stale snapshot. That is what
+   * keeps two turns off one native session.
    *
    * The caller must have established that no live turn owns the observed lease
    * (the busy check): the CAS promises one writer per observed state, not that
@@ -206,6 +208,7 @@ export class ChatStore {
   claimTurn(thread: ChatThread, lease: Omit<ChatTurnLease, "epoch">, expectedEpoch = 0): number {
     const existing = this.get(thread.id);
     const epoch = expectedEpoch + 1;
+    const observedStatus = thread.turn?.status ?? "";
     const claimed: ChatThread = { ...thread, turn: { ...lease, epoch } };
     if (!existing) {
       if (expectedEpoch !== 0)
@@ -219,9 +222,17 @@ export class ChatStore {
         .query(
           `UPDATE chat_threads SET title = ?, updated_at = ?, data = ?
             WHERE id = ? AND json_valid(data)
-              AND coalesce(json_extract(data, '$.turn.epoch'), 0) = ?`,
+              AND coalesce(json_extract(data, '$.turn.epoch'), 0) = ?
+              AND coalesce(json_extract(data, '$.turn.status'), '') = ?`,
         )
-        .run(claimed.title, claimed.updatedAt, JSON.stringify(claimed), claimed.id, expectedEpoch);
+        .run(
+          claimed.title,
+          claimed.updatedAt,
+          JSON.stringify(claimed),
+          claimed.id,
+          expectedEpoch,
+          observedStatus,
+        );
       if (result.changes === 0)
         throw new ConflictError(
           "Another turn claimed this conversation; this message was not started.",
