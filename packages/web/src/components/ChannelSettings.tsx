@@ -586,26 +586,26 @@ function ConnectionEditor({
         </Field>
       </div>
       <div className="flex items-start gap-1">
-        <p className="text-sm text-muted-foreground">{provider.setup.join(" ")}</p>
+        <ol className="space-y-1 text-xs text-muted-foreground" data-testid="channel-setup-steps">
+          {provider.setup.map((step, index) => (
+            <li key={step} className="flex gap-2">
+              <span aria-hidden="true" className="text-outline tabular-nums">
+                {index + 1}.
+              </span>
+              <span>{step}</span>
+            </li>
+          ))}
+        </ol>
         {draft.provider === "slack-user" && (
           <HelpPopover label="Slack session credentials" testId="channel-slack-user-help">
-            <div className="space-y-2">
-              <p>
-                The session cookie is full access to your Slack account — treat it like a password.
-                Stored values are encrypted; environment references keep them out of the database.
-              </p>
-              <p>
-                <strong>Fill from local Slack</strong> reads the installed desktop app
-                (macOS/Windows). Manually: open app.slack.com → DevTools → Console →{" "}
-                <code>TS.boot_data.api_token</code> (xoxc), and Application → Cookies → the{" "}
-                <code>d</code> value (xoxd).
-              </p>
-              <p>
-                Trigger keywords are configurable: set <code>config.triggers</code> (default{" "}
-                <code>["@orc"]</code>) under Provider configuration. Matching messages are marked as
-                mentions; keyword rules work on the full text.
-              </p>
-            </div>
+            <p>
+              The session cookie is full access to your Slack account — treat it like a password.
+              Stored values are encrypted; environment references keep them out of the database.
+            </p>
+            <p className="mt-2">
+              Trigger keywords default to <code>@orc</code>; set <code>config.triggers</code> under
+              Provider configuration.
+            </p>
           </HelpPopover>
         )}
       </div>
@@ -664,6 +664,17 @@ function ConnectionEditor({
         >
           Fill from local Slack
         </Button>
+      )}
+      {draft.provider === "slack-user" && (
+        <details className="text-xs text-muted-foreground">
+          <summary className="flex min-h-11 cursor-pointer items-center sm:min-h-8">
+            Manual token and cookie
+          </summary>
+          <p className="pb-2">
+            Open app.slack.com → DevTools → Console for <code>TS.boot_data.api_token</code> (xoxc),
+            then Application → Cookies → <code>d</code> (xoxd).
+          </p>
+        </details>
       )}
       {draft.provider === "slack" && (
         <Button
@@ -1012,10 +1023,9 @@ function ConnectionEditor({
                 Apply agent replies
               </Button>
               <HelpPopover label="Agent reply routing" testId="channel-replies-help">
-                The reply project is the default. Use “default” for the agent to follow Chat
-                Settings. /projects, /agent and /model can change this conversation's choices within
-                recipient permissions. The project needs a working directory. Existing earlier
-                routing rules retain priority. Apply, then save the connection.
+                The reply project is the default; “default” follows Chat Settings. /projects, /agent
+                and /model change this conversation within recipient permissions. Apply, then save
+                the connection.
               </HelpPopover>
               <Button variant="ghost" onClick={() => setReplyTarget(null)}>
                 Cancel
