@@ -396,8 +396,9 @@ A send into a conversation whose turn is still running returns `409` with code
 `SESSION_BUSY` and `details.canTakeOver` / `details.reason`. Resending the same
 request with `confirmBusy: true` stops the turn this daemon owns, waits for its
 transcript and terminal lease to be saved, and continues the same native session.
-A turn owned by another live ORC daemon on the same database is refused either
-way. While a daemon is shutting down, new turns are refused with `503` and code
+A turn owned by another live ORC daemon on this machine is refused either way;
+a lease records its host and pid, and only a process on this host can be proven
+live. While a daemon is shutting down, new turns are refused with `503` and code
 `DAEMON_DRAINING`; the conversation stays resumable and the send can be retried
 after the restart.
 
