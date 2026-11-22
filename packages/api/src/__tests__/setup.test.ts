@@ -292,6 +292,47 @@ describe("suggestSetupProjects", () => {
     expect(norm(clone.path)).toBe(norm(repoAClone));
   });
 
+  test("colliding max-length basenames get distinct names instead of hanging", async () => {
+    // Two folders whose sanitized basenames are identical at the 100-char name
+    // cap: a dedupe suffix must reserve room within the cap, or every candidate
+    // truncates back to the taken base and the loop never ends. A regression
+    // here blocks the event loop, so this run dies as a timeout, not a failure.
+    const longRoot = mkdtempSync(join(tmpdir(), "orc-setup-long-"));
+    const stem = "x".repeat(110);
+    const seeds = [
+      { id: "s-long-a", dir: join(longRoot, `${stem}-aaa`), last: 60 },
+      { id: "s-long-b", dir: join(longRoot, `${stem}-bbb`), last: 50 },
+    ];
+    try {
+      const db = getSqlite();
+      for (const { id, dir, last } of seeds) {
+        mkdirSync(dir, { recursive: true });
+        db.prepare(
+          `INSERT INTO gateway_sessions
+               (id, chat_id, backend, mode, runtime_session_id, cwd, execution_host, project_id, last_activity_at, created_at)
+             VALUES (?, '__live-sessions__', 'claude', 'direct', ?, ?, NULL, NULL, ?, ?)`,
+        ).run(id, `native-${id}`, dir, last, last);
+      }
+
+      const started = Date.now();
+      const suggestions = await suggestSetupProjects();
+      // Termination is the regression: bounded work returns well inside any timeout.
+      expect(Date.now() - started).toBeLessThan(5000);
+      const long = suggestions.filter((entry) => entry.name.startsWith("xxxx"));
+      expect(long).toHaveLength(2);
+      // Newest keeps the full base; the collision gets a suffix that fits the cap.
+      expect(long[0]?.name).toBe(stem.slice(0, 100));
+      expect(long[1]?.name).toBe(`${stem.slice(0, 98)}-2`);
+      expect(long.every((entry) => /^[a-zA-Z0-9_-]{1,100}$/.test(entry.name))).toBeTrue();
+      expect(new Set(long.map((entry) => entry.name.toLowerCase())).size).toBe(2);
+    } finally {
+      getSqlite()
+        .prepare("DELETE FROM gateway_sessions WHERE id IN (?, ?)")
+        .run(...seeds.map((seed) => seed.id));
+      rmSync(longRoot, { recursive: true, force: true });
+    }
+  });
+
   test("GET /api/setup answers with agent rows, suggestions and the default agent", async () => {
     const res = await req(app, "GET", "/setup");
     expect(res.status).toBe(200);
