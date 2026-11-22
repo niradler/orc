@@ -51,10 +51,10 @@ function pluginEntryDir(entry: unknown): string | undefined {
   return undefined;
 }
 
-/** OpenCode resolves a plugin directory through its package entry, not a bare file. */
 /**
  * Materialize the plugin files embedded in a compiled binary so OpenCode can
- * load them from a stable directory. A changed bundle gets a new hash path.
+ * load them from a stable directory. A changed bundle gets a new hash path;
+ * OpenCode resolves the directory through its package entry, not a bare file.
  */
 export function installEmbeddedOpenCodePlugin(
   assets: Record<string, string>,
@@ -74,7 +74,17 @@ export function installEmbeddedOpenCodePlugin(
     if (existsSync(target)) {
       if (!readFileSync(target).equals(content))
         throw new Error("Bundled OpenCode plugin cache was modified");
-    } else writeFileSync(target, content, { flag: "wx" });
+      continue;
+    }
+    try {
+      writeFileSync(target, content, { flag: "wx" });
+    } catch (error) {
+      // Another ORC process extracted the same bundle first; accept only the
+      // identical bytes, never a partially written or tampered file.
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (!readFileSync(target).equals(content))
+        throw new Error("Bundled OpenCode plugin cache was modified");
+    }
   }
   return directory;
 }

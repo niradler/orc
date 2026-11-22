@@ -275,6 +275,17 @@ test("opencode sessions get ORC's session config and fail loudly when enforcemen
     "in-memory rule database",
   );
   store.revert(revision.id, "Test cleanup");
+
+  // A readable policy is required before OpenCode can be made safe: a storage
+  // failure must refuse the session instead of returning an advisory gap.
+  getSqlite().exec("ALTER TABLE rule_heads RENAME COLUMN revision_id TO broken_head");
+  try {
+    await expect(sessionRules("opencode", { cwd: workspace })).rejects.toThrow(
+      "could not read them",
+    );
+  } finally {
+    getSqlite().exec("ALTER TABLE rule_heads RENAME COLUMN broken_head TO revision_id");
+  }
 });
 
 test("SDK pre-tool callback fails closed on evaluator errors and malformed input", async () => {

@@ -45,7 +45,9 @@ The baseline asks the human before `daemon stop`/`restart`, process kills, `sudo
 destructive `rm`/`rd`/`del`/`format`/`mkfs`, forced pushes, hard resets, `shutdown` and
 `reboot`. Everything else keeps OpenCode's own policy, so ordinary shell commands do not
 start prompting. The plugin's `execute.before` deny still runs first, and auto-approval
-cannot bypass it.
+cannot bypass it. A baseline `ask` follows the session's auto-approval setting: chat
+prompts the human, while a worker or KB digest session with auto-approval answers it
+automatically. A workspace `deny` or `ask_user` rule always keeps its own behavior.
 
 If rules are enabled and a policy covers the session folder, ORC refuses to start the
 session when the plugin bundle is missing, the database is in memory, or the session runs

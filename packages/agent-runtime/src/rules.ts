@@ -61,6 +61,14 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
     try {
       policies = matching();
     } catch (error) {
+      const message = error instanceof Error ? error.message : "storage unavailable";
+      // OpenCode has a verified interception path, so a storage failure must not
+      // silently drop its plugin and permission baseline. Other backends keep
+      // the advisory gap; Claude rethrows below.
+      if (agent === "opencode")
+        throw new Error(
+          `ORC rules are enabled in this workspace, but the OpenCode session could not read them (${message}). Restore the ORC rule database, or disable rules to run without enforcement.`,
+        );
       return {
         ...opts,
         ruleGap: {
@@ -68,7 +76,7 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
           agent,
           policies: [],
           reason: "evaluation_unavailable",
-          message: `ORC could not read the workspace rules (${error instanceof Error ? error.message : "storage unavailable"}), so this session runs without rule enforcement.`,
+          message: `ORC could not read the workspace rules (${message}), so this session runs without rule enforcement.`,
         },
       };
     }

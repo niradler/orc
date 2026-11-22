@@ -260,7 +260,10 @@ configuration, and ORC never edits the global `opencode.json`:
 The baseline is defense in depth. A matching `deny` workspace rule still blocks before
 OpenCode's permission layer, and `autoApprove` cannot bypass it. An approvable rule uses
 `ask_user`, which creates the normal ORC human request and returns the human's decision
-to the hook. When rules are enabled and a policy covers the session folder, ORC refuses
+to the hook, regardless of `autoApprove`. A baseline `ask` is an ordinary OpenCode
+permission request: it prompts a human in chat (where auto-approval is off), while a
+worker or KB digest session that runs with auto-approval answers it automatically. When
+rules are enabled and a policy covers the session folder, ORC refuses
 to start the session if the bundled plugin is missing, the database is in memory, or the
 session runs on a remote execution host that cannot load this machine's plugin. The error
 names the plugin and `ORC_OPENCODE_PLUGIN`. ORC never downgrades such a session to
