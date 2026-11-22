@@ -124,7 +124,10 @@ function migrateRuleStorage(db: Database): number {
         }
         if (!parsed || typeof parsed !== "object") continue;
         const result = parsed as RuleDecision;
-        const outcome = isRuleOutcome(result) || commandRouteOutcome(result).outcome;
+        // Builtin action receipts carry no decision; they are durable evidence
+        // and a replay guard, so keep them like any other applied row.
+        const receipt = result.decision !== "abstain" && result.decision !== "deny";
+        const outcome = receipt || isRuleOutcome(result) || commandRouteOutcome(result).outcome;
         const counter: RuleCounterInput = {
           workspace: row.workspace,
           revision_id: row.revision_id,
@@ -266,43 +269,47 @@ export class RuleStore {
           JSON.stringify([active.id, event.backend, event.session_id, event.id, "command_route"]),
         )
         .digest("hex");
-      const existing = this.db
-        .query<{ input_hash: string }, [string]>(
-          "SELECT input_hash FROM rule_decisions WHERE event_key=?",
-        )
-        .get(eventKey);
-      if (existing) {
-        if (existing.input_hash !== inputHash)
-          throw new ConflictError("Event identity reused with different input");
-        continue;
-      }
-      const now = Date.now();
-      const counter: RuleCounterInput = {
-        workspace: active.workspace,
-        revision_id: active.id,
-        phase: "command_route",
-        tool: event.tool ?? null,
-        at: now,
-        abstain: !outcome,
+      const apply = () => {
+        const existing = this.db
+          .query<{ input_hash: string }, [string]>(
+            "SELECT input_hash FROM rule_decisions WHERE event_key=?",
+          )
+          .get(eventKey);
+        if (existing) {
+          if (existing.input_hash !== inputHash)
+            throw new ConflictError("Event identity reused with different input");
+          return;
+        }
+        const now = Date.now();
+        const counter: RuleCounterInput = {
+          workspace: active.workspace,
+          revision_id: active.id,
+          phase: "command_route",
+          tool: event.tool ?? null,
+          at: now,
+          abstain: !outcome,
+        };
+        countEvent(this.db, counter);
+        if (!outcome) return;
+        this.db
+          .query(
+            "INSERT INTO rule_decisions(id,event_key,input_hash,revision_id,session_id,phase,tool,result,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+          )
+          .run(
+            ulid(),
+            eventKey,
+            inputHash,
+            active.id,
+            event.session_id,
+            "command_route",
+            event.tool ?? null,
+            JSON.stringify(redacted),
+            now,
+          );
+        countHits(this.db, counter, redacted as RuleDecision);
       };
-      countEvent(this.db, counter);
-      if (!outcome) continue;
-      this.db
-        .query(
-          "INSERT INTO rule_decisions(id,event_key,input_hash,revision_id,session_id,phase,tool,result,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-        )
-        .run(
-          ulid(),
-          eventKey,
-          inputHash,
-          active.id,
-          event.session_id,
-          "command_route",
-          event.tool ?? null,
-          JSON.stringify(redacted),
-          now,
-        );
-      countHits(this.db, counter, redacted as RuleDecision);
+      if (outcome) this.db.transaction(apply).immediate();
+      else apply();
     }
     return result;
   }

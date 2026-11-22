@@ -238,11 +238,18 @@ describe("rule history and action evidence", () => {
       INSERT INTO rule_decisions VALUES ('cr-pass','k4','h','rev','command_route','s','Bash','{"decision":"abstain","reasons":[],"context":[],"jobs":[],"command_processing":{"rule_ids":["rw"],"status":"passthrough","command_hash":null}}',1003);
       INSERT INTO rule_decisions VALUES ('cr-deny','k5','h','rev','command_route','s','Bash','{"decision":"deny","reasons":[{"rule_id":"rw","reason":"bad"}],"context":[],"jobs":[],"command_processing":{"rule_ids":["rw"],"status":"denied","command_hash":null}}',1004);
       INSERT INTO rule_decisions VALUES ('malformed','k6','h','rev','command_route','s','Bash','{not json',1005);
+      INSERT INTO rule_decisions VALUES ('receipt-done','k7','h','rev','pre_tool','s','Write','{"status":"done","rule_id":"sync","action":"record_event"}',1006);
     `);
       new RuleStore(legacy);
       expect(
         legacy.query<{ id: string }, []>("SELECT id FROM rule_decisions ORDER BY id").all(),
-      ).toEqual([{ id: "cr-deny" }, { id: "cr-rewrite" }, { id: "deny" }, { id: "malformed" }]);
+      ).toEqual([
+        { id: "cr-deny" },
+        { id: "cr-rewrite" },
+        { id: "deny" },
+        { id: "malformed" },
+        { id: "receipt-done" },
+      ]);
       expect(
         legacy
           .query<{ events: number; abstains: number }, []>(
@@ -253,6 +260,7 @@ describe("rule history and action evidence", () => {
         { events: 3, abstains: 1 },
         { events: 1, abstains: 0 },
         { events: 1, abstains: 1 },
+        { events: 1, abstains: 0 },
       ]);
       expect(
         legacy
@@ -275,6 +283,7 @@ describe("rule history and action evidence", () => {
         { events: 3, abstains: 1 },
         { events: 1, abstains: 0 },
         { events: 1, abstains: 1 },
+        { events: 1, abstains: 0 },
       ]);
       expect(
         legacy.query<{ count: number }, []>("SELECT SUM(count) AS count FROM rule_hits").get(),
@@ -353,6 +362,9 @@ describe("rule history and action evidence", () => {
           )
           .get()?.events,
       ).toBe(1);
+      expect(() =>
+        routeStore.evaluateCommand({ ...command("cmd-1"), input: { command: "different" } }),
+      ).toThrow("different input");
     });
 
     test("a passthrough is an abstain and not a rewrite hit", () => {
