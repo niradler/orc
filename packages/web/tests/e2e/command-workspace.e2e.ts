@@ -142,12 +142,8 @@ test("should share recent folders and last selection between chat and terminal, 
   await page.getByTestId("chat-open-button").click();
   await setWorkspaceFolder(page, cwd);
   await expect(page.getByTestId("chat-workspace-folder")).toHaveAttribute("title", `Local: ${cwd}`);
-  // Exercise the native chooser contract without opening an OS dialog in CI.
-  await page.route("**/api/terminals/pick-folder", (route) => {
-    expect(route.request().postDataJSON()).toEqual({ initial: cwd, host: null });
-    return route.fulfill({ json: { path: cwd } });
-  });
   await browseWorkspace(page);
+  await page.getByTestId("remote-folder-pick").click();
   await openWorkspaceFolder(page);
   await expect(page.getByTestId("chat-workspace-recent-option")).toContainText([cwd]);
   await closeWorkspaceFolder(page);
@@ -157,7 +153,6 @@ test("should share recent folders and last selection between chat and terminal, 
   await page.getByTestId("terminal-new").click();
   await page.getByTestId("terminal-host-select").selectOption("");
   await expect(page.getByTestId("terminal-cwd")).toHaveValue(cwd);
-  await page.unroute("**/api/terminals/pick-folder");
   await page.getByTestId("terminal-browse").click();
   await page.getByTestId("remote-folder-name-nested").dblclick();
   await page.getByTestId("remote-folder-pick").click();

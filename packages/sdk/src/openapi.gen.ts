@@ -523,6 +523,95 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/remote-hosts/{id}/browse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List folders on a remote ORC's machine or one of its SSH hosts */
+        get: {
+            parameters: {
+                query?: {
+                    path?: string;
+                    host?: "" | string;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Folders */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["RemoteHostBrowse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/remote-hosts/{id}/browse/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a folder on a remote ORC's machine or one of its SSH hosts */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        host: string | null;
+                        parent: string;
+                        name: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Created folder */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            path: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chat/waiting": {
         parameters: {
             query?: never;
@@ -24274,6 +24363,12 @@ export interface components {
             host: string | null;
             /** @description SSH aliases configured on the remote */
             hosts: string[];
+        };
+        RemoteHostBrowse: {
+            host: string | null;
+            path: string;
+            parent: string | null;
+            directories: string[];
         };
         HealthResponse: {
             /** @enum {string} */

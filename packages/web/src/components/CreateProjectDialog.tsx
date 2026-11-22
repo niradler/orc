@@ -6,7 +6,7 @@ import {
 } from "@orc/core/workspace-settings";
 import { useState } from "react";
 import type { CreateProjectInput, ProjectStatus } from "@/api/client";
-import { api } from "@/api/client";
+import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { FormDialog } from "@/components/FormDialog";
 import { GithubSyncFields } from "@/components/GithubSyncFields";
 import { HelpPopover } from "@/components/HelpPopover";
@@ -66,7 +66,7 @@ export function CreateProjectDialog({
   const [workspace, setWorkspace] = useState<WorkspaceEnvironment>(defaultWorkspaceEnvironment);
   const createProject = useCreateProject();
   const [firstTask, setFirstTask] = useState(allowFirstTask);
-  const [folderError, setFolderError] = useState("");
+  const [browsing, setBrowsing] = useState(false);
   const dirty =
     JSON.stringify([
       name,
@@ -104,7 +104,7 @@ export function CreateProjectDialog({
     setMaxWorkers("");
     setFirstTask(allowFirstTask);
     setWorkspace(defaultWorkspaceEnvironment());
-    setFolderError("");
+    setBrowsing(false);
     createProject.reset();
   }
 
@@ -239,23 +239,17 @@ export function CreateProjectDialog({
                       variant="ghost"
                       size="sm"
                       data-testid="project-pick-folder"
-                      onClick={async () => {
-                        try {
-                          const result = await api.terminals.pickFolder(scope || undefined);
-                          if (result.path) setScope(result.path);
-                          setFolderError("");
-                        } catch (error) {
-                          setFolderError(error instanceof Error ? error.message : String(error));
-                        }
-                      }}
+                      onClick={() => setBrowsing(true)}
                     >
                       Choose folder
                     </Button>
-                    {folderError && (
-                      <p role="alert" className="text-xs text-destructive">
-                        {folderError}
-                      </p>
-                    )}
+                    <FolderPickerDialog
+                      open={browsing}
+                      onOpenChange={setBrowsing}
+                      host={null}
+                      initial={scope}
+                      onPick={setScope}
+                    />
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
                     <div className="flex items-center gap-1">

@@ -182,6 +182,61 @@ describe("remote ORC hosts", () => {
     );
   });
 
+  test("browses and creates folders through the remote server", async () => {
+    const listed = await req(
+      app,
+      "GET",
+      `/remote-hosts/${id}/browse?path=${encodeURIComponent(destHome)}&host=`,
+    );
+    expect(listed.status).toBe(200);
+    const listing = await listed.json<{ path: string; directories: string[] }>();
+    expect(listing.path).toBe(destHome);
+
+    const created = await req(app, "POST", `/remote-hosts/${id}/browse/folders`, {
+      host: null,
+      parent: destHome,
+      name: "picked-here",
+    });
+    expect(created.status).toBe(200);
+    expect((await created.json<{ path: string }>()).path).toBe(join(destHome, "picked-here"));
+    const after = await (
+      await req(app, "GET", `/remote-hosts/${id}/browse?path=${encodeURIComponent(destHome)}`)
+    ).json<{ directories: string[] }>();
+    expect(after.directories).toContain("picked-here");
+  });
+
+  test("forwards the requested host, including an empty one, to the remote server", async () => {
+    const original = globalThis.fetch;
+    const requested: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      requested.push(String(input));
+      return new Response(
+        JSON.stringify({ host: null, path: destHome, parent: null, directories: [] }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }) as typeof fetch;
+    try {
+      const own = await req(
+        app,
+        "GET",
+        `/remote-hosts/${id}/browse?path=${encodeURIComponent(destHome)}&host=`,
+      );
+      expect(own.status).toBe(200);
+      const aliased = await req(
+        app,
+        "GET",
+        `/remote-hosts/${id}/browse?path=${encodeURIComponent(destHome)}&host=my-ssh-host`,
+      );
+      expect(aliased.status).toBe(200);
+    } finally {
+      globalThis.fetch = original;
+    }
+    expect(requested.map((url) => new URL(url).searchParams.get("host"))).toEqual([
+      "",
+      "my-ssh-host",
+    ]);
+  });
+
   test("a wrong token fails the test with a clear reason", async () => {
     await req(app, "POST", "/remote-hosts", {
       id,

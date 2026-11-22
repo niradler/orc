@@ -7,8 +7,8 @@ the editor for shared specialist profiles.
 Import a package folder, inspect its original files, then choose **Use package**.
 Select the coding agent, local or configured SSH host, working folder, and chat
 or terminal destination. An ORC project is optional: its folder can fill the path,
-which remains editable. **Browse** lists folders on the selected SSH host or opens
-the local folder picker. Saved agent definitions have the same **Launch agent** dialog.
+which remains editable. **Browse** lists folders on the selected host in the
+dashboard's folder dialog. Saved agent definitions have the same **Launch agent** dialog.
 Terminal launches run preparation before starting the agent. Chat launches wait
 for preparation before opening a persistent conversation; use a terminal if an
 installer needs trust, authentication or conflict prompts. Chat supports Claude
