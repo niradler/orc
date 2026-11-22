@@ -82,10 +82,9 @@ export function ExportSkillsDialog({ onClose }: { onClose: () => void }) {
         <DialogHeader className="shrink-0 flex-row items-center gap-1 border-b px-4 py-3 pr-12 sm:px-6">
           <DialogTitle>Export to agents</DialogTitle>
           <HelpPopover label="skill exports">
-            Writes ORC skills as native skill folders (SKILL.md plus supporting files) into your
-            agent skills folders, a project checkout (.claude/skills, .agents/skills, ...) or any
-            folder. Project checkouts come from the project's folder and its agent sessions.
-            Existing folders are only replaced when you select them, and a backup is kept.
+            Writes skills as native skill folders (SKILL.md plus files) into agent folders, a
+            project checkout, or any folder. Existing folders are replaced only when selected; a
+            backup is kept.
           </HelpPopover>
         </DialogHeader>
         <div

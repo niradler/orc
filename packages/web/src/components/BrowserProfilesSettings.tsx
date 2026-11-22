@@ -48,10 +48,8 @@ export function BrowserProfilesSettings() {
       <div className="flex items-center gap-1">
         <h3 className="text-sm font-medium">Browser profiles</h3>
         <HelpPopover label="Browser profiles" testId="browser-profiles-help">
-          Every chat uses the ORC browser profile unless you pick another one in its browser panel,
-          so a login made once works for you and your agents in every chat and survives restarts.
-          Add a saved profile to keep a second set of logins apart. Temporary keeps one chat's
-          logins in memory only.
+          Every chat uses the ORC profile unless you pick another, so one login serves all chats and
+          survives restarts. A saved profile keeps logins apart; temporary lasts one chat.
         </HelpPopover>
       </div>
       <form
@@ -151,10 +149,8 @@ export function BrowserProfilesSettings() {
           <span className="inline-flex items-center gap-1">
             Import logins from Chrome, Edge, Brave, Arc, Firefox or Safari
             <HelpPopover label="Importing logins" testId="browser-import-help">
-              Logins go into the profile selected above. Scan installed Firefox profiles, or
-              Chrome/Edge/Brave/Chromium on macOS and Linux, and Safari on macOS. Only the sites you
-              choose are copied. Close the source browser first. OS keychain approval may be
-              required; Linux encrypted stores require Secret Service’s secret-tool.
+              Copies selected sites' logins into the profile above. Close the source browser first;
+              OS keychain approval may be needed. Sources: Chrome-family, Firefox or Safari.
             </HelpPopover>
           </span>
         </summary>
@@ -247,11 +243,9 @@ export function BrowserProfilesSettings() {
             Find source sites
           </Button>
           <HelpPopover label="Live browser connection" testId="browser-import-live-help">
-            Connect a Chrome/Edge profile whose local debugging endpoint you enabled, then select
-            sites and a destination profile. Approve any prompt in that browser. Only selected
-            sites’ cookies are copied; the agent never receives this connection. Passwords, local
-            storage and device-bound sessions are not transferred. Some sites require logging in
-            again. Windows Chrome/Edge app-bound cookie files require this connection.
+            Connect a Chrome/Edge profile with local debugging enabled, then pick sites. Only those
+            sites' cookies are copied; passwords and device-bound sessions are not. Some sites need
+            a fresh sign-in.
           </HelpPopover>
         </div>
         {source && (

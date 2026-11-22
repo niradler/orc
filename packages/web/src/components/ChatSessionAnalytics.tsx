@@ -129,9 +129,9 @@ export function ChatSessionAnalytics({
             Context and cache
           </h3>
           <HelpPopover label="Context and cache" testId="chat-analytics-context-help">
-            Every request re-sends the whole conversation, so context totals count reused text once
-            per request. Cache reuse is the share of that input the provider read from its prompt
-            cache. Compaction lowers the next request and is marked on the chart.
+            Every request re-sends the conversation, so context totals count reused text once per
+            request. Cache reuse is the share read from the provider's cache; compaction lowers the
+            next request.
           </HelpPopover>
         </div>
         {!data.context ? (

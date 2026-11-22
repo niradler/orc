@@ -120,10 +120,8 @@ export function ChatSettingsForm({ onManageProviders }: { onManageProviders: () 
             <div className="flex items-center gap-1">
               <Label htmlFor="chat-mcp">Tools connection</Label>
               <HelpPopover label="Tools connection" testId="chat-mcp-help">
-                The ORC connection uses server credentials internally and serves meta tools that
-                search, describe and invoke every ORC tool on demand. Host configuration may include
-                other MCP servers; this setting does not disable them. Protected workspaces may also
-                require ORC tools.
+                Uses server credentials and serves meta tools that search, describe and invoke ORC
+                tools on demand. Other MCP servers from host config still apply.
               </HelpPopover>
             </div>
             <select

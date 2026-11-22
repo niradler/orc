@@ -76,14 +76,8 @@ export function VoiceSettings() {
       <div className="mb-2 flex items-center gap-1">
         <h2 className="text-base font-medium">Voice</h2>
         <HelpPopover label="voice settings" testId="settings-voice-help">
-          <p>
-            The microphone used by composer dictation and voice mode. Saved in this browser, so each
-            device picks its own source.
-          </p>
-          <p className="mt-2">
-            System default follows your operating system. Device names appear once the browser has
-            microphone permission; the browser needs HTTPS or localhost to reach the microphone.
-          </p>
+          Microphone for composer dictation and voice mode. Saved on this device; system default
+          follows the OS. Device names need microphone permission and HTTPS or localhost.
         </HelpPopover>
       </div>
       <p className="mb-6 text-xs text-muted-foreground">
@@ -131,15 +125,8 @@ export function VoiceSettings() {
         <div className="mb-2 flex items-center gap-1">
           <h3 className="text-sm font-medium">Speech defaults</h3>
           <HelpPopover label="speech defaults" testId="settings-speech-help">
-            <p>
-              Saved on the server for every device and channel. The language is sent to the
-              transcription provider; auto detect lets the provider decide.
-            </p>
-            <p className="mt-2">
-              The voice is used for spoken replies. OpenAI-compatible servers such as Vocal list
-              their voices here; otherwise type a voice id. Voice mode can override the voice in the
-              server config.
-            </p>
+            Saved on the server for every device and channel. The language goes to the transcription
+            provider; auto detect lets it decide. The voice is used for spoken replies.
           </HelpPopover>
         </div>
         <p className="mb-6 text-xs text-muted-foreground">

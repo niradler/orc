@@ -418,22 +418,14 @@ export function UsageSettings() {
           </h2>
           <HelpPopover label="Token usage" testId="usage-help">
             <p>
-              Tokens are indexed per request from local Claude, Codex, Pi, OpenCode, Gemini and
-              Cursor sessions. Filtering, model distribution and time buckets use the request time,
-              not the session start date.
+              Indexed per request from local agent sessions; filters and buckets use request time.
             </p>
             <p className="mt-2">
-              Gemini exposes only message totals, and Cursor exposes a context estimate, so those
-              requests are marked estimated. Sessions that have not been indexed yet are reported
-              separately and are not included in the distribution.
+              Gemini totals and Cursor context estimates are marked estimated; unindexed sessions
+              are excluded.
             </p>
             <p className="mt-2">
-              Raw requests are kept for 95 days. Older usage is rolled up per session, day and
-              model, so All time keeps totals and shares without storing every request.
-            </p>
-            <p className="mt-2">
-              No billed cost is shown: ORC has no reliable price source for every provider and plan.
-              Token counts are exact where the CLI records them.
+              Requests older than 95 days are rolled up. Costs are hidden since prices vary by plan.
             </p>
           </HelpPopover>
         </div>
@@ -767,27 +759,21 @@ export function UsageSettings() {
             </h3>
             <p className="text-xs text-muted-foreground">
               {count.format(data.coverage.indexed_sessions)} sessions with request-level usage.
-              {data.coverage.unindexed_sessions > 0 && (
-                <>
-                  {" "}
-                  {count.format(data.coverage.unindexed_sessions)} sessions started in this period
-                  have not been indexed yet
-                  {data.coverage.unindexed_tokens > 0
-                    ? `; their ${count.format(data.coverage.unindexed_tokens)} lifetime tokens are excluded from the distribution`
-                    : ""}
-                  .
-                </>
-              )}
+              {data.coverage.unindexed_sessions > 0 &&
+                ` ${count.format(data.coverage.unindexed_sessions)} not indexed yet${
+                  data.coverage.unindexed_tokens > 0
+                    ? ` (${count.format(data.coverage.unindexed_tokens)} lifetime tokens excluded)`
+                    : ""
+                }.`}
               {data.coverage.unsupported_sessions > 0 &&
-                ` ${count.format(data.coverage.unsupported_sessions)} use agents that do not report per-request usage.`}
+                ` ${count.format(data.coverage.unsupported_sessions)} use agents without per-request usage.`}
               {data.coverage.unknown_sessions > 0 &&
-                ` ${count.format(data.coverage.unknown_sessions)} have no recorded token count.`}
+                ` ${count.format(data.coverage.unknown_sessions)} have no token count.`}
             </p>
             {data.coverage.estimated_sessions > 0 && (
               <p className="text-xs text-muted-foreground">
-                Cursor sessions with estimated counts:{" "}
-                {count.format(data.coverage.estimated_sessions)}. Gemini messages are also estimated
-                because only a total is available.
+                Estimated: {count.format(data.coverage.estimated_sessions)} Cursor sessions. Gemini
+                messages are estimated too, since only a total is available.
               </p>
             )}
           </section>
