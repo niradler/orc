@@ -366,3 +366,32 @@ describe("suggestSetupProjects", () => {
     expect((await after.json()).setup_dismissed).toBeTrue();
   });
 });
+
+// --- Dismissal lifecycle ------------------------------------------------------
+
+// Own app and database: creating or deleting a project kicks off a background
+// git scan of session folders, which must not race the seeded fixture folders
+// the suggestions describe removes in its teardown.
+describe("setup dismissal lifecycle", () => {
+  let app: ReturnType<typeof setupTestApp>;
+
+  beforeAll(() => {
+    app = setupTestApp();
+  });
+
+  afterAll(() => {
+    teardownTestApp();
+  });
+
+  test("creating a project clears the setup dismissal", async () => {
+    const save = await req(app, "PATCH", "/settings", { setup_dismissed: true });
+    expect(save.status).toBe(200);
+    const created = await req(app, "POST", "/projects", { name: "dismissal-clears" });
+    expect(created.status).toBe(201);
+    const project = await created.json<{ id: string }>();
+    const after = await req(app, "GET", "/settings");
+    expect((await after.json()).setup_dismissed).toBeUndefined();
+    const removed = await req(app, "DELETE", `/projects/${project.id}`);
+    expect(removed.status).toBe(204);
+  });
+});
