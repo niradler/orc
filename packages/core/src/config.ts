@@ -614,3 +614,12 @@ export function updateGlobalConfig(mutate: (raw: Record<string, unknown>) => voi
   resetConfig();
   return loadConfig();
 }
+
+/** The first-run setup screen stays dismissed only until a project exists. */
+export function clearSetupDismissal(): void {
+  if (!loadConfig().preferences.setup_dismissed) return;
+  updateGlobalConfig((raw) => {
+    const preferences = raw.preferences as Record<string, unknown> | undefined;
+    if (preferences) delete preferences.setup_dismissed;
+  });
+}
