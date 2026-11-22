@@ -10,7 +10,7 @@ import {
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { instanceId, registerShutdownHook } from "@orc/api/lifecycle";
-import { configuredApiSecret, globalConfigPath, loadConfig } from "@orc/core/config";
+import { configuredApiSecret, dialableHost, globalConfigPath, loadConfig } from "@orc/core/config";
 import {
   canonicalPath,
   clearDaemonRuntime,
@@ -30,7 +30,7 @@ import {
   stopWatchers,
 } from "@orc/runner";
 import { createOrcClient } from "@orc/sdk/client";
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { inheritLoginShellPath } from "../login-path.js";
 import { listAllJobs } from "./job.js";
 
@@ -116,9 +116,13 @@ function installWindows(): void {
   );
 }
 
-function installMacos(): void {
-  const bin = resolveOrcBin();
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+/**
+ * launchd agent for the daemon. `SuccessfulExit: false` restarts the daemon
+ * when it crashes but leaves it stopped after a clean `orc daemon stop`; plain
+ * `KeepAlive: true` would start it again immediately and make stop a no-op.
+ */
+export function launchdPlist(bin: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -133,13 +137,21 @@ function installMacos(): void {
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
   <key>StandardOutPath</key>
   <string>${ORC_LOG}</string>
   <key>StandardErrorPath</key>
   <string>${ORC_LOG}</string>
 </dict>
 </plist>`;
+}
+
+function installMacos(): void {
+  const bin = resolveOrcBin();
+  const plist = launchdPlist(bin);
 
   mkdirSync(join(homedir(), "Library", "LaunchAgents"), { recursive: true });
   writeFileSync(LAUNCHD_PLIST, plist);
@@ -237,34 +249,58 @@ function writePid() {
   writeFileSync(ORC_PID, String(process.pid));
 }
 
-function removePid() {
+/**
+ * Drop the pid file, but only when it still names the process being stopped: a
+ * restart writes the new pid before the old process exits, and clearing the
+ * file blindly would leave that daemon untrackable.
+ */
+function removePid(pid?: number) {
   try {
-    require("node:fs").unlinkSync(ORC_PID);
+    if (pid !== undefined && readDaemonPid() !== pid) return;
+    unlinkSync(ORC_PID);
   } catch {}
 }
 
 /**
  * Where the running daemon answers: the discovery record's bound port wins over
- * the configured one, and a wildcard bind is reached over loopback.
+ * the configured one; a wildcard bind is reached over loopback and an IPv6 host
+ * keeps the brackets its URL needs.
  */
 export function daemonApiTarget(): { host: string; port: number; secret: string | undefined } {
   const runtime = readDaemonRuntime();
   const config = loadConfig();
-  const configuredHost = config.api.host;
-  const host =
-    configuredHost === "0.0.0.0" || configuredHost === "::" ? "127.0.0.1" : configuredHost;
   return {
-    host,
+    host: dialableHost(config.api.host),
     port: runtime?.port ?? config.api.port,
     secret: configuredApiSecret(config.api.secret),
   };
 }
 
+async function waitUntilGone(
+  pid: number,
+  timeoutSeconds: number,
+  alive: (pid: number) => boolean,
+): Promise<boolean> {
+  const deadline = Date.now() + Math.max(1, timeoutSeconds) * 1000;
+  while (Date.now() < deadline) {
+    if (!alive(pid)) {
+      removePid(pid);
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!alive(pid)) {
+    removePid(pid);
+    return true;
+  }
+  return false;
+}
+
 /**
- * Ask the running daemon to drain and exit over HTTP. This is the only graceful
- * path that works for every launch mode (supervisor, desktop app, scheduled task,
- * npx) and the only one that works on Windows, where a signal is a hard kill.
- * Returns true once the process is gone.
+ * Ask the running daemon to drain and exit over HTTP, then wait for the pid to
+ * go. This is the graceful path on every platform and launch mode (supervisor,
+ * desktop app, service manager, npx); on Windows a signal is a hard kill, so it
+ * is the only one there. Returns true once the process is gone.
  */
 export async function requestGracefulStop(
   pid: number,
@@ -272,7 +308,6 @@ export async function requestGracefulStop(
   target = daemonApiTarget(),
   alive: (pid: number) => boolean = isProcessAlive,
 ): Promise<boolean> {
-  const deadline = Date.now() + Math.max(1, timeoutSeconds) * 1000;
   try {
     const response = await fetch(`http://${target.host}:${target.port}/api/system/shutdown`, {
       method: "POST",
@@ -288,46 +323,63 @@ export async function requestGracefulStop(
     // No reachable API (already gone, or the port never bound): fall through to
     // the pid check so a finished shutdown still reports success.
   }
-  while (Date.now() < deadline) {
-    if (!alive(pid)) {
-      removePid();
-      return true;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-  }
-  return !alive(pid);
+  return waitUntilGone(pid, timeoutSeconds, alive);
 }
 
-/**
- * Wait for a pid to disappear. Used after a forced kill so the replacement
- * daemon does not race the old process for its port.
- */
-async function waitForExit(pid: number, timeoutSeconds: number): Promise<boolean> {
-  const deadline = Date.now() + Math.max(1, timeoutSeconds) * 1000;
-  while (Date.now() < deadline) {
-    if (!isProcessAlive(pid)) {
-      removePid();
-      return true;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  return !isProcessAlive(pid);
-}
-
-/** Last resort: kill the pid. The resumable chat state is already on disk. */
-function killDaemon(pid: number, why: "force" | "signal"): void {
-  const signal = why === "force" ? "SIGKILL" : "SIGTERM";
+/** Last resort: signal the pid. The resumable chat state is already on disk. */
+function signalDaemon(pid: number, signal: NodeJS.Signals): boolean {
   try {
     process.kill(pid, signal);
-    console.log(
-      why === "force"
-        ? `Killed daemon (pid ${pid}). In-flight turns resume from their saved state.`
-        : `Sent SIGTERM to daemon (pid ${pid}).`,
-    );
+    return true;
   } catch {
-    console.error(`Could not signal pid ${pid} - process may already be stopped.`);
-    removePid();
+    removePid(pid);
+    return false;
   }
+}
+
+function parseSeconds(value: string): number {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0)
+    throw new InvalidArgumentError("Pass a positive number of seconds.");
+  return seconds;
+}
+
+export interface StopDaemonOptions {
+  timeoutSeconds: number;
+  force?: boolean;
+  /** Injected in tests to exercise the Windows and POSIX branches anywhere. */
+  platform?: NodeJS.Platform;
+  gracefulStop?: (pid: number, timeoutSeconds: number) => Promise<boolean>;
+  signal?: (pid: number, signal: NodeJS.Signals) => boolean;
+  alive?: (pid: number) => boolean;
+}
+
+export type StopOutcome = { stopped: true; how: "drain" | "signal" | "kill" } | { stopped: false };
+
+/**
+ * Stop a daemon the same way on Windows, macOS and Linux: ask the API to drain,
+ * then fall back to SIGTERM only where the platform delivers it to the daemon's
+ * handler. Windows has no graceful signal, so a stuck drain needs `--force`.
+ */
+export async function stopDaemon(pid: number, options: StopDaemonOptions): Promise<StopOutcome> {
+  const timeoutSeconds = Math.max(1, options.timeoutSeconds);
+  const alive = options.alive ?? isProcessAlive;
+  const signal = options.signal ?? signalDaemon;
+  if (options.force) {
+    if (!signal(pid, "SIGKILL") && !alive(pid)) return { stopped: true, how: "kill" };
+    return (await waitUntilGone(pid, timeoutSeconds, alive))
+      ? { stopped: true, how: "kill" }
+      : { stopped: false };
+  }
+  const gracefulStop = options.gracefulStop ?? requestGracefulStop;
+  if (await gracefulStop(pid, timeoutSeconds)) return { stopped: true, how: "drain" };
+  if ((options.platform ?? platform()) === "win32") return { stopped: false };
+  if (!signal(pid, "SIGTERM")) {
+    return alive(pid) ? { stopped: false } : { stopped: true, how: "signal" };
+  }
+  return (await waitUntilGone(pid, timeoutSeconds, alive))
+    ? { stopped: true, how: "signal" }
+    : { stopped: false };
 }
 
 /** Restart in the background so the caller keeps its terminal. Uses the config
@@ -429,55 +481,60 @@ export function daemonCommand() {
       "--force",
       "Kill the daemon instead of asking it to drain; an in-flight turn is cut and resumes from the next boot",
     )
-    .option("--timeout <seconds>", "Seconds to wait for a graceful exit", "30")
+    .option(
+      "--timeout <seconds>",
+      "Seconds to wait for the drain before giving up",
+      parseSeconds,
+      30,
+    )
     .action(async (opts) => {
       const daemonPid = readDaemonPid();
       if (!daemonPid) {
         console.log(`No daemon running (no pid file at ${ORC_PID}).`);
         return;
       }
-      if (opts.force) {
-        killDaemon(daemonPid, "force");
-        return;
-      }
-      // Ask the daemon to drain over HTTP. A signal cannot do this on Windows:
-      // SIGTERM there terminates the process without running its handler, which
-      // is how an in-flight chat turn was cut and a thread lost its session.
-      const stopped = await requestGracefulStop(daemonPid, Number(opts.timeout));
-      if (stopped) {
-        console.log(`Daemon stopped (pid ${daemonPid}).`);
-        return;
-      }
-      if (platform() === "win32") {
+      const outcome = await stopDaemon(daemonPid, {
+        timeoutSeconds: opts.timeout,
+        force: Boolean(opts.force),
+      });
+      if (!outcome.stopped) {
         console.error(
-          `The daemon did not stop within ${opts.timeout}s. Windows cannot deliver a graceful signal, so re-run with --force to kill it. In-flight turns resume from their last saved state.`,
+          platform() === "win32"
+            ? `The daemon is still running after ${opts.timeout}s. Windows cannot deliver a graceful signal, so re-run with --force to kill it. In-flight turns resume from their last saved state.`
+            : `The daemon is still running after ${opts.timeout}s. Re-run with --force to kill it; in-flight turns resume from their last saved state.`,
         );
         process.exitCode = 1;
         return;
       }
-      // POSIX still delivers SIGTERM to the daemon's handler.
-      console.log(`No drain response; sending SIGTERM to daemon (pid ${daemonPid}).`);
-      killDaemon(daemonPid, "signal");
+      console.log(
+        outcome.how === "kill"
+          ? `Killed daemon (pid ${daemonPid}). In-flight turns resume from their saved state.`
+          : outcome.how === "signal"
+            ? `Daemon stopped (pid ${daemonPid}) after SIGTERM drained it.`
+            : `Daemon stopped (pid ${daemonPid}).`,
+      );
     });
 
   cmd
     .command("restart")
     .description("Stop the daemon gracefully, then start it again")
     .option("--force", "Kill instead of draining before the restart")
-    .option("--timeout <seconds>", "Seconds to wait for a graceful exit", "30")
+    .option(
+      "--timeout <seconds>",
+      "Seconds to wait for the drain before giving up",
+      parseSeconds,
+      30,
+    )
     .action(async (opts) => {
       const daemonPid = readDaemonPid();
       if (daemonPid) {
-        if (opts.force) {
-          killDaemon(daemonPid, "force");
-          // The replacement must not race the old process for its port.
-          if (!(await waitForExit(daemonPid, Number(opts.timeout)))) {
-            console.error(`The daemon did not exit within ${opts.timeout}s; not restarting.`);
-            process.exitCode = 1;
-            return;
-          }
-        } else if (!(await requestGracefulStop(daemonPid, Number(opts.timeout)))) {
-          console.error(`The daemon did not stop within ${opts.timeout}s; not restarting.`);
+        const outcome = await stopDaemon(daemonPid, {
+          timeoutSeconds: opts.timeout,
+          force: Boolean(opts.force),
+        });
+        // The replacement must not race the old process for its port.
+        if (!outcome.stopped) {
+          console.error(`The daemon is still running after ${opts.timeout}s; not restarting.`);
           process.exitCode = 1;
           return;
         }

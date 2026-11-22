@@ -133,10 +133,11 @@ async function shutdown(signal: string, exitCode = 0) {
   // Draining first: new turns are refused while active ones finish and persist
   // their resumable identity, so a stop can never orphan a conversation.
   beginDrain();
-  const forceExit = setTimeout(
-    () => process.exit(exitCode === RESTART_EXIT_CODE ? RESTART_EXIT_CODE : 1),
-    10000,
-  );
+  // A stop that overruns its drain budget is still an intentional stop: exiting
+  // non-zero here would make a supervisor (or systemd's Restart=on-failure)
+  // resurrect a daemon the operator asked to stop. The resumable state is
+  // already durable, so the requested code is always the honest one.
+  const forceExit = setTimeout(() => process.exit(exitCode), 10000);
   forceExit.unref();
   await drainChatTurns().catch((error) => logger.error("Chat turn drain failed", error));
   stopSessionWatcher();

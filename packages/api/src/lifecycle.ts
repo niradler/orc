@@ -51,12 +51,9 @@ export function registerShutdownHandler(handler: (() => Promise<void>) | undefin
   stopping = false;
 }
 
-export function canShutdown(): boolean {
-  return stop !== undefined;
-}
-
-/** Graceful stop for callers that cannot deliver a POSIX signal (Windows, where
- *  signaling another process is a hard kill): drain, persist, then exit. */
+/** Graceful stop for any caller: drain the active turns, persist their
+ *  resumable state, then exit. It is the only graceful path on Windows, where
+ *  signaling another process is a hard kill. */
 export function requestShutdown(): void {
   if (!stop)
     throw new OrcError(

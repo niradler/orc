@@ -101,7 +101,7 @@ app.openapi(
       },
       503: {
         description:
-          "This runtime has no shutdown handler (for example `orc api` without the daemon)",
+          "This process registered no shutdown handler, as with an embedded app that mounts the API routes without the daemon runtime",
         content: {
           "application/json": { schema: z.object({ error: z.string(), code: z.string() }) },
         },

@@ -35,7 +35,8 @@ const deadLease: ChatTurnLease = {
   runId: crypto.randomUUID(),
   startedAt: 1_000,
   status: "running",
-  pid: 4_000_000, // cannot be a live pid
+  // Above every kernel's pid_max (Linux tops out at 4194304), so never live.
+  pid: 2_147_483_647,
   host: hostname(),
   lastHeartbeatAt: 2_000,
   epoch: 1,

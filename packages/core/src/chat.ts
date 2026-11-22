@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { ChatAgentOptionsMapSchema, ChatPermissionModeSchema } from "./chat-options.js";
 import { chatUiCatalogText } from "./chat-ui.js";
-import { ConflictError } from "./errors.js";
 import { SessionFileSchema } from "./session-file-types.js";
 import { AgentCapabilitiesSchema } from "./types.js";
 
@@ -661,13 +660,15 @@ export const ChatTurnLeaseStatusSchema = z.enum([
   "interrupted",
 ]);
 export type ChatTurnLeaseStatus = z.infer<typeof ChatTurnLeaseStatusSchema>;
+/** A chat turn is force-ended at this age, whatever the agent is doing. */
+export const CHAT_TURN_HARD_LIMIT_MS = 4 * 60 * 60 * 1000;
 /**
  * A `running` lease older than this cannot still have a live writer: the daemon
- * force-ends a chat turn at its four-hour hard limit, so anything older is a
+ * has already force-ended the turn at its hard limit, so anything older is a
  * leftover from a process that died. Recovery also uses it to discount a
  * recycled OS pid, which would otherwise present a dead lease as live forever.
  */
-export const CHAT_TURN_LEASE_STALE_MS = 4 * 60 * 60 * 1000 + 61_000;
+export const CHAT_TURN_LEASE_STALE_MS = CHAT_TURN_HARD_LIMIT_MS + 61_000;
 export const ChatTurnLeaseSchema = z.object({
   runId: z.string().uuid(),
   startedAt: z.number().finite().nonnegative(),
@@ -693,7 +694,7 @@ export type ChatTurnLease = z.infer<typeof ChatTurnLeaseSchema>;
  * so recovery can try it instead of starting from nothing. Most recent last.
  */
 export const CHAT_PROVIDER_REFS_MAX = 20;
-export const ChatProviderRefSourceSchema = z.enum(["started", "resumed", "discovered", "handoff"]);
+export const ChatProviderRefSourceSchema = z.enum(["started", "resumed"]);
 export type ChatProviderRefSource = z.infer<typeof ChatProviderRefSourceSchema>;
 export const ChatProviderRefSchema = z.object({
   backend: z.string(),
@@ -706,7 +707,7 @@ export const ChatProviderRefSchema = z.object({
 export type ChatProviderRef = z.infer<typeof ChatProviderRefSchema>;
 
 /** The last recovery this thread went through, for the UI's recovery notice. */
-export const ChatRecoveryModeSchema = z.enum(["resumed", "discovered", "transcript_handoff"]);
+export const ChatRecoveryModeSchema = z.enum(["transcript_handoff"]);
 export type ChatRecoveryMode = z.infer<typeof ChatRecoveryModeSchema>;
 export const ChatRecoverySchema = z.object({
   at: z.number().finite().nonnegative(),
@@ -785,24 +786,10 @@ export function parseChatThread(value: unknown): ChatThread {
 }
 /**
  * The only send refusal the always-resumable contract allows: a genuinely live
- * run owns the session and the client did not confirm pushing into it. The 409
- * body carries the active run so the client can offer that confirmation.
+ * run owns the session and the client did not confirm pushing into it. Clients
+ * recognize it by this code and decide whether to offer the confirmation.
  */
 export const CHAT_SESSION_BUSY_CODE = "SESSION_BUSY";
-export const ChatBusySessionSchema = z.object({
-  runId: z.string(),
-  startedAt: z.number().finite().nonnegative(),
-  backend: z.string(),
-  runtimeId: z.string().nullable(),
-});
-export type ChatBusySession = z.infer<typeof ChatBusySessionSchema>;
-export function sessionBusyError(active: ChatBusySession): ConflictError {
-  return new ConflictError(
-    "This session is running a turn. Confirm to push the message into it.",
-    CHAT_SESSION_BUSY_CODE,
-    { active },
-  );
-}
 
 export const ChatEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn"), turn: ChatTurnSchema }),

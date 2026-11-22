@@ -1,13 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { hostname } from "node:os";
-import {
-  CHAT_TURN_LEASE_STALE_MS,
-  type ChatMessage,
-  type ChatThread,
-  type ChatTurnLease,
-  parseChatThread,
-} from "@orc/core/chat";
-import { isProcessAlive } from "@orc/core/daemon-runtime";
+import { type ChatMessage, type ChatThread, parseChatThread } from "@orc/core/chat";
+import { chatTurnLeaseIsLive } from "@orc/core/chat-lease";
 import { createLogger } from "@orc/core/logger";
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
@@ -73,7 +67,7 @@ export async function reconcileChatTurnLeases(
     }
     const lease = thread.turn;
     if (lease?.status !== "running") continue;
-    if (leaseHolderAlive(lease, me, now)) {
+    if (chatTurnLeaseIsLive(lease, { now, host: me })) {
       summary.live++;
       continue;
     }
@@ -86,35 +80,6 @@ export async function reconcileChatTurnLeases(
     }
   }
   return summary;
-}
-
-/**
- * Whether a recorded `running` lease still has a writer.
- *
- * A lease older than the turn hard limit cannot be live: the daemon force-ends
- * any turn at that age, so the only way one is still `running` is that the
- * writer died. That bound also covers a recycled OS pid, which would otherwise
- * keep a dead lease `live` forever.
- *
- * Inside the bound, a pid on this machine is the strongest evidence. A lease
- * with no pid (written by an older build) falls back to its heartbeat: a recent
- * beat proves something was writing, an absent one proves nothing, so only a
- * lease from another host or an expired one is settled without a pid.
- */
-function leaseHolderAlive(lease: ChatTurnLease, me: string, now: number): boolean {
-  if (now - lease.startedAt > CHAT_TURN_LEASE_STALE_MS) return false;
-  // This process is the one asking, and it runs no such turn: a pid match is a
-  // recycled pid left by a previous daemon, not a live writer. Same rule as the
-  // send path, so boot and send agree on what is live.
-  if (lease.pid === process.pid) return false;
-  if (lease.pid !== undefined) {
-    if (lease.host !== undefined && lease.host !== me) return false;
-    return isProcessAlive(lease.pid);
-  }
-  if (lease.host !== undefined && lease.host !== me) return false;
-  return (
-    lease.lastHeartbeatAt !== undefined && now - lease.lastHeartbeatAt <= CHAT_TURN_LEASE_STALE_MS
-  );
 }
 
 /**

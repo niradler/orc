@@ -35,7 +35,7 @@ import { RuleStore } from "@orc/db/rules";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { reconcileChatTurnLeases } from "../chat-recovery";
-import { setChatTurnLimits } from "../routes/chat";
+import { drainChatTurns, setChatTurnLimits } from "../routes/chat";
 import type { createApp } from "../server";
 import { LIVE_CHAT_ID } from "../session-watcher";
 import { activeTurns, runChatTurn, turnKey } from "../sessions/turns";
@@ -2086,11 +2086,15 @@ describe("native chat runtime", () => {
       // a session to resume instead of a fresh start.
       // (activeTurns also holds the native key once the first event flows, so
       // only the pin is asserted here, not the key count.)
+      let stored: ChatThread | undefined;
       for (let attempt = 0; attempt < 100; attempt++) {
-        const stored = (await (await request(`/chat/threads/${threadId}`)).json()) as ChatThread;
+        stored = (await (await request(`/chat/threads/${threadId}`)).json()) as ChatThread;
         if (stored.runtimeId) break;
         await Bun.sleep(20);
       }
+      // Assert the pin here: without it the confirmed push starts a fresh
+      // session, and the failure would surface later as a misleading id diff.
+      expect(stored?.runtimeId).toBe("early-native-fixture");
 
       // Unconfirmed: the client's queue contract — a plain SESSION_BUSY it can
       // recognize — and the turn keeps running.
@@ -2126,11 +2130,65 @@ describe("native chat runtime", () => {
       const lastUser = [...afterTakeover.messages].reverse().find((entry) => entry.role === "user");
       expect(lastUser?.content).toBe("push in");
       expect(afterTakeover.runtimeId).toBe("early-native-fixture");
+      // The stopped turn released the thread: the next test starts with no run.
+      for (let attempt = 0; attempt < 100 && activeTurns.size > 0; attempt++) await Bun.sleep(20);
+      expect(activeTurns.size).toBe(0);
     } finally {
       waitPermission = false;
       await cancelReader?.();
-      // Let the stopped turn finish its finalizer so the next test starts clean.
+      calls.length = 0;
+      restore();
+    }
+  });
+
+  test("a daemon drain stops the live turn and keeps its pinned session", async () => {
+    const restore = setChatTurnLimits({ shutdownWaitMs: 50, shutdownStopMs: 2_000 });
+    waitPermission = true;
+    let cancelReader: (() => Promise<void>) | undefined;
+    try {
+      const first = await request("/chat/stream", {
+        messages: [{ role: "user", content: "long job" }],
+      });
+      expect(first.status).toBe(200);
+      const reader = first.body?.getReader();
+      if (!reader) throw new Error("missing stream");
+      cancelReader = () => reader.cancel().catch(() => {});
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let threadId: string | undefined;
+      while (!threadId) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value);
+        for (const line of buffer.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          const event = JSON.parse(line.slice(5)) as ChatEvent;
+          if (event.type === "thread") threadId = event.thread.id;
+        }
+      }
+      expect(threadId).toBeDefined();
+      let stored: ChatThread | undefined;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        stored = (await (await request(`/chat/threads/${threadId}`)).json()) as ChatThread;
+        if (stored.runtimeId) break;
+        await Bun.sleep(20);
+      }
+      const pinned = stored?.runtimeId;
+      if (!pinned) throw new Error("the live turn did not pin its native session");
+
+      // A daemon stop drains the live turn instead of leaving its lease running.
+      await drainChatTurns();
+
+      const drained = (await (await request(`/chat/threads/${threadId}`)).json()) as ChatThread;
+      expect(drained.turn?.status).not.toBe("running");
+      // The identity the turn resumed survives the drain: the next send continues
+      // that native session rather than starting a second conversation.
+      expect(drained.runtimeId).toBe(pinned);
       for (let attempt = 0; attempt < 100 && activeTurns.size > 0; attempt++) await Bun.sleep(20);
+      expect(activeTurns.size).toBe(0);
+    } finally {
+      waitPermission = false;
+      await cancelReader?.();
       calls.length = 0;
       restore();
     }
@@ -2929,7 +2987,8 @@ describe("native chat runtime", () => {
       expect(result.response.status).toBe(200);
       expect(result.events).toContainEqual({
         type: "error",
-        message: "This response could not be saved. Start a new chat before continuing.",
+        message:
+          "This response could not be saved. The conversation up to its last saved turn is intact; send again to continue.",
       });
     }
   });
