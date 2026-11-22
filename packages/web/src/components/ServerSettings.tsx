@@ -1,6 +1,6 @@
 import { RotateCw } from "lucide-react";
+import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { useHealth } from "@/hooks/useHealth";
 import { useRestartServer } from "@/hooks/useRestartServer";
 
@@ -9,15 +9,18 @@ export function ServerSettings() {
   const restart = useRestartServer();
   return (
     <section aria-labelledby="server-title">
-      <h2 id="server-title" className="mb-1 text-base font-medium">
-        Server maintenance
-      </h2>
+      <div className="mb-1 flex items-center gap-1">
+        <h2 id="server-title" className="text-base font-medium">
+          Server maintenance
+        </h2>
+        <HelpPopover label="server restart" testId="settings-restart-help">
+          Restarting reloads the server and its host state, keeps your settings and reconnects this
+          dashboard automatically.
+        </HelpPopover>
+      </div>
       <p className="mb-4 text-sm text-muted-foreground">
-        Restart ORC to reload server and host information. This closes active terminals and may
-        interrupt running work. Your settings are kept, and this dashboard reconnects automatically.
-        Switching hosts applies to new actions without a restart.
+        Closes active terminals and may interrupt running work.
       </p>
-      <Separator className="mb-4" />
       <Button
         variant="outline"
         data-testid="settings-restart"

@@ -85,10 +85,8 @@ function GoalBody({ goal, taskStatus }: { goal: Goal; taskStatus: string }) {
           <span className="font-label text-xs font-medium text-outline">Goal</span>
           <Chip className={STATUS_COLORS[status]}>{status}</Chip>
           <HelpPopover label="goal loops" testId="goal-help">
-            ORC loops a worker agent and the success check until the check passes. A metric that
-            stops improving switches to the next allowed agent, then a reviewer, then one human
-            request. Budgets cap iterations, tokens and wall-clock time; workers keep their native
-            session across iterations.
+            Loops a worker and the success check until it passes. A stalled metric moves to the next
+            agent, a reviewer, then one human request. Budgets cap iterations, tokens and time.
           </HelpPopover>
         </div>
         {active && (

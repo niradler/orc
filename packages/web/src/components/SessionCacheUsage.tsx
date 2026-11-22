@@ -107,8 +107,7 @@ export function SessionCacheUsage({ sessionId, live }: { sessionId: string; live
       </div>
       {indicator.cold && (
         <p className="mb-2 max-w-prose text-muted-foreground">
-          The recorded cache lifetime has elapsed since this activity. The next request may rebuild
-          some cached input; reuse also depends on the prompt and other requests.
+          Cache lifetime elapsed. The next request may rebuild some cached input.
         </p>
       )}
     </details>

@@ -32,9 +32,8 @@ export function RetentionSettings() {
           Automatic cleanup
         </h3>
         <HelpPopover label="automatic cleanup" testId="retention-help">
-          Notifications expire even when unresolved. Their source requests are kept independently.
-          Audit events remain until their own expiry. These settings apply across ORC clients;
-          shorter periods also apply to existing history.
+          Notifications expire even when unresolved; their requests are kept. Audit events use their
+          own expiry. Shorter periods also apply to existing history.
         </HelpPopover>
       </div>
       <form

@@ -435,9 +435,8 @@ export function AgentSettings() {
                   <div className="flex items-center gap-1">
                     <Label htmlFor="provider-home">Config directory</Label>
                     <HelpPopover label="Config directory" testId="provider-home-help">
-                      The CLI's own configuration and session directory. Point each profile at a
-                      different directory to use a separate account; ORC reads the login from there
-                      and never stores or changes credentials. Leave blank for the host default.
+                      The CLI's own configuration and session directory. Use one per account; ORC
+                      reads the login but never stores credentials. Blank uses the host default.
                     </HelpPopover>
                   </div>
                   <Button
@@ -703,16 +702,15 @@ export function AgentSettings() {
                     testId="provider-options-help"
                   >
                     {profile.agent === "opencode"
-                      ? "Configure custom providers and model options in OpenCode on the execution host. Use Default model above for a provider/model override, or leave it blank for OpenCode's default. Environment overrides apply to ACP and model discovery. ACPX launch flags do not apply to OpenCode."
+                      ? "Configure providers and models in OpenCode on the host. Default model above overrides provider/model; env overrides apply to ACP and model discovery."
                       : chatRuntime(profile.agent) === "claude-sdk"
                         ? 'Claude SDK options, for example {"effort":"high","maxTurns":20}.'
                         : chatRuntime(profile.agent) === "pi"
-                          ? 'Pi options, for example {"thinkingLevel":"high","autoCompaction":true}. Queue mode, auto-retry and auto-compaction changes are saved to Pi\'s own settings on the execution host; thinking level is session-only.'
+                          ? 'Example: {"thinkingLevel":"high","autoCompaction":true}. Queue, retry and compaction live in Pi\'s host settings; thinking level is session-only.'
                           : chatRuntime(profile.agent) === "codex"
                             ? 'Codex arguments, for example ["-c","model_reasoning_effort=\\"high\\""].'
                             : 'ACPX arguments, for example ["--timeout","120"].'}{" "}
-                    Session options override these defaults. These options apply to chat, not native
-                    terminal launches.
+                    Session options override these defaults, for chat only — not terminal launches.
                   </HelpPopover>
                 </div>
                 {profile.agent !== "opencode" && (
