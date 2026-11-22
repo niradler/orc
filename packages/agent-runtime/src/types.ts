@@ -48,6 +48,12 @@ export type SessionOpts = {
   autoApprove?: boolean | undefined;
   acpxAgent?: string | undefined;
   acpAgent?: string | undefined;
+  /**
+   * Grace period before a pending OpenCode `question` tool call that no ACP
+   * elicitation joined fails the turn instead of waiting forever (#512).
+   * Production uses the 30s default; tests inject a short window.
+   */
+  acpQuestionSurfaceMs?: number | undefined;
   acpxNativeSessionId?: string | undefined;
   a2aUrl?: string | undefined;
   agentApiUrl?: string | undefined;
