@@ -469,6 +469,7 @@ hidden rows unless asked with `include_hidden=true`.
 | `GET` `PATCH` | `/settings` | Workspace preferences |
 | `GET` `PATCH` | `/settings/mcp` | MCP defaults and prompts |
 | `GET` | `/backends` | Agent backends and whether each can run |
+| `GET` | `/setup` | First-run status: detected agents (installed / signed in / version / fix command), projects suggested from their session history, and the default agent |
 | `GET` | `/events` | Resource-change event stream |
 | `GET` `PUT` | `/ssh` | SSH execution host |
 | `GET` | `/system/about` | Server version, platform, runtime, data folder, start time |
