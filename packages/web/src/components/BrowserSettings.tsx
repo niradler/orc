@@ -11,10 +11,8 @@ export function BrowserSettings() {
       <div className="mb-2 flex items-center gap-1">
         <h2 className="text-base font-medium">Browser</h2>
         <HelpPopover label="Browser" testId="browser-help">
-          Logins in the ORC browser and saved profiles persist across chats and restarts; temporary
-          ones end with the chat. Camera, microphone and location stay blocked. Browser downloads
-          are staged safely and can be saved to the chat workspace. File previews stay inside ORC;
-          the external-link icon opens a source in VS Code.
+          Logins persist across chats and restarts; temporary ones end with the chat. Camera,
+          microphone and location stay blocked. Downloads can be saved to the chat workspace.
         </HelpPopover>
       </div>
       <p className="mb-6 text-xs text-muted-foreground">

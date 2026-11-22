@@ -23,11 +23,9 @@ export function ChatSendModeSelect({
       <div className="flex items-center gap-1">
         <span>While responding</span>
         <HelpPopover label="While responding" testId="chat-send-mode-help">
-          Send now delivers the message into the running response so the agent sees it before its
-          next step. Queue holds it until the response finishes. Attachments always queue.
-          {supported
-            ? ""
-            : ` ${config.agent} cannot take a message mid-response, so messages wait for the next turn.`}
+          Send now reaches the agent before its next step; Queue waits for the response to finish.
+          Attachments always queue.
+          {supported ? "" : ` ${config.agent} waits for the next turn.`}
         </HelpPopover>
       </div>
       <select

@@ -357,7 +357,7 @@ app.openapi(
           { backend: "pi", interception: "pi_package_extension" },
           {
             backend: "opencode",
-            interception: "opencode_plugin_requires_install",
+            interception: "opencode_session_config",
           },
           { backend: "other", interception: "unsupported" },
         ],

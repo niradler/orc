@@ -770,7 +770,9 @@ For exposing ORC beyond localhost, see [Self-hosting](./self-hosted.md).
 "args": ["literal", "arguments"] }`. Add the ID to `preferences.agents` to select it
 in chat. The `opencode` agent already ships a built-in direct ACP command
 (`opencode acp`); an `acp_commands.opencode` entry overrides it, for example to pin a
-specific installation. Commands run on the chosen execution host; authenticate using that agent's
+specific installation. ORC-managed OpenCode sessions also receive the session-scoped
+plugin and permission baseline described in [Agent rules](./agent-rules.md#opencode-session-permissions);
+no global `opencode.json` edit is needed. Commands run on the chosen execution host; authenticate using that agent's
 own login or existing secure environment configuration. Arguments are not shell
 expressions and must not contain secrets. See [Connect agents](./connect-agents.md#capabilities-and-direct-acp)
 for setup, capability negotiation and permission limitations. Existing chats retain

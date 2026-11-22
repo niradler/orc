@@ -3,6 +3,7 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError } from "@orc/core/errors";
 import { resolveExecHost } from "@orc/core/exec-host";
 import type { HumanRequest } from "@orc/core/human-requests";
+import { createLogger } from "@orc/core/logger";
 import type { RuleDecision } from "@orc/core/rule-types";
 import { getSqlite } from "@orc/db/client";
 import { currentHumanRequest, HumanRequestStore } from "@orc/db/human-requests";
@@ -15,7 +16,22 @@ import {
   type SessionOpts,
 } from "./types.js";
 
+const logger = createLogger("agent-runtime:human-requests");
+
 type Pause = Extract<AgentEvent, { type: "permission_request" | "question_request" }>;
+
+/** One-line failure reason for logs and channel messages; zod errors stringify as JSON. */
+function failureReason(error: unknown): string {
+  if (error && typeof error === "object" && Array.isArray((error as { issues?: unknown }).issues)) {
+    const issues = (error as { issues: { path?: PropertyKey[]; message?: string }[] }).issues;
+    const summary = issues
+      .map((issue) => `${(issue.path ?? []).join(".") || "input"}: ${issue.message ?? "invalid"}`)
+      .join("; ");
+    if (summary) return summary.slice(0, 300);
+  }
+  return (error instanceof Error ? error.message : String(error)).slice(0, 300);
+}
+
 type Wait = {
   abort: AbortController;
   requests: HumanRequest[];
@@ -225,10 +241,36 @@ export function withHumanRequests(
       }
       emit({ type: "request_resolved", data: { requestId: event.data.requestId } });
       emit({ type: "system_status", data: "Human response sent to the originating agent" });
-    } catch {
+    } catch (error) {
+      logger.warn("Human request bridge fell back or failed", {
+        session: session.id,
+        requestId: event.data.requestId,
+        kind: event.type,
+        created: wait.requests.length,
+        aborted: wait.abort.signal.aborted,
+        channel: !!opts.humanRequestContext?.channel,
+        error: failureReason(error),
+      });
       if (!wait.abort.signal.aborted) {
         const expected = event.type === "question_request" ? event.data.questions.length : 1;
         if (!wait.ruleBound && wait.requests.length < expected) {
+          if (opts.humanRequestContext?.channel) {
+            // A channel session has no ephemeral chat UI: the channel runtime
+            // only delivers durable inbox rows, so re-emitting the request
+            // would leave the native call pending forever (issue #512). Fail
+            // visibly and release the agent instead.
+            stopWait(wait, true);
+            emit({
+              type: "error",
+              data: `This ${event.type === "question_request" ? "question" : "approval"} could not be delivered to the originating channel; the turn was stopped and nothing was authorized.`,
+            });
+            try {
+              await session.close();
+            } catch {
+              /* Native connection may already be gone. */
+            }
+            return;
+          }
           stopWait(wait, false);
           emit({ type: "system_status", data: "Answer this request in the original chat." });
           emit(event);

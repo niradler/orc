@@ -504,9 +504,9 @@ export function RulesPanel() {
               >
                 <summary className="cursor-pointer font-medium">Agent connections</summary>
                 <p className="text-xs text-muted-foreground">
-                  Claude SDK sessions connect when rule enforcement is enabled. Native agents need
-                  installed, trusted hooks and a supported host. Pi enforces rules through the
-                  @orc/pi package; OpenCode through the @orc/opencode plugin.
+                  Claude SDK sessions connect when rule enforcement is on. Native agents need
+                  installed, trusted hooks and a supported host. Pi uses @orc/pi; OpenCode uses the
+                  OpenCode plugin.
                 </p>
                 {hookAgents.map((agent) => (
                   <p key={agent} className="text-xs break-all">
