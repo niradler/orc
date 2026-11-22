@@ -231,7 +231,7 @@ test("protected opencode chat refuses to start when enforcement cannot run", asy
     store.history(homedir()).find((row) => row.current)?.id ?? null,
     "Protect the default opencode workspace",
   );
-  loadConfig({ rules: { enabled: true } });
+  loadConfig({ rules: { enabled: true, retention_days: 30, max_decision_rows: 200_000 } });
   const previousMock = process.env.ORC_E2E_CHAT_MOCK;
   process.env.ORC_E2E_CHAT_MOCK = "1";
   try {
@@ -246,7 +246,7 @@ test("protected opencode chat refuses to start when enforcement cannot run", asy
     else process.env.ORC_E2E_CHAT_MOCK = previousMock;
     store.revert(revision.id, "End isolated opencode fixture");
     getSqlite().query("DELETE FROM rule_heads WHERE workspace=?").run(realpathSync(homedir()));
-    loadConfig({ rules: { enabled: false } });
+    loadConfig({ rules: { enabled: false, retention_days: 30, max_decision_rows: 200_000 } });
   }
 });
 
