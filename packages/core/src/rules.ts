@@ -13,6 +13,55 @@ export { RuleEventSchema, RulePolicySchema, RuleSchema } from "./rule-types.js";
 
 import type { RuleDecision, RuleEvent, RulePolicy } from "./rule-types.js";
 
+export const RULE_DAY_MS = 86_400_000;
+
+/** UTC day bucket for aggregated rule counters. */
+export function ruleDecisionDay(ms: number): number {
+  return Math.floor(ms / RULE_DAY_MS);
+}
+
+/**
+ * A decision is worth a durable row only when a rule did something: deny, ask,
+ * inject, rewrite, enqueue or approve. An empty abstain has no effect and is
+ * counted instead.
+ */
+export function isRuleOutcome(result: RuleDecision): boolean {
+  return (
+    result.decision === "deny" ||
+    Boolean(result.reasons?.length) ||
+    Boolean(result.context?.length) ||
+    Boolean(result.jobs?.length) ||
+    Boolean(result.scripts?.length) ||
+    Boolean(result.command_processors?.length) ||
+    Boolean(result.orc_actions?.length) ||
+    Boolean(result.action_errors?.length) ||
+    Boolean(result.human_requests?.length) ||
+    Boolean(result.human_receipts?.length) ||
+    result.human_approved === true ||
+    result.updated_input !== undefined
+  );
+}
+
+/** Per-rule outcome pairs for metrics; duplicated rule ids are collapsed. */
+export function ruleDecisionHits(result: RuleDecision): { rule_id: string; outcome: string }[] {
+  const hits = new Map<string, string>();
+  const add = (ruleId: string, outcome: string): void => {
+    if (!hits.has(`${ruleId}\0${outcome}`)) hits.set(`${ruleId}\0${outcome}`, outcome);
+  };
+  for (const reason of result.reasons ?? []) add(reason.rule_id, "deny");
+  for (const error of result.action_errors ?? []) add(error.rule_id, "error");
+  for (const job of result.jobs ?? []) add(job.rule_id, "job");
+  for (const script of result.scripts ?? []) add(script.rule_id, "script");
+  for (const processor of result.command_processors ?? []) add(processor.rule_id, "rewrite");
+  for (const action of result.orc_actions ?? []) add(action.rule_id, "action");
+  for (const request of result.human_requests ?? [])
+    add(request.rule_id, result.human_approved ? "approved" : "ask");
+  return [...hits].map(([key, outcome]) => ({
+    rule_id: key.slice(0, key.indexOf("\0")),
+    outcome,
+  }));
+}
+
 export function canonicalWorkspace(path: string): string {
   const actual = realpathSync(resolve(path));
   if (!statSync(actual).isDirectory()) throw new Error("Workspace must be a directory");

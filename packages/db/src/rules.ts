@@ -12,11 +12,15 @@ import type { RuleRevision } from "@orc/core/rule-types";
 import {
   canonicalWorkspace,
   evaluateRules,
+  isRuleOutcome,
+  RULE_DAY_MS,
   type RuleDecision,
   type RuleEvent,
   RuleEventSchema,
   type RulePolicy,
   RulePolicySchema,
+  ruleDecisionDay,
+  ruleDecisionHits,
   withinWorkspace,
 } from "@orc/core/rules";
 
@@ -55,10 +59,151 @@ export function installRules(db: Database): void {
       created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,
       UNIQUE(decision_id,rule_id)
     );
+    CREATE TABLE IF NOT EXISTS rule_counters (
+      workspace TEXT NOT NULL,revision_id TEXT NOT NULL REFERENCES rule_revisions(id),
+      phase TEXT NOT NULL,tool TEXT NOT NULL DEFAULT '',day INTEGER NOT NULL,
+      events INTEGER NOT NULL DEFAULT 0,abstains INTEGER NOT NULL DEFAULT 0,
+      first_seen INTEGER NOT NULL,last_seen INTEGER NOT NULL,
+      PRIMARY KEY(workspace,revision_id,phase,tool,day)
+    ) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS rule_counters_day_idx ON rule_counters(day);
+    CREATE TABLE IF NOT EXISTS rule_hits (
+      workspace TEXT NOT NULL,revision_id TEXT NOT NULL REFERENCES rule_revisions(id),
+      rule_id TEXT NOT NULL,outcome TEXT NOT NULL,day INTEGER NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,last_seen INTEGER NOT NULL,
+      PRIMARY KEY(workspace,revision_id,rule_id,outcome,day)
+    ) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS rule_hits_day_idx ON rule_hits(day);
+    CREATE TABLE IF NOT EXISTS rule_migrations (name TEXT PRIMARY KEY,applied_at INTEGER NOT NULL);
   `);
   const columns = db.query<{ name: string }, []>("PRAGMA table_info(rule_actions)").all();
   if (!columns.some((column) => column.name === "event_json"))
     db.exec("ALTER TABLE rule_actions ADD COLUMN event_json TEXT");
+  migrateRuleStorage(db);
+}
+
+/**
+ * One-time fold of the pre-counter decision log into counters. Existing
+ * abstains become counter rows and are deleted; outcome rows stay and are
+ * counted once. A marker makes every later open a no-op, and the fold shares
+ * one transaction so a crash rolls both the counts and the deletes back.
+ */
+function migrateRuleStorage(db: Database): number {
+  const done = db.query("SELECT 1 FROM rule_migrations WHERE name='rule_counters_v1'").get();
+  if (done) return 0;
+  const rows = db
+    .query<
+      {
+        id: string;
+        revision_id: string;
+        workspace: string;
+        phase: string;
+        tool: string | null;
+        result: string;
+        created_at: number;
+      },
+      []
+    >(
+      `SELECT d.id,d.revision_id,r.workspace,d.phase,d.tool,d.result,d.created_at
+       FROM rule_decisions d JOIN rule_revisions r ON r.id=d.revision_id`,
+    )
+    .all();
+  const moved: string[] = [];
+  db.transaction(() => {
+    for (const row of rows) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(row.result);
+      } catch {
+        continue;
+      }
+      if (!parsed || typeof parsed !== "object") continue;
+      const result = parsed as RuleDecision;
+      if (result.decision !== "abstain" && result.decision !== "deny") {
+        countEvent(db, {
+          workspace: row.workspace,
+          revision_id: row.revision_id,
+          phase: row.phase,
+          tool: row.tool,
+          at: row.created_at,
+          abstain: false,
+        });
+        continue;
+      }
+      const counter: RuleCounterInput = {
+        workspace: row.workspace,
+        revision_id: row.revision_id,
+        phase: row.phase,
+        tool: row.tool,
+        at: row.created_at,
+        abstain: !isRuleOutcome(result),
+      };
+      countEvent(db, counter);
+      if (counter.abstain) moved.push(row.id);
+      else countHits(db, counter, result);
+    }
+    for (let start = 0; start < moved.length; start += 500) {
+      const chunk = moved.slice(start, start + 500);
+      db.query(`DELETE FROM rule_decisions WHERE id IN (${chunk.map(() => "?").join(",")})`).run(
+        ...chunk,
+      );
+    }
+    db.query("INSERT INTO rule_migrations(name,applied_at) VALUES ('rule_counters_v1',?)").run(
+      Date.now(),
+    );
+  }).immediate();
+  if (moved.length)
+    console.info(`[orc] moved ${moved.length} abstain rule decisions into counters`);
+  return moved.length;
+}
+
+type RuleCounterInput = {
+  workspace: string;
+  revision_id: string;
+  phase: string;
+  tool: string | null;
+  at: number;
+  abstain: boolean;
+};
+
+function countEvent(db: Database, input: RuleCounterInput): void {
+  db.query(
+    `INSERT INTO rule_counters(workspace,revision_id,phase,tool,day,events,abstains,first_seen,last_seen)
+     VALUES (?,?,?,?,?,1,?,?,?)
+     ON CONFLICT(workspace,revision_id,phase,tool,day) DO UPDATE SET
+       events=events+1,
+       abstains=abstains+excluded.abstains,
+       first_seen=min(first_seen,excluded.first_seen),
+       last_seen=max(last_seen,excluded.last_seen)`,
+  ).run(
+    input.workspace,
+    input.revision_id,
+    input.phase,
+    input.tool ?? "",
+    ruleDecisionDay(input.at),
+    input.abstain ? 1 : 0,
+    input.at,
+    input.at,
+  );
+}
+
+function countHits(db: Database, input: RuleCounterInput, result: RuleDecision): void {
+  for (const hit of ruleDecisionHits(result)) {
+    db.query(
+      `INSERT INTO rule_hits(workspace,revision_id,rule_id,outcome,day,count,last_seen)
+       VALUES (?,?,?,?,?,1,?)
+       ON CONFLICT(workspace,revision_id,rule_id,outcome,day) DO UPDATE SET
+         count=count+1,
+         last_seen=max(last_seen,excluded.last_seen)`,
+    ).run(
+      input.workspace,
+      input.revision_id,
+      hit.rule_id,
+      hit.outcome,
+      ruleDecisionDay(input.at),
+      input.at,
+    );
+  }
 }
 
 type RevisionRow = Omit<RuleRevision, "policy" | "current"> & {
@@ -109,6 +254,16 @@ export class RuleStore {
           : null,
       },
     };
+    const outcome = result.decision === "deny" || result.updated_input !== undefined;
+    const routeDecision: RuleDecision = {
+      decision: result.decision,
+      reasons: result.reasons,
+      context: [],
+      jobs: [],
+      ...(result.updated_input === undefined
+        ? {}
+        : { command_processors: original.command_processors }),
+    };
     for (const active of this.active(event.cwd)) {
       if (
         !active.policy?.rules.some((rule) =>
@@ -116,6 +271,17 @@ export class RuleStore {
         )
       )
         continue;
+      const now = Date.now();
+      const counter: RuleCounterInput = {
+        workspace: active.workspace,
+        revision_id: active.id,
+        phase: "command_route",
+        tool: event.tool ?? null,
+        at: now,
+        abstain: false,
+      };
+      countEvent(this.db, counter);
+      if (!outcome) continue;
       const eventKey = createHash("sha256")
         .update(
           JSON.stringify([active.id, event.backend, event.session_id, event.id, "command_route"]),
@@ -134,8 +300,9 @@ export class RuleStore {
           "command_route",
           event.tool ?? null,
           JSON.stringify(redacted),
-          Date.now(),
+          now,
         );
+      countHits(this.db, counter, routeDecision);
     }
     return result;
   }
@@ -395,45 +562,69 @@ export class RuleStore {
         ]),
       )
       .digest("hex");
+    const existing = this.db
+      .query<{ input_hash: string; result: string }, [string]>(
+        "SELECT input_hash,result FROM rule_decisions WHERE event_key=?",
+      )
+      .get(eventKey);
+    if (existing) {
+      if (existing.input_hash !== inputHash)
+        throw new ConflictError("Event identity reused with different input");
+      return JSON.parse(existing.result) as RuleDecision;
+    }
+    const result = evaluateRules(active.policy as RulePolicy, event, [
+      this.db.filename,
+      `${this.db.filename}-wal`,
+      `${this.db.filename}-shm`,
+    ]);
+    if (process.env.ORC_RULE_ACTION === "1") {
+      result.jobs = [];
+      result.scripts = [];
+      result.command_processors = [];
+      result.orc_actions = [];
+      result.human_requests = [];
+    }
+    if (validation) {
+      result.jobs = [];
+      result.command_processors = [];
+      result.orc_actions = [];
+      result.human_requests = [];
+      result.scripts = (result.scripts ?? []).filter((script) => script.target.mode === "sync");
+    }
+    const now = Date.now();
+    const counter: RuleCounterInput = {
+      workspace: active.workspace,
+      revision_id: active.id,
+      phase: event.phase,
+      tool: event.tool ?? null,
+      at: now,
+      abstain: false,
+    };
+    if (!isRuleOutcome(result)) {
+      countEvent(this.db, { ...counter, abstain: true });
+      return result;
+    }
+    const synchronous = result.scripts?.some((script) => script.target.mode === "sync");
     const recorded = this.db
       .transaction(() => {
-        const existing = this.db
+        const raced = this.db
           .query<{ input_hash: string; result: string }, [string]>(
             "SELECT input_hash,result FROM rule_decisions WHERE event_key=?",
           )
           .get(eventKey);
-        if (existing) {
-          if (existing.input_hash !== inputHash)
+        if (raced) {
+          if (raced.input_hash !== inputHash)
             throw new ConflictError("Event identity reused with different input");
           return {
             fresh: false,
             finalized: true,
             id: "",
-            result: JSON.parse(existing.result) as RuleDecision,
+            result: JSON.parse(raced.result) as RuleDecision,
           };
         }
-        const result = evaluateRules(active.policy as RulePolicy, event, [
-          this.db.filename,
-          `${this.db.filename}-wal`,
-          `${this.db.filename}-shm`,
-        ]);
-        if (process.env.ORC_RULE_ACTION === "1") {
-          result.jobs = [];
-          result.scripts = [];
-          result.command_processors = [];
-          result.orc_actions = [];
-          result.human_requests = [];
-        }
-        if (validation) {
-          result.jobs = [];
-          result.command_processors = [];
-          result.orc_actions = [];
-          result.human_requests = [];
-          result.scripts = (result.scripts ?? []).filter((script) => script.target.mode === "sync");
-        }
         const id = ulid();
-        const now = Date.now();
-        const synchronous = result.scripts?.some((script) => script.target.mode === "sync");
+        countEvent(this.db, counter);
+        if (!synchronous) countHits(this.db, counter, result);
         this.db
           .query(
             "INSERT INTO rule_decisions(id,event_key,input_hash,revision_id,session_id,phase,tool,result,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -468,8 +659,8 @@ export class RuleStore {
       })
       .immediate();
     if (!recorded.fresh || recorded.finalized) return recorded.result;
-    const result = recorded.result;
-    for (const script of result.scripts ?? []) {
+    const finalResult = recorded.result;
+    for (const script of finalResult.scripts ?? []) {
       if (script.target.mode !== "sync") continue;
       try {
         const output = runRuleScript(script.target, event);
@@ -479,25 +670,25 @@ export class RuleStore {
         if (output.context.length && !capability?.context)
           throw new Error("Script returned context for an event that cannot inject it");
         if (output.decision === "deny") {
-          result.decision = "deny";
-          result.reasons.push({
+          finalResult.decision = "deny";
+          finalResult.reasons.push({
             rule_id: script.rule_id,
             reason: output.reason ?? "Script denied event",
           });
         }
-        result.context.push(...output.context);
+        finalResult.context.push(...output.context);
       } catch {
-        result.decision = "deny";
-        result.reasons.push({
+        finalResult.decision = "deny";
+        finalResult.reasons.push({
           rule_id: script.rule_id,
           reason: "Custom script failed or returned an unsupported result",
         });
       }
     }
-    if (result.context.join("").length > 32000) {
-      result.context = [];
-      result.decision = "deny";
-      result.reasons.push({
+    if (finalResult.context.join("").length > 32000) {
+      finalResult.context = [];
+      finalResult.decision = "deny";
+      finalResult.reasons.push({
         rule_id: "context-limit",
         reason: "Combined script context exceeds limit",
       });
@@ -506,11 +697,12 @@ export class RuleStore {
       .transaction(() => {
         this.db
           .query("UPDATE rule_decisions SET result=? WHERE id=?")
-          .run(JSON.stringify(result), recorded.id);
-        this.enqueue(active, event, serialized, result, recorded.id);
+          .run(JSON.stringify(finalResult), recorded.id);
+        countHits(this.db, counter, finalResult);
+        this.enqueue(active, event, serialized, finalResult, recorded.id);
       })
       .immediate();
-    return result;
+    return finalResult;
   }
 
   private enqueue(
@@ -599,4 +791,208 @@ export class RuleStore {
       )
       .all(...workspaceFilter(workspace));
   }
+
+  metrics(workspace?: string, days = 30, nowMs = Date.now()): RuleMetrics {
+    const windowDays = Math.min(3650, Math.max(1, Math.floor(days)));
+    const cutoffDay = ruleDecisionDay(nowMs - windowDays * RULE_DAY_MS);
+    const filter = workspaceFilter(workspace);
+    const totals = this.db
+      .query<{ events: number; abstains: number }, [number, string | null, string | null]>(
+        `SELECT COALESCE(SUM(events),0) AS events,COALESCE(SUM(abstains),0) AS abstains
+         FROM rule_counters WHERE day>=? AND (? IS NULL OR workspace=?)`,
+      )
+      .get(cutoffDay, ...filter) ?? { events: 0, abstains: 0 };
+    const perRule = this.db
+      .query<
+        {
+          workspace: string;
+          revision_id: string;
+          rule_id: string;
+          outcome: string;
+          count: number;
+          last_seen: number;
+        },
+        [number, string | null, string | null]
+      >(
+        `SELECT workspace,revision_id,rule_id,outcome,SUM(count) AS count,MAX(last_seen) AS last_seen
+         FROM rule_hits WHERE day>=? AND (? IS NULL OR workspace=?)
+         GROUP BY workspace,revision_id,rule_id,outcome ORDER BY count DESC LIMIT 200`,
+      )
+      .all(cutoffDay, ...filter);
+    const denials =
+      this.db
+        .query<{ count: number }, [number, string | null, string | null]>(
+          `SELECT COALESCE(SUM(count),0) AS count FROM rule_hits
+           WHERE outcome='deny' AND day>=? AND (? IS NULL OR workspace=?)`,
+        )
+        .get(cutoffDay, ...filter)?.count ?? 0;
+    return {
+      days: windowDays,
+      totals: {
+        events: totals.events,
+        abstains: totals.abstains,
+        outcomes: totals.events - totals.abstains,
+        denials,
+        abstain_rate: totals.events ? totals.abstains / totals.events : 0,
+      },
+      per_workspace: this.db
+        .query<
+          {
+            workspace: string;
+            events: number;
+            abstains: number;
+            outcomes: number;
+            last_seen: number;
+          },
+          [number, string | null, string | null]
+        >(
+          `SELECT workspace,SUM(events) AS events,SUM(abstains) AS abstains,
+                  SUM(events-abstains) AS outcomes,MAX(last_seen) AS last_seen
+           FROM rule_counters WHERE day>=? AND (? IS NULL OR workspace=?)
+           GROUP BY workspace ORDER BY events DESC`,
+        )
+        .all(cutoffDay, ...filter),
+      per_rule: perRule,
+      per_day: this.db
+        .query<
+          { day: number; events: number; abstains: number },
+          [number, string | null, string | null]
+        >(
+          `SELECT day,SUM(events) AS events,SUM(abstains) AS abstains
+           FROM rule_counters WHERE day>=? AND (? IS NULL OR workspace=?)
+           GROUP BY day ORDER BY day`,
+        )
+        .all(cutoffDay, ...filter),
+    };
+  }
+}
+
+export type RuleMetrics = {
+  days: number;
+  totals: {
+    events: number;
+    abstains: number;
+    outcomes: number;
+    denials: number;
+    abstain_rate: number;
+  };
+  per_workspace: {
+    workspace: string;
+    events: number;
+    abstains: number;
+    outcomes: number;
+    last_seen: number;
+  }[];
+  per_rule: {
+    workspace: string;
+    revision_id: string;
+    rule_id: string;
+    outcome: string;
+    count: number;
+    last_seen: number;
+  }[];
+  per_day: { day: number; events: number; abstains: number }[];
+};
+
+export const DEFAULT_RULE_RETENTION_DAYS = 30;
+export const MAX_RULE_DECISION_ROWS = 200_000;
+export const MAX_RULE_AGGREGATE_ROWS = 20_000;
+const DEFAULT_RULE_PRUNE_BATCH = 1000;
+
+export type RulePruneOptions = {
+  retentionDays?: number | undefined;
+  maxRows?: number | undefined;
+  nowMs?: number | undefined;
+  batchSize?: number | undefined;
+};
+
+/**
+ * Bounded retention for decisions and their aggregates. Pending actions keep
+ * their decision; finished actions are removed with it. Never runs on the hook
+ * path and never runs VACUUM, so it cannot block a tool call.
+ */
+export function pruneRuleStorage(db: Database, options: RulePruneOptions = {}): number {
+  const retentionDays = options.retentionDays ?? DEFAULT_RULE_RETENTION_DAYS;
+  if (!Number.isInteger(retentionDays) || retentionDays < 1 || retentionDays > 3650)
+    throw new RangeError("Rule retention must be an integer from 1 to 3650 days");
+  const maxRows = options.maxRows ?? MAX_RULE_DECISION_ROWS;
+  if (!Number.isInteger(maxRows) || maxRows < 1000)
+    throw new RangeError("Rule decision cap must be an integer of at least 1000 rows");
+  const batchSize = options.batchSize ?? DEFAULT_RULE_PRUNE_BATCH;
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 10_000)
+    throw new RangeError("Rule prune batch must be an integer from 1 to 10000 rows");
+  const nowMs = options.nowMs ?? Date.now();
+  const cutoff = nowMs - retentionDays * RULE_DAY_MS;
+  const cutoffDay = ruleDecisionDay(cutoff);
+  return db
+    .transaction(() => {
+      const deleteIds = (ids: string[]): number => {
+        for (let start = 0; start < ids.length; start += 500) {
+          const chunk = ids.slice(start, start + 500);
+          const marks = chunk.map(() => "?").join(",");
+          db.query(`DELETE FROM rule_actions WHERE decision_id IN (${marks})`).run(...chunk);
+          db.query(`DELETE FROM rule_decisions WHERE id IN (${marks})`).run(...chunk);
+        }
+        return ids.length;
+      };
+      const expired = deleteIds(
+        db
+          .query<{ id: string }, [number, number]>(
+            `SELECT d.id FROM rule_decisions d
+             WHERE d.created_at<? AND NOT EXISTS (
+               SELECT 1 FROM rule_actions a WHERE a.decision_id=d.id AND a.status='pending'
+             )
+             ORDER BY d.created_at,d.rowid LIMIT ?`,
+          )
+          .all(cutoff, batchSize)
+          .map((row) => row.id),
+      );
+      const overflow = deleteIds(
+        db
+          .query<{ id: string }, [number, number]>(
+            `SELECT d.id FROM rule_decisions d
+             WHERE NOT EXISTS (
+               SELECT 1 FROM rule_actions a WHERE a.decision_id=d.id AND a.status='pending'
+             )
+             ORDER BY d.created_at DESC,d.rowid DESC LIMIT ? OFFSET ?`,
+          )
+          .all(batchSize, maxRows)
+          .map((row) => row.id),
+      );
+      for (const table of ["rule_counters", "rule_hits"] as const) {
+        if (table === "rule_counters")
+          db.query(
+            `DELETE FROM rule_counters WHERE day IN (
+               SELECT day FROM rule_counters WHERE day<? GROUP BY day ORDER BY day LIMIT ?
+             )`,
+          ).run(cutoffDay, batchSize);
+        else
+          db.query(
+            `DELETE FROM rule_hits WHERE day IN (
+               SELECT day FROM rule_hits WHERE day<? GROUP BY day ORDER BY day LIMIT ?
+             )`,
+          ).run(cutoffDay, batchSize);
+        const count =
+          db.query<{ count: number }, []>(`SELECT COUNT(*) AS count FROM ${table}`).get()?.count ??
+          0;
+        if (count <= MAX_RULE_AGGREGATE_ROWS) continue;
+        const excess = Math.min(count - MAX_RULE_AGGREGATE_ROWS, batchSize);
+        if (table === "rule_counters")
+          db.query(
+            `DELETE FROM rule_counters WHERE (workspace,revision_id,phase,tool,day) IN (
+               SELECT workspace,revision_id,phase,tool,day FROM rule_counters
+               ORDER BY day,workspace,revision_id,phase,tool LIMIT ?
+             )`,
+          ).run(excess);
+        else
+          db.query(
+            `DELETE FROM rule_hits WHERE (workspace,revision_id,rule_id,outcome,day) IN (
+               SELECT workspace,revision_id,rule_id,outcome,day FROM rule_hits
+               ORDER BY day,workspace,revision_id,rule_id,outcome LIMIT ?
+             )`,
+          ).run(excess);
+      }
+      return expired + overflow;
+    })
+    .immediate();
 }
