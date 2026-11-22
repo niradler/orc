@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Bar, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, type LiveSession, type Project } from "@/api/client";
 import { ErrorState } from "@/components/ErrorState";
+import { FirstRunSetup } from "@/components/FirstRunSetup";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { ResumeActions } from "@/components/ResumeActions";
 import { StateBadge } from "@/components/StateBadge";
@@ -21,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ViewHeader } from "@/components/ViewHeader";
+import { WORKSPACE_PREFERENCES_KEY } from "@/hooks/useAgents";
 import { useJobs } from "@/hooks/useJobs";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjectScope } from "@/hooks/useProjectScope";
@@ -82,6 +84,10 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
   const jobsQuery = useJobs(scopeParams);
   const { data: jobs } = jobsQuery;
   const { data: projects } = useProjects();
+  const { data: preferences } = useQuery({
+    queryKey: WORKSPACE_PREFERENCES_KEY,
+    queryFn: api.settings.get,
+  });
   const sessionsQuery = useLiveSessions(false, scopeParams?.project_id);
   const usageQuery = useQuery({
     queryKey: ["usage-report", "30", "day", "", "", projectId],
@@ -119,8 +125,15 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
         ? "Unassigned"
         : (projects?.find((p) => p.id === projectId)?.name ?? "");
 
+  // A brand-new workspace lands here with no projects: lead with the one-time
+  // setup screen (detected agents + suggested projects) above the quiet empty
+  // activity. Dismissing hides it until a project exists.
+  const showFirstRun =
+    Array.isArray(projects) && projects.length === 0 && preferences?.setup_dismissed !== true;
+
   return (
     <div data-activity-preview data-testid="activity-preview" className="activity-preview">
+      {showFirstRun && <FirstRunSetup />}
       <ViewHeader
         title="Activity"
         meta={scopeLabel || "All projects"}

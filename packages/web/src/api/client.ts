@@ -191,6 +191,9 @@ export type {
   SessionMessageResult,
   SessionSearchResult,
   SessionSyncResult,
+  SetupAgent,
+  SetupProjectSuggestion,
+  SetupStatus,
   SkillFileInput,
   SkillFull,
   SkillMeta,
@@ -261,6 +264,7 @@ import type {
   SessionMessageResult,
   SessionSearchResult,
   SessionSyncResult,
+  SetupStatus,
   SkillFileInput,
   SkillFull,
   SkillMeta,
@@ -1153,6 +1157,10 @@ export const api = {
 
   backends: {
     list: () => req<{ backends: AgentBackendInfo[]; default_backend: string }>("GET", "/backends"),
+  },
+
+  setup: {
+    status: () => req<SetupStatus>("GET", "/setup"),
   },
 
   flows: {
