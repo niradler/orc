@@ -43,6 +43,7 @@
         // by scripts/validate-package.ts (EXTERNAL_RUNTIME_DEPS). Do not remove.
         "@anthropic-ai/claude-agent-sdk",
         "sqlite-vec",
+        "serialport",
         "zod",
         // Build-order dependency: build.ts runs `bun run --filter @orc/web build`
         // and copy-web.ts copies packages/web/dist. Not imported as a module.

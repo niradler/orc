@@ -19,7 +19,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const CLI_DIR = resolve(import.meta.dir, "..");
 const DIST_ENTRY = join(CLI_DIR, "dist", "index.js");
@@ -64,6 +64,24 @@ function resolveVec0(req: NodeRequire): string | null {
   }
 }
 
+// serialport loads @serialport/bindings-cpp's .node via node-gyp-build: either a
+// compiled build or a shipped prebuild, both relative to that package's own dir.
+function resolveSerialBindings(req: NodeRequire): string | null {
+  try {
+    const pkgDir = dirname(req.resolve("@serialport/bindings-cpp/package.json"));
+    for (const rel of [
+      "build/Release/bindings.node",
+      `prebuilds/${process.platform}-${process.arch}/node.napi.node`,
+    ]) {
+      const candidate = join(pkgDir, rel);
+      if (existsSync(candidate)) return candidate;
+    }
+  } catch {
+    /* missing package */
+  }
+  return null;
+}
+
 // Deps that are intentionally external (not bundled) and therefore must be
 // resolvable from the installed package's node_modules. `binary`, when set,
 // resolves a runtime executable the dep loads relative to its own location.
@@ -73,6 +91,7 @@ const EXTERNAL_RUNTIME_DEPS: Array<{
 }> = [
   { pkg: "@anthropic-ai/claude-agent-sdk", binary: resolveSdkBinary },
   { pkg: "sqlite-vec", binary: resolveVec0 },
+  { pkg: "serialport", binary: resolveSerialBindings },
   { pkg: "zod" },
 ];
 

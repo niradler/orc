@@ -22,6 +22,7 @@ const sidebar = [
       { text: "Skills", link: "/docs/skills" },
       { text: "Pi and porc", link: "/docs/pi" },
       { text: "OpenCode", link: "/docs/opencode" },
+      { text: "Desktop buddy", link: "/docs/buddy" },
     ],
   },
   {

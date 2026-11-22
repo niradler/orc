@@ -101,6 +101,10 @@ export const VEC0_ASSET: { path: string; name: string } | null = { path: vec0, n
     target,
     "--outfile",
     out,
+    // Native serial bindings cannot embed in a compiled binary; buddy serial
+    // needs the npm install, while --simulate and HTTP device mode work anywhere.
+    "--external",
+    "serialport",
     "--define",
     `process.env.ORC_VERSION=${JSON.stringify(pkg.version)}`,
   ]);
