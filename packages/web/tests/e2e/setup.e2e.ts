@@ -91,6 +91,35 @@ async function mockFreshWorkspace(page: Page): Promise<void> {
   await page.route("**/api/settings", (route) =>
     route.request().method() === "GET" ? route.fulfill({ json: {} }) : route.continue(),
   );
+  // Provider profiles decide which agents can become the default; keep the
+  // enabled set fixed instead of depending on the test host's binaries.
+  await page.route("**/api/settings/providers", (route) => {
+    const method = route.request().method();
+    if (method === "PUT") return route.fulfill({ json: route.request().postDataJSON() ?? {} });
+    if (method !== "GET") return route.continue();
+    const profile = (agent: string, enabled: boolean) => ({
+      id: agent,
+      name: agent,
+      agent,
+      enabled,
+      executable: "",
+      model: "",
+      environment: [],
+    });
+    return route.fulfill({
+      json: {
+        providers: [
+          profile("claude", true),
+          profile("codex", true),
+          profile("opencode", true),
+          profile("pi", false),
+          profile("cursor", true),
+        ],
+        default_provider_id: "claude",
+        revision: "fixture",
+      },
+    });
+  });
 }
 
 test.describe("first-run setup", () => {
@@ -122,6 +151,11 @@ test.describe("first-run setup", () => {
     // Default agent is marked; a ready non-default agent can become the default.
     await expect(page.getByTestId("first-run-default-claude")).toHaveText("Default");
     await expect(page.getByTestId("first-run-default-opencode")).toHaveText("Make default");
+    const saved = page.waitForRequest(
+      (request) => request.url().endsWith("/api/settings/providers") && request.method() === "PUT",
+    );
+    await page.getByTestId("first-run-default-opencode").click();
+    expect((await saved).postDataJSON()).toMatchObject({ default_provider_id: "opencode" });
 
     // Done-when: the folders from agent history are suggested with their context.
     await expect(page.getByTestId("first-run-suggestion-0")).toContainText("orc");

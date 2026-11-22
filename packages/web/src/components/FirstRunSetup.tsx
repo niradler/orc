@@ -70,6 +70,11 @@ export function FirstRunSetup() {
   const readyCount = agents.filter((agent) => agent.installed && agent.signed_in !== false).length;
   const setRow = (index: number, state: RowState) =>
     setRows((current) => ({ ...current, [index]: state }));
+  // Only enabled provider profiles can become the default for new sessions.
+  const canBeDefault = (agent: string) =>
+    defaultAgent.providers.data?.providers.some(
+      (profile) => profile.agent === agent && profile.enabled,
+    ) ?? false;
 
   async function createSelected(): Promise<void> {
     setCreating(true);
@@ -186,6 +191,7 @@ export function FirstRunSetup() {
                   ))}
                 {agent.installed &&
                   agent.signed_in !== false &&
+                  canBeDefault(agent.agent) &&
                   (defaultAgentId === agent.agent ? (
                     <span
                       className="px-2 text-xs text-muted-foreground"
