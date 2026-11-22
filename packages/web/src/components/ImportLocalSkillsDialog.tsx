@@ -95,10 +95,8 @@ export function ImportLocalSkillsDialog({ onClose }: { onClose: () => void }) {
         <DialogHeader className="shrink-0 flex-row items-center gap-1 border-b px-4 py-3 pr-12 sm:px-6">
           <DialogTitle>Import from local agents</DialogTitle>
           <HelpPopover label="local skill imports">
-            Copies skills from agent folders such as ~/.claude/skills and ~/.codex/skills, a project
-            checkout's skill folders, or any folder of skill folders, into ORC. The originals are
-            not changed. Near copies of skills already in ORC are flagged so a one-letter edit does
-            not create a duplicate.
+            Copies skills from agent folders such as ~/.claude/skills or a project checkout into
+            ORC. Originals are unchanged; near duplicates are flagged.
           </HelpPopover>
         </DialogHeader>
         <div

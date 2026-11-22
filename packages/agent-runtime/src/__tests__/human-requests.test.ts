@@ -7,7 +7,7 @@ import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
 import { withHumanRequests } from "../human-requests.js";
-import type { AgentEvent, AgentSession } from "../types.js";
+import type { AgentEvent, AgentSession, SessionOpts } from "../types.js";
 
 const cwd = mkdtempSync(join(tmpdir(), "orc-native-human-"));
 let server: ReturnType<typeof Bun.serve>;
@@ -77,7 +77,7 @@ afterAll(() => {
   rmSync(cwd, { recursive: true, force: true });
 });
 
-function native(event: AgentEvent, backend = "codex-cli") {
+function native(event: AgentEvent, backend = "codex-cli", extraOpts: Partial<SessionOpts> = {}) {
   let interrupt: (event: AgentEvent) => void = () => {};
   const interrupted = new Promise<AgentEvent>((resolve) => {
     interrupt = resolve;
@@ -119,6 +119,7 @@ function native(event: AgentEvent, backend = "codex-cli") {
       cwd,
       executionHost: null,
       interactive: true,
+      ...extraOpts,
     }),
     received,
     interrupt,
@@ -459,5 +460,87 @@ test("a failed partial inbox cleanup leaves an unruled question answerable in ch
       await session.respondQuestion?.("partial-cleanup", { first: ["a"], second: ["b"] });
   }
   expect(received).toEqual([{ id: "partial-cleanup", value: { first: ["a"], second: ["b"] } }]);
+  await session.close();
+});
+
+/** A durable-bridge failure the inbox schema rejects: chat_thread_id must be a UUID. */
+const brokenInboxContext = {
+  attentionContext: { chatThreadId: "not-a-uuid", sessionTitle: "bridge failure" },
+} satisfies Partial<SessionOpts>;
+
+test("a channel question that cannot enter the inbox fails visibly instead of deadlocking", async () => {
+  const { session, received } = native(
+    {
+      type: "question_request",
+      data: {
+        requestId: "channel-broken",
+        questions: [
+          {
+            id: "q0",
+            header: "Color",
+            question: "Pick a color",
+            options: [{ label: "Red", description: "" }],
+          },
+        ],
+      },
+    },
+    "opencode",
+    {
+      ...brokenInboxContext,
+      humanRequestContext: {
+        projectId: "project-a",
+        notify: ["telegram"],
+        channel: { connection: "tg", target: "direct", chat_id: "chat1", sender_id: "nir" },
+      },
+    },
+  );
+  const events: AgentEvent[] = [];
+  // The stream must end: a channel session has no consumer for a re-emitted
+  // ephemeral question, so the old fallback left the native request pending forever.
+  for await (const event of session.events()) {
+    events.push(event);
+    if (event.type === "result" || event.type === "error") break;
+  }
+  const error = events.find((event) => event.type === "error");
+  expect(typeof error?.data === "string" ? error.data : "").toContain(
+    "could not be delivered to the originating channel",
+  );
+  expect(received).toEqual([]);
+  expect(session.alive()).toBe(false);
+  expect(session.waitingForHuman?.()).toBe(false);
+  expect(
+    new HumanRequestStore(getSqlite())
+      .list()
+      .filter((entry) => entry.input.origin.session_id === session.id),
+  ).toEqual([]);
+});
+
+test("a chat question that cannot enter the inbox still falls back to the original chat", async () => {
+  const { session, received } = native(
+    {
+      type: "question_request",
+      data: {
+        requestId: "chat-broken",
+        questions: [{ id: "q0", header: "Color", question: "Pick a color", options: [] }],
+      },
+    },
+    "claude-cli",
+    brokenInboxContext,
+  );
+  const events: AgentEvent[] = [];
+  for await (const event of session.events()) {
+    events.push(event);
+    if (event.type === "question_request")
+      await session.respondQuestion?.("chat-broken", { q0: ["Blue"] });
+  }
+  expect(
+    events.some(
+      (event) =>
+        event.type === "system_status" &&
+        event.data.includes("Answer this request in the original chat"),
+    ),
+  ).toBe(true);
+  expect(events.some((event) => event.type === "error")).toBe(false);
+  expect(received).toEqual([{ id: "chat-broken", value: { q0: ["Blue"] } }]);
   await session.close();
 });
