@@ -678,7 +678,7 @@ test("agent_loop.acp_commands.opencode overrides the builtin command and routes 
       }
     } finally {
       resetConfig();
-      loadConfig({ rules: { enabled: false } });
+      loadConfig({ rules: { enabled: false, retention_days: 30, max_decision_rows: 200_000 } });
     }
   } finally {
     rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });

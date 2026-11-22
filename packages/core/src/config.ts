@@ -252,7 +252,13 @@ export const OrcConfigSchema = z.object({
       embedding: { provider: "none", batch_size: 32, timeout_secs: 60 },
     }),
 
-  rules: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+  rules: z
+    .object({
+      enabled: z.boolean().default(false),
+      retention_days: z.number().int().min(1).max(3650).default(30),
+      max_decision_rows: z.number().int().min(1000).max(1_000_000).default(200_000),
+    })
+    .default({ enabled: false, retention_days: 30, max_decision_rows: 200_000 }),
 
   agent_loop: z
     .object({

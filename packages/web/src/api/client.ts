@@ -1040,6 +1040,36 @@ export const api = {
       }),
     revert: (id: string, reason: string) =>
       req<RuleRevision>("POST", "/rules/revert", { id, reason }),
+    metrics: (workspace?: string, days = 30) =>
+      req<{
+        days: number;
+        totals: {
+          events: number;
+          abstains: number;
+          outcomes: number;
+          denials: number;
+          abstain_rate: number;
+        };
+        per_workspace: {
+          workspace: string;
+          events: number;
+          abstains: number;
+          outcomes: number;
+          last_seen: number;
+        }[];
+        per_rule: {
+          workspace: string;
+          revision_id: string;
+          rule_id: string;
+          outcome: string;
+          count: number;
+          last_seen: number;
+        }[];
+        per_day: { day: number; events: number; abstains: number }[];
+      }>("GET", "/rules/metrics", undefined, {
+        ...(workspace ? { workspace } : {}),
+        days,
+      }),
   },
   health: {
     check: (signal?: AbortSignal) =>

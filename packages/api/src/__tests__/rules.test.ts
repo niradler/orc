@@ -190,7 +190,7 @@ test("protected codex chat starts an unverified backend and reports the gap", as
     store.history(homedir()).find((row) => row.current)?.id ?? null,
     "Protect the default chat workspace",
   );
-  loadConfig({ rules: { enabled: true } });
+  loadConfig({ rules: { enabled: true, retention_days: 30, max_decision_rows: 200_000 } });
   const previousMock = process.env.ORC_E2E_CHAT_MOCK;
   process.env.ORC_E2E_CHAT_MOCK = "1";
   try {
@@ -220,7 +220,7 @@ test("protected codex chat starts an unverified backend and reports the gap", as
     else process.env.ORC_E2E_CHAT_MOCK = previousMock;
     store.revert(revision.id, "End isolated chat fixture");
     getSqlite().query("DELETE FROM rule_heads WHERE workspace=?").run(realpathSync(homedir()));
-    loadConfig({ rules: { enabled: false } });
+    loadConfig({ rules: { enabled: false, retention_days: 30, max_decision_rows: 200_000 } });
   }
 });
 
@@ -231,7 +231,7 @@ test("protected opencode chat refuses to start when enforcement cannot run", asy
     store.history(homedir()).find((row) => row.current)?.id ?? null,
     "Protect the default opencode workspace",
   );
-  loadConfig({ rules: { enabled: true } });
+  loadConfig({ rules: { enabled: true, retention_days: 30, max_decision_rows: 200_000 } });
   const previousMock = process.env.ORC_E2E_CHAT_MOCK;
   process.env.ORC_E2E_CHAT_MOCK = "1";
   try {
@@ -246,8 +246,56 @@ test("protected opencode chat refuses to start when enforcement cannot run", asy
     else process.env.ORC_E2E_CHAT_MOCK = previousMock;
     store.revert(revision.id, "End isolated opencode fixture");
     getSqlite().query("DELETE FROM rule_heads WHERE workspace=?").run(realpathSync(homedir()));
-    loadConfig({ rules: { enabled: false } });
+    loadConfig({ rules: { enabled: false, retention_days: 30, max_decision_rows: 200_000 } });
   }
+});
+
+test("metrics are served from counters without scanning decision rows", async () => {
+  const workspace = mkdtempSync(join(root, "metrics-"));
+  const store = new RuleStore(getSqlite());
+  store.activate({ ...policy, workspace }, null, "Metrics policy");
+  const event = (id: string, tool: string) => ({
+    id,
+    session_id: "metrics-session",
+    backend: "claude" as const,
+    cwd: workspace,
+    phase: "pre_tool",
+    tool,
+    input: tool === "Bash" ? { command: "echo hi" } : { file_path: join(workspace, "a.txt") },
+  });
+  for (let index = 0; index < 3; index++) store.evaluate(event(`metrics-read-${index}`, "Read"));
+  store.evaluate(event("metrics-bash", "Bash"));
+  const response = await req(
+    app,
+    "GET",
+    `/rules/metrics?workspace=${encodeURIComponent(workspace)}&days=30`,
+  );
+  expect(response.status).toBe(200);
+  const metrics = await response.json<{
+    totals: {
+      events: number;
+      abstains: number;
+      outcomes: number;
+      denials: number;
+      abstain_rate: number;
+    };
+    per_rule: { rule_id: string; outcome: string; count: number }[];
+    per_workspace: { workspace: string; events: number }[];
+  }>();
+  expect(metrics.totals).toEqual({
+    events: 4,
+    abstains: 3,
+    outcomes: 1,
+    denials: 1,
+    abstain_rate: 0.75,
+  });
+  expect(metrics.per_rule).toContainEqual(
+    expect.objectContaining({ rule_id: "guard", outcome: "deny", count: 1 }),
+  );
+  expect(metrics.per_workspace[0]?.events).toBe(4);
+  expect(
+    getSqlite().query("SELECT id FROM rule_decisions WHERE session_id='metrics-session'").all(),
+  ).toHaveLength(1);
 });
 
 test("should scope hook-client history by cwd and flag truncation", async () => {

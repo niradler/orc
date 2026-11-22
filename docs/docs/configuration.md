@@ -404,7 +404,7 @@ An invalid config file stops ORC with `Invalid orc config` and the failing key.
     "max_workers": 2
   },
   "runner": { "default_timeout_secs": 300, "max_concurrent_jobs": 5 },
-  "rules": { "enabled": true }
+  "rules": { "enabled": true, "retention_days": 30, "max_decision_rows": 200000 }
 }
 ```
 
@@ -515,6 +515,8 @@ Pick the execution host from the SSH row under **Settings → Hosts**: **Change*
 | Key                | Default | Env                 | Purpose                                               |
 | ------------------ | ------- | ------------------- | ----------------------------------------------------- |
 | `rules.enabled`    | `false` | `ORC_RULES_ENABLED` | Enforce [agent rules](./agent-rules.md)               |
+| `rules.retention_days` | `30` | none | Days to keep deny, approval, job, script, rewrite, context and error rows before pruning |
+| `rules.max_decision_rows` | `200000` | none | Hard row cap for retained rule decisions; overflow is pruned oldest first |
 | `mcp.default_mode` | `meta`  | none                | MCP tool surface: `meta` or `full` |
 | `mcp.code_execution` | `true` | none | Make `tool_execute` available in meta mode on local stdio and authenticated HTTP connections. |
 | `github.token`     | none    | `ORC_GITHUB_TOKEN`  | Token for ORC's GitHub calls (pull requests, reviews) |
