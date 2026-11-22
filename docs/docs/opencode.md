@@ -35,7 +35,9 @@ There is no `install-hook` step; OpenCode loads the plugin itself.
 
 A chat or worker that ORC starts with the OpenCode backend needs no manual install. ORC
 adds the bundled plugin and the dangerous-command permission baseline to a session-scoped
-`OPENCODE_CONFIG_CONTENT` document at spawn. OpenCode merges that layer after global and
+`OPENCODE_CONFIG_CONTENT` document at spawn. ORC starts a dedicated `opencode acp`
+process per session, so the document applies to that process only and never changes the
+user's own OpenCode sessions. OpenCode merges that layer after global and
 project configuration, so the ORC entries win without editing the user's
 `opencode.json`; plugins from both layers load. The session also receives
 `ORC_COMMAND`, `ORC_DB_PATH`, `ORC_API_BASE` and `ORC_API_SECRET` so the hook child reads

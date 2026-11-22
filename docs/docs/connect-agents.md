@@ -285,9 +285,11 @@ falls back to ACPX, the conservative ACPX capabilities apply.
 
 ACPX remains the compatibility path for other coding agents. It streams text,
 reasoning and tool results and keeps named sessions. Its CLI permissions are chosen
-through launch flags; ORC cannot answer individual live ACPX permission requests. ORC
-passes `--approve-all` only when a caller sets `autoApprove`; an unspecified session
-keeps the CLI's non-interactive denial instead of granting every write.
+through launch flags; ORC cannot answer individual live ACPX permission requests and
+its chat UI has no ACPX approval prompt. ORC therefore passes `--approve-all` by
+default, because an unanswered request would stall the turn until the timeout. A
+caller can still set `autoApprove: false` to omit the flag; for ACPX sessions, use
+workspace rules for blocking rather than the permission prompt.
 
 On first API startup, ORC enables installed agents from the default list: Codex,
 Claude Code, Cursor, Gemini CLI and OpenCode. Missing agents start unchecked in

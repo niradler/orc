@@ -55,8 +55,8 @@ test("should pass ACPX arguments literally and respect explicit permission flags
   }
 });
 
-test("should approve all ACPX permissions only when autoApprove is explicit", async () => {
-  for (const autoApprove of [undefined, true]) {
+test("should approve all ACPX permissions by default because approvals have no UI", async () => {
+  for (const autoApprove of [undefined, true, false]) {
     const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-approve-"));
     const script = join(cwd, "agent.ts");
     writeFileSync(
@@ -77,7 +77,9 @@ test("should approve all ACPX permissions only when autoApprove is explicit", as
       let args: string[] | undefined;
       for await (const event of session.events())
         if (event.type === "text") args = JSON.parse(event.data) as string[];
-      expect(args?.includes("--approve-all") ?? false).toBe(autoApprove === true);
+      // ACPX cannot round-trip a permission request through ORC's approval UI, so
+      // the default must approve: an unanswered request stalls the turn until timeout.
+      expect(args?.includes("--approve-all") ?? false).toBe(autoApprove !== false);
     } finally {
       await session.close();
       rmSync(cwd, { recursive: true, force: true });
