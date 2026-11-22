@@ -515,7 +515,7 @@ Pick the execution host from the SSH row under **Settings → Hosts**: **Change*
 | Key                | Default | Env                 | Purpose                                               |
 | ------------------ | ------- | ------------------- | ----------------------------------------------------- |
 | `rules.enabled`    | `false` | `ORC_RULES_ENABLED` | Enforce [agent rules](./agent-rules.md)               |
-| `rules.retention_days` | `30` | none | Days to keep deny, approval, job, script, rewrite and error rows before pruning |
+| `rules.retention_days` | `30` | none | Days to keep deny, approval, job, script, rewrite, context and error rows before pruning |
 | `rules.max_decision_rows` | `200000` | none | Hard row cap for retained rule decisions; overflow is pruned oldest first |
 | `mcp.default_mode` | `meta`  | none                | MCP tool surface: `meta` or `full` |
 | `mcp.code_execution` | `true` | none | Make `tool_execute` available in meta mode on local stdio and authenticated HTTP connections. |

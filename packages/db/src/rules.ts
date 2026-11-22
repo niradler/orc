@@ -11,6 +11,7 @@ import { runRuleScript } from "@orc/core/rule-script";
 import type { RuleRevision } from "@orc/core/rule-types";
 import {
   canonicalWorkspace,
+  commandRouteOutcome,
   evaluateRules,
   isRuleOutcome,
   RULE_DAY_MS,
@@ -109,52 +110,47 @@ function migrateRuleStorage(db: Database): number {
     )
     .all();
   const moved: string[] = [];
-  db.transaction(() => {
-    for (const row of rows) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(row.result);
-      } catch {
-        continue;
-      }
-      if (!parsed || typeof parsed !== "object") continue;
-      const result = parsed as RuleDecision;
-      if (result.decision !== "abstain" && result.decision !== "deny") {
-        countEvent(db, {
+  const applied = db
+    .transaction(() => {
+      // Two processes can race the cheap check above; the marker inside the
+      // transaction is the one that decides who folds.
+      if (db.query("SELECT 1 FROM rule_migrations WHERE name='rule_counters_v1'").get()) return 0;
+      for (const row of rows) {
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(row.result);
+        } catch {
+          continue;
+        }
+        if (!parsed || typeof parsed !== "object") continue;
+        const result = parsed as RuleDecision;
+        const outcome = isRuleOutcome(result) || commandRouteOutcome(result).outcome;
+        const counter: RuleCounterInput = {
           workspace: row.workspace,
           revision_id: row.revision_id,
           phase: row.phase,
           tool: row.tool,
           at: row.created_at,
-          abstain: false,
-        });
-        continue;
+          abstain: !outcome,
+        };
+        countEvent(db, counter);
+        if (counter.abstain) moved.push(row.id);
+        else countHits(db, counter, result);
       }
-      const counter: RuleCounterInput = {
-        workspace: row.workspace,
-        revision_id: row.revision_id,
-        phase: row.phase,
-        tool: row.tool,
-        at: row.created_at,
-        abstain: !isRuleOutcome(result),
-      };
-      countEvent(db, counter);
-      if (counter.abstain) moved.push(row.id);
-      else countHits(db, counter, result);
-    }
-    for (let start = 0; start < moved.length; start += 500) {
-      const chunk = moved.slice(start, start + 500);
-      db.query(`DELETE FROM rule_decisions WHERE id IN (${chunk.map(() => "?").join(",")})`).run(
-        ...chunk,
+      for (let start = 0; start < moved.length; start += 500) {
+        const chunk = moved.slice(start, start + 500);
+        db.query(`DELETE FROM rule_decisions WHERE id IN (${chunk.map(() => "?").join(",")})`).run(
+          ...chunk,
+        );
+      }
+      db.query("INSERT INTO rule_migrations(name,applied_at) VALUES ('rule_counters_v1',?)").run(
+        Date.now(),
       );
-    }
-    db.query("INSERT INTO rule_migrations(name,applied_at) VALUES ('rule_counters_v1',?)").run(
-      Date.now(),
-    );
-  }).immediate();
-  if (moved.length)
-    console.info(`[orc] moved ${moved.length} abstain rule decisions into counters`);
-  return moved.length;
+      return moved.length;
+    })
+    .immediate();
+  if (applied) console.info(`[orc] moved ${applied} abstain rule decisions into counters`);
+  return applied;
 }
 
 type RuleCounterInput = {
@@ -188,7 +184,10 @@ function countEvent(db: Database, input: RuleCounterInput): void {
 }
 
 function countHits(db: Database, input: RuleCounterInput, result: RuleDecision): void {
-  for (const hit of ruleDecisionHits(result)) {
+  const hits = ruleDecisionHits(result);
+  for (const ruleId of commandRouteOutcome(result).rewriteRuleIds)
+    hits.push({ rule_id: ruleId, outcome: "rewrite" });
+  for (const hit of hits) {
     db.query(
       `INSERT INTO rule_hits(workspace,revision_id,rule_id,outcome,day,count,last_seen)
        VALUES (?,?,?,?,?,1,?)
@@ -233,7 +232,7 @@ export class RuleStore {
     const result = processRuleCommand(event, original, (replacement) =>
       this.evaluate(replacement, true, true),
     );
-    if (!original.command_processors?.length) return result;
+    if (original.decision === "deny" || !original.command_processors?.length) return result;
     const serialized = JSON.stringify(event);
     const inputHash = createHash("sha256").update(serialized).digest("hex");
     const redacted = {
@@ -255,15 +254,6 @@ export class RuleStore {
       },
     };
     const outcome = result.decision === "deny" || result.updated_input !== undefined;
-    const routeDecision: RuleDecision = {
-      decision: result.decision,
-      reasons: result.reasons,
-      context: [],
-      jobs: [],
-      ...(result.updated_input === undefined
-        ? {}
-        : { command_processors: original.command_processors }),
-    };
     for (const active of this.active(event.cwd)) {
       if (
         !active.policy?.rules.some((rule) =>
@@ -271,6 +261,21 @@ export class RuleStore {
         )
       )
         continue;
+      const eventKey = createHash("sha256")
+        .update(
+          JSON.stringify([active.id, event.backend, event.session_id, event.id, "command_route"]),
+        )
+        .digest("hex");
+      const existing = this.db
+        .query<{ input_hash: string }, [string]>(
+          "SELECT input_hash FROM rule_decisions WHERE event_key=?",
+        )
+        .get(eventKey);
+      if (existing) {
+        if (existing.input_hash !== inputHash)
+          throw new ConflictError("Event identity reused with different input");
+        continue;
+      }
       const now = Date.now();
       const counter: RuleCounterInput = {
         workspace: active.workspace,
@@ -278,18 +283,13 @@ export class RuleStore {
         phase: "command_route",
         tool: event.tool ?? null,
         at: now,
-        abstain: false,
+        abstain: !outcome,
       };
       countEvent(this.db, counter);
       if (!outcome) continue;
-      const eventKey = createHash("sha256")
-        .update(
-          JSON.stringify([active.id, event.backend, event.session_id, event.id, "command_route"]),
-        )
-        .digest("hex");
       this.db
         .query(
-          "INSERT INTO rule_decisions(id,event_key,input_hash,revision_id,session_id,phase,tool,result,created_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(event_key) DO UPDATE SET result=excluded.result",
+          "INSERT INTO rule_decisions(id,event_key,input_hash,revision_id,session_id,phase,tool,result,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
         )
         .run(
           ulid(),
@@ -302,7 +302,7 @@ export class RuleStore {
           JSON.stringify(redacted),
           now,
         );
-      countHits(this.db, counter, routeDecision);
+      countHits(this.db, counter, redacted as RuleDecision);
     }
     return result;
   }
@@ -940,7 +940,7 @@ export function pruneRuleStorage(db: Database, options: RulePruneOptions = {}): 
           .query<{ id: string }, [number, number]>(
             `SELECT d.id FROM rule_decisions d
              WHERE d.created_at<? AND NOT EXISTS (
-               SELECT 1 FROM rule_actions a WHERE a.decision_id=d.id AND a.status='pending'
+               SELECT 1 FROM rule_actions a WHERE a.decision_id=d.id AND a.status IN ('pending','running')
              )
              ORDER BY d.created_at,d.rowid LIMIT ?`,
           )
@@ -952,7 +952,7 @@ export function pruneRuleStorage(db: Database, options: RulePruneOptions = {}): 
           .query<{ id: string }, [number, number]>(
             `SELECT d.id FROM rule_decisions d
              WHERE NOT EXISTS (
-               SELECT 1 FROM rule_actions a WHERE a.decision_id=d.id AND a.status='pending'
+               SELECT 1 FROM rule_actions a WHERE a.decision_id=d.id AND a.status IN ('pending','running')
              )
              ORDER BY d.created_at DESC,d.rowid DESC LIMIT ? OFFSET ?`,
           )

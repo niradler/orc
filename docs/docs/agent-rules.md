@@ -184,19 +184,22 @@ Decision records store input hashes rather than raw tool arguments or file conte
 ### Decision storage and retention
 
 Only decisions that did something are stored as rows: deny, approval, job, script,
-rewrite and error outcomes. An empty abstain is counted instead. `rule_counters`
-holds events and abstains keyed by workspace, revision, phase, tool and UTC day;
-`rule_hits` holds per-rule outcome counts. An abstain therefore costs one small
-upsert rather than a JSON row per tool call, and the dashboard never scans raw
-events to compute volume.
+rewrite, context injection and error outcomes. An empty abstain is counted
+instead. `rule_counters` holds events and abstains keyed by workspace, revision,
+phase, tool and UTC day; `rule_hits` holds per-rule outcome counts for deny,
+error, job, script, rewrite, action and ask decisions. Context injections count
+in the totals but are not attributed to a single rule, and a human approval or
+denial is not persisted, so those do not add per-rule hits. An abstain therefore
+costs one small upsert rather than a JSON row per tool call, and the dashboard
+never scans raw events to compute volume.
 
 Retention defaults to 30 days (`rules.retention_days`) and 200,000 rows
 (`rules.max_decision_rows`). The bounded maintenance pass runs with notification
-cleanup, prunes oldest first, keeps any decision with a pending action, and never
-runs `VACUUM` on the request path. SQLite reuses freed pages, so the database
-file can stay at its high-water mark after pruning. Opening an older database
-folds existing abstain rows into counters and deletes those rows once; deny and
-other outcome rows are kept.
+cleanup, prunes oldest first, keeps any decision with a pending or running
+action, and never runs `VACUUM` on the request path. SQLite reuses freed pages,
+so the database file can stay at its high-water mark after pruning. Opening an
+older database folds existing abstain rows into counters and deletes those rows
+once; deny, rewritten command routes and other outcome rows are kept.
 
 `GET /api/rules/metrics?workspace=&days=` serves total events, abstain rate,
 denials per rule and volume per workspace from counters. `GET /api/rules` stays

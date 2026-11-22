@@ -32,7 +32,6 @@ export function isRuleOutcome(result: RuleDecision): boolean {
     Boolean(result.context?.length) ||
     Boolean(result.jobs?.length) ||
     Boolean(result.scripts?.length) ||
-    Boolean(result.command_processors?.length) ||
     Boolean(result.orc_actions?.length) ||
     Boolean(result.action_errors?.length) ||
     Boolean(result.human_requests?.length) ||
@@ -52,7 +51,6 @@ export function ruleDecisionHits(result: RuleDecision): { rule_id: string; outco
   for (const error of result.action_errors ?? []) add(error.rule_id, "error");
   for (const job of result.jobs ?? []) add(job.rule_id, "job");
   for (const script of result.scripts ?? []) add(script.rule_id, "script");
-  for (const processor of result.command_processors ?? []) add(processor.rule_id, "rewrite");
   for (const action of result.orc_actions ?? []) add(action.rule_id, "action");
   for (const request of result.human_requests ?? [])
     add(request.rule_id, result.human_approved ? "approved" : "ask");
@@ -60,6 +58,28 @@ export function ruleDecisionHits(result: RuleDecision): { rule_id: string; outco
     rule_id: key.slice(0, key.indexOf("\0")),
     outcome,
   }));
+}
+
+/**
+ * A redacted command_route row stores the processor result separately from the
+ * normal decision shape. Only rewritten and denied routes are applied outcomes;
+ * passthrough did nothing and belongs in the abstain counter.
+ */
+export function commandRouteOutcome(result: RuleDecision): {
+  outcome: boolean;
+  rewriteRuleIds: string[];
+} {
+  const processing = (
+    result as RuleDecision & {
+      command_processing?: { status?: unknown; rule_ids?: unknown };
+    }
+  ).command_processing;
+  const status = processing?.status;
+  if (status !== "denied" && status !== "rewritten") return { outcome: false, rewriteRuleIds: [] };
+  const ids = Array.isArray(processing?.rule_ids)
+    ? processing.rule_ids.filter((id): id is string => typeof id === "string")
+    : [];
+  return { outcome: true, rewriteRuleIds: status === "rewritten" ? ids : [] };
 }
 
 export function canonicalWorkspace(path: string): string {
