@@ -110,6 +110,7 @@ export const OrcConfigSchema = z.object({
       composer_profiles: ComposerProfilesSchema.optional(),
       agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
       provider_paths: ProviderPathsSchema.optional(),
+      setup_dismissed: z.boolean().optional(),
     })
     .default({}),
   skills: z

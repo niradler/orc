@@ -44,6 +44,7 @@ import { sessionMessagesRouter } from "./routes/session-messages.js";
 import { sessionSendRouter } from "./routes/session-send.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { settingsRouter } from "./routes/settings.js";
+import { setupRouter } from "./routes/setup.js";
 import { skillsRouter } from "./routes/skills.js";
 import { sshRouter } from "./routes/ssh.js";
 import { systemRouter } from "./routes/system.js";
@@ -144,6 +145,7 @@ export function createApp() {
   app.route("/api", humanRequestsRouter);
   app.route("/api", notificationsRouter);
   app.route("/api", settingsRouter);
+  app.route("/api", setupRouter);
   app.route("/api", usageRouter);
   app.route("/api", channelsRouter);
   app.route("/api", systemRouter);

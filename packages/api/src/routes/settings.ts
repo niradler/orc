@@ -225,6 +225,10 @@ const PreferencesSchema = z
       }),
     agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
     provider_paths: ProviderPathsSchema.optional(),
+    setup_dismissed: z.boolean().optional().openapi({
+      description:
+        "The first-run setup screen was dismissed; it stays hidden while no project exists.",
+    }),
   })
   .strict();
 function composerRevision(preferences: Record<string, unknown> | undefined): string {
