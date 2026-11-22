@@ -176,7 +176,12 @@ async function signInState(
   spec: SetupAgentSpec,
   deps: SetupDeps,
 ): Promise<{ signed_in: boolean | null; account_label: string | null }> {
-  const identityDeps = { read: deps.read, home: deps.home, platform: deps.platform };
+  const identityDeps = {
+    read: deps.read,
+    home: deps.home,
+    platform: deps.platform,
+    env: deps.env,
+  };
   switch (spec.id) {
     case "claude": {
       if (deps.env.ANTHROPIC_API_KEY || deps.env.ANTHROPIC_AUTH_TOKEN)

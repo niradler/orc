@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import {
   agentHomeVariable,
+  expandAgentHome,
   providerConfiguredHome,
   providerEffectiveHome,
   storedProviderProfiles,
@@ -21,6 +22,7 @@ type Dependencies = {
   read: (path: string) => Promise<string>;
   home: string;
   platform: NodeJS.Platform;
+  env: Record<string, string | undefined>;
 };
 
 const signedOut = (message: string | null = null): Identity => ({
@@ -50,11 +52,12 @@ export async function readClaudeIdentity(
   profile: ProviderProfile,
   dependencies: Dependencies,
 ): Promise<Identity> {
-  const configHome = providerEffectiveHome(profile) ?? join(dependencies.home, ".claude");
   // Without CLAUDE_CONFIG_DIR Claude keeps the account block in ~/.claude.json;
   // with it, the file lives inside that directory. The default ~/.claude home is
   // not itself a CLAUDE_CONFIG_DIR override.
-  const configuredHome = providerConfiguredHome(profile) ?? process.env.CLAUDE_CONFIG_DIR;
+  const configuredHome =
+    providerConfiguredHome(profile) ?? expandAgentHome(dependencies.env.CLAUDE_CONFIG_DIR);
+  const configHome = configuredHome ?? join(dependencies.home, ".claude");
   const accountPath = configuredHome
     ? join(configHome, ".claude.json")
     : join(dependencies.home, ".claude.json");
@@ -90,7 +93,10 @@ export async function readCodexIdentity(
   profile: ProviderProfile,
   dependencies: Dependencies,
 ): Promise<Identity> {
-  const home = providerEffectiveHome(profile) ?? join(dependencies.home, ".codex");
+  const home =
+    providerConfiguredHome(profile) ??
+    expandAgentHome(dependencies.env.CODEX_HOME) ??
+    join(dependencies.home, ".codex");
   let auth: Record<string, unknown>;
   try {
     auth = JSON.parse(await dependencies.read(join(home, "auth.json"))) as Record<string, unknown>;
@@ -182,5 +188,10 @@ export function withDuplicates(accounts: ProviderAccount[]): ProviderAccount[] {
 }
 
 function defaultDependencies(): Dependencies {
-  return { read: (path) => readFile(path, "utf8"), home: homedir(), platform: process.platform };
+  return {
+    read: (path) => readFile(path, "utf8"),
+    home: homedir(),
+    platform: process.platform,
+    env: process.env,
+  };
 }
