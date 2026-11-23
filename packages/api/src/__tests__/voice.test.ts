@@ -346,7 +346,7 @@ test("sequential speak calls preserve unplayed clips from the first call", async
   await until(async () => voice.audio.length === 2);
   const speaks = voice.messages.filter((m) => m.type === "speak") as { id: string }[];
   expect(speaks).toHaveLength(2);
-  voice.ws.send(JSON.stringify({ type: "played", id: speaks[1]!.id }));
+  voice.ws.send(JSON.stringify({ type: "played", id: speaks[1]?.id }));
   voice.say(burst(200, 3000));
   await voice.next("speech_cancelled");
   voice.ws.close();
