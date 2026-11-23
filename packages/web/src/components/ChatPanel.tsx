@@ -731,6 +731,11 @@ export function ChatPanel({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [analyticsFocusModel, setAnalyticsFocusModel] = useState<string | null>(null);
+  const openModelSplit = (model: string) => {
+    setAnalyticsFocusModel(model);
+    setAnalyticsOpen(true);
+  };
   const actionMenuRows = (includeSessionActions: boolean) => (
     <>
       <button
@@ -1340,8 +1345,12 @@ export function ChatPanel({
                       return (
                         <>
                           {dividers.byMessage.get(message.id)?.map((divider, index) => (
-                            // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
-                            <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                            <ChatTurnDivider
+                              // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                              key={`${divider.type}-${index}`}
+                              divider={divider}
+                              onOpenModelSplit={thread ? openModelSplit : undefined}
+                            />
                           ))}
                           <MessagePrimitive.Root
                             style={{
@@ -1427,8 +1436,12 @@ export function ChatPanel({
                     }}
                   </ThreadPrimitive.Messages>
                   {dividers.trailing.map((divider, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
-                    <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                    <ChatTurnDivider
+                      // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                      key={`${divider.type}-${index}`}
+                      divider={divider}
+                      onOpenModelSplit={thread ? openModelSplit : undefined}
+                    />
                   ))}
                 </div>
               </ThreadPrimitive.Viewport>
@@ -2003,13 +2016,25 @@ export function ChatPanel({
           }}
         />
       )}
-      <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
+      <Dialog
+        open={analyticsOpen}
+        onOpenChange={(open) => {
+          setAnalyticsOpen(open);
+          if (!open) setAnalyticsFocusModel(null);
+        }}
+      >
         <DialogContent
           data-testid="chat-analytics-dialog"
           className="max-h-[85dvh] w-[min(56rem,calc(100vw-24px))] max-w-none overflow-y-auto"
         >
           <DialogTitle className="sr-only">Session analytics</DialogTitle>
-          {analyticsOpen && <ChatSessionAnalytics threadId={thread?.id} streaming={false} />}
+          {analyticsOpen && (
+            <ChatSessionAnalytics
+              threadId={thread?.id}
+              streaming={false}
+              focusModel={analyticsFocusModel}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </ThreadPrimitive.Root>

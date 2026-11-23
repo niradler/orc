@@ -10,6 +10,7 @@ import { createApp } from "../server.js";
 const original = {
   HOME: process.env.HOME,
   USERPROFILE: process.env.USERPROFILE,
+  ORC_HOME: process.env.ORC_HOME,
   CORS: process.env.ORC_API_CORS_ORIGINS,
 };
 const home = mkdtempSync(join(tmpdir(), "orc-auth-"));
@@ -30,6 +31,7 @@ function restore(key: string, value: string | undefined) {
 beforeAll(() => {
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.ORC_HOME = join(home, ".orc");
   process.env.ORC_API_SECRET = "test-secret";
   process.env.ORC_DB_PATH = ":memory:";
   createTestDb();
@@ -48,6 +50,7 @@ afterAll(() => {
   delete process.env.ORC_DB_PATH;
   restore("HOME", original.HOME);
   restore("USERPROFILE", original.USERPROFILE);
+  restore("ORC_HOME", original.ORC_HOME);
   restore("ORC_API_CORS_ORIGINS", original.CORS);
   resetConfig();
   rmSync(home, { recursive: true, force: true });

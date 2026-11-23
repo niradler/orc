@@ -378,9 +378,14 @@ A turn opens with a `thread` event carrying the conversation metadata and only
 that turn's user message; the full transcript is read from `GET /chat/threads/{id}`.
 `GET /chat/threads/{id}/analytics` counts messages, turns, tool calls and failures
 from the stored chat transcript for every coding agent. When the agent's native
-session records token usage, it adds context growth, cache reuse and compaction
-markers. Agents without readable usage return `context.supported: false` with a
-reason instead of failing the request.
+session records token usage, it joins per-request usage to each turn (`model`,
+`usage`, `costUsd` and `usageSource`), summarizes session totals with an explicit
+`unattributed` bucket, `byModel` breakdown, `cacheHitRate`, `cacheSavingsUsd` and
+`totalCostUsd`, and adds context growth, cache reuse and compaction markers.
+Pricing uses built-in defaults plus `preferences.model_pricing` overrides saved
+through `PATCH /settings`; unpriced models return `costUsd: null`. Agents without
+readable usage return `context.supported: false` with a reason instead of failing
+the request.
 `POST /chat/stream` accepts an optional `clientMessageId` (UUID) and stores it as
 the user message id, rejecting a repeat with `409`. If a first send's response is
 lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the

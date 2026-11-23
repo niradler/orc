@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getUserAgentsDir } from "@orc/core/agent-service";
-import { resetConfig } from "@orc/core/config";
+import { globalConfigPath, loadConfig, resetConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { shortId, ulid } from "@orc/core/ids";
 import { closeDb, createTestDb } from "@orc/db/client";
@@ -11,23 +11,28 @@ import { toolListing } from "./server.js";
 import { executeTool, toolDefinitions } from "./tools.js";
 
 const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
+const originalOrcHome = process.env.ORC_HOME;
+const testOrcHome = mkdtempSync(join(tmpdir(), "orc-mcp-home-"));
 
 beforeAll(() => {
+  process.env.ORC_HOME = testOrcHome;
   process.env.ORC_API_SECRET = "test-secret";
   process.env.ORC_DB_PATH = ":memory:";
   process.env.ORC_ACTIVE_PROJECT = "";
   resetConfig();
-  // Force an in-memory DB so tools never touch the real ~/.orc/orc.db.
   createTestDb();
 });
 
 afterAll(() => {
   if (originalActiveProject === undefined) delete process.env.ORC_ACTIVE_PROJECT;
   else process.env.ORC_ACTIVE_PROJECT = originalActiveProject;
+  if (originalOrcHome === undefined) delete process.env.ORC_HOME;
+  else process.env.ORC_HOME = originalOrcHome;
   closeDb();
   resetConfig();
   delete process.env.ORC_API_SECRET;
   delete process.env.ORC_DB_PATH;
+  rmSync(testOrcHome, { recursive: true, force: true });
 });
 
 // ── Session event dedup & eviction ──────────────────────────────────────────
@@ -583,6 +588,36 @@ describe("MCP project_create tool", () => {
     );
     expect(error).toBeInstanceOf(ValidationError);
     expect((error as ValidationError).message).toContain("unscoped connection");
+  });
+
+  test("creating a project clears setup_dismissed in config.json and loadConfig()", async () => {
+    const throwawayHome = mkdtempSync(join(tmpdir(), "orc-mcp-dismissal-"));
+    const previousOrcHome = process.env.ORC_HOME;
+    const name = uniqueName();
+    created.push(name);
+    try {
+      process.env.ORC_HOME = throwawayHome;
+      writeFileSync(
+        join(throwawayHome, "config.json"),
+        `${JSON.stringify({ preferences: { setup_dismissed: true } }, null, 2)}\n`,
+      );
+      resetConfig();
+      expect(globalConfigPath()).toBe(join(throwawayHome, "config.json"));
+      expect(loadConfig().preferences.setup_dismissed).toBe(true);
+
+      await executeTool("project_create", { name });
+
+      const saved = JSON.parse(readFileSync(globalConfigPath(), "utf8")) as {
+        preferences?: { setup_dismissed?: boolean };
+      };
+      expect(saved.preferences?.setup_dismissed).toBeUndefined();
+      expect(loadConfig().preferences.setup_dismissed).toBeUndefined();
+    } finally {
+      if (previousOrcHome === undefined) delete process.env.ORC_HOME;
+      else process.env.ORC_HOME = previousOrcHome;
+      resetConfig();
+      rmSync(throwawayHome, { recursive: true, force: true });
+    }
   });
 });
 

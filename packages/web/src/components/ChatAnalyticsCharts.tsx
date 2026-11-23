@@ -21,6 +21,12 @@ const CACHED = "var(--color-series-1)";
 const FRESH = "var(--color-series-3)";
 const TOOL = "var(--color-series-1)";
 const FAILURE = "var(--color-error)";
+const TOKEN_SERIES = {
+  input: "var(--color-series-1)",
+  output: "var(--color-series-2)",
+  cacheRead: "var(--color-series-3)",
+  cacheWrite: "var(--color-series-4)",
+} as const;
 const OUTCOME = {
   completed: "var(--color-series-1)",
   stopped: "var(--color-series-4)",
@@ -28,6 +34,13 @@ const OUTCOME = {
   failed: "var(--color-error)",
   running: "var(--color-series-3)",
 } as const;
+
+function formatUsd(value: number | null): string {
+  if (value === null) return "-";
+  if (value === 0) return "$0.00";
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  return `$${value.toFixed(2)}`;
+}
 
 type ContextPoint = NonNullable<ChatContextAnalytics["usage"]["timeline"]>[number] & {
   fresh: number;
@@ -313,6 +326,140 @@ export function ChatTurnChart({ turns }: { turns: ChatTurnStat[] }) {
                 <Cell key={turn.index} fill={OUTCOME[turn.outcome]} />
               ))}
             </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </figure>
+  );
+}
+
+type TurnTokenPoint = {
+  index: number;
+  model: string | null;
+  usageSource: ChatTurnStat["usageSource"];
+  costUsd: number | null;
+  hasUsage: boolean;
+  input: number;
+  output: number;
+  outputDirect: number;
+  reasoning: number;
+  cacheRead: number;
+  cacheWrite: number;
+  total: number;
+};
+
+export function ChatTurnTokensChart({ turns }: { turns: ChatTurnStat[] }) {
+  const hasAnyUsage = turns.some((turn) => turn.usage !== null);
+  if (!hasAnyUsage) return null;
+  const points: TurnTokenPoint[] = turns.map((turn) => ({
+    index: turn.index,
+    model: turn.model,
+    usageSource: turn.usageSource,
+    costUsd: turn.costUsd,
+    hasUsage: turn.usage !== null,
+    input: turn.usage?.input ?? 0,
+    output: (turn.usage?.output ?? 0) + (turn.usage?.reasoning ?? 0),
+    outputDirect: turn.usage?.output ?? 0,
+    reasoning: turn.usage?.reasoning ?? 0,
+    cacheRead: turn.usage?.cacheRead ?? 0,
+    cacheWrite: turn.usage?.cacheWrite ?? 0,
+    total: turn.usage?.total ?? 0,
+  }));
+  return (
+    <figure data-testid="chat-turn-tokens-chart" className="w-full min-w-0">
+      <figcaption className="mb-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+        <LegendItem color={TOKEN_SERIES.input} label="Input" />
+        <LegendItem color={TOKEN_SERIES.output} label="Output" />
+        <LegendItem color={TOKEN_SERIES.cacheRead} label="Cache read" />
+        <LegendItem color={TOKEN_SERIES.cacheWrite} label="Cache write" />
+      </figcaption>
+      <div className="h-44 w-full min-w-0">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <CartesianGrid vertical={false} stroke="var(--color-border)" />
+            <XAxis
+              dataKey="index"
+              tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
+              tickLine={false}
+              axisLine={{ stroke: "var(--color-border)" }}
+              minTickGap={20}
+            />
+            <YAxis
+              width={40}
+              tick={{ fill: "var(--color-muted-foreground)", fontSize: 10 }}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={(value: number) => formatTokenCount(value, false)}
+            />
+            <Tooltip
+              cursor={{ fill: "var(--color-surface-high)" }}
+              content={({ active, payload }) => {
+                const point = active
+                  ? (payload?.[0]?.payload as TurnTokenPoint | undefined)
+                  : undefined;
+                if (!point) return null;
+                return (
+                  <div className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs tabular-nums shadow-sm">
+                    <p className="font-medium text-on-surface">
+                      Turn {count.format(point.index)}
+                      {point.model && (
+                        <span className="font-mono font-normal text-muted-foreground">
+                          {" "}
+                          · {point.model}
+                        </span>
+                      )}
+                    </p>
+                    {!point.hasUsage ? (
+                      <p className="text-muted-foreground">Usage unreadable for this turn</p>
+                    ) : (
+                      <>
+                        <p>
+                          Total {count.format(point.total)}
+                          {point.usageSource === "estimated" ? " (estimated)" : ""}
+                        </p>
+                        <p className="text-muted-foreground">
+                          Input {count.format(point.input)} · Output{" "}
+                          {count.format(point.outputDirect)}
+                          {point.reasoning > 0
+                            ? ` · Reasoning ${count.format(point.reasoning)}`
+                            : ""}
+                        </p>
+                        <p className="text-muted-foreground">
+                          Cache read {count.format(point.cacheRead)} · Cache write{" "}
+                          {count.format(point.cacheWrite)}
+                        </p>
+                        <p className="text-muted-foreground">Cost {formatUsd(point.costUsd)}</p>
+                      </>
+                    )}
+                  </div>
+                );
+              }}
+            />
+            <Bar
+              dataKey="input"
+              stackId="tokens"
+              fill={TOKEN_SERIES.input}
+              isAnimationActive={false}
+            />
+            <Bar
+              dataKey="output"
+              stackId="tokens"
+              fill={TOKEN_SERIES.output}
+              isAnimationActive={false}
+            />
+            <Bar
+              dataKey="cacheRead"
+              stackId="tokens"
+              fill={TOKEN_SERIES.cacheRead}
+              isAnimationActive={false}
+            />
+            <Bar
+              dataKey="cacheWrite"
+              stackId="tokens"
+              fill={TOKEN_SERIES.cacheWrite}
+              radius={[2, 2, 0, 0]}
+              isAnimationActive={false}
+            />
           </BarChart>
         </ResponsiveContainer>
       </div>

@@ -306,8 +306,12 @@ lifetime totals from the distribution, rather than mixing the two accounting
 models. A session is not re-indexed when its activity stays inside the second the
 ledger already recorded, and a larger backlog drains in bounded batches. Sessions
 from agents that do not record token usage (for example Cursor Agent chats) are
-reported separately instead of being counted as pending. No billed cost is shown:
-ORC has no reliable price source for every provider and plan.
+reported separately instead of being counted as pending. The global usage report
+does not show billed cost, while per-session analytics estimate USD cost and
+cache savings from built-in model rates plus optional custom overrides configured
+under **Settings → Usage → Model pricing** (`preferences.model_pricing` in
+`config.json`, in USD per million tokens for input, output, cache read and cache
+write). Models without a configured price show `-` rather than `$0`.
 
 Raw requests are kept for 95 days, just past the 90-day window, so every normal
 period stays exact. Older usage rolls up per session, UTC day and model: totals,
