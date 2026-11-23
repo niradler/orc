@@ -168,6 +168,12 @@ export const SessionStatusSchema = z.object({
   /** When a session another session started began; null for one a human started. */
   started_at: timestamp.nullable(),
   updated_at: timestamp,
+  last_activity_at: timestamp.nullable().optional(),
+  last_activity: z.string().max(200).nullable().optional(),
+  activity_count: z.number().int().min(0).optional(),
+  start_error: z.string().max(2000).nullable().optional(),
+  native_session_id: z.string().max(200).nullable().optional(),
+  live_session_id: identity.nullable().optional(),
 });
 export type SessionStatus = z.infer<typeof SessionStatusSchema>;
 

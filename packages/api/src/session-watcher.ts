@@ -22,6 +22,7 @@ import { CLAUDE_REGISTRY_DIR, claudeAdapter } from "./sessions/claude.js";
 import { codexAdapter } from "./sessions/codex.js";
 import {
   invalidateProjectFolderCache,
+  isAlive,
   LIVE_CHAT_ID,
   leavesScope,
   oneLine,
@@ -713,7 +714,16 @@ export function startSessionWatcher(
     });
     const keys = new Set<string>();
     let nextExpiration = Number.POSITIVE_INFINITY;
+    let reapedDeadPids = false;
     for (const row of rows) {
+      if (row.pid && !row.execution_host && row.pid !== process.pid && !isAlive(row.pid)) {
+        await getDb()
+          .update(gateway_sessions)
+          .set({ status: "stopped", updated_at: new Date() })
+          .where(and(eq(gateway_sessions.id, row.id), eq(gateway_sessions.status, "running")));
+        reapedDeadPids = true;
+        continue;
+      }
       if (row.pid && (row.pid !== process.pid || row.execution_host !== null)) {
         const key = `${row.execution_host ?? "local"}:${row.pid}`;
         keys.add(key);
@@ -730,9 +740,13 @@ export function startSessionWatcher(
         nextExpiration = Math.min(nextExpiration, Date.now() + 30_000);
       } else if (!row.pid && row.status === "running" && row.last_activity_at) {
         const expires = row.last_activity_at.getTime() + 30_050;
-        if (expires > Date.now()) nextExpiration = Math.min(nextExpiration, expires);
+        nextExpiration = Math.min(
+          nextExpiration,
+          expires > Date.now() ? expires : Date.now() + 1_000,
+        );
       }
     }
+    if (reapedDeadPids) changes.publish("sessions");
     for (const [key, stop] of processes)
       if (!keys.has(key)) {
         stop();

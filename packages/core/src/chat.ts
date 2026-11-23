@@ -489,6 +489,7 @@ export const ChatTurnSchema = z.object({
   // (the agent errored): the turn record tells the reader that the work was cut
   // off and that the conversation resumes where it left off.
   outcome: z.enum(["completed", "stopped", "failed", "interrupted"]).optional(),
+  error: z.string().max(2000).optional(),
   // Frozen at turn end so a finished turn's token figure does not keep drifting
   // as the session records later requests.
   usage: z

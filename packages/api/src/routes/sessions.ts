@@ -32,10 +32,12 @@ import { LIVE_CHAT_ID, liveRunFields, syncNow } from "../session-watcher.js";
 import { emptySessionCacheUsage, loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { childWorkCountsMany } from "../sessions/control.js";
+import { chatThreadTranscript, resolveSessionRef } from "../sessions/resolve.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
 import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
+import { chatStatus } from "./chat.js";
 
 const app = createRouter();
 
@@ -629,13 +631,62 @@ app.openapi(liveSearchRoute, async (c) => {
 // registration order, so {id} would otherwise swallow "search".
 app.openapi(liveGetRoute, async (c) => {
   const { id } = c.req.valid("param");
-  const row = await getDb().query.gateway_sessions.findFirst({
-    where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
-  });
-  if (!row) throw new NotFoundError("Session", id);
-  const [session] = await toLiveDtos([row]);
-  if (!session) throw new NotFoundError("Session", id);
-  return c.json(session, 200);
+  const resolved = resolveSessionRef(id);
+  if (!resolved) throw new NotFoundError("Session", id);
+  if (resolved.gateway) {
+    const [session] = await toLiveDtos([resolved.gateway]);
+    if (session) return c.json(session, 200);
+  }
+  if (!resolved.thread) throw new NotFoundError("Session", id);
+  const thread = resolved.thread;
+  const st = chatStatus(thread.id);
+  const createdMs = thread.spawnedBy?.at ?? thread.messages[0]?.timestamp ?? thread.updatedAt;
+  const liveStatus: "idle" | "running" | "stopped" | "error" =
+    st.status === "running" || st.status === "waiting" || st.status === "queued"
+      ? "running"
+      : st.status === "failed"
+        ? "error"
+        : st.status === "stopped"
+          ? "stopped"
+          : "idle";
+  return c.json(
+    {
+      id: thread.id,
+      agent: thread.config.agent,
+      session_id: thread.runtimeId ?? null,
+      parent_id: null,
+      spawned_from_id: thread.spawnedBy?.sessionId ?? null,
+      name: thread.title,
+      summary: st.last_message,
+      tokens_used: null,
+      tokens_estimated: false,
+      model: thread.config.model || null,
+      permission_mode: thread.config.permissionMode ?? null,
+      cwd: thread.cwd,
+      host: thread.host,
+      pid: null,
+      status: liveStatus,
+      waiting_for_human: st.waiting_for !== null,
+      waiting_for:
+        st.waiting_for === "question"
+          ? { reason: "question" as const, tool: null }
+          : st.waiting_for === "approval"
+            ? { reason: "permission" as const, tool: null }
+            : null,
+      background_work: false,
+      working_children: st.working_children,
+      waiting_children: st.waiting_children,
+      hidden: false,
+      renamed: false,
+      project_id: thread.projectId ?? null,
+      handoff: null,
+      send: null,
+      task: null,
+      last_activity_at: new Date(st.last_activity_at ?? st.updated_at).toISOString(),
+      created_at: new Date(createdMs).toISOString(),
+    },
+    200,
+  );
 });
 
 app.openapi(
@@ -657,12 +708,11 @@ app.openapi(
   }),
   async (c) => {
     const { id } = c.req.valid("param");
-    const row = await getDb().query.gateway_sessions.findFirst({
-      where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
-    });
-    if (!row) throw new NotFoundError("Session", id);
+    const resolved = resolveSessionRef(id);
+    if (!resolved) throw new NotFoundError("Session", id);
+    const row = resolved.gateway;
     c.header("Cache-Control", "no-store");
-    if (!row.transcript_path || !["claude", "codex", "pi", "opencode"].includes(row.backend))
+    if (!row?.transcript_path || !["claude", "codex", "pi", "opencode"].includes(row.backend))
       return c.json(emptySessionCacheUsage(), 200);
     const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
     return c.json(
@@ -694,26 +744,30 @@ app.openapi(
   }),
   async (c) => {
     const { id } = c.req.valid("param");
-    const row = await getDb().query.gateway_sessions.findFirst({
-      where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
-    });
-    if (!row) throw new NotFoundError("Session", id);
-    const threads = new ChatStore(getSqlite());
+    const resolved = resolveSessionRef(id);
+    if (!resolved) throw new NotFoundError("Session", id);
+    const row = resolved.gateway;
     const thread =
-      threads.bySource(id) ??
-      (row.runtime_session_id
-        ? (threads.byRuntime(row.backend, row.execution_host ?? null, row.runtime_session_id)[0] ??
-          null)
+      resolved.thread ??
+      (row
+        ? (new ChatStore(getSqlite()).bySource(row.id) ??
+          (row.runtime_session_id
+            ? (new ChatStore(getSqlite()).byRuntime(
+                row.backend,
+                row.execution_host ?? null,
+                row.runtime_session_id,
+              )[0] ?? null)
+            : null))
         : null);
     if (!thread) throw new NotFoundError("Chat for session", id);
     c.header("Cache-Control", "no-store");
     return c.json(
       await chatAnalyticsFor(thread, {
-        backend: row.backend,
-        model: row.model ?? null,
-        transcript_path: row.transcript_path ?? null,
-        runtime_session_id: row.runtime_session_id ?? null,
-        tokens_used: row.tokens_used ?? null,
+        backend: row?.backend ?? thread.backend,
+        model: row?.model ?? (thread.config.model || null),
+        transcript_path: row?.transcript_path ?? null,
+        runtime_session_id: row?.runtime_session_id ?? thread.runtimeId ?? null,
+        tokens_used: row?.tokens_used ?? null,
       }),
       200,
     );
@@ -723,32 +777,39 @@ app.openapi(
 app.openapi(liveTranscriptRoute, async (c) => {
   const { id } = c.req.valid("param");
   const { offset, limit, q } = c.req.valid("query");
-  const row = await getDb().query.gateway_sessions.findFirst({
-    where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
-  });
-  if (!row) throw new NotFoundError("Session", id);
-  if (!row.transcript_path) {
-    throw new NotFoundError("Transcript for session", id);
+  const resolved = resolveSessionRef(id);
+  if (!resolved) throw new NotFoundError("Session", id);
+  const row = resolved.gateway;
+  if (row?.transcript_path) {
+    const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
+    if (await runtime.isFile(row.transcript_path)) {
+      const externalId = row.runtime_session_id ?? null;
+      const bytes = await loadTranscriptBytes(
+        runtime,
+        row.backend,
+        row.transcript_path,
+        externalId,
+      );
+      const host = runtime.host.kind === "ssh" ? runtime.host.alias : "local";
+      return c.json(
+        await readTranscriptBytes(
+          bytes,
+          row.backend,
+          transcriptCacheKey(host, row.backend, row.transcript_path, externalId),
+          {
+            offset,
+            limit,
+            q,
+          },
+        ),
+        200,
+      );
+    }
   }
-  const runtime = hostRuntime(execHostFor(row.execution_host ?? null));
-  if (!(await runtime.isFile(row.transcript_path)))
-    throw new NotFoundError("Transcript for session", id);
-  const externalId = row.runtime_session_id ?? null;
-  const bytes = await loadTranscriptBytes(runtime, row.backend, row.transcript_path, externalId);
-  const host = runtime.host.kind === "ssh" ? runtime.host.alias : "local";
-  return c.json(
-    await readTranscriptBytes(
-      bytes,
-      row.backend,
-      transcriptCacheKey(host, row.backend, row.transcript_path, externalId),
-      {
-        offset,
-        limit,
-        q,
-      },
-    ),
-    200,
-  );
+  if (resolved.thread) {
+    return c.json(chatThreadTranscript(resolved.thread, { offset, limit, q }), 200);
+  }
+  throw new NotFoundError("Transcript for session", id);
 });
 
 app.openapi(liveSyncRoute, async (c) => c.json({ results: await syncNow() }, 200));
@@ -759,9 +820,8 @@ app.openapi(liveUpdateRoute, async (c) => {
   const { task_id, display_title, hidden } = c.req.valid("json");
   if (task_id === undefined && display_title === undefined && hidden === undefined)
     throw new ValidationError("Send task_id, display_title or hidden");
-  const row = await db.query.gateway_sessions.findFirst({
-    where: and(eq(gateway_sessions.id, id), eq(gateway_sessions.chat_id, LIVE_CHAT_ID)),
-  });
+  const resolved = resolveSessionRef(id);
+  const row = resolved?.gateway ?? null;
   if (!row) throw new NotFoundError("Session", id);
   if (task_id && !(await db.query.tasks.findFirst({ where: eq(tasks.id, task_id) }))) {
     throw new NotFoundError("Task", task_id);
@@ -773,7 +833,7 @@ app.openapi(liveUpdateRoute, async (c) => {
   await db
     .update(gateway_sessions)
     .set({ ...patch, updated_at: new Date() })
-    .where(eq(gateway_sessions.id, id));
+    .where(eq(gateway_sessions.id, row.id));
   const [dto] = await toLiveDtos([
     {
       ...row,

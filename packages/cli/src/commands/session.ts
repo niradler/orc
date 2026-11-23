@@ -60,6 +60,127 @@ function authHeaders(): Record<string, string> {
   return headers;
 }
 
+type LiveSessionDetail = {
+  id: string;
+  agent: string;
+  session_id: string | null;
+  name: string | null;
+  summary: string | null;
+  cwd: string | null;
+  status: string;
+  project_id: string | null;
+  last_activity_at: string | null;
+  created_at: string;
+};
+
+type LiveSessionStatus = {
+  session_id: string;
+  title: string;
+  agent: string;
+  status: string;
+  waiting_for: string | null;
+  last_message: string | null;
+  project_id: string | null;
+  cwd: string;
+  started_at: number | null;
+  updated_at: number;
+  last_activity_at?: number | null;
+  last_activity?: string | null;
+  activity_count?: number;
+  start_error?: string | null;
+  native_session_id?: string | null;
+  live_session_id?: string | null;
+};
+
+async function resolveLiveCandidateId(id: string): Promise<string> {
+  if (id.length < 6 || id.length >= 26) return id;
+  const listRes = await fetch(
+    `${apiBase()}/sessions/live?active=false&include_hidden=true&limit=500`,
+    {
+      headers: authHeaders(),
+    },
+  ).catch(() => null);
+  if (!listRes?.ok) return id;
+  const body = (await listRes.json()) as { sessions?: LiveSessionDetail[] };
+  const matches = (body.sessions ?? []).filter(
+    (row) =>
+      row.id === id ||
+      row.id.endsWith(id) ||
+      row.id.startsWith(id) ||
+      row.session_id === id ||
+      row.session_id?.startsWith(id),
+  );
+  return matches.length === 1 && matches[0] ? matches[0].id : id;
+}
+
+async function showLiveSession(id: string): Promise<boolean> {
+  const headers = authHeaders();
+  let targetId = id;
+  let statusRes = await fetch(`${apiBase()}/sessions/live/${encodeURIComponent(targetId)}/status`, {
+    headers,
+  }).catch(() => null);
+  if (statusRes?.status === 404) {
+    const candidate = await resolveLiveCandidateId(id);
+    if (candidate !== targetId) {
+      targetId = candidate;
+      statusRes = await fetch(`${apiBase()}/sessions/live/${encodeURIComponent(targetId)}/status`, {
+        headers,
+      }).catch(() => null);
+    }
+  }
+  const liveRes = await fetch(`${apiBase()}/sessions/live/${encodeURIComponent(targetId)}`, {
+    headers,
+  }).catch(() => null);
+
+  const statusBody = statusRes?.ok ? ((await statusRes.json()) as LiveSessionStatus) : null;
+  const liveBody = liveRes?.ok ? ((await liveRes.json()) as LiveSessionDetail) : null;
+  if (!statusBody && !liveBody) return false;
+
+  if (isJson()) {
+    jsonOut(statusBody ? { ...statusBody, ...(liveBody ? { live: liveBody } : {}) } : liveBody);
+    return true;
+  }
+
+  const sessionId = statusBody?.session_id ?? liveBody?.id ?? id;
+  const agent = statusBody?.agent ?? liveBody?.agent ?? "unknown";
+  const status = statusBody?.status ?? liveBody?.status ?? "unknown";
+  const title = statusBody?.title ?? liveBody?.name ?? null;
+  const projectId = statusBody?.project_id ?? liveBody?.project_id ?? null;
+  const cwd = statusBody?.cwd || liveBody?.cwd || null;
+  const nativeId = statusBody?.native_session_id ?? liveBody?.session_id ?? null;
+  const liveId = statusBody?.live_session_id ?? liveBody?.id ?? null;
+  const lastActivityMs =
+    statusBody?.last_activity_at ??
+    (liveBody?.last_activity_at ? Date.parse(liveBody.last_activity_at) : null);
+
+  console.log(`Session:  ${sessionId}`);
+  if (liveId && liveId !== sessionId) console.log(`Live ID:  ${liveId}`);
+  if (nativeId && nativeId !== sessionId) console.log(`Native:   ${nativeId}`);
+  console.log(`Agent:    ${agent}`);
+  console.log(
+    `Status:   ${status}${statusBody?.waiting_for ? ` (${statusBody.waiting_for})` : ""}`,
+  );
+  if (title) console.log(`Title:    ${title}`);
+  if (projectId) console.log(`Project:  ${projectId}`);
+  if (cwd) console.log(`CWD:      ${cwd}`);
+  if (lastActivityMs && Number.isFinite(lastActivityMs)) {
+    const iso = new Date(lastActivityMs).toISOString();
+    console.log(
+      `Activity: ${new Date(lastActivityMs).toLocaleString()} (${formatAgo(iso)})${statusBody?.last_activity ? ` [${statusBody.last_activity}]` : ""}`,
+    );
+  }
+  if (statusBody?.start_error) {
+    console.log("\nError:");
+    console.log(`  ${statusBody.start_error}`);
+  }
+  const msg = statusBody?.last_message ?? liveBody?.summary ?? null;
+  if (msg && msg !== statusBody?.start_error) {
+    console.log("\nLast message:");
+    console.log(`  ${msg}`);
+  }
+  return true;
+}
+
 export function sessionCommand() {
   const cmd = new Command("session").description("View session history");
 
@@ -101,7 +222,7 @@ export function sessionCommand() {
 
   cmd
     .command("show <id>")
-    .description("Show session detail with events")
+    .description("Show session detail (recorded, live, chat UUID, or native session id)")
     .option("-e, --events", "Show recorded events")
     .option("-s, --snapshot", "Show snapshot XML")
     .option("-n, --limit <n>", "Max events to show", "50")
@@ -120,14 +241,19 @@ export function sessionCommand() {
 
       let res: Response;
       try {
-        res = await fetch(`${apiBase()}/sessions/${resolvedId}`, {
+        res = await fetch(`${apiBase()}/sessions/${encodeURIComponent(resolvedId)}`, {
           headers: authHeaders(),
         });
       } catch {
         return console.error("Cannot connect to orc API.");
       }
 
-      if (res.status === 404) return console.error(`Session not found: ${id}`);
+      if (res.status === 404) {
+        const liveShown = await showLiveSession(id);
+        if (liveShown) return;
+        process.exitCode = 1;
+        return console.error(`Session not found: ${id}`);
+      }
       if (!res.ok) return console.error(`API error: ${res.status}`);
 
       const s = (await res.json()) as SessionDetail;

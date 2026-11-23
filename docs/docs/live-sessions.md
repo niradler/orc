@@ -211,9 +211,13 @@ subagents:
 | --------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `session_start`                   | Starts a headless ORC chat with a prompt and returns its `session_id` immediately                  |
 | `session_send`                    | Messages it: `queue`, `steer` or `interrupt`                                                       |
-| `session_status` / `session_list` | Status (`queued`, `running`, `waiting`, `idle`, `failed`, `stopped`), last reply, queue, parent and children |
+| `session_status` / `session_list` | Status (`queued`, `running`, `waiting`, `idle`, `failed`, `stopped`), live mid-turn activity (`last_activity_at`, `last_activity`, `activity_count`), explicit `start_error` on spawn/launch failures, last reply, queue, parent and children |
 | `session_wait` | Blocks until it stops running, waits for a human, or replies (`until: message`); `session_ids` with `mode: all` or `any` waits on several children |
-| `session_stop` | Stops its current turn and, by default (`cascade`), every session it started; queued children are cancelled; messages still queued for a stopped session are cancelled, and messages sent after the stop deliver normally; sessions stay resumable |
+| `session_stop` | Stops its current turn (or reconciles a discovery-only live record) and, by default (`cascade`), every session it started; queued children are cancelled; messages still queued for a stopped session are cancelled, and messages sent after the stop deliver normally; sessions stay resumable |
+
+While a headless turn is running, `GET /api/sessions/live/{id}/status` (and MCP `session_status`) advances `last_activity_at`, `updated_at`, `last_activity` (such as `tool:bash`, `thinking`, `text`, `plan`, or `waiting:approval`), and `activity_count` on every streamed event before the turn completes, so callers can distinguish active workers from hung turns. If launch, preflight, or the turn fails, `start_error` exposes the failure reason explicitly (and `last_message` falls back to it when no assistant prose was emitted). `session_start` also normalizes canonical backend aliases (`codex-cli` to `codex`, `claude-cli`/`claude-code` to `claude`, `cursor-agent` to `cursor`), and provider/adapter mismatches report both the mismatched provider and the valid provider IDs for the requested agent.
+
+Live session routes (`GET /api/sessions/live/{id}`, `/status`, `/transcript`, `/stop`, `/cache`, `/analytics`, `/children`) and `orc session show <id>` resolve any session identifier form interchangeably: chat thread UUIDs returned by `session_start`, live record IDs from `GET /api/sessions/live`, or native runtime IDs such as `ses_...`. Calling `POST /api/sessions/live/{id}/stop` on a discovery-only live record without a chat thread signals its local process when still alive and settles the row to `stopped`.
 
 `session_start` takes `workspace`:
 

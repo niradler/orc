@@ -20,13 +20,9 @@ import { getSqlite } from "@orc/db/client";
 import { SessionMessageStore } from "@orc/db/session-messages";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
-import {
-  requireAncestor,
-  sendToSession,
-  sessionLineage,
-  sessionSubagents,
-} from "../sessions/control.js";
-import { chatStatus, spawnChat, stopChat } from "./chat.js";
+import { sendToSession, sessionLineage, sessionSubagents } from "../sessions/control.js";
+import { resolveSessionRef } from "../sessions/resolve.js";
+import { chatStatus, spawnChat, stopSession } from "./chat.js";
 
 const app = createRouter();
 app.use("/session-messages/*", bodyLimit({ maxSize: 20000 }));
@@ -240,15 +236,25 @@ app.openapi(
       },
     },
   }),
-  (c) =>
-    c.json(
+  (c) => {
+    const id = c.req.valid("param").id;
+    const resolved = resolveSessionRef(id);
+    const ids = resolved
+      ? [
+          ...new Set(
+            [id, resolved.chatId, resolved.liveId, resolved.nativeId].filter(
+              (v): v is string => !!v,
+            ),
+          ),
+        ]
+      : [id];
+    return c.json(
       {
-        sessions: new ChatStore(getSqlite())
-          .children([c.req.valid("param").id])
-          .map((child) => chatStatus(child.id)),
+        sessions: new ChatStore(getSqlite()).children(ids).map((child) => chatStatus(child.id)),
       },
       200,
-    ),
+    );
+  },
 );
 
 app.openapi(
@@ -408,11 +414,8 @@ app.openapi(
   }),
   (c) => {
     const id = c.req.valid("param").id;
-    chatStatus(id);
     const sender = caller(c.req.header("X-ORC-Session"));
-    requireAncestor(sender, id);
-    stopChat(id, c.req.valid("query").cascade === "true", sender.session_id ?? null);
-    return c.json(chatStatus(id), 200);
+    return c.json(stopSession(id, c.req.valid("query").cascade === "true", sender), 200);
   },
 );
 

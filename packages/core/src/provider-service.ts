@@ -4,6 +4,7 @@ import { ChatSettingsSchema } from "./chat.js";
 import {
   agentLabel,
   CODING_AGENTS,
+  canonicalAgentId,
   DEFAULT_ENABLED_AGENTS,
   enabledAgents,
 } from "./coding-agents.js";
@@ -158,19 +159,29 @@ export function providerForAgent(
   providerId?: string,
   allowDisabled = false,
 ): StoredProviderProfile | undefined {
+  const resolvedAgent = canonicalAgentId(agent);
   const saved = profiles(loadConfig());
   const selected = providerId
     ? saved.instances.find((profile) => profile.id === providerId)
     : (saved.instances.find(
-        (profile) => profile.id === saved.default_id && profile.agent === agent,
-      ) ?? saved.instances.find((profile) => profile.id === agent));
-  if (providerId && !selected && allowDisabled && providerId === agent) return undefined;
+        (profile) => profile.id === saved.default_id && profile.agent === resolvedAgent,
+      ) ?? saved.instances.find((profile) => profile.id === resolvedAgent));
+  if (providerId && !selected && allowDisabled && providerId === resolvedAgent) return undefined;
   if (providerId && !selected)
     throw new ValidationError(
-      "This provider is no longer configured. Choose another provider for a new session.",
+      `Provider "${providerId}" is no longer configured. Choose another provider for a new session.`,
     );
-  if (selected && selected.agent !== agent)
-    throw new ValidationError("The provider does not match the coding-agent adapter.");
+  if (selected && selected.agent !== resolvedAgent) {
+    const validIds = saved.instances
+      .filter((profile) => profile.agent === resolvedAgent)
+      .map((profile) => profile.id);
+    const validHint = validIds.length
+      ? ` Valid provider id(s) for agent "${resolvedAgent}": ${validIds.join(", ")}.`
+      : ` No configured providers match agent "${resolvedAgent}".`;
+    throw new ValidationError(
+      `Provider "${selected.id}" (agent "${selected.agent}") does not match the coding-agent adapter "${resolvedAgent}".${validHint}`,
+    );
+  }
   if (selected && !selected.enabled && !allowDisabled)
     throw new ValidationError("Enable this provider before starting a new session.");
   return selected;
@@ -287,15 +298,23 @@ export function providerChatDefaults(
   const config = loadConfig();
   const base = ChatSettingsSchema.parse(config.preferences.chat ?? {});
   const saved = profiles(config);
-  const id = providerId ?? (agent ? undefined : saved.default_id);
+  const normalizedAgent = agent ? canonicalAgentId(agent) : undefined;
+  const id = providerId ?? (normalizedAgent ? undefined : saved.default_id);
   const selectedAgent =
-    agent ?? saved.instances.find((profile) => profile.id === id)?.agent ?? base.agent;
+    normalizedAgent ?? saved.instances.find((profile) => profile.id === id)?.agent ?? base.agent;
   const profile = providerForAgent(
     selectedAgent,
     id,
-    allowDisabled || (!providerId && !agent && !saved.instances.some((item) => item.enabled)),
+    allowDisabled ||
+      (!providerId && !normalizedAgent && !saved.instances.some((item) => item.enabled)),
   );
-  if (!profile) return { ...base, agent: selectedAgent };
+  if (!profile)
+    return {
+      ...base,
+      agent: selectedAgent,
+      providerId: undefined,
+      model: base.agent === selectedAgent ? base.model : "",
+    };
   const agentOptions = config.providers ? {} : { ...base.agentOptions };
   delete agentOptions[profile.agent];
   return {

@@ -1,7 +1,9 @@
 import { execSync, spawn } from "node:child_process";
 import {
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
   realpathSync,
   unlinkSync,
@@ -10,7 +12,13 @@ import {
 import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { instanceId, registerShutdownHook } from "@orc/api/lifecycle";
-import { configuredApiSecret, dialableHost, globalConfigPath, loadConfig } from "@orc/core/config";
+import {
+  configuredApiSecret,
+  dialableHost,
+  globalConfigPath,
+  loadConfig,
+  resolveApiBase,
+} from "@orc/core/config";
 import {
   canonicalPath,
   clearDaemonRuntime,
@@ -19,6 +27,12 @@ import {
   readDaemonRuntime,
   writeDaemonRuntime,
 } from "@orc/core/daemon-runtime";
+import {
+  type LogLevel,
+  type LogSource,
+  type ReadLogsResult,
+  readRecentLogs,
+} from "@orc/core/logger";
 import { superviseServer } from "@orc/core/process-supervisor";
 import { ORC_VERSION } from "@orc/core/version";
 import {
@@ -32,6 +46,7 @@ import {
 import { createOrcClient } from "@orc/sdk/client";
 import { Command, InvalidArgumentError } from "commander";
 import { inheritLoginShellPath } from "../login-path.js";
+import { isJson, jsonOut } from "../output.js";
 import { listAllJobs } from "./job.js";
 
 export const ORC_HOME = daemonHome();
@@ -382,11 +397,12 @@ export async function stopDaemon(pid: number, options: StopDaemonOptions): Promi
     : { stopped: false };
 }
 
-/** Restart in the background so the caller keeps its terminal. Uses the config
- *  file for host/port, so per-invocation global flags are not carried over. */
+export function openDaemonLogFd(logPath: string = ORC_LOG): number {
+  mkdirSync(join(ORC_HOME, "logs"), { recursive: true });
+  return openSync(logPath, "a");
+}
+
 function startDetachedDaemon(): void {
-  // A compiled CLI is its own entry point; a source checkout runs the script
-  // through Bun. Mirrors the supervisor's standalone detection.
   const standalone = import.meta.path.includes("$bunfs") || import.meta.path.includes("~BUN");
   const entry = process.argv[1];
   if (!standalone && !entry) {
@@ -394,13 +410,18 @@ function startDetachedDaemon(): void {
     process.exitCode = 1;
     return;
   }
-  const child = spawn(
-    process.execPath,
-    standalone ? ["daemon"] : [...process.execArgv, entry as string, "daemon"],
-    { detached: true, stdio: "ignore", windowsHide: true },
-  );
-  child.unref();
-  console.log(`Daemon restarting in the background (pid ${child.pid}).`);
+  const logFd = openDaemonLogFd(ORC_LOG);
+  try {
+    const child = spawn(
+      process.execPath,
+      standalone ? ["daemon"] : [...process.execArgv, entry as string, "daemon"],
+      { detached: true, stdio: ["ignore", logFd, logFd], windowsHide: true },
+    );
+    child.unref();
+    console.log(`Daemon restarting in the background (pid ${child.pid}, log ${ORC_LOG}).`);
+  } finally {
+    closeSync(logFd);
+  }
 }
 
 export function daemonCommand() {
@@ -414,6 +435,7 @@ export function daemonCommand() {
     .action(async () => {
       if (!(await superviseServer())) return;
       ensureOrcHome();
+      if (process.env.ORC_LOG_FILE === undefined) process.env.ORC_LOG_FILE = "1";
       inheritLoginShellPath();
 
       const existingPid = readDaemonPid();
@@ -619,4 +641,69 @@ export function daemonCommand() {
     });
 
   return cmd;
+}
+
+export function logsCommand() {
+  return new Command("logs")
+    .description("Show recent ORC daemon and worker logs")
+    .option("-n, --lines <n>", "Max entries to show", "100")
+    .option("-l, --level <level>", "Minimum level: debug|info|warn|error")
+    .option("--ns <namespace>", "Filter by logger namespace (e.g. api:chat, runner:flow)")
+    .option("-q, --query <text>", "Filter entries containing text")
+    .option("--source <source>", "Log source: orc|daemon|all", "orc")
+    .option("--local", "Read local log files directly without calling the API")
+    .action(
+      async (opts: {
+        lines: string;
+        level?: LogLevel;
+        ns?: string;
+        query?: string;
+        source: LogSource;
+        local?: boolean;
+      }) => {
+        const lines = Math.min(Math.max(Number(opts.lines) || 100, 1), 1000);
+        let result: ReadLogsResult | null = null;
+        if (!opts.local) {
+          try {
+            const config = loadConfig();
+            const qs = new URLSearchParams({ lines: String(lines), source: opts.source });
+            if (opts.level) qs.set("level", opts.level);
+            if (opts.ns) qs.set("ns", opts.ns);
+            if (opts.query) qs.set("q", opts.query);
+            const headers: Record<string, string> = {};
+            const secret = configuredApiSecret(process.env.ORC_API_SECRET ?? config.api.secret);
+            if (secret) headers.Authorization = `Bearer ${secret}`;
+            const res = await fetch(`${resolveApiBase(config)}/api/system/logs?${qs}`, {
+              headers,
+              signal: AbortSignal.timeout(5000),
+            });
+            if (res.ok) result = (await res.json()) as ReadLogsResult;
+          } catch {
+            // Fall back to reading local log files directly when the daemon is unreachable.
+          }
+        }
+        result ??= readRecentLogs({
+          lines,
+          level: opts.level,
+          ns: opts.ns,
+          q: opts.query,
+          source: opts.source,
+        });
+
+        if (isJson()) return jsonOut(result);
+        if (!result.entries.length) {
+          console.log(
+            `No matching log entries in ${opts.source === "daemon" ? result.daemon_log_path : result.path}.`,
+          );
+          return;
+        }
+        for (const entry of result.entries) {
+          const ts = entry.ts ? entry.ts.slice(0, 19).replace("T", " ") : "-------------------";
+          const level = (entry.level ?? "log").toUpperCase().padEnd(5);
+          const ns = entry.ns ? `[${entry.ns}] ` : "";
+          const data = entry.data ? ` ${entry.data}` : "";
+          console.log(`${ts} ${level} ${ns}${entry.msg}${data}`);
+        }
+      },
+    );
 }

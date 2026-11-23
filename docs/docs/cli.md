@@ -29,13 +29,14 @@ Commands that take a project (`task`, `job`, `mem`, `kb`) default to the active 
 | --- | --- |
 | `orc daemon start` | Run API, scheduler, file watchers, channels and task loop as one process |
 | `orc daemon stop [--force] [--timeout <s>]` | Stop the daemon gracefully: active chat turns drain and their session identity is saved, then the process exits. `--force` kills it instead; `--timeout` bounds the wait (default 30) |
-| `orc daemon restart [--force] [--timeout <s>]` | Stop gracefully, then start again in the background |
+| `orc daemon restart [--force] [--timeout <s>]` | Stop gracefully, then start again in the background (appending stdout/stderr to `~/.orc/daemon.log`) |
 | `orc daemon status` | Scheduler state and next run times of active jobs |
 | `orc daemon install [--force]` | Register the daemon to start on login/boot and start it now |
 | `orc daemon uninstall` | Remove the auto-start registration |
+| `orc logs` | Read recent daemon and worker logs (`-n/--lines`, `-l/--level`, `--ns`, `-q/--query`, `--source orc\|daemon\|all`, `--local`) |
 | `orc api` | Start the API server only |
 | `orc mcp [--mode meta\|full]` | Start the MCP server on stdio. See [MCP](./mcp.md) |
-| `orc home` | Show `~/.orc` files, daemon state and API config |
+| `orc home` | Show `~/.orc` files (including `logs/orc.log` and `daemon.log`), daemon state and API config |
 | `orc status` | API health and counts |
 | `orc doctor` | Check which agent backends are usable on this machine |
 | `orc schema [resource] [--list]` | Show resource schemas from the running API's OpenAPI spec |
@@ -173,7 +174,7 @@ New jobs are disabled until `--enable` or `orc job update <job> --enabled`.
 | Command | Main flags |
 | --- | --- |
 | `orc session list` | `-a, --agent claude-code\|cursor\|codex`, `-n, --limit` |
-| `orc session show <id>` | `-e, --events`, `-s, --snapshot`, `-n, --limit` |
+| `orc session show <id>` | Show recorded, live, chat UUID, or native (`ses_...`) session details (`-e, --events`, `-s, --snapshot`, `-n, --limit`) |
 | `orc session log <summary>` | `-a, --agent` (default `human`), `--agent-version` |
 
 ## Scratchpads

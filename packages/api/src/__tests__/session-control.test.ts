@@ -827,3 +827,264 @@ describe("child work rollup", () => {
     }
   });
 });
+
+describe("observable worker sessions (#533)", () => {
+  test("advances mid-turn last_activity_at and activity metadata on tool and thinking events before turn completion", async () => {
+    const wrapper = createBackend("claude");
+    let pushEvent: ((event: AgentEvent) => void) | undefined;
+    let finishTurn: (() => void) | undefined;
+
+    registerBackend("claude", () => ({
+      ...wrapper,
+      startSession: async () => {
+        const runtimeId = `ses_live_${crypto.randomUUID().slice(0, 8)}`;
+        const queue: AgentEvent[] = [];
+        let wake: (() => void) | undefined;
+        let done = false;
+        pushEvent = (event) => {
+          queue.push(event);
+          wake?.();
+          wake = undefined;
+        };
+        finishTurn = () => {
+          queue.push({ type: "text", data: "final reply" });
+          queue.push({ type: "result", data: { runtimeSessionId: runtimeId } });
+          done = true;
+          wake?.();
+          wake = undefined;
+        };
+        return {
+          id: runtimeId,
+          capabilities: wrapper.capabilities,
+          getRuntimeSessionId: () => runtimeId,
+          send: async () => {},
+          interrupt: async () => finishTurn?.(),
+          respondPermission: () => {},
+          alive: () => !done,
+          close: async () => {
+            done = true;
+            wake?.();
+          },
+          async *events(): AsyncIterable<AgentEvent> {
+            while (!done || queue.length > 0) {
+              if (!queue.length) {
+                await new Promise<void>((resolve) => {
+                  wake = resolve;
+                });
+                continue;
+              }
+              const next = queue.shift();
+              if (next) yield next;
+            }
+          },
+        };
+      },
+    }));
+
+    try {
+      const parent = await startParent("parent: live activity", repo);
+      const initial = await status(parent.id);
+      expect(initial.status).toBe("running");
+      const firstActivityAt = initial.last_activity_at ?? initial.updated_at;
+
+      await Bun.sleep(20);
+      pushEvent?.({
+        type: "tool_use",
+        data: { id: "tool-1", name: "bash", input: '{"command":"git status"}' },
+      });
+      await until(
+        async () => (await status(parent.id)).last_activity === "tool:bash",
+        "tool_use activity recorded",
+      );
+      const afterTool = await status(parent.id);
+      expect(afterTool.status).toBe("running");
+      expect(afterTool.last_activity).toBe("tool:bash");
+      expect(afterTool.activity_count).toBeGreaterThanOrEqual(1);
+      expect(afterTool.last_activity_at ?? 0).toBeGreaterThan(firstActivityAt);
+      expect(afterTool.updated_at).toBeGreaterThan(firstActivityAt);
+
+      await Bun.sleep(20);
+      pushEvent?.({ type: "thinking", data: "analyzing diff" });
+      await until(
+        async () => (await status(parent.id)).last_activity === "thinking",
+        "thinking activity recorded",
+      );
+      const afterThinking = await status(parent.id);
+      expect(afterThinking.last_activity_at ?? 0).toBeGreaterThan(afterTool.last_activity_at ?? 0);
+      expect(afterThinking.activity_count).toBeGreaterThan(afterTool.activity_count ?? 0);
+
+      finishTurn?.();
+      await until(async () => (await status(parent.id)).status === "idle", "turn completed");
+      const settled = await status(parent.id);
+      expect(settled.last_message).toBe("final reply");
+    } finally {
+      registerBackend("claude", () => wrapper);
+    }
+  });
+
+  test("surfaces runtime spawn errors in start_error and last_message and logs them to /system/logs", async () => {
+    const wrapper = createBackend("claude");
+    const oldLogFlag = process.env.ORC_LOG_FILE;
+    process.env.ORC_LOG_FILE = "1";
+    let failLaunch = false;
+    registerBackend("claude", () => ({
+      ...wrapper,
+      startSession: async (opts) => {
+        if (failLaunch) throw new Error("Simulated codex launch failure: auth token missing");
+        return fakeSession(opts.cwd, `native-ok-${crypto.randomUUID()}`);
+      },
+    }));
+
+    try {
+      const parent = await startParent("parent: spawn error test", repo);
+      const parentTurn = await turnFor("parent: spawn error test");
+      failLaunch = true;
+
+      const spawned = await req(
+        app,
+        "POST",
+        "/sessions/live/spawn",
+        { prompt: "child: will fail launch", title: "Failing worker" },
+        as(parent.id),
+      );
+      expect(spawned.status).toBe(200);
+      const child = await spawned.json<SessionStatus>();
+
+      await until(async () => (await status(child.session_id)).status === "failed", "child failed");
+      const failed = await status(child.session_id);
+      expect(failed.status).toBe("failed");
+      expect(failed.start_error).toContain("Simulated codex launch failure: auth token missing");
+      expect(failed.last_message).toContain("Simulated codex launch failure: auth token missing");
+
+      const logsRes = await req(
+        app,
+        "GET",
+        "/system/logs?level=error&q=Simulated+codex+launch+failure",
+      );
+      expect(logsRes.status).toBe(200);
+      const logsBody = await logsRes.json<{
+        path: string;
+        entries: { level: string | null; msg: string; data?: string }[];
+      }>();
+      expect(logsBody.entries.length).toBeGreaterThanOrEqual(1);
+      expect(
+        logsBody.entries.some((entry) =>
+          `${entry.msg} ${entry.data ?? ""}`.includes("Simulated codex launch failure"),
+        ),
+      ).toBe(true);
+
+      parentTurn.release();
+      for (const turn of turns) turn.release();
+    } finally {
+      if (oldLogFlag === undefined) delete process.env.ORC_LOG_FILE;
+      else process.env.ORC_LOG_FILE = oldLogFlag;
+      registerBackend("claude", () => wrapper);
+    }
+  });
+
+  test("normalizes backend alias agent=codex-cli on session spawn", async () => {
+    const originalCodex = createBackend("codex-cli");
+    registerBackend("codex-cli", () => ({
+      ...originalCodex,
+      preflight: async () => ({ ok: true }),
+      startSession: async (opts) => fakeSession(opts.cwd, `native-codex-${crypto.randomUUID()}`),
+      resumeSession: async (id, opts) => fakeSession(opts.cwd, id),
+    }));
+    try {
+      const parent = await startParent("parent: codex alias", repo);
+      const parentTurn = await turnFor("parent: codex alias");
+
+      const spawned = await req(
+        app,
+        "POST",
+        "/sessions/live/spawn",
+        { prompt: "child: codex alias run", agent: "codex-cli", title: "Codex alias worker" },
+        as(parent.id),
+      );
+      expect(spawned.status).toBe(200);
+      const child = await spawned.json<SessionStatus>();
+      expect(child.agent).toBe("codex");
+
+      const childTurn = await turnFor("child: codex alias run");
+      childTurn.release();
+      parentTurn.release();
+      await until(
+        async () => (await status(child.session_id)).status === "idle",
+        "codex child idle",
+      );
+      for (const turn of turns) turn.release();
+    } finally {
+      registerBackend("codex-cli", () => originalCodex);
+    }
+  });
+
+  test("resolves chat UUID, gateway record id, and native ses_ id across status, live, transcript, and stop — including discovery-only records", async () => {
+    const parent = await startParent("parent: unified ids", repo);
+    const parentTurn = await turnFor("parent: unified ids");
+    parentTurn.release();
+    await until(async () => (await status(parent.id)).status === "idle", "parent idle");
+
+    const thread = await (await req(app, "GET", `/chat/threads/${parent.id}`)).json<{
+      runtimeId: string | null;
+    }>();
+    expect(thread.runtimeId).toBeTruthy();
+
+    const sqlite = getSqlite();
+    const liveId = `live-${crypto.randomUUID().slice(0, 12)}`;
+    const nativeId = thread.runtimeId as string;
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions
+           (id, chat_id, backend, mode, status, role, runtime_session_id, title, cwd, created_at, updated_at, last_activity_at)
+         VALUES (?, '__live-sessions__', 'claude', 'direct', 'idle', 'worker', ?, 'Unified Session', ?, unixepoch(), unixepoch(), unixepoch())`,
+      )
+      .run(liveId, nativeId, repo);
+
+    const discoveryId = `disc-${crypto.randomUUID().slice(0, 12)}`;
+    const discoveryNative = `ses_discovery_${crypto.randomUUID().slice(0, 8)}`;
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions
+           (id, chat_id, backend, mode, status, role, runtime_session_id, title, cwd, created_at, updated_at, last_activity_at)
+         VALUES (?, '__live-sessions__', 'opencode', 'direct', 'running', 'worker', ?, 'Discovery Only', ?, unixepoch(), unixepoch(), unixepoch())`,
+      )
+      .run(discoveryId, discoveryNative, repo);
+
+    try {
+      for (const identifier of [parent.id, liveId, nativeId]) {
+        const stRes = await req(app, "GET", `/sessions/live/${identifier}/status`);
+        expect(stRes.status).toBe(200);
+        const stBody = await stRes.json<SessionStatus>();
+        expect(stBody.session_id).toBe(parent.id);
+        expect(stBody.live_session_id).toBe(liveId);
+        expect(stBody.native_session_id).toBe(nativeId);
+
+        const liveRes = await req(app, "GET", `/sessions/live/${identifier}`);
+        expect(liveRes.status).toBe(200);
+        const liveBody = await liveRes.json<{ id: string; session_id: string | null }>();
+        expect(liveBody.id).toBe(liveId);
+        expect(liveBody.session_id).toBe(nativeId);
+
+        const trRes = await req(app, "GET", `/sessions/live/${identifier}/transcript`);
+        expect(trRes.status).toBe(200);
+        const trBody = await trRes.json<{ total: number; turns: unknown[] }>();
+        expect(trBody.total).toBeGreaterThanOrEqual(2);
+      }
+
+      const discByLive = await req(app, "GET", `/sessions/live/${discoveryId}/status`);
+      expect(discByLive.status).toBe(200);
+      expect((await discByLive.json<SessionStatus>()).status).toBe("running");
+
+      const discByNative = await req(app, "GET", `/sessions/live/${discoveryNative}/status`);
+      expect(discByNative.status).toBe(200);
+      expect((await discByNative.json<SessionStatus>()).session_id).toBe(discoveryId);
+
+      const stopRes = await req(app, "POST", `/sessions/live/${discoveryId}/stop`);
+      expect(stopRes.status).toBe(200);
+      const stoppedBody = await stopRes.json<SessionStatus>();
+      expect(stoppedBody.status).toBe("stopped");
+    } finally {
+      sqlite.query("DELETE FROM gateway_sessions WHERE id IN (?, ?)").run(liveId, discoveryId);
+    }
+  });
+});

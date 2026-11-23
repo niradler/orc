@@ -241,6 +241,8 @@ A flow cannot loop forever. Five independent rails, each halting the run and (by
 
 Plus: a node that dies routes through `on_error` if it declares one, otherwise the run halts with the error attached. A node that ends without reporting anything halts with `no_outcome` rather than the graph guessing a verdict. Mutually-routing gates trip a chain limit instead of spinning.
 
+**Liveness reconciliation.** Before draining queued nodes or starting a task-loop cycle, the runner reconciles `running` worker sessions and agent nodes against live handles and process liveness. A node whose worker process exited, whose backing gateway session is missing or already stopped/errored, or whose in-process handle is gone past the startup grace window is automatically reclaimed (retried within `max_node_retries`, or failed into `on_error`), freeing its `max_workers` slot without requiring a manual `orc flow halt`. Daemon startup runs orphan recovery unconditionally even when `agent_loop.enabled` is `false`. Active live nodes and sessions currently starting are never reaped.
+
 `describeHalt()` turns each reason into a sentence for the task comment and `orc flow status`.
 
 ## The node contract

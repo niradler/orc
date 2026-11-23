@@ -462,6 +462,17 @@ stored on the session row, so a re-sync that rewrites the agent title or notices
 new activity keeps both. `GET /sessions/live` and `/sessions/live/search` omit
 hidden rows unless asked with `include_hidden=true`.
 
+All `/sessions/live/{id}` endpoints (`GET`, `PATCH`, `/status`, `/transcript`,
+`/stop`, `/cache`, `/analytics`, `/children`) resolve any valid session
+identifier: chat thread UUID, live gateway record ID, or native runtime ID
+(such as `ses_...`). `GET /sessions/live/{id}/status` returns live mid-turn
+activity (`last_activity_at`, `last_activity`, `activity_count`, advancing
+`updated_at`), explicit `start_error` on spawn or turn failure, and cross-id
+links (`native_session_id`, `live_session_id`). `GET /sessions/live/{id}/transcript`
+falls back to the stored chat thread messages when no native transcript file is
+present on disk, and `POST /sessions/live/{id}/stop` also stops discovery-only
+live records that have no backing chat thread.
+
 ### Human requests, rules and scratchpads
 
 | Method | Path | Purpose |
@@ -490,6 +501,7 @@ hidden rows unless asked with `include_hidden=true`.
 | `GET` | `/events` | Resource-change event stream |
 | `GET` `PUT` | `/ssh` | SSH execution host |
 | `GET` | `/system/about` | Server version, platform, runtime, data folder, start time |
+| `GET` | `/system/logs` | Recent structured daemon and worker logs (`lines`, `level`, `ns`, `q`, `source=orc\|daemon\|all`) |
 | `POST` | `/system/restart` | Restart ORC |
 | `POST` | `/system/shutdown` | Stop ORC gracefully: refuse new chat turns, drain the active ones, persist their session identity, then exit |
 | `POST` | `/mcp/tool` | Run any MCP tool: `{ "name", "args" }` |

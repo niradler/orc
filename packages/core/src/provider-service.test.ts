@@ -343,3 +343,18 @@ test("should not touch an ambient ORC_HOME sentinel config when isolated provide
     rmSync(isolated, { recursive: true, force: true });
   }
 });
+
+test("normalizes backend aliases and reports actionable provider mismatch diagnostics", () => {
+  const defaults = providerChatDefaults(undefined, "codex-cli", true);
+  expect(defaults.agent).toBe("codex");
+  expect(defaults.providerId).toBe("codex");
+
+  const custom = providerChatDefaults(undefined, "custom-acp-agent", true);
+  expect(custom.agent).toBe("custom-acp-agent");
+  expect(custom.providerId).toBeUndefined();
+
+  expect(() => providerForAgent("codex", "claude", true)).toThrow(
+    /Provider "claude" \(agent "claude"\) does not match the coding-agent adapter "codex"\. Valid provider id\(s\) for agent "codex":/,
+  );
+  expect(providerForAgent("codex-cli", "codex", true)?.agent).toBe("codex");
+});
