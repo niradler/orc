@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ChatAgentOptionsMapSchema, ChatPermissionModeSchema } from "./chat-options.js";
 import { chatUiCatalogText } from "./chat-ui.js";
 import { SessionFileSchema } from "./session-file-types.js";
+import { SessionDeliverySchema } from "./session-messages.js";
 import { AgentCapabilitiesSchema } from "./types.js";
 
 export const NATIVE_CHAT_AGENTS = ["claude", "codex", "gemini", "opencode", "pi"];
@@ -514,6 +515,7 @@ export const ChatMessageSchema = z.object({
   activity: z.array(ChatActivitySchema).optional(),
   providerActivity: z.array(ChatProviderActivitySchema).max(200).optional(),
   attachments: z.array(SessionFileSchema).max(10).optional(),
+  deliveries: z.array(SessionDeliverySchema).max(20).optional(),
 });
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;
 export const CHAT_HISTORY_PAGE_SIZE = 500;
