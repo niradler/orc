@@ -1,4 +1,4 @@
-import type { HumanRequest } from "@orc/core/human-requests";
+import { type HumanRequest, parseSnoozeDurationSeconds } from "@orc/core/human-requests";
 import { currentHumanRequest, type HumanRequestStore } from "@orc/db/human-requests";
 import { redactSecrets } from "./redact.js";
 import type { GatewayAdapter, IncomingMessage, SupportsInlineButtons } from "./types.js";
@@ -70,7 +70,7 @@ export class HumanRequestChannels {
   async notify(adapters: ReadonlyMap<string, GatewayAdapter>, targets: Target[]): Promise<void> {
     for (const entry of this.store.list()) {
       const request = currentHumanRequest(this.store, entry.id);
-      if (request.status !== "pending") continue;
+      if (request.status !== "pending" || this.store.isSnoozed(request)) continue;
       for (const target of targets) {
         const source = request.input.origin.channel;
         if (
@@ -185,9 +185,11 @@ export class HumanRequestChannels {
       return "Questions and approvals are disabled for this recipient. Review the request in ORC.";
     const match = message.text
       .trim()
-      .match(/^\/attention(?:@\w+)?\s+(\S+)\s+(\d+)\s+(approve|deny|answer)(?:\s+([\s\S]+))?$/);
+      .match(
+        /^\/attention(?:@\w+)?\s+(\S+)\s+(\d+)\s+(approve|deny|answer|snooze)(?:\s+([\s\S]+))?$/,
+      );
     if (!match)
-      return "Use /attention <request-id> <version> answer <text>, approve, or deny. Open Notifications in ORC for request details.";
+      return "Use /attention <request-id> <version> answer <text>, approve, deny, or snooze <duration>. Open Notifications in ORC for request details.";
     const [, id = "", rawVersion, operation, answer] = match;
     const version = Number(rawVersion);
     try {
@@ -208,6 +210,13 @@ export class HumanRequestChannels {
         return "This recipient no longer has access to the request project. Review it in ORC.";
       if (request.input.origin.channel && request.input.origin.channel.sender_id !== message.userId)
         return "Only the originating sender may answer this request.";
+      if (operation === "snooze") {
+        const seconds = answer ? parseSnoozeDurationSeconds(answer) : null;
+        if (!seconds)
+          return "Use /attention <request-id> <version> snooze <duration> (for example 15m, 1h, 3h).";
+        this.store.snooze(id, version, this.store.currentTime() + seconds * 1000);
+        return `Request snoozed for ${answer?.trim()}. You can still answer earlier here or in ORC.`;
+      }
       if (request.input.kind === "question") {
         if (operation !== "answer" || !answer?.trim()) return "This question needs an answer.";
         this.store.respond(id, version, { kind: "question", answer });

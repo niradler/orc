@@ -29,6 +29,22 @@ beforeAll(() => {
         const body = (await request.json()) as { version: number };
         return Response.json(store.acknowledge(parts.at(-2) ?? "", body.version));
       }
+      if (parts.at(-1) === "view") return Response.json(store.get(parts.at(-2) ?? ""));
+      if (parts.at(-1) === "snooze" && request.method === "POST") {
+        const body = (await request.json()) as {
+          version: number;
+          until?: number;
+          after_seconds?: number;
+        };
+        const until = body.until ?? Date.now() + (body.after_seconds ?? 0) * 1000;
+        return Response.json(store.snooze(parts.at(-2) ?? "", body.version, until));
+      }
+      if (parts.at(-1) === "snooze" && request.method === "DELETE") {
+        const version = new URL(request.url).searchParams.get("version");
+        return Response.json(
+          store.unsnooze(parts.at(-2) ?? "", version ? Number(version) : undefined),
+        );
+      }
       return Response.json(store.get(parts.at(-1) ?? ""));
     },
   });
@@ -172,4 +188,46 @@ test("should let a chat session that is bound by its chat id ask and read with i
   await expect(
     executeTool("human_request_get", { id: request.id }, { agentSessionId: "unrelated-chat" }),
   ).rejects.toThrow("another agent session");
+});
+
+test("should snooze and unsnooze pending human requests via MCP with session and project isolation", async () => {
+  const options = {
+    projectScopes: [{ id: "project-a", name: "human-a" }],
+    agentSessionId: "snooze-session",
+  };
+  const request = JSON.parse(
+    await executeTool(
+      "human_request",
+      {
+        kind: "question",
+        prompt: "Snooze via MCP?",
+        origin: { backend: "external", session_id: "snooze-session", request_id: "mcp-snooze" },
+      },
+      options,
+    ),
+  );
+  const snoozed = JSON.parse(
+    await executeTool(
+      "human_request_snooze",
+      { id: request.id, version: request.version, after_seconds: 3600 },
+      options,
+    ),
+  );
+  expect(snoozed.status).toBe("pending");
+  expect(snoozed.snooze_until).toBeGreaterThan(Date.now());
+  await expect(
+    executeTool(
+      "human_request_snooze",
+      { id: request.id, version: request.version, after_seconds: 600 },
+      { agentSessionId: "wrong-session" },
+    ),
+  ).rejects.toThrow("another agent");
+  const woken = JSON.parse(
+    await executeTool(
+      "human_request_unsnooze",
+      { id: request.id, version: snoozed.version },
+      options,
+    ),
+  );
+  expect(woken.snooze_until).toBeNull();
 });

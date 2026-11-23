@@ -67,10 +67,12 @@ export const NotificationSchema = z.object({
   expires_at: z.number(),
   read_at: z.number().nullable(),
   dismissed_at: z.number().nullable(),
+  snooze_until: z.number().nullable().default(null),
 });
 
 export const NotificationPageSchema = z.object({
   notifications: z.array(NotificationSchema),
+  snoozed: z.array(NotificationSchema).default([]),
   unread: z.number().int(),
   has_more: z.boolean(),
 });

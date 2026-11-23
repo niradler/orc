@@ -1,7 +1,7 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { agentLabel, supportsManualCompaction } from "@orc/core/coding-agents";
 import { sessionMessageHookSupported } from "@orc/core/session-messages";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowLeft,
@@ -81,11 +81,13 @@ import {
 import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
 import { SessionView } from "@/components/SessionView";
+import { SnoozedWaitingBanner } from "@/components/SnoozeMenu";
 import { StateBadge } from "@/components/StateBadge";
 import { ScratchpadFormDialog } from "@/components/scratchpad/ScratchpadFormDialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
+import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useOpenLiveSession } from "@/hooks/useOpenLiveSession";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
@@ -128,6 +130,7 @@ import {
 } from "@/lib/composer-handoff";
 import { THIS_SERVER } from "@/lib/host-labels";
 import { scratchpadPath } from "@/lib/scratchpad-routes";
+import { isRequestSnoozed, pendingRequestsForSession } from "@/lib/snooze";
 import { matchSubagents } from "@/lib/subagent-links";
 import { cn } from "@/lib/utils";
 
@@ -356,11 +359,29 @@ export function ChatPanel({
   const turnElsewhere = runElsewhere || (agentRunning && !refreshing);
   // The usage API only knows sessions it discovered from an agent or terminal.
   const contextUsage = useChatContextUsage(thread?.sourceId, streaming);
+  const humanRequests = useHumanRequests();
+  const threadPendingRequests = useMemo(
+    () =>
+      thread
+        ? pendingRequestsForSession(humanRequests.data, {
+            threadId: thread.id,
+            sourceId: thread.sourceId,
+            runtimeId: thread.runtimeId,
+            backend: thread.backend,
+            host: thread.host,
+          })
+        : [],
+    [humanRequests.data, thread],
+  );
+  const snoozedThreadRequest = useMemo(
+    () => threadPendingRequests.find((request) => isRequestSnoozed(request)) ?? null,
+    [threadPendingRequests],
+  );
   const runClaim =
     !!session.data?.running ||
     (session.data?.live?.status === "running" && session.data.live.agent !== "codex");
   const sessionState: AgentState | null = chatSessionState({
-    needsYou: !!permission || !!question,
+    needsYou: !!permission || !!question || threadPendingRequests.length > 0,
     failed: !!error,
     streaming,
     reconnecting,
@@ -408,6 +429,14 @@ export function ChatPanel({
     streaming,
   );
   const queryClient = useQueryClient();
+  const wakeSnoozedRequest = useMutation({
+    mutationFn: ({ id, version }: { id: string; version: number }) =>
+      api.humanRequests.unsnooze(id, version),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["human-requests"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
   const [backgroundError, setBackgroundError] = useState<string | null>(null);
   const openBackground = async (sessionId: string, native?: boolean) => {
     setBackgroundError(null);
@@ -1461,6 +1490,19 @@ export function ChatPanel({
               >
                 {error}
               </div>
+            )}
+            {snoozedThreadRequest && snoozedThreadRequest.snooze_until !== null && (
+              <SnoozedWaitingBanner
+                until={snoozedThreadRequest.snooze_until}
+                busy={wakeSnoozedRequest.isPending}
+                error={wakeSnoozedRequest.error?.message ?? null}
+                onWake={() =>
+                  wakeSnoozedRequest.mutate({
+                    id: snoozedThreadRequest.id,
+                    version: snoozedThreadRequest.version,
+                  })
+                }
+              />
             )}
             {(permission || question) && (
               <div

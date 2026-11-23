@@ -1,6 +1,11 @@
-import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
+import type {
+  HumanRequest,
+  HumanRequestSnoozeInput,
+  HumanResponse,
+} from "@orc/core/human-requests";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  BellRing,
   CheckCheck,
   ChevronRight,
   CircleAlert,
@@ -16,9 +21,11 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { type CommandRequestDraft, CommandRequestForm } from "@/components/CommandRequestForm";
 import { HelpPopover } from "@/components/HelpPopover";
+import { SnoozeMenu } from "@/components/SnoozeMenu";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { formatSnoozeUntil, isRequestSnoozed } from "@/lib/snooze";
 
 type RequestState = { label: string; tone: string; Icon: LucideIcon; spin?: boolean };
 
@@ -78,6 +85,8 @@ export function RequestCard({
   draft,
   onDraftChange,
   onNavigate,
+  onSnoozed,
+  borderless = false,
 }: {
   request: HumanRequest;
   expanded: boolean;
@@ -85,6 +94,8 @@ export function RequestCard({
   draft?: RequestDraft;
   onDraftChange?: (update: Partial<RequestDraft>) => void;
   onNavigate?: () => void;
+  onSnoozed?: () => void;
+  borderless?: boolean;
 }) {
   const [localDraft, setLocalDraft] = useState<RequestDraft>({
     answer: "",
@@ -101,21 +112,68 @@ export function RequestCard({
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [params] = useSearchParams();
+  const invalidateRequestQueries = () => {
+    void client.invalidateQueries({ queryKey: ["human-requests"] });
+    void client.invalidateQueries({ queryKey: ["notifications"] });
+  };
   const respond = useMutation({
     mutationFn: (response: HumanResponse) =>
       api.humanRequests.respond(request.id, request.version, response),
-    onSettled: () => client.invalidateQueries({ queryKey: ["human-requests"] }),
+    onSettled: invalidateRequestQueries,
   });
   const cancel = useMutation({
     mutationFn: () => api.humanRequests.cancel(request.id, request.version),
-    onSettled: () => client.invalidateQueries({ queryKey: ["human-requests"] }),
+    onSettled: invalidateRequestQueries,
+  });
+  const snooze = useMutation({
+    mutationFn: (choice: Omit<HumanRequestSnoozeInput, "version">) =>
+      api.humanRequests.snooze(request.id, { version: request.version, ...choice }),
+    onSuccess: () => onSnoozed?.(),
+    onSettled: invalidateRequestQueries,
+  });
+  const unsnooze = useMutation({
+    mutationFn: () => api.humanRequests.unsnooze(request.id, request.version),
+    onSettled: invalidateRequestQueries,
   });
   const pending = request.status === "pending";
+  const snoozed = isRequestSnoozed(request);
   const status = requestState(request);
   const hostLabel = requestHostLabel(request);
-  const busy = respond.isPending || cancel.isPending;
+  const busy = respond.isPending || cancel.isPending || snooze.isPending || unsnooze.isPending;
   const secondaryActions = (
     <>
+      {pending && snoozed && (
+        <Button
+          data-testid="attention-wake-now"
+          size="sm"
+          variant="outline"
+          type="button"
+          disabled={busy}
+          className="max-sm:min-h-11 pointer-coarse:min-h-11"
+          onClick={() => unsnooze.mutate()}
+        >
+          <BellRing size={14} /> {unsnooze.isPending ? "Waking…" : "Wake now"}
+        </Button>
+      )}
+      {pending && (
+        <SnoozeMenu
+          disabled={busy}
+          onSelect={(choice) => snooze.mutate(choice)}
+          trigger={
+            <Button
+              data-testid="attention-snooze"
+              size="sm"
+              variant="ghost"
+              type="button"
+              disabled={busy}
+              aria-label={snoozed ? "Change snooze time" : "Snooze request"}
+              className="max-sm:min-h-11 pointer-coarse:min-h-11"
+            >
+              <Clock size={14} /> {snooze.isPending ? "Snoozing…" : "Snooze"}
+            </Button>
+          }
+        />
+      )}
       {request.input.origin.chat_thread_id && (
         <Button
           data-testid="attention-open-chat"
@@ -189,7 +247,7 @@ export function RequestCard({
   return (
     <article
       data-testid={`attention-request-${request.id}`}
-      className="min-w-0 border-b border-border"
+      className={borderless ? "min-w-0" : "min-w-0 border-b border-border"}
     >
       <div className="flex min-h-11 items-center gap-3 py-1">
         <h2 className="min-w-0 flex-1">
@@ -206,20 +264,32 @@ export function RequestCard({
               size={14}
               className={`shrink-0 text-muted-foreground ${expanded ? "rotate-90" : ""}`}
             />
-            <span className="min-w-0">
+            <span className="min-w-0 flex-1">
               <span
                 className={`block text-sm font-medium wrap-anywhere ${expanded ? "whitespace-pre-wrap" : "line-clamp-1"}`}
               >
                 {request.input.title ?? request.input.prompt}
               </span>
-              <span className="block truncate text-xs font-normal text-muted-foreground">
-                {request.input.origin.session_title ?? request.input.origin.backend}
-                {hostLabel && ` · ${hostLabel}`}
+              <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-normal text-muted-foreground">
+                <span className="truncate">
+                  {request.input.origin.session_title ?? request.input.origin.backend}
+                  {hostLabel && ` · ${hostLabel}`}
+                </span>
+                {pending && snoozed && request.snooze_until !== null && (
+                  <span
+                    data-testid="attention-snoozed-until"
+                    className="inline-flex shrink-0 items-center gap-1"
+                    title={new Date(request.snooze_until).toLocaleString()}
+                  >
+                    <Clock aria-hidden="true" size={12} />
+                    <span>Snoozed until {formatSnoozeUntil(request.snooze_until)}</span>
+                  </span>
+                )}
               </span>
             </span>
           </button>
         </h2>
-        {pending ? (
+        {pending && snoozed ? null : pending ? (
           <StateBadge state="needs-you" testId="attention-state" className="shrink-0" />
         ) : (
           <span
@@ -522,6 +592,11 @@ export function RequestCard({
         </p>
       )}
       {cancel.error && <p role="alert">{cancel.error.message}</p>}
+      {(snooze.error || unsnooze.error) && (
+        <p role="alert" data-testid="attention-snooze-error" className="text-sm text-error">
+          {(snooze.error ?? unsnooze.error)?.message}
+        </p>
+      )}
       {respond.error && (
         <p role="alert" data-testid="attention-error" className="text-sm text-destructive">
           {respond.error.message}

@@ -107,9 +107,33 @@ orc attention request request.json --wait
 orc attention list
 orc attention get REQUEST_ID
 orc attention respond REQUEST_ID response.json --version 1
+orc attention snooze REQUEST_ID --for 1h
+orc attention unsnooze REQUEST_ID
 orc attention acknowledge REQUEST_ID --version 2
 orc attention cancel REQUEST_ID --version 1
 ```
+
+## Snoozing pending requests
+
+Snooze hides a `pending` question, approval or command from **Needs you** and
+the header bell unread count until a chosen time (`15m`, `1h`, `3h`,
+`Tomorrow 9:00` or a custom timestamp) without answering, denying or cancelling
+it. The request stays `pending` and answerable, its `expires_at` deadline is
+unchanged, and the waiting session still shows **Waiting for you · snoozed until …**
+with **Wake now**.
+
+- Snoozed items move into a separate **Snoozed** group in the notification
+  center, where you can answer them early or click **Wake now**.
+- Push notifications and channel reminders are suppressed while snoozed. When
+  the snooze ends, the request returns to **Needs you** with one notification
+  (a periodic sweep also recovers due snoozes after a restart).
+- Answering, cancelling, making unavailable or expiring a request clears its
+  snooze automatically. Only `pending` requests can be snoozed.
+- REST API: `POST /api/human-requests/{id}/snooze` with `{ version, until | after_seconds }`
+  and `DELETE /api/human-requests/{id}/snooze` (optional `?version=<n>`).
+- MCP tools: `human_request_snooze` and `human_request_unsnooze`.
+- CLI: `orc attention snooze <id> --for 1h` (or `--until <iso>`) and
+  `orc attention unsnooze <id>`.
 
 Use `-` instead of a file for JSON on stdin. Example question:
 
@@ -219,7 +243,11 @@ The notification supplies an explicit response command:
 /attention REQUEST_ID VERSION answer My answer
 /attention REQUEST_ID VERSION approve
 /attention REQUEST_ID VERSION deny
+/attention REQUEST_ID VERSION snooze 1h
 ```
+
+Snoozing suppresses channel reminders until the due time, while a channel reply
+still answers the request and clears the snooze.
 
 Replies are checked against the current authorized user and the original
 chat/thread/request/version binding before they reach agent chat. Large requests

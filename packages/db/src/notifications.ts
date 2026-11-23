@@ -16,13 +16,20 @@ import {
 import { z } from "zod";
 import { AuditLog, installAudit, recordNotificationAudit } from "./audit.js";
 
-type Row = Omit<OrcNotification, "requires_action"> & {
+type Row = Omit<OrcNotification, "requires_action" | "snooze_until"> & {
   requires_action: number;
   project_label: string | null;
+  snooze_until?: number | null;
 };
 const ID_ATTEMPTS = 8;
 const COLUMNS =
   "id,type,source_id,title,body,level,project_id,project_label,path,requires_action,created_at,expires_at,read_at,dismissed_at";
+const QUALIFIED_COLUMNS =
+  "n.id,n.type,n.source_id,n.title,n.body,n.level,n.project_id,n.project_label,n.path,n.requires_action,n.created_at,n.expires_at,n.read_at,n.dismissed_at";
+const NOT_SNOOZED = `NOT (type='human.request' AND EXISTS (
+  SELECT 1 FROM human_requests hr
+  WHERE hr.id=notifications.source_id AND hr.status='pending'
+    AND hr.snooze_until IS NOT NULL AND hr.snooze_until>?))`;
 const RELATED_SOURCES = `SELECT related.source_id FROM notification_session_sources related
   JOIN notification_session_sources current ON current.session_key=related.session_key
   WHERE current.source_id=?`;
@@ -38,6 +45,7 @@ const notification = (row: Row, maximumAge: number): OrcNotification =>
     title: notificationTitle(row.title, row.project_label),
     expires_at: Math.min(row.expires_at, row.created_at + maximumAge),
     requires_action: !!row.requires_action,
+    snooze_until: row.snooze_until ?? null,
   });
 
 export function tableExists(db: Database, name: string): boolean {
@@ -46,6 +54,14 @@ export function tableExists(db: Database, name: string): boolean {
       "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
     )
     .get(name);
+}
+
+export function hasHumanRequestSnooze(db: Database): boolean {
+  if (!tableExists(db, "human_requests")) return false;
+  return db
+    .query<{ name: string }, []>("PRAGMA table_info(human_requests)")
+    .all()
+    .some((column) => column.name === "snooze_until");
 }
 
 /** The current project name, or null when the project is gone or unknown. */
@@ -237,29 +253,55 @@ export class NotificationStore {
     z.boolean().parse(unreadOnly);
     if (projectId !== undefined && projectId !== null) z.string().min(1).max(256).parse(projectId);
     this.cleanup();
+    const now = this.now();
     const maximumAge = this.maximumAge();
-    const cutoff = this.now() - maximumAge;
+    const cutoff = now - maximumAge;
+    const snoozeAware = hasHumanRequestSnooze(this.db);
     const project =
       projectId === undefined
         ? ""
         : projectId === null
           ? " AND project_id IS NULL"
           : " AND project_id=?";
+    const qualifiedProject =
+      projectId === undefined
+        ? ""
+        : projectId === null
+          ? " AND n.project_id IS NULL"
+          : " AND n.project_id=?";
     const projectBindings = projectId === undefined || projectId === null ? [] : [projectId];
-    const filter = `expires_at>? AND created_at>? AND dismissed_at IS NULL${project} AND (${LATEST_FINISHED})${unreadOnly ? " AND read_at IS NULL" : ""}`;
+    const snoozeFilter = snoozeAware ? ` AND ${NOT_SNOOZED}` : "";
+    const snoozeBindings = snoozeAware ? [now] : [];
+    const filter = `expires_at>? AND created_at>? AND dismissed_at IS NULL${project}${snoozeFilter} AND (${LATEST_FINISHED})${unreadOnly ? " AND read_at IS NULL" : ""}`;
     const rows = this.db
       .query<Row, (number | string)[]>(
         `SELECT ${COLUMNS} FROM notifications WHERE ${filter} ORDER BY created_at DESC,id DESC LIMIT ? OFFSET ?`,
       )
-      .all(this.now(), cutoff, ...projectBindings, limit + 1, offset);
+      .all(now, cutoff, ...projectBindings, ...snoozeBindings, limit + 1, offset);
     const unread =
       this.db
         .query<{ count: number }, (number | string)[]>(
-          `SELECT count(*) AS count FROM notifications WHERE expires_at>? AND created_at>? AND dismissed_at IS NULL${project} AND read_at IS NULL AND (${LATEST_FINISHED})`,
+          `SELECT count(*) AS count FROM notifications WHERE expires_at>? AND created_at>? AND dismissed_at IS NULL${project}${snoozeFilter} AND read_at IS NULL AND (${LATEST_FINISHED})`,
         )
-        .get(this.now(), cutoff, ...projectBindings)?.count ?? 0;
+        .get(now, cutoff, ...projectBindings, ...snoozeBindings)?.count ?? 0;
+    const snoozedRows =
+      snoozeAware && offset === 0
+        ? this.db
+            .query<Row, (number | string)[]>(
+              `SELECT ${QUALIFIED_COLUMNS},hr.snooze_until AS snooze_until
+               FROM notifications n
+               JOIN human_requests hr ON hr.id=n.source_id
+               WHERE n.type='human.request'
+                 AND n.expires_at>? AND n.created_at>? AND n.dismissed_at IS NULL
+                 AND hr.status='pending' AND hr.snooze_until IS NOT NULL AND hr.snooze_until>?${qualifiedProject}
+               ORDER BY hr.snooze_until ASC,n.created_at DESC,n.id DESC
+               LIMIT 100`,
+            )
+            .all(now, cutoff, now, ...projectBindings)
+        : [];
     return {
       notifications: rows.slice(0, limit).map((row) => notification(row, maximumAge)),
+      snoozed: snoozedRows.map((row) => notification(row, maximumAge)),
       unread,
       has_more: rows.length > limit,
     };
@@ -341,13 +383,16 @@ export class NotificationStore {
           ? " AND project_id IS NULL"
           : " AND project_id=?";
     const projectBindings = projectId === undefined || projectId === null ? [] : [projectId];
+    const snoozeAware = hasHumanRequestSnooze(this.db);
+    const snoozeFilter = snoozeAware ? ` AND ${NOT_SNOOZED}` : "";
+    const snoozeBindings = snoozeAware ? [now] : [];
     this.db
       .transaction(() => {
         const updated = this.db
           .query(
-            `UPDATE notifications SET read_at=? WHERE read_at IS NULL AND dismissed_at IS NULL AND expires_at>? AND created_at>?${project}`,
+            `UPDATE notifications SET read_at=? WHERE read_at IS NULL AND dismissed_at IS NULL AND expires_at>? AND created_at>?${project}${snoozeFilter}`,
           )
-          .run(now, now, cutoff, ...projectBindings);
+          .run(now, now, cutoff, ...projectBindings, ...snoozeBindings);
         if (updated.changes)
           new AuditLog(this.db, { now: () => now }).record({
             action: "notification.read_all",

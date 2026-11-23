@@ -9,6 +9,7 @@ import {
   notificationDestination,
 } from "@orc/db/notification-deliveries";
 import { notificationProjectLabel } from "@orc/db/notification-producers";
+import { hasHumanRequestSnooze } from "@orc/db/notifications";
 import type { ChannelService } from "./service.js";
 
 const active = new WeakSet<ChannelService>();
@@ -50,9 +51,24 @@ export async function forwardChannelNotifications(
       }
       // Producers retain their explicit provider selection; delivery grants no response authority.
       if (event.type === "human.request") {
+        const snoozeAware = hasHumanRequestSnooze(service.store.db);
         const request = service.store.db
-          .query<{ payload: string }, [string]>("SELECT payload FROM human_requests WHERE id=?")
+          .query<{ payload: string; status?: string; snooze_until?: number | null }, [string]>(
+            snoozeAware
+              ? "SELECT payload,status,snooze_until FROM human_requests WHERE id=?"
+              : "SELECT payload FROM human_requests WHERE id=?",
+          )
           .get(event.source_id);
+        if (
+          snoozeAware &&
+          request?.status === "pending" &&
+          request.snooze_until !== null &&
+          request.snooze_until !== undefined &&
+          request.snooze_until > store.now()
+        ) {
+          store.finish(claim, "skipped", "Request is snoozed");
+          continue;
+        }
         const notify: unknown = request ? JSON.parse(request.payload).notify : [];
         if (!Array.isArray(notify) || !notify.includes(connection.provider)) {
           store.finish(claim, "skipped", "Producer did not select this provider");
