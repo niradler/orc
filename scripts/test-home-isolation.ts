@@ -1,7 +1,7 @@
 import { afterAll } from "bun:test";
 import { spawn } from "node:child_process";
 import {
-  existsSync,
+  lstatSync,
   mkdtempSync,
   readdirSync,
   realpathSync,
@@ -31,17 +31,40 @@ import { dirname, join, relative, resolve, sep } from "node:path";
  * - the next preload sweeps homes whose owner pid is gone (or that are over a
  *   day old), which reaps anything the first two missed, including hard crashes.
  */
-function resolveWithExistingAncestor(target: string): string {
+function normalizePathForCompare(path: string): string {
+  return process.platform === "win32" ? path.toLowerCase() : path;
+}
+
+function pathIsWithinRoot(resolved: string, tempRoot: string): boolean {
+  const lhs = normalizePathForCompare(resolved);
+  const rhs = normalizePathForCompare(tempRoot);
+  return lhs === rhs || lhs.startsWith(rhs + sep);
+}
+
+function resolveWithExistingAncestor(target: string): string | null {
   const absolute = resolve(target);
   let cursor = absolute;
-  while (!existsSync(cursor)) {
+  for (;;) {
+    let present = false;
+    try {
+      lstatSync(cursor);
+      present = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return null;
+    }
+    if (present) {
+      try {
+        const realBase = realpathSync(cursor);
+        const tail = relative(cursor, absolute);
+        return tail ? join(realBase, tail) : realBase;
+      } catch {
+        return null;
+      }
+    }
     const parent = dirname(cursor);
     if (parent === cursor) return absolute;
     cursor = parent;
   }
-  const realBase = realpathSync(cursor);
-  const tail = relative(cursor, absolute);
-  return tail ? join(realBase, tail) : realBase;
 }
 
 function isUnderTempRoot(candidate: string | undefined, tempRoot: string): boolean {
@@ -49,7 +72,7 @@ function isUnderTempRoot(candidate: string | undefined, tempRoot: string): boole
   if (!trimmed) return false;
   try {
     const resolved = resolveWithExistingAncestor(trimmed);
-    return resolved === tempRoot || resolved.startsWith(tempRoot + sep);
+    return resolved !== null && pathIsWithinRoot(resolved, tempRoot);
   } catch {
     return false;
   }
@@ -63,7 +86,7 @@ export function isolateTestHome(): void {
   const current = process.env.HOME ?? process.env.USERPROFILE;
   try {
     const resolved = current ? realpathSync(current) : "";
-    if (resolved === tempRoot || resolved.startsWith(tempRoot + sep)) return;
+    if (resolved && pathIsWithinRoot(resolved, tempRoot)) return;
   } catch {
     // A missing HOME is not the real home; fall through and create one.
   }
