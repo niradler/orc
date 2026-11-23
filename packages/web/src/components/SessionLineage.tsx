@@ -43,7 +43,7 @@ export function SessionLineage({ sessionId }: { sessionId: string | null }) {
         return;
       }
       chat.openThread(await api.chat.get(node.id));
-      if (home.viewId) home.go({ viewId: null }, { replace: true });
+      if (chat.surface === "page" && home.viewId) home.go({ viewId: null }, { replace: true });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "The session could not be opened.");
     }

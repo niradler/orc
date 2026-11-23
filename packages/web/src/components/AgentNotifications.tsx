@@ -25,7 +25,7 @@ import { RequestCard, type RequestDraft } from "@/components/RequestCard";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useActiveLiveSessionsSummary } from "@/hooks/useActiveLiveSessions";
-import { CHAT_THREAD_PARAM, useChat } from "@/hooks/useChat";
+import { CHAT_THREAD_PARAM, SIDE_CHAT_THREAD_PARAM, useChatSurfaces } from "@/hooks/useChat";
 import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
@@ -95,19 +95,19 @@ export function useNotificationCenter(): Center {
   return center;
 }
 
-/** Default scope and the chat's assigned identity do not navigate away from the open menu. */
 function menuPlace({ pathname, search }: { pathname: string; search: string }): string {
   const params = new URLSearchParams(search);
   params.delete("project");
   params.delete(CHAT_THREAD_PARAM);
+  params.delete(SIDE_CHAT_THREAD_PARAM);
   return `${pathname}?${params}`;
 }
 
-/** Phone navigation target for the bell: a full page, never a modal. */
 export function notificationsPath(search: string): string {
   const params = new URLSearchParams(search);
   params.delete("chat");
   params.delete(CHAT_THREAD_PARAM);
+  params.delete(SIDE_CHAT_THREAD_PARAM);
   params.delete("notifications");
   return `/notifications?${params}`;
 }
@@ -117,28 +117,38 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const phone = !useBreakpoint("md");
-  const { tabs, activeKey, projectScope } = useChat();
+  const desktopViewport = useBreakpoint("xl");
+  const { page: pageTab, side: sideTab, projectScope } = useChatSurfaces();
   const requests = useHumanRequests();
   const summary = useActiveLiveSessionsSummary();
   const viewParams = new URLSearchParams(location.search);
-  const viewedSessionId =
-    location.pathname === "/chat"
-      ? (viewParams.get("sessionLive") ??
-        viewParams.get("sessionView") ??
-        tabs.find((tab) => tab.key === activeKey)?.thread?.sourceId ??
-        null)
-      : null;
+  const pageOpen = location.pathname === "/chat" || viewParams.get("chat") === "full";
+  const sideOpen = desktopViewport && viewParams.get("chat") === "open";
+  const viewedSessionId = pageOpen
+    ? (viewParams.get("sessionLive") ??
+      viewParams.get("sessionView") ??
+      pageTab.thread?.sourceId ??
+      null)
+    : null;
+  const viewedSideSessionId = sideOpen ? (sideTab.thread?.sourceId ?? null) : null;
   const viewedSession = useQuery({
     queryKey: ["sessions", "live-one", viewedSessionId],
     queryFn: () => api.sessions.liveOne(viewedSessionId as string),
     enabled: !!viewedSessionId,
     retry: false,
   }).data;
-  const sessions = useMemo(
-    () =>
-      viewedSession ? [viewedSession, ...(summary.data?.sessions ?? [])] : summary.data?.sessions,
-    [viewedSession, summary.data],
-  );
+  const viewedSideSession = useQuery({
+    queryKey: ["sessions", "live-one", viewedSideSessionId],
+    queryFn: () => api.sessions.liveOne(viewedSideSessionId as string),
+    enabled: !!viewedSideSessionId && viewedSideSessionId !== viewedSessionId,
+    retry: false,
+  }).data;
+  const sessions = useMemo(() => {
+    const extra = [viewedSession, viewedSideSession].filter(
+      (session): session is NonNullable<typeof session> => Boolean(session),
+    );
+    return extra.length ? [...extra, ...(summary.data?.sessions ?? [])] : summary.data?.sessions;
+  }, [viewedSession, viewedSideSession, summary.data]);
   const [expanded, setExpanded] = useState(false);
   const [showRead, setShowRead] = useState(false);
   const [needsYou, setNeedsYou] = useState(false);
@@ -149,20 +159,27 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const [pulse, setPulse] = useState(0);
   const [announcement, setAnnouncement] = useState("");
   const feed = useRef(new NotificationFeed());
-  // Completion IDs already settled for the open view; the inbox refetch catches up.
   const acknowledged = useRef(new Set<string>());
   const acknowledge = useRef<(items: readonly OrcNotification[]) => void>(() => {});
+  const activeThreadId = pageOpen ? (pageTab.thread?.id ?? null) : null;
+  const activeThreadSourceId = pageOpen ? (pageTab.thread?.sourceId ?? null) : null;
+  const sideThreadId = sideOpen ? (sideTab.thread?.id ?? null) : null;
+  const sideThreadSourceId = sideOpen ? (sideTab.thread?.sourceId ?? null) : null;
   const delivery = useRef({
     location,
-    tabs,
-    activeKey,
+    activeThreadId,
+    activeThreadSourceId,
+    sideThreadId,
+    sideThreadSourceId,
     requests: requests.data,
     sessions,
   });
   delivery.current = {
     location,
-    tabs,
-    activeKey,
+    activeThreadId,
+    activeThreadSourceId,
+    sideThreadId,
+    sideThreadSourceId,
     requests: requests.data,
     sessions,
   };
@@ -235,10 +252,6 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     feed.current.update(latest, Date.now());
   }, [query.data]);
 
-  const activeThreadId = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
-  const activeThreadSourceId = tabs.find((tab) => tab.key === activeKey)?.thread?.sourceId ?? null;
-  // A completion for the chat or session already on screen is settled instead of
-  // waiting unread in the bell; the visible conversation is the acknowledgement.
   useEffect(() => {
     if (document.visibilityState === "hidden" || !document.hasFocus()) return;
     const view = {
@@ -247,6 +260,8 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       search: location.search,
       chatThreadId: activeThreadId,
       threadSourceId: activeThreadSourceId,
+      sideChatThreadId: sideThreadId,
+      sideThreadSourceId: sideThreadSourceId,
       sessions,
       requests: requests.data,
     };
@@ -267,6 +282,8 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     location.search,
     activeThreadId,
     activeThreadSourceId,
+    sideThreadId,
+    sideThreadSourceId,
     sessions,
     requests.data,
   ]);
@@ -280,9 +297,10 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
           active: true,
           pathname: state.location.pathname,
           search: state.location.search,
-          chatThreadId: state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id ?? null,
-          threadSourceId:
-            state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.sourceId ?? null,
+          chatThreadId: state.activeThreadId,
+          threadSourceId: state.activeThreadSourceId,
+          sideChatThreadId: state.sideThreadId,
+          sideThreadSourceId: state.sideThreadSourceId,
           sessions: state.sessions,
           requests: state.requests ?? undefined,
         });

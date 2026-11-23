@@ -141,8 +141,9 @@ export function useSessionHistory({
   const { terminals } = useTerminals();
   const projectScope = chat.projectScope;
   const navigation = useSessionHome();
-  const setOpen = (next: boolean) => navigation.go({ listOpen: next });
-  const open = enabled && (forceOpen || docked || rail || navigation.listOpen);
+  const [localOpen, setLocalOpen] = useState(false);
+  const setOpen = (next: boolean) => (home ? home.go({ listOpen: next }) : setLocalOpen(next));
+  const open = enabled && (forceOpen || docked || rail || (home ? home.listOpen : localOpen));
   const [search, setSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(50);
   const [pending, setPending] = useState(false);

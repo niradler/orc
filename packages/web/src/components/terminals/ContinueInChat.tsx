@@ -14,7 +14,7 @@ export function ContinueInChat({
   showLabel?: boolean;
   onContinued?: () => void;
 }) {
-  const chat = useChat();
+  const chat = useChat("side");
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [pending, setPending] = useState(false);
@@ -25,10 +25,12 @@ export function ContinueInChat({
     setPending(true);
     setError("");
     try {
-      chat.openThread(await api.chat.resume(terminal.live_session_id));
+      const thread = await api.chat.resume(terminal.live_session_id);
+      chat.openThread(thread);
       const next = new URLSearchParams(params);
       next.delete("session");
       next.set("chat", "open");
+      next.set("chatThread", thread.id);
       navigate({ search: next.toString() });
       onContinued?.();
     } catch (cause) {

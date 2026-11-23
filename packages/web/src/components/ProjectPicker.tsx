@@ -29,7 +29,7 @@ export function ProjectPicker({
 }) {
   const { data: projects, isLoading, isError } = useProjects({ status: "active" });
   const navigate = useNavigate();
-  const { search: routeSearch } = useLocation();
+  const { pathname: routePathname, search: routeSearch } = useLocation();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
@@ -168,7 +168,7 @@ export function ProjectPicker({
               data-testid="nav-projects"
               onClick={() => {
                 setOpen(false);
-                navigate(workspaceDestination("/projects", projectId, routeSearch));
+                navigate(workspaceDestination("/projects", projectId, routeSearch, routePathname));
                 onNavigate?.();
               }}
             >
@@ -194,7 +194,7 @@ export function ProjectPicker({
           onClose={() => setFirstTask(null)}
           onCreated={(id) => {
             setFirstTask(null);
-            navigate(workspaceDestination(`/tasks/${id}`, firstTask, routeSearch));
+            navigate(workspaceDestination(`/tasks/${id}`, firstTask, routeSearch, routePathname));
             onNavigate?.();
           }}
         />

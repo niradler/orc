@@ -515,6 +515,88 @@ test("a channel question that cannot enter the inbox fails visibly instead of de
   ).toEqual([]);
 });
 
+test("a channel secret question fails visibly instead of deadlocking", async () => {
+  const { session, received } = native(
+    {
+      type: "question_request",
+      data: {
+        requestId: "channel-secret",
+        questions: [{ id: "token", header: "Token", question: "API token?", isSecret: true }],
+      },
+    },
+    "claude-cli",
+    {
+      humanRequestContext: {
+        projectId: "project-a",
+        notify: ["telegram"],
+        channel: { connection: "tg", target: "direct", chat_id: "chat1", sender_id: "nir" },
+      },
+    },
+  );
+  const events: AgentEvent[] = [];
+  for await (const event of session.events()) {
+    events.push(event);
+    if (event.type === "result" || event.type === "error") break;
+  }
+  const error = events.find((event) => event.type === "error");
+  expect(typeof error?.data === "string" ? error.data : "").toContain(
+    "Secret input cannot be collected through a channel",
+  );
+  expect(events.some((event) => event.type === "question_request")).toBe(false);
+  expect(received).toEqual([]);
+  expect(session.alive()).toBe(false);
+  expect(session.waitingForHuman?.()).toBe(false);
+  expect(
+    new HumanRequestStore(getSqlite())
+      .list()
+      .filter((entry) => entry.input.origin.session_id === session.id),
+  ).toEqual([]);
+}, 2000);
+
+test("a rule-bound channel secret question fails with an error and cancels the native call", async () => {
+  const { session, received } = native(
+    {
+      type: "question_request",
+      data: {
+        requestId: "channel-secret-ruled",
+        questions: [{ id: "token", header: "Token", question: "API token?", isSecret: true }],
+      },
+    },
+    "codex-cli",
+    {
+      humanRequestContext: {
+        projectId: "project-a",
+        notify: ["telegram"],
+        channel: { connection: "tg", target: "direct", chat_id: "chat1", sender_id: "nir" },
+      },
+    },
+  );
+  const events: AgentEvent[] = [];
+  for await (const event of session.events()) {
+    events.push(event);
+    if (event.type === "result" || event.type === "error") break;
+  }
+  const error = events.find((event) => event.type === "error");
+  expect(typeof error?.data === "string" ? error.data : "").toContain(
+    "Secret input cannot be collected through a channel",
+  );
+  expect(events.some((event) => event.type === "question_request")).toBe(false);
+  expect(
+    events.some(
+      (event) =>
+        event.type === "system_status" && event.data.includes("ORC rule requires your response"),
+    ),
+  ).toBe(false);
+  expect(received).toEqual([]);
+  expect(session.alive()).toBe(false);
+  expect(session.waitingForHuman?.()).toBe(false);
+  expect(
+    new HumanRequestStore(getSqlite())
+      .list()
+      .filter((entry) => entry.input.origin.session_id === session.id),
+  ).toEqual([]);
+}, 2000);
+
 test("a chat question that cannot enter the inbox still falls back to the original chat", async () => {
   const { session, received } = native(
     {
