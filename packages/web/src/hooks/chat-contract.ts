@@ -81,6 +81,22 @@ export function chatSurfaceLinks(
   };
 }
 
+export function initialChatSurfaceLinks(
+  pathname: string,
+  search: string,
+  desktopViewport: boolean,
+): ChatSurfaceUrlState {
+  const links = chatSurfaceLinks(pathname, search, desktopViewport);
+  const params = new URLSearchParams(search);
+  if (params.get("chat") !== "open" || desktopViewport) return links;
+  const readId = (key: string) => {
+    const value = params.get(key);
+    return value && isChatThreadId(value) ? value : null;
+  };
+  const handoffThread = readId(SIDE_CHAT_THREAD_PARAM) ?? readId(CHAT_THREAD_PARAM);
+  return handoffThread ? { ...links, pageLinked: handoffThread } : links;
+}
+
 /** Conversations open as chat tabs in this browser, restored after a reload. */
 export const CHAT_TABS_KEY = "orc_chat_tabs";
 export interface StoredChatTabs {

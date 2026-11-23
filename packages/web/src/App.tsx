@@ -25,8 +25,14 @@ import { useNotificationShade } from "@/hooks/useNotificationShade";
 import { useProjects } from "@/hooks/useProjects";
 import { sessionHomeExitSteps, useSessionHomeEntry } from "@/hooks/useSessionHome";
 import { useVisualViewport } from "@/hooks/useVisualViewport";
+import { DesktopPreviewContext } from "@/lib/desktop-preview-context";
 import { SelectedProjectProvider } from "@/lib/selected-project";
-import { clearSessionHome } from "@/lib/session-home";
+import {
+  clearSessionHome,
+  SESSION_LIVE_PARAM,
+  SESSION_TERMINAL_PARAM,
+  SESSION_VIEW_PARAM,
+} from "@/lib/session-home";
 import { TerminalsProvider } from "@/lib/terminals";
 import { cn } from "@/lib/utils";
 
@@ -278,6 +284,9 @@ function AppShell({
     next.delete(SIDE_CHAT_THREAD_PARAM);
     if (narrow) {
       handoff("side", "page");
+      next.delete(SESSION_VIEW_PARAM);
+      next.delete(SESSION_LIVE_PARAM);
+      if (pathname === "/chat") next.delete(SESSION_TERMINAL_PARAM);
       const sideThread =
         live.get(SIDE_CHAT_THREAD_PARAM) ??
         (pathname === "/chat"
@@ -425,13 +434,15 @@ function AppShell({
         </div>
 
         <div data-testid="side-chat" className={cn("hidden xl:flex", !chatOpen && "xl:hidden")}>
-          <ChatSurfaceProvider surface="side">
-            <ChatPanel
-              open={chatOpen}
-              onToggle={() => setChatVisible(false)}
-              onToggleFullscreen={expandSideChat}
-            />
-          </ChatSurfaceProvider>
+          <DesktopPreviewContext.Provider value={null}>
+            <ChatSurfaceProvider surface="side">
+              <ChatPanel
+                open={chatOpen}
+                onToggle={() => setChatVisible(false)}
+                onToggleFullscreen={expandSideChat}
+              />
+            </ChatSurfaceProvider>
+          </DesktopPreviewContext.Provider>
         </div>
       </div>
 

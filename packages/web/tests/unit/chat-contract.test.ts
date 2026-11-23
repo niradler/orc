@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { ChatSettingsSchema } from "@orc/core/chat";
 import {
   chatSurfaceLinks,
+  initialChatSurfaceLinks,
   parseChatEvent,
   parseChatPreferences,
   parseChatTabs,
@@ -113,6 +114,41 @@ describe("chat preferences", () => {
       pageLinked: pageId,
       sideLinked: null,
     });
+  });
+
+  test("narrow-viewport initial link capture preserves incoming deep links across redirect", () => {
+    const pageId = "3f0c831c-500d-4ae5-9c83-0d2bc6c431fa";
+    const sideId = "4f0c831c-500d-4ae5-9c83-0d2bc6c431fb";
+    expect(initialChatSurfaceLinks("/activity", `?chat=open&chatThread=${sideId}`, false)).toEqual({
+      pageShown: false,
+      sideShown: false,
+      redirecting: true,
+      pageParam: null,
+      sideParam: null,
+      pageLinked: sideId,
+      sideLinked: null,
+    });
+    expect(
+      initialChatSurfaceLinks(
+        "/chat",
+        `?chat=open&chatThread=${pageId}&sideChatThread=${sideId}`,
+        false,
+      ),
+    ).toEqual({
+      pageShown: true,
+      sideShown: false,
+      redirecting: true,
+      pageParam: "chatThread",
+      sideParam: null,
+      pageLinked: sideId,
+      sideLinked: null,
+    });
+    expect(
+      initialChatSurfaceLinks("/activity", "?chat=open&chatThread=not-a-uuid", false).pageLinked,
+    ).toBeNull();
+    expect(initialChatSurfaceLinks("/activity", `?chat=open&chatThread=${sideId}`, true)).toEqual(
+      chatSurfaceLinks("/activity", `?chat=open&chatThread=${sideId}`, true),
+    );
   });
 
   test("workspace project hints survive reload without trusting unrelated or malformed storage", () => {

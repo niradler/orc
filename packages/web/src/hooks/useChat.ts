@@ -58,6 +58,7 @@ import {
   type ChatSurface,
   chatSurfaceLinks,
   DEFAULT_CONFIG,
+  initialChatSurfaceLinks,
   parseChatEvent,
   parseChatPreferences,
   parseChatTabs,
@@ -363,9 +364,14 @@ function useChatStore(desktopViewport: boolean) {
   );
   const handoff = useCallback(
     (from: ChatSurface, to: ChatSurface) => {
-      activate(to, activeKeysRef.current[from]);
+      if (from === to) return;
+      const fromKey = activeKeysRef.current[from];
+      activate(to, fromKey);
+      const detached = blankTab(defaults.current, creationProject.current);
+      mutate((current) => [...current, detached]);
+      activate(from, detached.key);
     },
-    [activate],
+    [activate, mutate],
   );
   const find = useCallback((key: string) => tabsRef.current.find((tab) => tab.key === key), []);
 
@@ -911,13 +917,15 @@ function useChatStore(desktopViewport: boolean) {
     [activate, attach, isActiveElsewhere, mutate, update, find, projectForCwd],
   );
   const showThread = useCallback(
-    async (surface: ChatSurface, id: string) => {
+    async (surface: ChatSurface, id: string, isCurrent?: () => boolean) => {
       const open = tabsRef.current.find((tab) => tab.thread?.id === id);
       if (open) {
-        activate(surface, open.key);
+        if (!isCurrent || isCurrent()) activate(surface, open.key);
         return;
       }
-      openThread(surface, await api.chat.get(id));
+      const thread = await api.chat.get(id);
+      if (isCurrent && !isCurrent()) return;
+      openThread(surface, thread);
     },
     [activate, openThread],
   );
@@ -1008,7 +1016,7 @@ function useChatStore(desktopViewport: boolean) {
     [activate, isActiveElsewhere, mutate, update],
   );
 
-  const initialLinks = useRef(urlState);
+  const initialLinks = useRef(initialChatSurfaceLinks(pathname, search, desktopViewport));
   useEffect(() => {
     const stored = parseChatTabs(readStorage(CHAT_TABS_KEY));
     const restoreSideId =
@@ -1982,25 +1990,39 @@ function useChatLinks(store: ChatStore, desktopViewport: boolean) {
   const sideCurrent = store.tabFor("side").thread?.id ?? null;
 
   useEffect(() => {
-    if (links.redirecting || !links.pageLinked || links.pageLinked === loadingPage.current) return;
-    loadingPage.current = links.pageLinked;
-    showThread("page", links.pageLinked)
+    const target = links.pageLinked;
+    if (links.redirecting || !target || target === loadingPage.current) return;
+    let active = true;
+    loadingPage.current = target;
+    showThread("page", target, () => active && loadingPage.current === target)
       .catch(() => {})
       .finally(() => {
+        if (!active || loadingPage.current !== target) return;
         loadingPage.current = null;
         setSettled((count) => count + 1);
       });
+    return () => {
+      active = false;
+      if (loadingPage.current === target) loadingPage.current = null;
+    };
   }, [links.redirecting, links.pageLinked, showThread]);
 
   useEffect(() => {
-    if (links.redirecting || !links.sideLinked || links.sideLinked === loadingSide.current) return;
-    loadingSide.current = links.sideLinked;
-    showThread("side", links.sideLinked)
+    const target = links.sideLinked;
+    if (links.redirecting || !target || target === loadingSide.current) return;
+    let active = true;
+    loadingSide.current = target;
+    showThread("side", target, () => active && loadingSide.current === target)
       .catch(() => {})
       .finally(() => {
+        if (!active || loadingSide.current !== target) return;
         loadingSide.current = null;
         setSettled((count) => count + 1);
       });
+    return () => {
+      active = false;
+      if (loadingSide.current === target) loadingSide.current = null;
+    };
   }, [links.redirecting, links.sideLinked, showThread]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: settled triggers re-sync once a link load finishes
@@ -2149,9 +2171,10 @@ export function ChatSurfaceProvider({
   surface: ChatSurface;
   children: ReactNode;
 }) {
-  const store = useContext(ChatStoreContext);
-  if (!store) throw new Error("ChatSurfaceProvider must be used inside ChatProvider");
-  const chat = useChatSurfaceController(store, surface);
+  const page = useContext(ChatPageContext);
+  const side = useContext(ChatSideContext);
+  const chat = surface === "side" ? side : page;
+  if (!chat) throw new Error("ChatSurfaceProvider must be used inside ChatProvider");
   const runtime = useSurfaceRuntime(chat);
   return createElement(
     ChatContext.Provider,
