@@ -209,6 +209,7 @@ async function signInState(
       const configDir =
         deps.env.CURSOR_CONFIG_DIR || xdg(deps.env.XDG_CONFIG_HOME ?? "", deps.home, [".config"]);
       const candidates = [
+        deps.env.CURSOR_CONFIG_DIR ? join(deps.env.CURSOR_CONFIG_DIR, "auth.json") : null,
         deps.platform === "win32"
           ? join(deps.env.APPDATA || join(deps.home, "AppData", "Roaming"), "Cursor", "auth.json")
           : null,
@@ -222,8 +223,15 @@ async function signInState(
       }
       // macOS keeps the CLI login in the keychain unless AGENT_CLI_CREDENTIAL_STORE=file,
       // so a missing file there is "cannot tell", not "signed out".
-      const cliConfig = await readJson(deps, join(configDir, "cli-config.json"));
-      if (cliConfig?.authInfo) return { signed_in: true, account_label: null };
+      const cliConfigCandidates = [
+        deps.env.CURSOR_CONFIG_DIR ? join(deps.env.CURSOR_CONFIG_DIR, "cli-config.json") : null,
+        join(configDir, "cursor", "cli-config.json"),
+        join(deps.home, ".cursor", "cli-config.json"),
+      ].filter((path): path is string => !!path);
+      for (const path of cliConfigCandidates) {
+        const cliConfig = await readJson(deps, path);
+        if (cliConfig?.authInfo) return { signed_in: true, account_label: null };
+      }
       return { signed_in: deps.platform === "darwin" ? null : false, account_label: null };
     }
   }

@@ -176,6 +176,46 @@ describe("readSetupAgents", () => {
     expect(byAgent(rows, "cursor")).toMatchObject({ installed: true, signed_in: null, fix: null });
   });
 
+  test("detects Cursor sign-in from ~/.cursor/cli-config.json and CURSOR_CONFIG_DIR/auth.json", async () => {
+    const fresh = mkdtempSync(join(tmpdir(), "orc-setup-cursor-"));
+    const customDir = join(fresh, "custom-cursor");
+    try {
+      writeJson(join(fresh, ".cursor", "cli-config.json"), {
+        authInfo: { email: "cursor@example.com" },
+      });
+      const defaultRows = await readSetupAgents(
+        fakeDeps({
+          home: fresh,
+          findBinary: installed({ "cursor-agent": "/bin/cursor-agent" }),
+          read: (path) => Bun.file(path).text(),
+        }),
+      );
+      expect(byAgent(defaultRows, "cursor")).toMatchObject({
+        installed: true,
+        signed_in: true,
+        fix: null,
+      });
+
+      writeJson(join(customDir, "auth.json"), { accessToken: "secret-cursor-token" });
+      const customRows = await readSetupAgents(
+        fakeDeps({
+          home: mkdtempSync(join(fresh, "empty-home-")),
+          env: { CURSOR_CONFIG_DIR: customDir },
+          findBinary: installed({ "cursor-agent": "/bin/cursor-agent" }),
+          read: (path) => Bun.file(path).text(),
+        }),
+      );
+      expect(byAgent(customRows, "cursor")).toMatchObject({
+        installed: true,
+        signed_in: true,
+        fix: null,
+      });
+      expect(JSON.stringify(customRows)).not.toContain("secret-cursor-token");
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
+  });
+
   test("keeps version null when --version fails and ignores an empty OpenCode auth file", async () => {
     const fresh = mkdtempSync(join(tmpdir(), "orc-setup-empty-"));
     try {

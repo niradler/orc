@@ -129,7 +129,10 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
   // setup screen (detected agents + suggested projects) above the quiet empty
   // activity. Dismissing hides it until a project exists.
   const showFirstRun =
-    Array.isArray(projects) && projects.length === 0 && preferences?.setup_dismissed !== true;
+    Array.isArray(projects) &&
+    projects.length === 0 &&
+    preferences !== undefined &&
+    preferences.setup_dismissed !== true;
 
   return (
     <div data-activity-preview data-testid="activity-preview" className="activity-preview">

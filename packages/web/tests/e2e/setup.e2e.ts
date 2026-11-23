@@ -205,9 +205,50 @@ test.describe("first-run setup", () => {
     await expect(page.getByTestId("first-run-suggestion-check-0")).toBeChecked();
   });
 
+  test("partial batch failure keeps the screen open for retry with remaining count", async ({
+    page,
+  }) => {
+    await mockFreshWorkspace(page);
+    let createdCount = 0;
+    await page.unroute("**/api/projects*");
+    await page.route("**/api/projects*", (route) => {
+      if (route.request().method() === "GET") {
+        return route.fulfill({
+          json: {
+            projects: createdCount > 0 ? [{ id: "p-1", name: "orc", status: "active" }] : [],
+            offset: 0,
+            limit: 100,
+            next_offset: null,
+          },
+        });
+      }
+      const body = route.request().postDataJSON() as { name?: string };
+      if (body.name === "orc") {
+        createdCount += 1;
+        return route.fulfill({ status: 201, json: { id: "p-1", ...body, status: "active" } });
+      }
+      return route.fulfill({ status: 409, json: { error: "Name taken" } });
+    });
+    await gotoView(page, "activity");
+    await expect(page.getByTestId("first-run-create")).toHaveText("Create 2 projects");
+    await page.getByTestId("first-run-create").click();
+    await expect(page.getByTestId("first-run-suggestion-created-0")).toBeVisible();
+    await expect(page.getByTestId("first-run-suggestion-error-1")).toContainText("Name taken");
+    await expect(page.getByTestId("first-run-create")).toHaveText("Create 1 project");
+    await expect(page.getByTestId("first-run-continue")).toBeVisible();
+    await page.getByTestId("first-run-continue").click();
+    await expect(page.getByTestId("first-run-setup")).toHaveCount(0);
+  });
+
   test("dismiss hides the screen and persists across reloads", async ({ page }) => {
     await mockFreshWorkspace(page);
     let dismissed = false;
+    let setupRequests = 0;
+    await page.unroute("**/api/setup");
+    await page.route("**/api/setup", (route) => {
+      setupRequests += 1;
+      return route.fulfill({ json: { agents, suggestions, default_agent: "claude" } });
+    });
     await page.unroute("**/api/settings");
     await page.route("**/api/settings", (route) => {
       if (route.request().method() === "PATCH") {
@@ -219,10 +260,12 @@ test.describe("first-run setup", () => {
     });
     await gotoView(page, "activity");
     await expect(page.getByTestId("first-run-setup")).toBeVisible();
+    const beforeReload = setupRequests;
     await page.getByTestId("first-run-dismiss").click();
     await expect(page.getByTestId("first-run-setup")).toHaveCount(0);
     await page.reload();
-    await expect(page.getByTestId("first-run-setup")).toHaveCount(0);
     await expect(page.getByTestId("activity-preview")).toBeVisible();
+    await expect(page.getByTestId("first-run-setup")).toHaveCount(0);
+    expect(setupRequests).toBe(beforeReload);
   });
 });

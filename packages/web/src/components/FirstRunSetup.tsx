@@ -43,8 +43,9 @@ export function FirstRunSetup() {
   const dismiss = useDismissSetup();
   const defaultAgent = useSetDefaultAgent();
   const [openFix, setOpenFix] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<number> | null>(null);
-  const [rows, setRows] = useState<Record<number, RowState>>({});
+  const [copiedFix, setCopiedFix] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string> | null>(null);
+  const [rows, setRows] = useState<Record<string, RowState>>({});
   const [creating, setCreating] = useState(false);
 
   if (setup.isPending)
@@ -66,42 +67,45 @@ export function FirstRunSetup() {
     );
 
   const { agents, suggestions, default_agent: defaultAgentId } = setup.data;
-  const checked = selected ?? new Set(suggestions.map((_, index) => index));
+  const checked = selected ?? new Set(suggestions.map((suggestion) => suggestion.path));
+  const pendingSelected = suggestions.filter(
+    (suggestion) => checked.has(suggestion.path) && rows[suggestion.path]?.status !== "created",
+  );
+  const hasCreated = suggestions.some((suggestion) => rows[suggestion.path]?.status === "created");
+  const hasFailed = suggestions.some((suggestion) => rows[suggestion.path]?.status === "error");
   const readyCount = agents.filter((agent) => agent.installed && agent.signed_in !== false).length;
-  const setRow = (index: number, state: RowState) =>
-    setRows((current) => ({ ...current, [index]: state }));
-  // Only enabled provider profiles can become the default for new sessions.
+  const setRow = (path: string, state: RowState) =>
+    setRows((current) => ({ ...current, [path]: state }));
   const canBeDefault = (agent: string) =>
     defaultAgent.providers.data?.providers.some(
       (profile) => profile.agent === agent && profile.enabled,
     ) ?? false;
 
+  async function finishSetup(): Promise<void> {
+    await queryClient.invalidateQueries({ queryKey: ["projects"] });
+    void queryClient.invalidateQueries({ queryKey: ["setup-status"] });
+  }
+
   async function createSelected(): Promise<void> {
     setCreating(true);
-    const targets = suggestions
-      .map((suggestion, index) => ({ suggestion, index }))
-      .filter(({ index }) => checked.has(index) && rows[index]?.status !== "created");
     let created = 0;
-    // One at a time so a rejected name does not race the rest, and each row can
-    // report its own outcome; failures stay selected for retry.
-    for (const { suggestion, index } of targets) {
-      setRow(index, { status: "creating" });
+    let failed = 0;
+    for (const suggestion of pendingSelected) {
+      setRow(suggestion.path, { status: "creating" });
       try {
         await api.projects.create({ name: suggestion.name, scope: suggestion.path });
         created += 1;
-        setRow(index, { status: "created" });
+        setRow(suggestion.path, { status: "created" });
       } catch (error) {
-        setRow(index, {
+        failed += 1;
+        setRow(suggestion.path, {
           status: "error",
           error: error instanceof Error ? error.message : "Could not create the project",
         });
       }
     }
     setCreating(false);
-    if (created > 0) {
-      await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      void queryClient.invalidateQueries({ queryKey: ["setup-status"] });
-    }
+    if (created > 0 && failed === 0) await finishSetup();
   }
 
   return (
@@ -112,14 +116,13 @@ export function FirstRunSetup() {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-1">
-          <h1 id="first-run-title" className="text-[22px] leading-tight font-medium">
+          <h2 id="first-run-title" className="text-[22px] leading-tight font-medium">
             Set up ORC
-          </h1>
+          </h2>
           <HelpPopover label="First-run setup" testId="first-run-help">
-            ORC detected the coding agents installed on this machine and the folders their own
-            session history shows they were last used in. Create projects from the suggestions to
-            group their tasks, sessions and knowledge, and pick the agent new chats start with.
-            Dismiss hides this screen; it stays hidden until a project exists.
+            ORC detected your installed coding agents and recent session folders. Create projects
+            from suggestions to group tasks, sessions and knowledge, or dismiss until a project
+            exists.
           </HelpPopover>
         </div>
         <Button
@@ -222,11 +225,30 @@ export function FirstRunSetup() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={`Copy ${agent.label} fix command`}
+                    aria-label={
+                      copiedFix === agent.agent
+                        ? `Copied ${agent.label} fix command`
+                        : `Copy ${agent.label} fix command`
+                    }
                     data-testid={`first-run-fix-copy-${agent.agent}`}
-                    onClick={() => void navigator.clipboard.writeText(agent.fix?.command ?? "")}
+                    onClick={() => {
+                      const command = agent.fix?.command ?? "";
+                      void navigator.clipboard
+                        ?.writeText(command)
+                        .then(() => {
+                          setCopiedFix(agent.agent);
+                          setTimeout(() => {
+                            setCopiedFix((current) => (current === agent.agent ? null : current));
+                          }, 2000);
+                        })
+                        .catch(() => {});
+                    }}
                   >
-                    <Copy size={14} aria-hidden />
+                    {copiedFix === agent.agent ? (
+                      <Check size={14} aria-hidden />
+                    ) : (
+                      <Copy size={14} aria-hidden />
+                    )}
                   </Button>
                 </span>
               )}
@@ -266,7 +288,7 @@ export function FirstRunSetup() {
           <>
             <div className="divide-y divide-border rounded-md border border-border">
               {suggestions.map((suggestion: SetupProjectSuggestion, index: number) => {
-                const row = rows[index] ?? { status: "idle" };
+                const row = rows[suggestion.path] ?? { status: "idle" };
                 return (
                   <div
                     key={suggestion.path}
@@ -279,12 +301,12 @@ export function FirstRunSetup() {
                         className="size-4 shrink-0 accent-primary"
                         aria-label={`Create project ${suggestion.name}`}
                         data-testid={`first-run-suggestion-check-${index}`}
-                        checked={checked.has(index) && row.status !== "created"}
+                        checked={checked.has(suggestion.path) && row.status !== "created"}
                         disabled={creating || row.status === "created"}
                         onChange={(event) => {
                           const next = new Set(checked);
-                          if (event.target.checked) next.add(index);
-                          else next.delete(index);
+                          if (event.target.checked) next.add(suggestion.path);
+                          else next.delete(suggestion.path);
                           setSelected(next);
                         }}
                       />
@@ -331,13 +353,23 @@ export function FirstRunSetup() {
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 data-testid="first-run-create"
-                disabled={creating || checked.size === 0}
+                disabled={creating || pendingSelected.length === 0}
                 onClick={() => void createSelected()}
               >
                 {creating
                   ? "Creating…"
-                  : `Create ${checked.size} project${checked.size === 1 ? "" : "s"}`}
+                  : `Create ${pendingSelected.length} project${pendingSelected.length === 1 ? "" : "s"}`}
               </Button>
+              {hasCreated && hasFailed && (
+                <Button
+                  variant="ghost"
+                  data-testid="first-run-continue"
+                  disabled={creating}
+                  onClick={() => void finishSetup()}
+                >
+                  Continue to Activity
+                </Button>
+              )}
               <span className="text-xs text-muted-foreground">
                 Uses the suggested name and folder; edit anything later in Projects.
               </span>
