@@ -253,24 +253,23 @@ export function withHumanRequests(
       });
       if (!wait.abort.signal.aborted) {
         const expected = event.type === "question_request" ? event.data.questions.length : 1;
+        if (opts.humanRequestContext?.channel && wait.requests.length < expected) {
+          const isSecret =
+            event.type === "question_request" &&
+            event.data.questions.some((question) => question.isSecret);
+          stopWait(wait, true);
+          emit({
+            type: "error",
+            data: isSecret
+              ? "Secret input cannot be collected through a channel; the turn was stopped and nothing was authorized. Continue in ORC chat or the agent's native client."
+              : `This ${event.type === "question_request" ? "question" : "approval"} could not be delivered to the originating channel; the turn was stopped and nothing was authorized.`,
+          });
+          try {
+            await session.close();
+          } catch {}
+          return;
+        }
         if (!wait.ruleBound && wait.requests.length < expected) {
-          if (opts.humanRequestContext?.channel) {
-            // A channel session has no ephemeral chat UI: the channel runtime
-            // only delivers durable inbox rows, so re-emitting the request
-            // would leave the native call pending forever (issue #512). Fail
-            // visibly and release the agent instead.
-            stopWait(wait, true);
-            emit({
-              type: "error",
-              data: `This ${event.type === "question_request" ? "question" : "approval"} could not be delivered to the originating channel; the turn was stopped and nothing was authorized.`,
-            });
-            try {
-              await session.close();
-            } catch {
-              /* Native connection may already be gone. */
-            }
-            return;
-          }
           stopWait(wait, false);
           emit({ type: "system_status", data: "Answer this request in the original chat." });
           emit(event);
@@ -313,6 +312,7 @@ export function withHumanRequests(
             continue;
           }
           if (
+            !opts.humanRequestContext?.channel &&
             !decision.human_requests?.length &&
             event.type === "question_request" &&
             event.data.questions.some((question) => question.isSecret)
@@ -332,20 +332,21 @@ export function withHumanRequests(
             };
             waits.set(event.data.requestId, wait);
             wait.task = answer(event, decision, wait);
-            if (decision.human_requests?.length)
-              emit({
-                type: "system_status",
-                data: `ORC rule requires your response: ${decision.human_requests.map((action) => action.target.prompt).join("; ")}`,
-              });
             if (
               wait.requests.length ===
               (event.type === "question_request" ? event.data.questions.length : 1)
-            )
+            ) {
+              if (decision.human_requests?.length)
+                emit({
+                  type: "system_status",
+                  data: `ORC rule requires your response: ${decision.human_requests.map((action) => action.target.prompt).join("; ")}`,
+                });
               emit(
                 wait.ruleBound && event.type === "permission_request"
                   ? { ...event, data: { ...event.data, allowSession: false } }
                   : event,
               );
+            }
             continue;
           }
         }
