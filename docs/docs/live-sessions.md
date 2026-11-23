@@ -197,11 +197,13 @@ while the agent still receives the full text and delivery-is-not-approval
 envelope.
 
 The same queue is available to agents through the `session_send` MCP tool
-(bind the connection with `?session=<session id>` or run stdio MCP inside the
-agent) and to chat channels with `/send <session id> <message>`. Agent-origin
-sends default to `mode: "queue"`; `steer` and `interrupt` are explicit choices.
-The delivery receipt reports `queued`, `steered`, `resumed`, `failed`, or `unsupported`
-so callers do not need to poll.
+(ORC-managed sessions bind the connection automatically with `?session=<session id>`
+and `X-ORC-Session`, and stdio MCP reads `ORC_SESSION_ID`; an explicitly unbound
+MCP client can still `queue` via the human-relay fallback, while `steer` and
+`interrupt` require a bound ancestor session) and to chat channels with `/send <session id> <message>`.
+Agent-origin sends default to `mode: "queue"`; `steer` and `interrupt` are
+explicit choices. The delivery receipt reports `queued`, `steered`, `resumed`,
+`failed`, or `unsupported` so callers do not need to poll.
 
 ```text
 /send                  list live sessions

@@ -8,7 +8,7 @@ import {
 } from "@orc/core/agent-service";
 import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
 import { clearSetupDismissal, loadConfig, resolveApiBase } from "@orc/core/config";
-import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { isGitRemoteUrl } from "@orc/core/git-remote";
 import {
   GithubSyncConfigSchema,
@@ -320,7 +320,7 @@ export const toolDefinitions = [
   {
     name: "session_send",
     description:
-      "Send a short note to another live or idle ORC session. Target with the ORC live session id, a session_start id, or the agent's native session id plus backend. mode queue (default) waits for the recipient's next safe point (or starts a turn when idle); steer explicitly injects it into a running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt only work on sessions you started. The receipt reports queued, steered, resumed, failed, or unsupported — do not poll; completion wakes you. It cannot approve tools or change configuration. Pass a stable request_id when retrying the same note.",
+      "Send a short note to another live or idle ORC session. Target with the ORC live session id, a session_start id, or the agent's native session id plus backend. mode queue (default) waits for the recipient's next safe point (or starts a turn when idle; unbound connections fall back to human relay); steer explicitly injects it into a running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt require a bound calling session that started the target (or one of its ancestors). The receipt reports queued, steered, resumed, failed, or unsupported — do not poll; completion wakes you. It cannot approve tools or change configuration. Pass a stable request_id when retrying the same note.",
     inputSchema: SessionMessageCreateSchema,
   },
   {
@@ -1424,10 +1424,36 @@ function callerOwns(caller: string | null | undefined, claimed: string): boolean
   }
 }
 
+export type DetailedToolResult = {
+  text: string;
+  data?: Record<string, unknown>;
+};
+
+export async function executeToolDetailed(
+  name: ToolName,
+  args: unknown,
+  options: ToolOptions = {},
+): Promise<DetailedToolResult> {
+  let data: Record<string, unknown> | undefined;
+  const text = await runTool(name, args, options, (structured) => {
+    data = structured;
+  });
+  return data !== undefined ? { text, data } : { text };
+}
+
 export async function executeTool(
   name: ToolName,
   args: unknown,
   options: ToolOptions = {},
+): Promise<string> {
+  return runTool(name, args, options);
+}
+
+async function runTool(
+  name: ToolName,
+  args: unknown,
+  options: ToolOptions = {},
+  setData?: (data: Record<string, unknown>) => void,
 ): Promise<string> {
   if (previewToolDefinitions.some((tool) => tool.name === name))
     return executePreviewTool(
@@ -1620,15 +1646,23 @@ export async function executeTool(
   }
   if (name === "session_send") {
     const input = SessionMessageCreateSchema.parse(args);
-    if (!options.agentSessionId)
-      throw new ValidationError(
-        "session_send needs the calling session identity; reconnect MCP with ?session=<session id> or run inside an agent session",
+    const mode = input.mode ?? "queue";
+    if (!options.agentSessionId && mode !== "queue")
+      throw new ForbiddenError(
+        `session_send with mode "${mode}" requires a bound calling session identity; reconnect MCP with ?session=<session id> or X-ORC-Session, or use mode "queue"`,
       );
+    if (options.projectScopes) {
+      const target = new SessionMessageStore(getSqlite()).target(input.session_id, input.backend);
+      if (!target.project_id || !options.projectScopes.some((p) => p.id === target.project_id))
+        throw new ForbiddenError("Session is outside the selected MCP projects");
+    }
     return JSON.stringify(
       SessionMessageResultSchema.parse(
         await orcApi("POST", "/session-messages", {
           body: input,
-          headers: { "X-ORC-Session": options.agentSessionId },
+          ...(options.agentSessionId
+            ? { headers: { "X-ORC-Session": options.agentSessionId } }
+            : {}),
         }),
       ),
     );
@@ -1640,10 +1674,10 @@ export async function executeTool(
     name === "session_list" ||
     name === "session_stop"
   ) {
-    if (!options.agentSessionId)
-      throw new ValidationError(
-        `${name} needs the calling session identity; reconnect MCP with ?session=<session id> or run inside an agent session`,
-      );
+    if (!options.agentSessionId) {
+      const message = `${name} needs the calling session identity; reconnect MCP with ?session=<session id>, pass X-ORC-Session, or run inside an agent session`;
+      throw name === "session_stop" ? new ForbiddenError(message) : new ValidationError(message);
+    }
     const headers = { "X-ORC-Session": options.agentSessionId };
     if (name === "session_start") {
       const { project, ...input } = SessionSpawnSchema.omit({ project_id: true })
@@ -1828,6 +1862,7 @@ export async function executeTool(
       const projectIds = selectedProjectIds(project, options) ?? [memoryProject(project)];
       const matched = new MemoryStore(getSqlite(db)).list(projectIds, { q, sort });
       const shown = matched.slice(0, limit ?? MEMORY_LIST_LIMIT);
+      setData?.({ memories: shown, total: matched.length });
       const more =
         matched.length > shown.length
           ? [`Showing ${shown.length} of ${matched.length}; use q to search or raise limit.`]
@@ -1860,6 +1895,13 @@ export async function executeTool(
         "mcp",
       );
       const priority = memory.priority === null ? "" : ` (priority ${memory.priority})`;
+      setData?.({
+        name: memory.name,
+        description: memory.description,
+        content: memory.content,
+        priority: memory.priority,
+        project_id: memory.project_id,
+      });
       return `# ${memory.name}${priority}\n${memory.description}\n\n${memory.content}`;
     }
 
@@ -2077,6 +2119,22 @@ export async function executeTool(
       const filtered = status
         ? rows
         : rows.filter((t) => !["done", "cancelled"].includes(t.status));
+      setData?.({
+        tasks: filtered.map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          progress: t.progress,
+          project_id: t.project_id,
+          tags: t.tags,
+          git_branch: t.git_branch,
+          github_pr: t.github_pr,
+          github_issue: t.github_issue,
+          ...(t.github_sync ? { github_sync: t.github_sync } : {}),
+        })),
+        count: filtered.length,
+      });
       if (filtered.length === 0) return status ? `No ${status} tasks.` : "No active tasks.";
       return filtered
         .map(
@@ -2110,14 +2168,38 @@ export async function executeTool(
         ),
       );
       const found = rows.filter((t): t is NonNullable<typeof t> => Boolean(t));
-      if (found.length === 0) return `Task not found: ${ids.join(", ")}`;
-      const sections = await Promise.all(
+      if (found.length === 0) {
+        setData?.({ tasks: [] });
+        return `Task not found: ${ids.join(", ")}`;
+      }
+      const entries = await Promise.all(
         found.map(async (t) => {
           const recent = await db.query.comments.findMany({
             where: and(eq(comments.resource_type, "task"), eq(comments.resource_id, t.id)),
             orderBy: [desc(comments.created_at)],
             limit: 20,
           });
+          const chronological = recent.reverse();
+          const data: Record<string, unknown> = {
+            id: t.id,
+            title: t.title,
+            status: t.status,
+            priority: t.priority,
+            progress: t.progress,
+            project_id: t.project_id,
+            body: t.body ?? null,
+            tags: t.tags,
+            git_branch: t.git_branch,
+            github_pr: t.github_pr,
+            github_issue: t.github_issue,
+            github_sync: t.github_sync ?? null,
+            comments: chronological.map((c) => ({
+              id: c.id,
+              author: c.author,
+              content: c.content,
+              created_at: c.created_at.toISOString(),
+            })),
+          };
           const links = [
             t.git_branch && `Branch: ${t.git_branch}`,
             t.github_pr && `PR: ${t.github_pr}`,
@@ -2125,19 +2207,21 @@ export async function executeTool(
             t.github_sync &&
               `GitHub sync: ${t.github_sync.error ?? (t.status !== t.github_sync.status ? "status pending" : "synced")}`,
           ].filter(Boolean);
-          const thread = recent
-            .reverse()
-            .map((c) => `- ${c.created_at.toISOString()} ${c.author}: ${c.content}`);
-          return [
+          const thread = chronological.map(
+            (c) => `- ${c.created_at.toISOString()} ${c.author}: ${c.content}`,
+          );
+          const section = [
             `[${t.id}] ${t.status} - ${t.title}`,
             `Progress: ${t.progress}%`,
             ...links,
             t.body ?? "",
             ...(thread.length > 0 ? ["", `Comments (latest ${thread.length}):`, ...thread] : []),
           ].join("\n");
+          return { section, data };
         }),
       );
-      return sections.join("\n\n");
+      setData?.({ tasks: entries.map((entry) => entry.data) });
+      return entries.map((entry) => entry.section).join("\n\n");
     }
 
     case "github_sync": {
@@ -2315,6 +2399,16 @@ export async function executeTool(
       const rows = await db.query.jobs.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         limit: limit ?? 20,
+      });
+      setData?.({
+        jobs: rows.map((j) => ({
+          id: j.id,
+          name: j.name,
+          enabled: j.enabled,
+          trigger_type: j.trigger_type,
+          run_count: j.run_count,
+          project_id: j.project_id,
+        })),
       });
       if (rows.length === 0) return "No jobs defined.";
       return rows
@@ -2532,6 +2626,22 @@ export async function executeTool(
         lines.push(`\n## Agent Loop: ${activeCount.count} active worker(s)`);
       }
 
+      setData?.({
+        project: resolved ? { id: resolved.id, name: resolved.name } : null,
+        tasks: filtered.map((t) => ({
+          id: t.id,
+          title: t.title,
+          status: t.status,
+          priority: t.priority,
+          progress: t.progress,
+          project_id: t.project_id,
+        })),
+        memories: projectMemories,
+        last_session: lastSession
+          ? { id: lastSession.id, agent: lastSession.agent, summary: lastSession.summary ?? null }
+          : null,
+        active_workers: activeCount?.count ?? 0,
+      });
       lines.push("\nUse task_get([ids]) or memory_read(name) for full content.");
       return lines.join("\n");
     }
@@ -2712,6 +2822,16 @@ export async function executeTool(
       const rows = await db.query.projects.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         orderBy: (p, { asc }) => [asc(p.name)],
+      });
+      setData?.({
+        projects: rows.map((p) => ({
+          id: p.id,
+          name: p.name,
+          status: p.status,
+          description: p.description ?? null,
+          tags: p.tags,
+          scope: p.scope ?? null,
+        })),
       });
       if (rows.length === 0) return "No projects found.";
       return rows
@@ -3269,11 +3389,17 @@ export async function executeTool(
     case "flow_status": {
       const { task: taskId } = args as { task: string };
       const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
-      if (!owner) return `Task not found: ${taskId}`;
+      if (!owner) {
+        setData?.({ task_id: taskId, found: false, run: null });
+        return `Task not found: ${taskId}`;
+      }
       assertTaskInScope(owner.project_id, options);
       const { getLatestFlowRunForTask } = await import("@orc/runner/flow-runner");
       const run = getLatestFlowRunForTask(taskId);
-      if (!run) return `No flow run for task ${taskId}.`;
+      if (!run) {
+        setData?.({ task_id: taskId, found: true, run: null });
+        return `No flow run for task ${taskId}.`;
+      }
 
       const lines = [
         `Flow: ${run.flow_name} (${run.flow_source})  run ${run.id}`,
@@ -3304,6 +3430,19 @@ export async function executeTool(
           if (n.error) lines.push(`    error: ${n.error}`);
         }
       }
+      setData?.({
+        id: run.id,
+        task_id: taskId,
+        flow_name: run.flow_name,
+        flow_source: run.flow_source,
+        status: run.status,
+        halt_description: run.halt_description ?? null,
+        node_executions: run.node_executions,
+        active: run.active,
+        visits: run.visits,
+        vars: Object.fromEntries(shownVars),
+        nodes: run.nodes,
+      });
       return lines.join("\n");
     }
 
@@ -3317,6 +3456,8 @@ export async function executeTool(
         ...(q ? { q } : {}),
         ...(source ? { source } : {}),
       });
+      const broken = listBrokenFlows();
+      setData?.({ flows, broken });
       if (flows.length === 0) return "No flows found.";
       const lines = flows.map(
         (f) =>
@@ -3324,7 +3465,6 @@ export async function executeTool(
           `${f.node_count} nodes, ${f.edge_count} edges` +
           (f.description ? `\n  ${f.description}` : ""),
       );
-      const broken = listBrokenFlows();
       if (broken.length > 0) {
         lines.push("", "Invalid flows (ignored):");
         for (const b of broken) lines.push(`  ${b.name}: ${b.errors.join("; ")}`);
@@ -3336,7 +3476,18 @@ export async function executeTool(
       const { name: flowName } = args as { name: string };
       const { readFlow } = await import("@orc/core/flow-service");
       const flow = readFlow(flowName);
-      if (!flow) return `Flow not found: ${flowName}`;
+      if (!flow) {
+        setData?.({ name: flowName, found: false });
+        return `Flow not found: ${flowName}`;
+      }
+      setData?.({
+        name: flow.name,
+        source: flow.source,
+        version: flow.version,
+        description: flow.description,
+        path: flow.path ?? null,
+        definition: flow.definition,
+      });
       return [
         `# ${flow.name} [${flow.source}] v${flow.version}`,
         flow.description,

@@ -37,14 +37,28 @@ function startWorker(): Worker {
   return new Worker(new URL("./code-worker.ts", import.meta.url), { env: {} });
 }
 
-interface CodeRequest {
+export interface CodeRequest {
   serial: boolean;
-  toolName?: string;
+  toolName?: string | undefined;
+  timeoutMs?: number | undefined;
+  envelope?: boolean | undefined;
   dispatch(): Promise<string>;
 }
 
 function errorPayload(error: string): string {
   return JSON.stringify({ error });
+}
+
+function envelopeErrorPayload(code: string, message: string): string {
+  return JSON.stringify({ ok: false, error: { code, message } });
+}
+
+function isCallPayload(raw: string): boolean {
+  try {
+    return (JSON.parse(raw) as { operation?: unknown })?.operation === "call";
+  } catch {
+    return false;
+  }
 }
 
 export function runCodeWorker(
@@ -70,6 +84,7 @@ export function runCodeWorker(
 
   return new Promise<CodeOutput>((resolve, reject) => {
     const queue: (CodeRequest & { id: number })[] = [];
+    const callTimers = new Set<ReturnType<typeof setTimeout>>();
     let running = 0;
     let serialRunning = false;
     let requests = 0;
@@ -81,6 +96,8 @@ export function runCodeWorker(
       if (closed) return;
       closed = true;
       clearTimeout(timer);
+      for (const activeTimer of callTimers) clearTimeout(activeTimer);
+      callTimers.clear();
       signal.removeEventListener("abort", cancel);
       queue.length = 0;
       worker.terminate();
@@ -113,11 +130,40 @@ export function runCodeWorker(
         running++;
         serialRunning = request.serial;
         if (request.toolName) dispatchedTools.push(request.toolName);
+        let replied = false;
+        let callTimer: ReturnType<typeof setTimeout> | undefined;
+        if (request.timeoutMs !== undefined) {
+          const remaining = Math.max(1, deadline - Date.now());
+          const limitMs = Math.max(1, Math.min(request.timeoutMs, remaining));
+          callTimer = setTimeout(() => {
+            if (callTimer) callTimers.delete(callTimer);
+            if (replied || closed) return;
+            replied = true;
+            const label = request.toolName ? `Tool call "${request.toolName}"` : "Tool call";
+            const message = `${label} timed out after ${limitMs}ms`;
+            post({
+              type: "reply",
+              id: request.id,
+              payload: request.envelope
+                ? envelopeErrorPayload("TIMEOUT", message)
+                : errorPayload(message),
+            });
+          }, limitMs);
+          callTimers.add(callTimer);
+        }
+        const clearCallTimer = () => {
+          if (!callTimer) return;
+          clearTimeout(callTimer);
+          callTimers.delete(callTimer);
+          callTimer = undefined;
+        };
         void request
           .dispatch()
           .then(
             (payload) => {
-              if (closed) return;
+              clearCallTimer();
+              if (closed || replied) return;
+              replied = true;
               replyBytes += Buffer.byteLength(payload);
               if (replyBytes > CODE_LIMITS.totalResponseBytes) {
                 finish(new Error("Code execution exceeded its tool response budget"));
@@ -125,10 +171,21 @@ export function runCodeWorker(
               }
               post({ type: "reply", id: request.id, payload });
             },
-            () =>
-              post({ type: "reply", id: request.id, payload: errorPayload("Tool request failed") }),
+            () => {
+              clearCallTimer();
+              if (closed || replied) return;
+              replied = true;
+              post({
+                type: "reply",
+                id: request.id,
+                payload: request.envelope
+                  ? envelopeErrorPayload("TOOL_ERROR", "Tool request failed")
+                  : errorPayload("Tool request failed"),
+              });
+            },
           )
           .finally(() => {
+            clearCallTimer();
             running--;
             serialRunning = false;
             if (!closed) drain();
@@ -166,8 +223,16 @@ export function runCodeWorker(
           try {
             queue.push({ ...prepare(data.payload), id: data.id });
             drain();
-          } catch {
-            post({ type: "reply", id: data.id, payload: errorPayload("Invalid tool request") });
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message.slice(0, 512) : "Invalid tool request";
+            post({
+              type: "reply",
+              id: data.id,
+              payload: isCallPayload(data.payload)
+                ? envelopeErrorPayload("INVALID_ARGS", message)
+                : errorPayload(message),
+            });
           }
           break;
       }
