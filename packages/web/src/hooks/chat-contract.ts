@@ -38,11 +38,71 @@ export function withPreferences(config: ChatConfig, preferences: ChatPreferences
   return preferences.permissionMode ? withPermissionMode(next, preferences.permissionMode) : next;
 }
 
+export type ChatSurface = "page" | "side";
+
+export const CHAT_THREAD_PARAM = "chatThread";
+export const SIDE_CHAT_THREAD_PARAM = "sideChatThread";
+
+export interface ChatSurfaceUrlState {
+  pageShown: boolean;
+  sideShown: boolean;
+  redirecting: boolean;
+  pageParam: typeof CHAT_THREAD_PARAM | null;
+  sideParam: typeof CHAT_THREAD_PARAM | typeof SIDE_CHAT_THREAD_PARAM | null;
+  pageLinked: string | null;
+  sideLinked: string | null;
+}
+
+export function chatSurfaceLinks(
+  pathname: string,
+  search: string,
+  desktopViewport: boolean,
+): ChatSurfaceUrlState {
+  const params = new URLSearchParams(search);
+  const chatParam = params.get("chat");
+  const redirecting = chatParam === "full" || (chatParam === "open" && !desktopViewport);
+  const pageShown = pathname === "/chat" || chatParam === "full";
+  const sideShown = chatParam === "open" && desktopViewport;
+  const pageParam = pageShown ? CHAT_THREAD_PARAM : null;
+  const sideParam = sideShown ? (pageShown ? SIDE_CHAT_THREAD_PARAM : CHAT_THREAD_PARAM) : null;
+  const readId = (key: string | null) => {
+    if (!key) return null;
+    const value = params.get(key);
+    return value && isChatThreadId(value) ? value : null;
+  };
+  return {
+    pageShown,
+    sideShown,
+    redirecting,
+    pageParam,
+    sideParam,
+    pageLinked: readId(pageParam),
+    sideLinked: readId(sideParam),
+  };
+}
+
+export function initialChatSurfaceLinks(
+  pathname: string,
+  search: string,
+  desktopViewport: boolean,
+): ChatSurfaceUrlState {
+  const links = chatSurfaceLinks(pathname, search, desktopViewport);
+  const params = new URLSearchParams(search);
+  if (params.get("chat") !== "open" || desktopViewport) return links;
+  const readId = (key: string) => {
+    const value = params.get(key);
+    return value && isChatThreadId(value) ? value : null;
+  };
+  const handoffThread = readId(SIDE_CHAT_THREAD_PARAM) ?? readId(CHAT_THREAD_PARAM);
+  return handoffThread ? { ...links, pageLinked: handoffThread } : links;
+}
+
 /** Conversations open as chat tabs in this browser, restored after a reload. */
 export const CHAT_TABS_KEY = "orc_chat_tabs";
 export interface StoredChatTabs {
   threads: string[];
   active: string | null;
+  sideActive?: string | null;
   projectIds?: Record<string, string | null>;
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -55,7 +115,8 @@ export function parseChatTabs(raw: string | null): StoredChatTabs {
   try {
     const value: unknown = JSON.parse(raw ?? "null");
     if (!value || typeof value !== "object") return { threads: [], active: null };
-    const { threads, active, projectIds: rawProjects } = value as Record<string, unknown>;
+    const record = value as Record<string, unknown>;
+    const { threads, active, sideActive, projectIds: rawProjects } = record;
     const ids = Array.isArray(threads)
       ? threads
           .filter((id): id is string => typeof id === "string" && isChatThreadId(id))
@@ -74,12 +135,16 @@ export function parseChatTabs(raw: string | null): StoredChatTabs {
           )
         : [],
     );
+    const hasSideActive = "sideActive" in record;
+    const parsedSideActive =
+      typeof sideActive === "string" && ids.includes(sideActive) ? sideActive : null;
     return {
       ...(Object.keys(projectIds).length
         ? { projectIds: projectIds as Record<string, string | null> }
         : {}),
       threads: ids,
       active: typeof active === "string" && ids.includes(active) ? active : null,
+      ...(hasSideActive ? { sideActive: parsedSideActive } : {}),
     };
   } catch {
     return { threads: [], active: null };

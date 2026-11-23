@@ -9,6 +9,10 @@ export type NotificationView = {
   chatThreadId: string | null;
   /** Native session the open chat thread was resumed from, if any. */
   threadSourceId?: string | null;
+  /** Side chat thread open alongside the workspace or Chat page, if any. */
+  sideChatThreadId?: string | null;
+  /** Native session the open side chat thread was resumed from, if any. */
+  sideThreadSourceId?: string | null;
   sessions?: readonly {
     id: string;
     agent: string;
@@ -28,21 +32,27 @@ export function notificationInView(item: OrcNotification, view: NotificationView
       ? view.requests?.find((request) => request.id === item.source_id)
       : undefined;
   const targetThread =
-    target.searchParams.get("chatThread") ?? request?.input.origin.chat_thread_id;
-  const chatOpen = !!params.get("chat") || view.pathname === "/chat";
-  if (chatOpen && targetThread && targetThread === view.chatThreadId) return true;
-  // Resuming clears the link parameter, so the open thread remembers its source session.
-  if (
-    chatOpen &&
-    view.threadSourceId &&
-    item.type.startsWith("agent.") &&
-    view.threadSourceId === item.source_id
-  )
-    return true;
-  // A session notification is in view when the chat page shows that session's
-  // conversation, its read-only view, or the same native session from a running terminal.
-  if (view.pathname !== "/chat") return false;
-  const liveId = params.get("sessionLive") ?? params.get("sessionView");
+    target.searchParams.get("chatThread") ??
+    target.searchParams.get("sideChatThread") ??
+    request?.input.origin.chat_thread_id;
+  const pageOpen = view.pathname === "/chat" || params.get("chat") === "full";
+  const sideOpen = params.get("chat") === "open";
+  const surfaceAware = "sideChatThreadId" in view || "sideThreadSourceId" in view;
+  const openThreads = new Set<string>();
+  const openSources = new Set<string>();
+  if (pageOpen) {
+    if (view.chatThreadId) openThreads.add(view.chatThreadId);
+    if (view.threadSourceId) openSources.add(view.threadSourceId);
+  }
+  if (sideOpen) {
+    const sideThread = surfaceAware ? view.sideChatThreadId : view.chatThreadId;
+    const sideSource = surfaceAware ? view.sideThreadSourceId : view.threadSourceId;
+    if (sideThread) openThreads.add(sideThread);
+    if (sideSource) openSources.add(sideSource);
+  }
+  if (targetThread && openThreads.has(targetThread)) return true;
+  if (item.type.startsWith("agent.") && openSources.has(item.source_id)) return true;
+  const liveId = pageOpen ? (params.get("sessionLive") ?? params.get("sessionView")) : null;
   if (
     liveId &&
     target.pathname === "/chat" &&
@@ -50,14 +60,17 @@ export function notificationInView(item: OrcNotification, view: NotificationView
       target.searchParams.get("sessionView") === liveId)
   )
     return true;
-  const session = view.sessions?.find((session) => session.id === (liveId ?? view.threadSourceId));
   const origin = request?.input.origin;
-  return (
-    !!session &&
-    !!origin &&
-    session.agent.replace(/-cli$/, "") === origin.backend.replace(/-cli$/, "") &&
-    session.host === (origin.execution_host ?? null) &&
-    session.session_id === (origin.native_session_id ?? origin.session_id)
+  if (!origin || !view.sessions?.length) return false;
+  const candidateSessionIds = new Set<string>(openSources);
+  if (liveId) candidateSessionIds.add(liveId);
+  if (candidateSessionIds.size === 0) return false;
+  return view.sessions.some(
+    (session) =>
+      candidateSessionIds.has(session.id) &&
+      session.agent.replace(/-cli$/, "") === origin.backend.replace(/-cli$/, "") &&
+      session.host === (origin.execution_host ?? null) &&
+      session.session_id === (origin.native_session_id ?? origin.session_id),
   );
 }
 
