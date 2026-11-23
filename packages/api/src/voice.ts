@@ -86,9 +86,10 @@ function maybeEndReply(ws: ServerWebSocket<VoiceSocketData>) {
 }
 
 function beginReply(ws: ServerWebSocket<VoiceSocketData>) {
-  ws.data.clips = new Set();
+  const wasPlaying = ws.data.sending === true || (ws.data.clips?.size ?? 0) > 0;
+  ws.data.clips ??= new Set();
   ws.data.sending = true;
-  ws.data.detector?.setSpeaking(true);
+  if (!wasPlaying) ws.data.detector?.setSpeaking(true);
   if (ws.data.guard) clearTimeout(ws.data.guard);
   ws.data.guard = setTimeout(() => endReply(ws), REPLY_GUARD_MS);
 }

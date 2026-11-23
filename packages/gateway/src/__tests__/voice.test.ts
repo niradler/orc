@@ -268,6 +268,16 @@ test("the end event reports the loudest frame, so a room can be tuned", () => {
   expect(peak(loud)).toBeGreaterThan(peak(quiet));
 });
 
+test("a stray pre-turn spike does not inflate peakDb of the next turn", () => {
+  const strayAndQuiet = detectSpeaking([
+    concatPcm(burst(20, 20_000), new Int16Array(8_000), burst(600, 300), new Int16Array(16_000)),
+  ]);
+  const quietOnly = detectSpeaking([concatPcm(burst(600, 300), new Int16Array(16_000))]);
+  const peak = (events: TurnEvent[]) =>
+    (events.find((event) => event.type === "end") as Extract<TurnEvent, { type: "end" }>).peakDb;
+  expect(peak(strayAndQuiet)).toBe(peak(quietOnly));
+});
+
 test("barge_ms 0 keeps voice mode half-duplex", () => {
   const events = detectSpeaking([concatPcm(burst(600, 3000), new Int16Array(16_000))], {
     bargeMs: 0,

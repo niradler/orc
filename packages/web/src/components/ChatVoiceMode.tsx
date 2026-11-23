@@ -37,7 +37,7 @@ export function isVoiceShortcut(event: {
 export function useVoiceMode(
   threadId: string | undefined,
   streaming: boolean,
-  followTurn?: () => void,
+  followTurn?: (threadId: string) => void,
 ) {
   const status = useQuery({ queryKey: ["speech-status"], queryFn: api.speech.status });
   // The socket handler is built once per session; keep the newest callback.
@@ -137,6 +137,7 @@ export function useVoiceMode(
       input.connect(node);
       let playAt = 0;
       let epoch = 0;
+      let hearingNow = false;
       let decoding = Promise.resolve();
       const clips: string[] = [];
       // Duck instead of stopping while we check whether the user is really
@@ -162,7 +163,12 @@ export function useVoiceMode(
           const turn = epoch;
           decoding = decoding.then(async () => {
             const audio = await context.decodeAudioData(data).catch(() => null);
-            if (!audio || turn !== epoch || context.state === "closed") return;
+            if (turn !== epoch || context.state === "closed") return;
+            if (!audio) {
+              if (clip && ws.readyState === WebSocket.OPEN)
+                ws.send(JSON.stringify({ type: "played", id: clip }));
+              return;
+            }
             const source = context.createBufferSource();
             source.buffer = audio;
             source.connect(output);
@@ -172,6 +178,7 @@ export function useVoiceMode(
             sources.add(source);
             setPlaying(true);
             source.onended = () => {
+              if (turn !== epoch) return;
               sources.delete(source);
               if (!sources.size) setPlaying(false);
               if (clip && ws.readyState === WebSocket.OPEN)
@@ -185,29 +192,38 @@ export function useVoiceMode(
           setConnecting(false);
           setAnalyser(node);
         } else if (event.type === "speech_start") {
+          hearingNow = true;
           duck(0.2);
           setError("");
           setHearing(true);
         } else if (event.type === "barge") {
+          hearingNow = true;
           silence();
           setHearing(true);
         } else if (event.type === "speech_end") {
+          hearingNow = false;
           duck(1);
           setHearing(false);
           setPending(true);
         } else if (event.type === "speech_cancelled") {
+          hearingNow = false;
           duck(1);
           setHearing(false);
           setPending(false);
-        } else if (event.type === "ignored" || event.type === "speak") {
+        } else if (event.type === "ignored") {
+          hearingNow = false;
           duck(1);
           setPending(false);
-          if (event.type === "speak" && event.id) clips.push(event.id);
+        } else if (event.type === "speak") {
+          if (!hearingNow) duck(1);
+          setPending(false);
+          if (event.id) clips.push(event.id);
         } else if (event.type === "turn_started") {
           // The turn runs on the server; this tab follows it so spoken words
           // appear in the transcript without a refresh.
-          followTurnRef.current?.();
+          followTurnRef.current?.(threadId);
         } else if (event.type === "error") {
+          hearingNow = false;
           duck(1);
           setPending(false);
           setError(event.message ?? "Voice turn failed.");

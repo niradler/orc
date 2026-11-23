@@ -329,6 +329,29 @@ test("once the client played every clip, a normal turn replaces idle playback", 
   voice.ws.close();
 });
 
+test("sequential speak calls preserve unplayed clips from the first call", async () => {
+  const id = await chat("Reply with exactly: ok");
+  const voice = await connect(id);
+  transcript = "";
+  await app.request(`/api/chat/threads/${id}/speak`, {
+    method: "POST",
+    headers: AUTH,
+    body: JSON.stringify({ text: "First reply." }),
+  });
+  await app.request(`/api/chat/threads/${id}/speak`, {
+    method: "POST",
+    headers: AUTH,
+    body: JSON.stringify({ text: "Second reply." }),
+  });
+  await until(async () => voice.audio.length === 2);
+  const speaks = voice.messages.filter((m) => m.type === "speak") as { id: string }[];
+  expect(speaks).toHaveLength(2);
+  voice.ws.send(JSON.stringify({ type: "played", id: speaks[1]!.id }));
+  voice.say(burst(200, 3000));
+  await voice.next("speech_cancelled");
+  voice.ws.close();
+});
+
 test("barge-in drops the rest of the speech", async () => {
   const id = await chat("Reply with exactly: ok");
   const voice = await connect(id);

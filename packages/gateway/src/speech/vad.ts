@@ -43,6 +43,7 @@ export function createTurnDetector({
   let bargeSent = false;
   let speaking = false;
   let peakDb = Number.NEGATIVE_INFINITY;
+  let onsetPeakDb = Number.NEGATIVE_INFINITY;
 
   const level = (frame: Int16Array) => {
     let sum = 0;
@@ -59,6 +60,7 @@ export function createTurnDetector({
     bargeQuiet = 0;
     bargeSent = false;
     peakDb = Number.NEGATIVE_INFINITY;
+    onsetPeakDb = Number.NEGATIVE_INFINITY;
   };
 
   const finish = (): TurnEvent => {
@@ -96,19 +98,27 @@ export function createTurnDetector({
         const frame = samples.slice(offset, offset + FRAME);
         const db = level(frame);
         const loud = db > thresholdDb;
-        if (db > peakDb) peakDb = db;
         if (!turn) {
           preroll.push(frame);
           if (preroll.length > PREROLL_FRAMES) preroll.shift();
-          onset = loud ? onset + 1 : 0;
+          if (loud) {
+            onset += 1;
+            if (db > onsetPeakDb) onsetPeakDb = db;
+          } else {
+            onset = 0;
+            onsetPeakDb = Number.NEGATIVE_INFINITY;
+          }
           if (onset >= ONSET_FRAMES) {
             turn = preroll;
             preroll = [];
             voicedMs = onset * FRAME_MS;
+            peakDb = onsetPeakDb;
+            onsetPeakDb = Number.NEGATIVE_INFINITY;
             events.push({ type: "start" });
           }
           continue;
         }
+        if (db > peakDb) peakDb = db;
         turn.push(frame);
         if (loud) {
           silent = 0;
