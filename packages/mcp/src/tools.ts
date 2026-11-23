@@ -320,7 +320,7 @@ export const toolDefinitions = [
   {
     name: "session_send",
     description:
-      "Send a short note to another live or idle ORC session. Target with the ORC live session id, a session_start id, or the agent's native session id plus backend. mode queue (default) delivers at the recipient's next safe point (unbound connections fall back to human relay); steer injects it into a session's running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt require a bound calling session that started the target (or one of its ancestors). It cannot approve tools or change configuration. Pass a stable request_id when retrying the same note.",
+      "Send a short note to another live or idle ORC session. Target with the ORC live session id, a session_start id, or the agent's native session id plus backend. mode queue (default) waits for the recipient's next safe point (or starts a turn when idle; unbound connections fall back to human relay); steer explicitly injects it into a running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt require a bound calling session that started the target (or one of its ancestors). The receipt reports queued, steered, resumed, failed, or unsupported — do not poll; completion wakes you. It cannot approve tools or change configuration. Pass a stable request_id when retrying the same note.",
     inputSchema: SessionMessageCreateSchema,
   },
   {
@@ -332,7 +332,7 @@ export const toolDefinitions = [
   {
     name: "session_start",
     description:
-      "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree on a new branch cut from your committed HEAD, or from another project's checkout; uncommitted edits are not carried), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC pushes the child's final reply, failure, stop or human question into this session: steered into your live turn when the agent supports it, otherwise at your next safe point. Use session_wait to block instead, session_send to message it, session_stop to stop it.",
+      "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree on a new branch cut from your committed HEAD, or from another project's checkout; uncommitted edits are not carried), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC queues the child's final reply, failure, stop or human question for your next safe point (delivered when your current turn ends, or starts a turn when idle) without interrupting your running turn. Use session_wait to block instead, session_send to message it (with explicit mode steer or interrupt if needed), session_stop to stop it.",
     inputSchema: SessionSpawnSchema.omit({ project_id: true }).extend({ project: projectParam }),
   },
   {
@@ -1651,6 +1651,11 @@ async function runTool(
       throw new ForbiddenError(
         `session_send with mode "${mode}" requires a bound calling session identity; reconnect MCP with ?session=<session id> or X-ORC-Session, or use mode "queue"`,
       );
+    if (options.projectScopes) {
+      const target = new SessionMessageStore(getSqlite()).target(input.session_id, input.backend);
+      if (!target.project_id || !options.projectScopes.some((p) => p.id === target.project_id))
+        throw new ForbiddenError("Session is outside the selected MCP projects");
+    }
     return JSON.stringify(
       SessionMessageResultSchema.parse(
         await orcApi("POST", "/session-messages", {
@@ -2167,8 +2172,7 @@ async function runTool(
         setData?.({ tasks: [] });
         return `Task not found: ${ids.join(", ")}`;
       }
-      const structuredTasks: Record<string, unknown>[] = [];
-      const sections = await Promise.all(
+      const entries = await Promise.all(
         found.map(async (t) => {
           const recent = await db.query.comments.findMany({
             where: and(eq(comments.resource_type, "task"), eq(comments.resource_id, t.id)),
@@ -2176,7 +2180,7 @@ async function runTool(
             limit: 20,
           });
           const chronological = recent.reverse();
-          structuredTasks.push({
+          const data: Record<string, unknown> = {
             id: t.id,
             title: t.title,
             status: t.status,
@@ -2195,7 +2199,7 @@ async function runTool(
               content: c.content,
               created_at: c.created_at.toISOString(),
             })),
-          });
+          };
           const links = [
             t.git_branch && `Branch: ${t.git_branch}`,
             t.github_pr && `PR: ${t.github_pr}`,
@@ -2206,17 +2210,18 @@ async function runTool(
           const thread = chronological.map(
             (c) => `- ${c.created_at.toISOString()} ${c.author}: ${c.content}`,
           );
-          return [
+          const section = [
             `[${t.id}] ${t.status} - ${t.title}`,
             `Progress: ${t.progress}%`,
             ...links,
             t.body ?? "",
             ...(thread.length > 0 ? ["", `Comments (latest ${thread.length}):`, ...thread] : []),
           ].join("\n");
+          return { section, data };
         }),
       );
-      setData?.({ tasks: structuredTasks });
-      return sections.join("\n\n");
+      setData?.({ tasks: entries.map((entry) => entry.data) });
+      return entries.map((entry) => entry.section).join("\n\n");
     }
 
     case "github_sync": {

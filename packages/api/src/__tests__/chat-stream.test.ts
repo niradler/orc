@@ -73,9 +73,14 @@ describe("/chat/stream contract", () => {
     // The browser suites chat through ORC_E2E_CHAT_MOCK with no agent CLI
     // installed, so an installed-but-disabled profile must not block the turn.
     const home = mkdtempSync(join(tmpdir(), "orc-chat-mock-"));
-    const previousHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    const previousHome = {
+      HOME: process.env.HOME,
+      USERPROFILE: process.env.USERPROFILE,
+      ORC_HOME: process.env.ORC_HOME,
+    };
     process.env.HOME = home;
     process.env.USERPROFILE = home;
+    process.env.ORC_HOME = join(home, ".orc");
     mkdirSync(join(home, ".orc"), { recursive: true });
     writeFileSync(globalConfigPath(), "{}");
     resetConfig();
@@ -238,9 +243,14 @@ describe("/chat/stream client message id", () => {
 describe("/chat/stream account switching", () => {
   function accountFixture() {
     const home = mkdtempSync(join(tmpdir(), "orc-chat-accounts-"));
-    const previousHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+    const previousHome = {
+      HOME: process.env.HOME,
+      USERPROFILE: process.env.USERPROFILE,
+      ORC_HOME: process.env.ORC_HOME,
+    };
     process.env.HOME = home;
     process.env.USERPROFILE = home;
+    process.env.ORC_HOME = join(home, ".orc");
     mkdirSync(join(home, ".orc"), { recursive: true });
     writeFileSync(globalConfigPath(), "{}");
     resetConfig();

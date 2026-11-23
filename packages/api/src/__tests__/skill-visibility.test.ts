@@ -20,10 +20,10 @@ let originalConfig: string | undefined;
 const userSkillName = `visibility-user-${process.pid}`;
 let createdVisibilitySkill = false;
 beforeAll(() => {
+  app = setupTestApp();
   originalConfig = existsSync(globalConfigPath())
     ? readFileSync(globalConfigPath(), "utf8")
     : undefined;
-  app = setupTestApp();
   reloadCache();
 });
 afterAll(() => {

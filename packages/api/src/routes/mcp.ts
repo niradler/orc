@@ -49,7 +49,7 @@ app.all("/mcp", async (c) => {
   const sessionSchema = z.string().trim().min(1).max(200).optional();
   const querySession = sessionSchema.parse(c.req.query("session"));
   const headerSession = sessionSchema.parse(c.req.header("X-ORC-Session") || undefined);
-  const agentSessionId = querySession ?? headerSession ?? preview.sessionId;
+  const agentSessionId = querySession ?? preview.sessionId ?? headerSession;
   const server = createMcpServer({
     publicApiBaseUrl: origin,
     projectsChanged: reassignSessions,

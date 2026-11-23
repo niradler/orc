@@ -21,6 +21,7 @@ import { SessionMessageStore } from "@orc/db/session-messages";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
 import {
+  deliverSessionMessageNow,
   requireAncestor,
   sendToSession,
   sessionLineage,
@@ -170,6 +171,18 @@ app.openapi(
     changes.publish("session-messages", "sessions");
     return c.json(moved, 200);
   },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/session-messages/{id}/deliver",
+    tags: ["Sessions"],
+    summary: "Steer a queued session message into the active turn now",
+    request: { params },
+    responses: message,
+  }),
+  async (c) => c.json(await deliverSessionMessageNow(c.req.valid("param").id), 200),
 );
 
 function callerSession(identifier: string | undefined): string {

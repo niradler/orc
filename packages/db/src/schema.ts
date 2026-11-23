@@ -471,6 +471,7 @@ export const session_messages = sqliteTable(
     sender_label: text("sender_label").notNull(),
     sender_key: text("sender_key").notNull(),
     body: text("body").notNull(),
+    delivery: text("delivery"),
     position: integer("position").notNull(),
     hop: integer("hop").notNull().default(0),
     state: text("state", {

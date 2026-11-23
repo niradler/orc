@@ -7,13 +7,18 @@ import { decryptSecret, encryptSecret, isEncryptedSecret, secretKeyPath } from "
 
 let home: string;
 let cwd: string;
-const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE, dir: process.cwd() };
+const saved = {
+  HOME: process.env.HOME,
+  USERPROFILE: process.env.USERPROFILE,
+  ORC_HOME: process.env.ORC_HOME,
+  dir: process.cwd(),
+};
 
 beforeEach(() => {
-  // Never touch the real ~/.orc: the key file and config live under a temp home.
   home = mkdtempSync(join(tmpdir(), "orc-secrets-"));
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.ORC_HOME = join(home, ".orc");
   cwd = join(home, "work");
   mkdirSync(join(cwd, ".orc"), { recursive: true });
   process.chdir(cwd);
@@ -22,8 +27,12 @@ beforeEach(() => {
 
 afterEach(() => {
   process.chdir(saved.dir);
-  process.env.HOME = saved.HOME;
-  process.env.USERPROFILE = saved.USERPROFILE;
+  if (saved.HOME === undefined) delete process.env.HOME;
+  else process.env.HOME = saved.HOME;
+  if (saved.USERPROFILE === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = saved.USERPROFILE;
+  if (saved.ORC_HOME === undefined) delete process.env.ORC_HOME;
+  else process.env.ORC_HOME = saved.ORC_HOME;
   resetConfig();
   rmSync(home, { recursive: true, force: true });
 });

@@ -5,6 +5,8 @@ import {
   SESSION_MESSAGE_HOP_LIMIT,
   SESSION_MESSAGE_HOURLY_LIMIT,
   SESSION_MESSAGE_RETENTION_MS,
+  type SessionDelivery,
+  SessionDeliverySchema,
   type SessionMessage,
   type SessionMessageCreate,
   SessionMessageSchema,
@@ -28,6 +30,7 @@ type MessageRow = {
   sender_label: string;
   sender_key: string;
   body: string;
+  delivery?: string | null;
   position: number;
   hop: number;
   state: string;
@@ -53,9 +56,19 @@ export type ClaimOptions = {
   limit?: number;
 };
 
+function parseDelivery(raw: string | null | undefined): SessionDelivery | null {
+  if (!raw) return null;
+  try {
+    return SessionDeliverySchema.parse(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
 function toMessage(row: MessageRow): SessionMessage {
   return SessionMessageSchema.parse({
     ...row,
+    delivery: parseDelivery(row.delivery),
     sender_kind: row.sender_kind,
     state: row.state,
     delivered_via: row.delivered_via,
@@ -82,6 +95,7 @@ export class SessionMessageStore {
       sender_label TEXT NOT NULL,
       sender_key TEXT NOT NULL,
       body TEXT NOT NULL,
+      delivery TEXT,
       position INTEGER NOT NULL,
       hop INTEGER NOT NULL DEFAULT 0,
       state TEXT NOT NULL,
@@ -98,6 +112,12 @@ export class SessionMessageStore {
       ON session_messages(target_native_id, target_backend, state, position);
     CREATE UNIQUE INDEX IF NOT EXISTS session_messages_request_idx
       ON session_messages(sender_key, request_id) WHERE request_id IS NOT NULL;`);
+    const columns = db
+      .query<{ name: string }, []>("PRAGMA table_info(session_messages)")
+      .all()
+      .map((column) => column.name);
+    if (!columns.includes("delivery"))
+      db.exec("ALTER TABLE session_messages ADD COLUMN delivery TEXT");
   }
 
   private audit(message: SessionMessage, action: string): void {
@@ -232,7 +252,11 @@ export class SessionMessageStore {
     return row;
   }
 
-  create(input: SessionMessageCreate, sender: SessionMessageSender): SessionMessage {
+  create(
+    input: SessionMessageCreate,
+    sender: SessionMessageSender,
+    delivery?: SessionDelivery | null,
+  ): SessionMessage {
     const normalizedSender = {
       ...sender,
       backend: sender.backend ? sessionMessageBackend(sender.backend) : sender.backend,
@@ -281,6 +305,7 @@ export class SessionMessageStore {
             )
             .get(target.id)?.position ?? -1;
         const now = this.now();
+        const parsedDelivery = delivery ? SessionDeliverySchema.parse(delivery) : null;
         const message: SessionMessage = SessionMessageSchema.parse({
           id: ulid(),
           project_id: target.project_id,
@@ -293,6 +318,7 @@ export class SessionMessageStore {
           sender_backend: normalizedSender.backend ?? null,
           sender_label: normalizedSender.label,
           body: input.body,
+          delivery: parsedDelivery,
           position: position + 1,
           hop,
           state: "queued",
@@ -307,9 +333,9 @@ export class SessionMessageStore {
           .query(
             `INSERT INTO session_messages
              (id,project_id,target_session_id,target_native_id,target_backend,sender_kind,
-              sender_session_id,sender_native_id,sender_backend,sender_label,sender_key,body,
+              sender_session_id,sender_native_id,sender_backend,sender_label,sender_key,body,delivery,
               position,hop,state,delivered_via,delivery_error,request_id,created_at,updated_at,delivered_at)
-             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           )
           .run(
             message.id,
@@ -324,6 +350,7 @@ export class SessionMessageStore {
             message.sender_label,
             senderKey,
             message.body,
+            parsedDelivery ? JSON.stringify(parsedDelivery) : null,
             message.position,
             message.hop,
             message.state,

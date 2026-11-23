@@ -30,7 +30,11 @@ mock.module("@niradler55/earshot/session", () => ({
   },
 }));
 
-const original = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+const original = {
+  HOME: process.env.HOME,
+  USERPROFILE: process.env.USERPROFILE,
+  ORC_HOME: process.env.ORC_HOME,
+};
 const privateHome = mkdtempSync(join(tmpdir(), "orc-channel-api-"));
 const db = new Database(":memory:");
 db.exec(
@@ -118,6 +122,7 @@ const request = (path: string, method = "GET", body?: unknown) =>
 beforeAll(() => {
   process.env.HOME = privateHome;
   process.env.USERPROFILE = privateHome;
+  process.env.ORC_HOME = join(privateHome, ".orc");
   resetConfig();
 });
 afterAll(async () => {

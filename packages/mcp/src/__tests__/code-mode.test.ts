@@ -174,24 +174,36 @@ describe("MCP code mode", () => {
             return { ok: false, message: String(error.message ?? error) };
           }
         };
-        const [bogus, nonScriptable, nearMiss] = await Promise.all([
-          tryDescribe("tools.orc.tool_execute"),
-          tryDescribe("task_delete"),
-          tryDescribe("task_foo"),
-        ]);
-        return { bogus, nonScriptable, nearMiss };
+        const [bogus, unknownTask, nonScriptableDescribe, nonScriptableCall, nearMiss] =
+          await Promise.all([
+            tryDescribe("tools.orc.tool_execute"),
+            tryDescribe("task_delete"),
+            tryDescribe("job_run"),
+            tools.call("job_run", { name: "x" }),
+            tryDescribe("task_foo"),
+          ]);
+        return { bogus, unknownTask, nonScriptableDescribe, nonScriptableCall, nearMiss };
       `,
       );
       const out = result.structuredContent?.result as {
         bogus: { ok: boolean; message: string };
-        nonScriptable: { ok: boolean; message: string };
+        unknownTask: { ok: boolean; message: string };
+        nonScriptableDescribe: { ok: boolean; message: string };
+        nonScriptableCall: { ok: boolean; error?: { code: string; message: string } };
         nearMiss: { ok: boolean; message: string };
       };
       expect(out.bogus.ok).toBe(false);
       expect(out.bogus.message).toContain("Unknown tool: tools.orc.tool_execute");
       expect(out.bogus.message).not.toContain("Close names:");
-      expect(out.nonScriptable.ok).toBe(false);
-      expect(out.nonScriptable.message).toContain("Unknown tool:");
+      expect(out.unknownTask.ok).toBe(false);
+      expect(out.unknownTask.message).toContain("Unknown tool:");
+      expect(out.nonScriptableDescribe.ok).toBe(false);
+      expect(out.nonScriptableDescribe.message).toContain("is not callable from tool_execute");
+      expect(out.nonScriptableCall).toMatchObject({
+        ok: false,
+        error: { code: "FORBIDDEN" },
+      });
+      expect(out.nonScriptableCall.error?.message).toContain("is not callable from tool_execute");
       expect(out.nearMiss.ok).toBe(false);
       expect(out.nearMiss.message).toContain("task_list");
       expect(out.nearMiss.message).not.toContain("tool_execute");

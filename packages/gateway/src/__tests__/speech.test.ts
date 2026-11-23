@@ -1,4 +1,4 @@
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,8 +8,12 @@ import { listSpeechVoices } from "../speech/voices.js";
 import { speechText, speechToText, textToSpeech } from "../speech.js";
 
 const home = mkdtempSync(join(tmpdir(), "orc-speech-"));
-process.env.ORC_HOME = home;
-resetConfig();
+const originalOrcHome = process.env.ORC_HOME;
+
+beforeAll(() => {
+  process.env.ORC_HOME = home;
+  resetConfig();
+});
 
 const fixture = (name: string) =>
   new Uint8Array(readFileSync(join(import.meta.dir, "fixtures", name)));
@@ -86,6 +90,9 @@ const origin = `http://127.0.0.1:${provider.port}`;
 
 afterAll(() => {
   provider.stop(true);
+  if (originalOrcHome === undefined) delete process.env.ORC_HOME;
+  else process.env.ORC_HOME = originalOrcHome;
+  resetConfig();
   rmSync(home, { recursive: true, force: true });
 });
 

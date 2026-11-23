@@ -430,6 +430,188 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
         steeredOk: false,
         steeredCode: "FORBIDDEN",
       });
+
+      const previewWins = await callMcp(
+        `?mode=meta&preview_session=${parentId}`,
+        "session_list",
+        {},
+        { "X-ORC-Session": unrelatedId },
+      );
+      expect(previewWins.isError).toBeUndefined();
+      expect(JSON.parse(previewWins.content[0]?.text ?? "{}").sessions).toMatchObject([
+        { session_id: childId },
+      ]);
+    } finally {
+      server.stop(true);
+      if (previousBase === undefined) delete process.env.ORC_API_BASE;
+      else process.env.ORC_API_BASE = previousBase;
+      resetConfig();
+    }
+  });
+
+  test("enforces project scopes on session_send for chat and non-chat sessions both directly and in tool_execute", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: app.fetch,
+    });
+    const previousBase = process.env.ORC_API_BASE;
+    process.env.ORC_API_BASE = String(server.url).replace(/\/$/, "");
+    resetConfig();
+
+    const sqlite = getSqlite();
+    sqlite.exec(`
+      INSERT OR IGNORE INTO projects(id, name) VALUES ('proj-alpha-521', 'ScopeAlpha'), ('proj-beta-521', 'ScopeBeta');
+      INSERT OR IGNORE INTO bridge_chats (id, platform, chat_id) VALUES ('mcp-scope-chat', 'test', 'mcp-scope-chat');
+    `);
+    const chats = new ChatStore(sqlite);
+    const now = Date.now();
+    const baseConfig = {
+      agent: "claude" as const,
+      model: "",
+      models: [],
+      permissionMode: "default" as const,
+      sendWhileRunning: "queue" as const,
+      autoApprove: false,
+      mcp: "orc" as const,
+      system: "",
+      agentOptions: {},
+    };
+    const alphaChatId = crypto.randomUUID();
+    const betaChatId = crypto.randomUUID();
+    chats.save({
+      id: alphaChatId,
+      title: "Alpha Chat",
+      cwd: "/tmp/orc-alpha",
+      projectId: "proj-alpha-521",
+      host: null,
+      backend: "claude",
+      runtimeId: "ses_alpha_chat",
+      sourceId: null,
+      config: baseConfig,
+      messages: [],
+      updatedAt: now,
+    });
+    chats.save({
+      id: betaChatId,
+      title: "Beta Chat",
+      cwd: "/tmp/orc-beta",
+      projectId: "proj-beta-521",
+      host: null,
+      backend: "claude",
+      runtimeId: "ses_beta_chat",
+      sourceId: null,
+      config: baseConfig,
+      messages: [],
+      updatedAt: now,
+    });
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, project_id, backend, mode, runtime_session_id, status, title)
+         VALUES (?, 'mcp-scope-chat', ?, 'claude', 'direct', ?, 'idle', ?)`,
+      )
+      .run("gw-alpha-521", "proj-alpha-521", "native-gw-alpha", "Alpha Live");
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, project_id, backend, mode, runtime_session_id, status, title)
+         VALUES (?, 'mcp-scope-chat', ?, 'claude', 'direct', ?, 'idle', ?)`,
+      )
+      .run("gw-beta-521", "proj-beta-521", "native-gw-beta", "Beta Live");
+
+    const callMcp = async (
+      query: string,
+      name: string,
+      args: Record<string, unknown>,
+      extraHeaders: Record<string, string> = {},
+    ) => {
+      const res = await app.request(`/mcp${query}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          Authorization: "Bearer test-secret",
+          ...extraHeaders,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const raw = await res.text();
+      return JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)).result as {
+        content: { text: string }[];
+        isError?: boolean;
+        structuredContent?: Record<string, unknown>;
+      };
+    };
+
+    try {
+      const directOutOfScopeChat = await callMcp(
+        `?mode=meta&project=ScopeAlpha&session=${alphaChatId}`,
+        "session_send",
+        { session_id: betaChatId, body: "Cross-project chat" },
+      );
+      expect(directOutOfScopeChat.isError).toBe(true);
+      expect(directOutOfScopeChat.content[0]?.text).toContain("outside the selected MCP projects");
+
+      const directOutOfScopeGateway = await callMcp(
+        "?mode=meta&project=ScopeAlpha",
+        "session_send",
+        { session_id: "native-gw-beta", backend: "claude", body: "Cross-project gateway" },
+      );
+      expect(directOutOfScopeGateway.isError).toBe(true);
+      expect(directOutOfScopeGateway.content[0]?.text).toContain(
+        "outside the selected MCP projects",
+      );
+
+      const directInScopeChat = await callMcp(
+        `?mode=meta&project=ScopeAlpha&session=${alphaChatId}`,
+        "session_send",
+        { session_id: alphaChatId, body: "In-scope chat" },
+      );
+      expect(directInScopeChat.isError).toBeUndefined();
+
+      const directInScopeGateway = await callMcp("?mode=meta&project=ScopeAlpha", "session_send", {
+        session_id: "native-gw-alpha",
+        backend: "claude",
+        body: "In-scope gateway",
+      });
+      expect(directInScopeGateway.isError).toBeUndefined();
+
+      const scripted = await callMcp(
+        `?mode=meta&project=ScopeAlpha&session=${alphaChatId}`,
+        "tool_execute",
+        {
+          code: `
+            const [betaChat, betaGw, alphaGw] = await tools.allSettled([
+              { name: "session_send", args: { session_id: ${JSON.stringify(betaChatId)}, body: "blocked" } },
+              { name: "session_send", args: { session_id: "native-gw-beta", backend: "claude", body: "blocked" } },
+              { name: "session_send", args: { session_id: "native-gw-alpha", backend: "claude", body: "allowed" } },
+            ]);
+            return {
+              betaChat: betaChat.ok ? "ok" : betaChat.error.code,
+              betaGw: betaGw.ok ? "ok" : betaGw.error.code,
+              alphaGwOk: alphaGw.ok,
+            };
+          `,
+        },
+      );
+      expect(scripted.isError).toBeUndefined();
+      expect(scripted.structuredContent?.result).toEqual({
+        betaChat: "FORBIDDEN",
+        betaGw: "FORBIDDEN",
+        alphaGwOk: true,
+      });
+
+      const betaMessages = sqlite
+        .query<{ count: number }, [string, string]>(
+          "SELECT COUNT(*) AS count FROM session_messages WHERE target_session_id IN (?, ?)",
+        )
+        .get(betaChatId, "gw-beta-521");
+      expect(betaMessages?.count).toBe(0);
     } finally {
       server.stop(true);
       if (previousBase === undefined) delete process.env.ORC_API_BASE;
