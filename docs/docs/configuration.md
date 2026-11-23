@@ -93,6 +93,13 @@ clears an executable override; **Discard changes** restores saved values. Failed
 saves retain the draft. Concurrent edits are rejected rather than overwriting
 another device's settings; **Discard draft and reload** loads the saved version.
 
+**Delete provider** removes the selected provider from the draft after a
+confirmation; **Save changes** applies the removal and drops its environment
+overrides and saved secrets. The last provider cannot be deleted. Deleting the
+default moves the default to the first remaining enabled provider. Existing
+conversations keep the deleted provider ID; new sessions must choose another
+provider.
+
 ### Pi
 
 Install [Pi](https://pi.dev/) 1.5.2 or newer on the execution host, with Node.js
