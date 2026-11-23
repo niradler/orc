@@ -5,7 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanerSource, isolateTestHome } from "./test-home-isolation.js";
 
-const KEYS = ["HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME"] as const;
+const KEYS = [
+  "HOME",
+  "USERPROFILE",
+  "ORC_HOME",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "XDG_CONFIG_HOME",
+] as const;
 const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
 const created: string[] = [];
 
@@ -41,8 +48,44 @@ test("an already isolated home is left untouched", () => {
   created.push(isolated);
   process.env.HOME = isolated;
   process.env.USERPROFILE = isolated;
+  delete process.env.ORC_HOME;
   isolateTestHome();
   expect(process.env.HOME).toBe(isolated);
+});
+
+test("strips an inherited ORC_HOME outside the temp root even when HOME is isolated", () => {
+  const realish = realpathSync(join(import.meta.dir, ".."));
+  const isolated = mkdtempSync(join(tmpdir(), "orc-home-guard-"));
+  created.push(isolated);
+  process.env.HOME = isolated;
+  process.env.USERPROFILE = isolated;
+  process.env.ORC_HOME = join(realish, ".orc");
+  isolateTestHome();
+  expect(process.env.HOME).toBe(isolated);
+  expect(process.env.ORC_HOME).toBeUndefined();
+
+  process.env.HOME = realish;
+  process.env.USERPROFILE = realish;
+  process.env.ORC_HOME = realish;
+  isolateTestHome();
+  created.push(process.env.HOME as string);
+  expect(process.env.ORC_HOME).toBeUndefined();
+  expect(realpathSync(process.env.HOME as string).startsWith(realpathSync(tmpdir()))).toBe(true);
+});
+
+test("preserves an ORC_HOME already inside the temp root and strips sibling paths", () => {
+  const isolated = mkdtempSync(join(tmpdir(), "orc-home-guard-"));
+  created.push(isolated);
+  process.env.HOME = isolated;
+  process.env.USERPROFILE = isolated;
+  const nestedOrcHome = join(isolated, "custom-orc");
+  process.env.ORC_HOME = nestedOrcHome;
+  isolateTestHome();
+  expect(process.env.ORC_HOME).toBe(nestedOrcHome);
+
+  process.env.ORC_HOME = `${realpathSync(tmpdir())}-evil`;
+  isolateTestHome();
+  expect(process.env.ORC_HOME).toBeUndefined();
 });
 
 test("the cleaner abandons a live owner's home at the deadline", async () => {

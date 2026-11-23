@@ -21,6 +21,7 @@ import { startChannelRuntime } from "../channel-runtime.js";
 const original = {
   HOME: process.env.HOME,
   USERPROFILE: process.env.USERPROFILE,
+  ORC_HOME: process.env.ORC_HOME,
   ORC_DB_PATH: process.env.ORC_DB_PATH,
   ORC_LOG_DIR: process.env.ORC_LOG_DIR,
   ORC_LOG_FILE: process.env.ORC_LOG_FILE,
@@ -118,6 +119,7 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
 beforeAll(async () => {
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.ORC_HOME = join(home, ".orc");
   process.env.ORC_DB_PATH = ":memory:";
   process.env.ORC_LOG_DIR = home;
   process.env.ORC_LOG_FILE = "1";

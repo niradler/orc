@@ -1,14 +1,23 @@
 import { afterAll } from "bun:test";
 import { spawn } from "node:child_process";
-import { mkdtempSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 
 /**
- * Direct `bun test` runs (outside ci:changed/ci:pr) inherit the real HOME, so a
- * test can open and rewrite the live ~/.orc/orc.db through the default resolution
- * (#474). The gates already isolate HOME per test step; this preload gives direct
- * runs the same protection. Skipped when HOME already lives under the temp root.
+ * Direct `bun test` runs (outside ci:changed/ci:pr) inherit the real HOME and
+ * ORC_HOME, so a test can open and rewrite the live ~/.orc/orc.db or config.json
+ * through the default resolution (#474, #534). The gates already strip ORC_* and
+ * isolate HOME per test step; this preload gives direct runs the same protection.
+ * Already-isolated temp paths are preserved.
  *
  * The throwaway home is removed when the run ends, including failure paths, by
  * three cooperating mechanisms (the bun test runner fires no process exit hooks,
@@ -22,13 +31,38 @@ import { join, sep } from "node:path";
  * - the next preload sweeps homes whose owner pid is gone (or that are over a
  *   day old), which reaps anything the first two missed, including hard crashes.
  */
+function resolveWithExistingAncestor(target: string): string {
+  const absolute = resolve(target);
+  let cursor = absolute;
+  while (!existsSync(cursor)) {
+    const parent = dirname(cursor);
+    if (parent === cursor) return absolute;
+    cursor = parent;
+  }
+  const realBase = realpathSync(cursor);
+  const tail = relative(cursor, absolute);
+  return tail ? join(realBase, tail) : realBase;
+}
+
+function isUnderTempRoot(candidate: string | undefined, tempRoot: string): boolean {
+  const trimmed = candidate?.trim();
+  if (!trimmed) return false;
+  try {
+    const resolved = resolveWithExistingAncestor(trimmed);
+    return resolved === tempRoot || resolved.startsWith(tempRoot + sep);
+  } catch {
+    return false;
+  }
+}
+
 export function isolateTestHome(): void {
+  const tempRoot = realpathSync(tmpdir());
+  if (process.env.ORC_HOME !== undefined && !isUnderTempRoot(process.env.ORC_HOME, tempRoot)) {
+    delete process.env.ORC_HOME;
+  }
   const current = process.env.HOME ?? process.env.USERPROFILE;
   try {
-    const tempRoot = realpathSync(tmpdir());
     const resolved = current ? realpathSync(current) : "";
-    // Compare on a separator boundary so a sibling like <tmpdir>-evil is not
-    // mistaken for an already-isolated home.
     if (resolved === tempRoot || resolved.startsWith(tempRoot + sep)) return;
   } catch {
     // A missing HOME is not the real home; fall through and create one.

@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { globalConfigPath, loadConfig, resetConfig } from "./config.js";
+import { globalConfigPath, loadConfig, resetConfig, updateGlobalConfig } from "./config.js";
 import {
   agentDefaultHome,
   agentHomes,
@@ -283,4 +283,63 @@ test("should resolve the configured home with the same precedence as the launche
   expect(resolveProviderEnvironment(secret).env.CLAUDE_CONFIG_DIR).toBe(secretHome);
   expect(agentHomes("claude")).toContain(envHome);
   expect(agentHomes("claude")).toContain(secretHome);
+});
+
+test("should not touch an ambient ORC_HOME sentinel config when isolated provider and config writes run", () => {
+  const sentinel = mkdtempSync(join(tmpdir(), "orc-sentinel-"));
+  const isolated = mkdtempSync(join(tmpdir(), "orc-isolated-"));
+  const sentinelConfig = join(sentinel, "config.json");
+  const sentinelBody = `${JSON.stringify({ preferences: { theme: "light" }, sentinel: "untouched" }, null, 2)}\n`;
+  writeFileSync(sentinelConfig, sentinelBody);
+
+  const savedEnv = {
+    HOME: process.env.HOME,
+    USERPROFILE: process.env.USERPROFILE,
+    ORC_HOME: process.env.ORC_HOME,
+  };
+  try {
+    process.env.ORC_HOME = sentinel;
+    resetConfig();
+    expect(globalConfigPath()).toBe(sentinelConfig);
+
+    process.env.HOME = isolated;
+    process.env.USERPROFILE = isolated;
+    process.env.ORC_HOME = isolated;
+    resetConfig();
+    expect(globalConfigPath()).toBe(join(isolated, "config.json"));
+
+    const initial = readProviderSettings();
+    saveProviderSettings({
+      ...initial,
+      default_provider_id: "claude-sentinel-check",
+      providers: [
+        ...initial.providers,
+        {
+          id: "claude-sentinel-check",
+          name: "Claude Sentinel Check",
+          agent: "claude",
+          enabled: true,
+          executable: "",
+          model: "sentinel-model",
+          environment: [],
+        },
+      ],
+    });
+    updateGlobalConfig((raw) => {
+      raw.preferences = { ...(raw.preferences as Record<string, unknown>), theme: "dark" };
+    });
+
+    expect(readFileSync(sentinelConfig, "utf8")).toBe(sentinelBody);
+    expect(readFileSync(join(isolated, "config.json"), "utf8")).toContain("claude-sentinel-check");
+  } finally {
+    if (savedEnv.HOME === undefined) delete process.env.HOME;
+    else process.env.HOME = savedEnv.HOME;
+    if (savedEnv.USERPROFILE === undefined) delete process.env.USERPROFILE;
+    else process.env.USERPROFILE = savedEnv.USERPROFILE;
+    if (savedEnv.ORC_HOME === undefined) delete process.env.ORC_HOME;
+    else process.env.ORC_HOME = savedEnv.ORC_HOME;
+    resetConfig();
+    rmSync(sentinel, { recursive: true, force: true });
+    rmSync(isolated, { recursive: true, force: true });
+  }
 });
