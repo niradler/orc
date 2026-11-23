@@ -54,6 +54,36 @@ const ResultSchema = z.object({
     .array(z.object({ rule_id: z.string(), target: RuleCommandProcessorSchema }))
     .optional(),
 });
+const MetricsSchema = z.object({
+  days: z.number(),
+  totals: z.object({
+    events: z.number(),
+    abstains: z.number(),
+    outcomes: z.number(),
+    denials: z.number(),
+    abstain_rate: z.number(),
+  }),
+  per_workspace: z.array(
+    z.object({
+      workspace: z.string(),
+      events: z.number(),
+      abstains: z.number(),
+      outcomes: z.number(),
+      last_seen: z.number(),
+    }),
+  ),
+  per_rule: z.array(
+    z.object({
+      workspace: z.string(),
+      revision_id: z.string(),
+      rule_id: z.string(),
+      outcome: z.string(),
+      count: z.number(),
+      last_seen: z.number(),
+    }),
+  ),
+  per_day: z.array(z.object({ day: z.number(), events: z.number(), abstains: z.number() })),
+});
 const RevisionSchema = z.object({
   id: z.string(),
   workspace: z.string(),
@@ -327,13 +357,36 @@ app.openapi(
           { backend: "pi", interception: "pi_package_extension" },
           {
             backend: "opencode",
-            interception: "opencode_plugin_requires_install",
+            interception: "opencode_session_config",
           },
           { backend: "other", interception: "unsupported" },
         ],
       },
       200,
     );
+  },
+);
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/rules/metrics",
+    tags: ["Rules"],
+    request: {
+      query: z.object({
+        workspace: z.string().optional(),
+        days: z.coerce.number().int().min(1).max(3650).optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description: "Aggregated rule volume, abstain rate and denials per rule",
+        content: { "application/json": { schema: MetricsSchema } },
+      },
+    },
+  }),
+  (c) => {
+    const { workspace, days } = c.req.valid("query");
+    return c.json(controls().metrics(workspace, days ?? 30), 200);
   },
 );
 app.openapi(

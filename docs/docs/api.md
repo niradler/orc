@@ -356,7 +356,9 @@ folder under the working directory; both take the same `threadId`, `host` and `c
 
 Chat streams include `turn` events with `startedAt` (Unix milliseconds), followed
 at completion by `finishedAt`, `durationMs` and `outcome` (`completed`, `stopped`,
-or `failed`). The same optional `turn` object is persisted on assistant messages.
+`interrupted` or `failed`). `interrupted` marks a turn a daemon restart cut short:
+the provider session identity survives, so the next message resumes it. The same
+optional `turn` object is persisted on assistant messages.
 `durationMs` prefers the backend's reported duration and otherwise uses server
 elapsed time. Replay includes the original start; legacy messages may omit `turn`.
 Before a tool call, a `narration` event moves accumulated prose out of the current
@@ -389,6 +391,16 @@ A first send may include `workspace` with `host`, `cwd`, `worktree` and `base`.
 When `worktree` is true, the server creates an isolated `orc/<id>` worktree from
 `base` (a local or remote-tracking branch already present in the checkout);
 omitting `base` uses the checkout's current `HEAD`.
+
+A send into a conversation whose turn is still running returns `409` with code
+`SESSION_BUSY` and `details.canTakeOver` / `details.reason`. Resending the same
+request with `confirmBusy: true` stops the turn this daemon owns, waits for its
+transcript and terminal lease to be saved, and continues the same native session.
+A turn owned by another live ORC daemon on this machine is refused either way;
+a lease records its host and pid, and only a process on this host can be proven
+live. While a daemon is shutting down, new turns are refused with `503` and code
+`DAEMON_DRAINING`; the conversation stays resumable and the send can be retried
+after the restart.
 
 First sends reserve `clientMessageId` before agent and workspace preparation.
 Repeating that ID without a thread returns `409` with code `CHAT_MESSAGE_EXISTS`,
@@ -473,6 +485,7 @@ hidden rows unless asked with `include_hidden=true`.
 | `GET` `PUT` | `/ssh` | SSH execution host |
 | `GET` | `/system/about` | Server version, platform, runtime, data folder, start time |
 | `POST` | `/system/restart` | Restart ORC |
+| `POST` | `/system/shutdown` | Stop ORC gracefully: refuse new chat turns, drain the active ones, persist their session identity, then exit |
 | `POST` | `/mcp/tool` | Run any MCP tool: `{ "name", "args" }` |
 | `GET` | `/audit` | Central lifecycle and knowledge audit log |
 | `GET` `POST` | `/integrations/connections` | spec-cli connections |

@@ -271,27 +271,13 @@ export function PackageRunDialog({
                         Boolean(hostInfo.error) ||
                         (!host && !hostInfo.data?.ready)
                       }
-                      onClick={async () => {
-                        if (host) {
-                          setBrowsing(true);
-                          return;
-                        }
-                        try {
-                          const result = await api.terminals.pickFolder(
-                            setup.cwd || undefined,
-                            null,
-                          );
-                          if (result.path) change({ cwd: result.path });
-                        } catch (failure) {
-                          setError((failure as Error).message);
-                        }
-                      }}
+                      onClick={() => setBrowsing(true)}
                     >
                       Browse
                     </Button>
                   </div>
                   <FolderPickerDialog
-                    open={browsing && !!host}
+                    open={browsing}
                     onOpenChange={setBrowsing}
                     host={host}
                     initial={setup.cwd}
@@ -358,12 +344,16 @@ export function PackageRunDialog({
               <summary className="cursor-pointer min-h-11 flex items-center sm:min-h-8">
                 How configuration is applied
               </summary>
-              <p>
-                Package files are transferred to the selected host when needed. APM deploys agent
-                configuration into the working folder; Codex plugins install into Codex's user cache
-                on that host. These tools must already be installed. Configuration remains after the
-                session; use a terminal for installer trust or conflict prompts.
-              </p>
+              <div className="space-y-1.5">
+                <p>
+                  Package files are copied to the selected host when needed. APM writes agent
+                  configuration into the working folder; Codex plugins go to Codex's cache there.
+                </p>
+                <p>
+                  Configuration stays after the session. Installer trust or conflict prompts open in
+                  a terminal.
+                </p>
+              </div>
             </details>
             {unsupported && (
               <p role="alert" className="text-sm text-destructive">

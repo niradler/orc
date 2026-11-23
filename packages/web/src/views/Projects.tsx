@@ -6,7 +6,7 @@ import {
   WorkspaceEnvironmentSchema,
 } from "@orc/core/workspace-settings";
 import { Plus, Search, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Project, ProjectStatus, ProjectSummary, UpdateProjectInput } from "@/api/client";
 import { BulkActionBar } from "@/components/BulkActionBar";
@@ -16,6 +16,7 @@ import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 import { DetailField } from "@/components/DetailField";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
+import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { FormDialog } from "@/components/FormDialog";
 import { GithubSyncFields } from "@/components/GithubSyncFields";
 import { HelpPopover } from "@/components/HelpPopover";
@@ -542,6 +543,8 @@ function EditProjectDialog({
   const [status, setStatus] = useState<ProjectStatus>(project.status);
   const [tags, setTags] = useState((project.tags ?? []).join(", "));
   const [scope, setScope] = useState(project.scope ?? "");
+  const [browsingScope, setBrowsingScope] = useState(false);
+  const scopeFolderTrigger = useRef<HTMLButtonElement>(null);
   const [gitRemoteUrl, setGitRemoteUrl] = useState(project.git_remote_url ?? "");
   const [githubSync, setGithubSync] = useState(
     project.github_sync ?? { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
@@ -723,6 +726,24 @@ function EditProjectDialog({
                       value={scope}
                       onChange={(e) => setScope(e.target.value)}
                       className="bg-background border-control-border text-on-surface font-body text-sm"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      ref={scopeFolderTrigger}
+                      data-testid="edit-project-pick-folder"
+                      onClick={() => setBrowsingScope(true)}
+                    >
+                      Choose folder
+                    </Button>
+                    <FolderPickerDialog
+                      open={browsingScope}
+                      onOpenChange={setBrowsingScope}
+                      host={null}
+                      initial={scope}
+                      onPick={setScope}
+                      returnFocusRef={scopeFolderTrigger}
                     />
                   </div>
                   <div className="space-y-1.5 md:col-span-2">

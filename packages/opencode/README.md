@@ -18,11 +18,20 @@ Add the plugin to `opencode.json` (project) or `~/.config/opencode/opencode.json
 }
 ```
 
-Or drop the self-contained bundle into the project's plugin folder (no package install):
+Or point `plugins` at the plugin package directory. OpenCode 2.x resolves a plugin
+directory through its `package.json`; a single `.js` file is ignored:
 
-```bash
-cp node_modules/@orc/opencode/dist/plugin.js .opencode/plugins/orc.js
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["/absolute/path/to/@orc/opencode"]
+}
 ```
+
+ORC-managed sessions need no install: ORC injects this package and its dangerous-command
+permission baseline through a session-scoped `OPENCODE_CONFIG_CONTENT` document, without
+editing the user's global configuration. See
+[the ORC OpenCode guide](https://niradler.github.io/orc/opencode.html).
 
 Rules must be enabled in ORC settings (`rules.enabled: true` or `ORC_RULES_ENABLED=true`),
 and a policy must cover the workspace. Manage policies on the ORC **Rules** page or with

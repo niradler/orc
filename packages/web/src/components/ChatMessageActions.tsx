@@ -7,6 +7,7 @@ import {
   GitFork,
   LoaderCircle,
   MessageSquareText,
+  RotateCcw,
   SquarePlus,
   TextCursor,
 } from "lucide-react";
@@ -86,6 +87,8 @@ export const ChatMessageActions = memo(function ChatMessageActions({
   threadTitle,
   agent,
   timestamp,
+  onRetry,
+  retryHint,
   onSelectionAction,
 }: {
   threadId: string | undefined;
@@ -101,6 +104,8 @@ export const ChatMessageActions = memo(function ChatMessageActions({
   threadTitle?: string | undefined;
   agent?: string | undefined;
   timestamp?: number | undefined;
+  onRetry?: (() => void) | undefined;
+  retryHint?: string | undefined;
   onSelectionAction?: (action: ChatSelectionAction, text: string, source: SelectionSource) => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -276,6 +281,21 @@ export const ChatMessageActions = memo(function ChatMessageActions({
             ) : (
               <Copy aria-hidden="true" size={14} />
             )}
+          </button>
+        )}
+        {role === "assistant" && onRetry && (
+          <button
+            type="button"
+            data-testid="chat-message-retry"
+            aria-label="Retry this prompt"
+            title={
+              retryHint ??
+              "Send this prompt again. The response was interrupted and the agent may repeat work it already did."
+            }
+            onClick={onRetry}
+            className={button}
+          >
+            <RotateCcw aria-hidden="true" size={14} />
           </button>
         )}
         {role === "assistant" && (

@@ -231,7 +231,13 @@ const BUSY_CONFLICTS = new Set([
 ]);
 
 function waitingConflict(cause: unknown): boolean {
-  return cause instanceof ApiError && cause.status === 409 && BUSY_CONFLICTS.has(cause.message);
+  return (
+    cause instanceof ApiError &&
+    cause.status === 409 &&
+    // By code, so a live turn owned by another daemon (or one that did not stop
+    // in time) queues like a local one instead of surfacing as a hard error.
+    (cause.code === "SESSION_BUSY" || BUSY_CONFLICTS.has(cause.message))
+  );
 }
 
 /** The server marks a steer whose text may already be in the conversation. */

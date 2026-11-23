@@ -19,9 +19,12 @@ import { ProviderSettingsSchema } from "./providers.js";
 const home = mkdtempSync(join(tmpdir(), "orc-providers-"));
 const oldHome = process.env.HOME;
 const oldProfile = process.env.USERPROFILE;
+const oldOrcHome = process.env.ORC_HOME;
 beforeAll(() => {
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  // An inherited ORC_HOME would point config writes at the real data root.
+  process.env.ORC_HOME = home;
   resetConfig();
 });
 afterAll(() => {
@@ -29,6 +32,8 @@ afterAll(() => {
   else process.env.HOME = oldHome;
   if (oldProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = oldProfile;
+  if (oldOrcHome === undefined) delete process.env.ORC_HOME;
+  else process.env.ORC_HOME = oldOrcHome;
   resetConfig();
   rmSync(home, { recursive: true, force: true });
 });

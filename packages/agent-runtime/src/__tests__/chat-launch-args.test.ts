@@ -55,6 +55,38 @@ test("should pass ACPX arguments literally and respect explicit permission flags
   }
 });
 
+test("should approve all ACPX permissions by default because approvals have no UI", async () => {
+  for (const autoApprove of [undefined, true, false]) {
+    const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-approve-"));
+    const script = join(cwd, "agent.ts");
+    writeFileSync(
+      script,
+      `import {writeFileSync} from 'node:fs'; if(process.argv.includes('ensure')){console.log('{}');process.exit(0);}console.log(JSON.stringify({method:'session/update',params:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:JSON.stringify(process.argv.slice(2))}}}}));console.log(JSON.stringify({id:1,result:{stopReason:'end_turn'}}));`,
+    );
+    const session = new AcpxSession(
+      {
+        cwd,
+        ...(autoApprove === undefined ? {} : { autoApprove }),
+        acpxAgent: "fixture",
+      },
+      [process.execPath, script],
+      { kind: "local" },
+    );
+    try {
+      await session.send("check permissions");
+      let args: string[] | undefined;
+      for await (const event of session.events())
+        if (event.type === "text") args = JSON.parse(event.data) as string[];
+      // ACPX cannot round-trip a permission request through ORC's approval UI, so
+      // the default must approve: an unanswered request stalls the turn until timeout.
+      expect(args?.includes("--approve-all") ?? false).toBe(autoApprove !== false);
+    } finally {
+      await session.close();
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }
+});
+
 test("should load an explicit native ACPX session and reject a replacement identity", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-acpx-native-"));
   const script = join(cwd, "agent.ts");

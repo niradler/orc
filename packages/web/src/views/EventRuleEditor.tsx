@@ -809,11 +809,9 @@ export function EventRuleEditor({
                 Command processor (executable and arguments)
               </Label>
               <HelpPopover label="Command processor" testId="rule-processor-help">
-                Use any trusted local CLI. Event JSON goes to stdin; {"{command}"} as a complete
-                argument passes the original command without shell interpolation. Stdout must
-                contain the replacement command. Claude Bash executes it and returns its output,
-                with normal permission checks. RTK example: rewrite codes [0, 3], passthrough [1].
-                Other failures block the call.
+                Trusted local CLI. Event JSON goes to stdin; {"{command}"} passes the original
+                command without shell interpolation. Stdout is the replacement command; other
+                failures block the call.
               </HelpPopover>
             </div>
             <textarea

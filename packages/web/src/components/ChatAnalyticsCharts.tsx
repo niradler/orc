@@ -24,6 +24,7 @@ const FAILURE = "var(--color-error)";
 const OUTCOME = {
   completed: "var(--color-series-1)",
   stopped: "var(--color-series-4)",
+  interrupted: "var(--color-warning)",
   failed: "var(--color-error)",
   running: "var(--color-series-3)",
 } as const;

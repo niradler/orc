@@ -109,6 +109,7 @@ import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
 import { groupChatMessages } from "@/lib/chat-message-groups";
+import { retryPrompt } from "@/lib/chat-retry";
 import {
   appendDraftQuote,
   boundedText,
@@ -580,6 +581,14 @@ export function ChatPanel({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+  // Only the latest interrupted turn offers Retry: resending an older prompt
+  // into a conversation that has moved on would re-inject stale instructions.
+  const retry = useMemo(() => {
+    const last = [...messages].reverse().find((message) => message.role === "assistant");
+    if (!last) return null;
+    const prompt = retryPrompt(messages, last.id);
+    return prompt ? { messageId: last.id, ...prompt } : null;
+  }, [messages]);
   // What an attribution line needs from a message the user selected text in.
   const messageSources = useMemo(
     () =>
@@ -1362,6 +1371,16 @@ export function ChatPanel({
                                     typeof custom.agent === "string" ? custom.agent : config.agent,
                                   )}
                                   timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
+                                  onRetry={
+                                    retry?.messageId === message.id && !streaming
+                                      ? () => void send(retry.prompt)
+                                      : undefined
+                                  }
+                                  retryHint={
+                                    retry && !retry.received
+                                      ? "Send this prompt again. The agent may not have received it."
+                                      : undefined
+                                  }
                                   onSelectionAction={actOnSelection}
                                 />
                               )}

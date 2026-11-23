@@ -253,7 +253,7 @@ export function ScratchpadHtmlEditor({ pad }: { pad: Scratchpad }) {
       <ConfirmDialog
         open={confirming}
         title="Render with ORC access?"
-        description="The page's scripts will be able to call the ORC API as you through orc.fetch: read and change anything, including starting agents and terminals. They stay in the sandbox; the dashboard does not hand them your API secret, though API calls such as terminals can reach anything you can. Only do this for a page you trust. Access ends when you go back to the sandbox, leave the page, or someone else edits it."
+        description="The page's scripts can call the ORC API as you through orc.fetch, including starting agents and terminals. The dashboard never hands them your API secret. Only render a page you trust; access ends in the sandbox or when you leave."
         confirmLabel="Render with access"
         variant="destructive"
         onCancel={() => setConfirming(false)}

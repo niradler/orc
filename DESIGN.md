@@ -258,7 +258,9 @@ the actual application with realistic data and preserve its working behavior.
   Forms show labels, values and concise current status. Validation errors and
   essential warnings needed for an action remain visible beside that action.
   Apply this rule to new and modified UI; do not repeat help paragraphs below
-  fields or section headings. Verify hover, focus, tap and dismissal end to end.
+  fields or section headings. Keep a popover body to one or two short sentences
+  (about 260 characters); `packages/web/tests/unit/copy-budget.test.ts` fails
+  longer copy. Verify hover, focus, tap and dismissal end to end.
 - **Verification:** review populated desktop and phone states, both themes,
   keyboard focus, touch targets, long content and recoverable failures. Exercise
   real save/reopen, selection/filter scope, native session resume, stream/queue

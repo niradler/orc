@@ -67,9 +67,22 @@ export const ChatTurnMeta = memo(function ChatTurnMeta({
   const timing = ChatTurnSchema.safeParse(turn);
   const { outcome, finishedAt } = timing.success ? timing.data : {};
   const durationMs = timing.success ? foldTurn([], timing.data).durationMs : null;
-  const reason = outcome === "stopped" ? "Stopped" : outcome === "failed" ? "Failed" : null;
+  const reason =
+    outcome === "stopped"
+      ? "Stopped"
+      : outcome === "interrupted"
+        ? "Interrupted"
+        : outcome === "failed"
+          ? "Failed"
+          : null;
   const verb =
-    reason === "Stopped" ? "Stopped after" : reason === "Failed" ? "Failed after" : "Worked for";
+    reason === "Stopped"
+      ? "Stopped after"
+      : reason === "Interrupted"
+        ? "Interrupted after"
+        : reason === "Failed"
+          ? "Failed after"
+          : "Worked for";
   const ended = finishedAt
     ? new Date(finishedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : null;
