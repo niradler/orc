@@ -1,6 +1,11 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { agentLabel, supportsManualCompaction } from "@orc/core/coding-agents";
-import { sessionMessageHookSupported } from "@orc/core/session-messages";
+import {
+  parseSessionDeliveryEnvelope,
+  type SessionDelivery,
+  type SessionMessage,
+  sessionMessageHookSupported,
+} from "@orc/core/session-messages";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -40,6 +45,7 @@ import {
 } from "@/components/ChatContinueInTerminal";
 import { ChatSessionPicker } from "@/components/ChatControls";
 import { ChatConversationInfo } from "@/components/ChatConversationInfo";
+import { ChatDeliveryList } from "@/components/ChatDeliveryCard";
 import {
   ChatDictationButton,
   ChatDictationPill,
@@ -93,9 +99,13 @@ import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
 import {
+  useCancelSessionMessage,
+  useDeliverSessionMessage,
+  useMoveSessionMessage,
   useSendSessionMessage,
   useSessionChildren,
   useSessionLineage,
+  useSessionMessages,
   useSessionSubagents,
 } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
@@ -352,6 +362,26 @@ export function ChatPanel({
   }, [thread?.id, session.data?.live?.status]);
   const agentBlocked = agentRunning && !agentInbox && !agentOverride;
   const queueToAgent = useSendSessionMessage(agentInbox?.id ?? null);
+  const threadInboxId = !agentInbox && thread?.id ? thread.id : null;
+  const threadSessionMessages = useSessionMessages(threadInboxId);
+  const queuedSessionMessages = useMemo(
+    () => (threadSessionMessages.data ?? []).filter((entry) => entry.state === "queued"),
+    [threadSessionMessages.data],
+  );
+  const deliverSessionMessage = useDeliverSessionMessage(threadInboxId);
+  const cancelSessionMessage = useCancelSessionMessage(threadInboxId);
+  const moveSessionMessage = useMoveSessionMessage(threadInboxId);
+  const resetSessionQueueMutations = useCallback(() => {
+    deliverSessionMessage.reset();
+    cancelSessionMessage.reset();
+    moveSessionMessage.reset();
+  }, [deliverSessionMessage.reset, cancelSessionMessage.reset, moveSessionMessage.reset]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset stale mutation errors when switching threads
+  useEffect(() => {
+    resetSessionQueueMutations();
+  }, [threadInboxId, resetSessionQueueMutations]);
+  const sessionQueueError =
+    deliverSessionMessage.error ?? cancelSessionMessage.error ?? moveSessionMessage.error;
   const runElsewhere = !!session.data?.running && !streaming && !refreshing;
   const turnElsewhere = runElsewhere || (agentRunning && !refreshing);
   // The usage API only knows sessions it discovered from an agent or terminal.
@@ -473,6 +503,22 @@ export function ChatPanel({
       setParentOpening(false);
     }
   };
+  const openDeliverySession = useCallback(
+    async (sessionId: string, _kind: SessionDelivery["kind"]) => {
+      try {
+        const next = await api.chat.get(sessionId);
+        openThread(next);
+        if (surface === "page") {
+          home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
+        } else if (ownsSessionHome && home.terminalId) {
+          home.go({ terminalId: null });
+        }
+      } catch {
+        await openSession(sessionId);
+      }
+    },
+    [home, openSession, openThread, ownsSessionHome, surface],
+  );
   const terminalControl = useChatContinueInTerminal({
     inChat: ownsSessionHome,
     onOpened: (terminal) => home.go({ terminalId: terminal.id }),
@@ -910,11 +956,19 @@ export function ChatPanel({
       setQueueDisclosure((current) =>
         current.key === activeKey && current.open ? current : { key: activeKey, open: true },
       );
-    else if (!queued.length && !answers.length && !streaming)
+    else if (!queued.length && !answers.length && !queuedSessionMessages.length && !streaming)
       setQueueDisclosure((current) =>
         current.key === activeKey && current.open ? { key: activeKey, open: false } : current,
       );
-  }, [activeKey, answers.length, editingQueuedId, open, queued.length, streaming]);
+  }, [
+    activeKey,
+    answers.length,
+    editingQueuedId,
+    open,
+    queued.length,
+    queuedSessionMessages.length,
+    streaming,
+  ]);
   const panel = usePanelWidth({
     storageKey: "orc_chat_panel_width",
     initial: 384,
@@ -1313,6 +1367,13 @@ export function ChatPanel({
                       const content = typeof custom.content === "string" ? custom.content : "";
                       const stored = storedMessages.get(message.id);
                       const usage = message.id === lastAssistant?.id ? turnUsage : null;
+                      const deliveries =
+                        message.role === "user"
+                          ? Array.isArray(custom.deliveries) && custom.deliveries.length > 0
+                            ? (custom.deliveries as SessionDelivery[])
+                            : parseSessionDeliveryEnvelope(content)
+                          : null;
+                      const isDelivery = !!deliveries?.length;
                       return (
                         <>
                           {dividers.byMessage.get(message.id)?.map((divider, index) => (
@@ -1326,26 +1387,29 @@ export function ChatPanel({
                           <MessagePrimitive.Root
                             style={{
                               contentVisibility: "auto",
-                              containIntrinsicSize: "auto 120px",
+                              containIntrinsicSize: isDelivery ? "auto 44px" : "auto 120px",
                             }}
                             data-testid="chat-message"
                             data-role={message.role}
+                            data-delivery={isDelivery ? "true" : undefined}
                             data-message-id={message.id}
                             className="group/message mx-auto mb-1 w-full max-w-(--chat-width) min-w-0 chat-message"
                           >
                             <div
                               className={
-                                message.role === "user"
+                                message.role === "user" && !isDelivery
                                   ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
                                   : undefined
                               }
                             >
                               <div data-testid="chat-message-agent" className="sr-only">
-                                {message.role === "user"
-                                  ? "You"
-                                  : typeof custom.agent === "string"
-                                    ? custom.agent
-                                    : "Assistant"}
+                                {isDelivery
+                                  ? "Delivery"
+                                  : message.role === "user"
+                                    ? "You"
+                                    : typeof custom.agent === "string"
+                                      ? custom.agent
+                                      : "Assistant"}
                               </div>
                               <div
                                 data-testid="chat-message-content"
@@ -1358,15 +1422,29 @@ export function ChatPanel({
                                   live={live}
                                   subagents={subagentLinks}
                                 />
-                                <ChatAttachments value={custom.attachments} />
-                                <AgentTextStreamProvider streaming={live}>
-                                  <MessagePrimitive.Parts
-                                    components={message.role === "user" ? userTextParts : textParts}
+                                {isDelivery ? (
+                                  <ChatDeliveryList
+                                    deliveries={deliveries}
+                                    timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
+                                    rawContent={content}
+                                    onOpenSession={openDeliverySession}
                                   />
-                                </AgentTextStreamProvider>
+                                ) : (
+                                  <>
+                                    <ChatAttachments value={custom.attachments} />
+                                    <AgentTextStreamProvider streaming={live}>
+                                      <MessagePrimitive.Parts
+                                        components={
+                                          message.role === "user" ? userTextParts : textParts
+                                        }
+                                      />
+                                    </AgentTextStreamProvider>
+                                  </>
+                                )}
                               </div>
                             </div>
                             {!live &&
+                              !isDelivery &&
                               (message.role === "user" ||
                                 !!content.trim() ||
                                 !!custom.turn ||
@@ -1549,7 +1627,7 @@ export function ChatPanel({
                   onRevise={(feedback) => void send(feedback)}
                 />
               )}
-            {!focusChat && queued.length + answers.length > 0 && (
+            {!focusChat && queued.length + answers.length + queuedSessionMessages.length > 0 && (
               <details
                 key={activeKey}
                 open={queueDisclosure.key === activeKey && queueDisclosure.open}
@@ -1569,7 +1647,8 @@ export function ChatPanel({
                     className="shrink-0 transition-transform group-open:rotate-180"
                   />
                   <span role="status" data-testid="chat-pending-count">
-                    {queued.length + answers.length} pending{queuePaused ? " · Paused" : ""}
+                    {queued.length + answers.length + queuedSessionMessages.length} pending
+                    {queuePaused ? " · Paused" : ""}
                   </span>
                 </summary>
                 <ol className="max-h-[min(30vh,14rem)] overflow-y-auto pb-1">
@@ -1582,6 +1661,53 @@ export function ChatPanel({
                       <span className="shrink-0 text-xs text-on-surface-variant">ORC answer</span>
                       <span className="min-w-0 truncate">{answer.title}</span>
                     </li>
+                  ))}
+                  {queuedSessionMessages.map((entry, index) => (
+                    <QueuedSessionMessage
+                      key={entry.id}
+                      message={entry}
+                      canMoveUp={index > 0}
+                      canMoveDown={index < queuedSessionMessages.length - 1}
+                      canDeliverNow={steerAvailable && !permission && !question}
+                      deliverDisabledReason={
+                        permission || question
+                          ? "Answer the pending prompt first"
+                          : !steerAvailable
+                            ? "Wait for the current response to finish or become steerable"
+                            : undefined
+                      }
+                      busy={
+                        deliverSessionMessage.isPending ||
+                        cancelSessionMessage.isPending ||
+                        moveSessionMessage.isPending
+                      }
+                      onOpenSource={
+                        entry.sender_session_id
+                          ? () => {
+                              void openDeliverySession(
+                                entry.sender_session_id as string,
+                                entry.delivery?.kind ?? "relay",
+                              ).catch(() => {});
+                            }
+                          : undefined
+                      }
+                      onMoveUp={() => {
+                        resetSessionQueueMutations();
+                        moveSessionMessage.mutate({ messageId: entry.id, direction: "up" });
+                      }}
+                      onMoveDown={() => {
+                        resetSessionQueueMutations();
+                        moveSessionMessage.mutate({ messageId: entry.id, direction: "down" });
+                      }}
+                      onDeliverNow={() => {
+                        resetSessionQueueMutations();
+                        deliverSessionMessage.mutate(entry.id);
+                      }}
+                      onCancel={() => {
+                        resetSessionQueueMutations();
+                        cancelSessionMessage.mutate(entry.id);
+                      }}
+                    />
                   ))}
                   {queued.map((entry, index) => (
                     <QueuedMessage
@@ -1603,6 +1729,15 @@ export function ChatPanel({
                     />
                   ))}
                 </ol>
+                {sessionQueueError && (
+                  <p
+                    role="alert"
+                    data-testid="chat-queued-session-error"
+                    className="pb-1 text-xs text-error"
+                  >
+                    {sessionQueueError.message}
+                  </p>
+                )}
               </details>
             )}
             <div
@@ -2142,6 +2277,119 @@ function QueuedMessage({
           {removeButton}
         </div>
       )}
+    </li>
+  );
+}
+
+function QueuedSessionMessage({
+  message,
+  canMoveUp,
+  canMoveDown,
+  canDeliverNow,
+  deliverDisabledReason,
+  busy,
+  onOpenSource,
+  onMoveUp,
+  onMoveDown,
+  onDeliverNow,
+  onCancel,
+}: {
+  message: SessionMessage;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  canDeliverNow: boolean;
+  deliverDisabledReason?: string;
+  busy: boolean;
+  onOpenSource?: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDeliverNow: () => void;
+  onCancel: () => void;
+}) {
+  const sourceLabel = message.delivery?.title ?? message.sender_label;
+  const preview = message.delivery?.summary || message.body;
+  return (
+    <li
+      data-testid="chat-queued-session-message"
+      data-message-id={message.id}
+      className="flex min-h-11 flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-outline-variant py-1 text-xs sm:min-h-9 sm:flex-nowrap sm:py-0"
+    >
+      <div className="flex min-w-0 flex-1 basis-48 items-center gap-1.5 overflow-hidden">
+        {onOpenSource ? (
+          <button
+            type="button"
+            data-testid="chat-queued-session-sender"
+            onClick={onOpenSource}
+            title={sourceLabel}
+            className="min-h-8 shrink-0 max-w-36 truncate font-medium text-on-surface underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus max-sm:min-h-11"
+          >
+            {sourceLabel}
+          </button>
+        ) : (
+          <span
+            data-testid="chat-queued-session-sender"
+            title={sourceLabel}
+            className="shrink-0 max-w-36 truncate font-medium text-on-surface"
+          >
+            {sourceLabel}
+          </span>
+        )}
+        <span
+          data-testid="chat-queued-session-summary"
+          title={preview}
+          className="min-w-0 flex-1 truncate text-on-surface-variant"
+        >
+          {preview}
+        </span>
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          data-testid="chat-queued-deliver-now"
+          disabled={!canDeliverNow || busy}
+          title={deliverDisabledReason ?? "Deliver into the active turn now"}
+          onClick={onDeliverNow}
+          className="min-h-11 shrink-0 rounded-md border border-control-border px-2 text-xs font-medium text-on-surface hover:bg-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 sm:min-h-7"
+        >
+          Deliver now
+        </button>
+        <ActionHelp label="Move pending message up">
+          <button
+            type="button"
+            data-testid="chat-queued-session-up"
+            disabled={!canMoveUp || busy}
+            aria-label="Move pending message up"
+            onClick={onMoveUp}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <ArrowUp size={14} />
+          </button>
+        </ActionHelp>
+        <ActionHelp label="Move pending message down">
+          <button
+            type="button"
+            data-testid="chat-queued-session-down"
+            disabled={!canMoveDown || busy}
+            aria-label="Move pending message down"
+            onClick={onMoveDown}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <ArrowDown size={14} />
+          </button>
+        </ActionHelp>
+        <ActionHelp label="Cancel pending message">
+          <button
+            type="button"
+            data-testid="chat-queued-session-cancel"
+            disabled={busy}
+            aria-label="Cancel pending message"
+            onClick={onCancel}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <Trash2 size={14} />
+          </button>
+        </ActionHelp>
+      </div>
     </li>
   );
 }

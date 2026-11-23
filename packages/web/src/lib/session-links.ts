@@ -1,3 +1,5 @@
+import type { SessionDelivery } from "@orc/core/session-messages";
+
 /**
  * Notifications and bookmarks stored before the session list moved into the
  * chat page still carry `/sessions?session=…`. Point those at the chat page
@@ -19,4 +21,13 @@ export function sessionPath(path: string): string {
   else next.set("sessionList", "show");
   const query = next.toString();
   return query ? `/chat?${query}` : "/chat";
+}
+
+export function deliverySessionHref(delivery: SessionDelivery): string | null {
+  const sessionId = delivery.session_id;
+  if (!sessionId) return null;
+  if (delivery.kind === "child_outcome") {
+    return `/chat?chatThread=${encodeURIComponent(sessionId)}`;
+  }
+  return `/chat?sessionLive=${encodeURIComponent(sessionId)}`;
 }

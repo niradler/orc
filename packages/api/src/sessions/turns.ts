@@ -1,3 +1,5 @@
+import type { SessionDelivery } from "@orc/core/session-messages";
+
 export const activeTurns = new Set<string>();
 
 export function turnKey(host: string | null, backend: string, runtimeId: string): string {
@@ -7,9 +9,13 @@ export function turnKey(host: string | null, backend: string, runtimeId: string)
 export type NativeSession = { host: string | null; backend: string; runtimeId: string };
 export type ChatTarget = NativeSession | { threadId: string };
 
+export type ChatTurnOptions = {
+  deliveries?: SessionDelivery[];
+};
+
 export type ChatControl = {
-  turn(target: ChatTarget, prompt: string): Promise<void> | null;
-  steer(target: ChatTarget, text: string): Promise<boolean>;
+  turn(target: ChatTarget, prompt: string, options?: ChatTurnOptions): Promise<void> | null;
+  steer(target: ChatTarget, text: string, options?: ChatTurnOptions): Promise<boolean>;
   canSteer(target: ChatTarget): boolean;
   stop(threadId: string): boolean;
   running(threadId: string): boolean;
@@ -37,6 +43,10 @@ export function chatControl(): ChatControl {
   return control;
 }
 
-export function runChatTurn(session: ChatTarget, prompt: string): Promise<void> | null {
-  return control.turn(session, prompt);
+export function runChatTurn(
+  session: ChatTarget,
+  prompt: string,
+  options?: ChatTurnOptions,
+): Promise<void> | null {
+  return control.turn(session, prompt, options);
 }
