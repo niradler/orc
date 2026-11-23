@@ -1093,7 +1093,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1220,6 +1220,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -1489,7 +1515,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1616,6 +1642,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -1821,7 +1873,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1948,6 +2000,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -2156,7 +2234,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -2283,6 +2361,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -2411,6 +2515,7 @@ export interface paths {
                             outcomes: {
                                 completed: number;
                                 stopped: number;
+                                interrupted: number;
                                 failed: number;
                                 running: number;
                             };
@@ -2435,12 +2540,95 @@ export interface paths {
                                 startedAt: number;
                                 durationMs: number | null;
                                 /** @enum {string} */
-                                outcome: "completed" | "stopped" | "failed" | "running";
+                                outcome: "completed" | "stopped" | "interrupted" | "failed" | "running";
                                 toolCalls: number;
                                 toolFailures: number;
                                 responseChars: number;
+                                /** @default null */
+                                model: string | null;
+                                /** @default null */
+                                usage: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                /** @default null */
+                                costUsd: number | null;
+                                /**
+                                 * @default unreadable
+                                 * @enum {string}
+                                 */
+                                usageSource: "recorded" | "estimated" | "unreadable";
                             }[];
                             turnTimelineTruncated: boolean;
+                            /**
+                             * @default {
+                             *       "totals": null,
+                             *       "attributed": null,
+                             *       "unattributed": null,
+                             *       "unattributedRequests": 0,
+                             *       "cacheHitRate": null,
+                             *       "cacheSavingsUsd": null,
+                             *       "totalCostUsd": null,
+                             *       "costComplete": false,
+                             *       "usageSource": "unreadable",
+                             *       "byModel": []
+                             *     }
+                             */
+                            usage: {
+                                totals: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                attributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributedRequests: number;
+                                cacheHitRate: number | null;
+                                cacheSavingsUsd: number | null;
+                                totalCostUsd: number | null;
+                                costComplete: boolean;
+                                /** @enum {string} */
+                                usageSource: "recorded" | "estimated" | "unreadable";
+                                byModel: {
+                                    model: string | null;
+                                    turns: number;
+                                    requests: number;
+                                    usage: {
+                                        input: number;
+                                        output: number;
+                                        cacheRead: number;
+                                        cacheWrite: number;
+                                        reasoning: number;
+                                        total: number;
+                                    };
+                                    costUsd: number | null;
+                                    cacheHitRate: number | null;
+                                    cacheSavingsUsd: number | null;
+                                    /** @enum {string} */
+                                    usageSource: "recorded" | "estimated" | "unreadable";
+                                }[];
+                            };
                             context: {
                                 backend: string;
                                 model: string | null;
@@ -2695,7 +2883,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -2822,6 +3010,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3096,7 +3310,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3223,6 +3437,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3278,7 +3518,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3578,7 +3818,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3705,6 +3945,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3968,7 +4234,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -4095,6 +4361,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -4164,7 +4456,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -4313,6 +4605,7 @@ export interface paths {
                         permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                         /** @enum {string} */
                         sendWhileRunning?: "steer" | "queue";
+                        confirmBusy?: boolean;
                         agentOptions?: {
                             [key: string]: {
                                 /** @enum {string} */
@@ -9171,6 +9464,14 @@ export interface paths {
                                 claude?: string;
                                 codex?: string;
                             };
+                            model_pricing?: {
+                                [key: string]: {
+                                    inputPerMillion: number;
+                                    outputPerMillion: number;
+                                    cacheReadPerMillion?: number;
+                                    cacheWritePerMillion?: number;
+                                };
+                            };
                             /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
                             setup_dismissed?: boolean;
                         };
@@ -9315,6 +9616,14 @@ export interface paths {
                             claude?: string;
                             codex?: string;
                         };
+                        model_pricing?: {
+                            [key: string]: {
+                                inputPerMillion: number;
+                                outputPerMillion: number;
+                                cacheReadPerMillion?: number;
+                                cacheWritePerMillion?: number;
+                            };
+                        };
                         /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
                         setup_dismissed?: boolean;
                     };
@@ -9448,6 +9757,14 @@ export interface paths {
                             provider_paths?: {
                                 claude?: string;
                                 codex?: string;
+                            };
+                            model_pricing?: {
+                                [key: string]: {
+                                    inputPerMillion: number;
+                                    outputPerMillion: number;
+                                    cacheReadPerMillion?: number;
+                                    cacheWritePerMillion?: number;
+                                };
                             };
                             /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
                             setup_dismissed?: boolean;
@@ -11117,6 +11434,58 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["RestartResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop the daemon gracefully: refuse new chat turns, let active ones finish and persist their resumable session state, then exit */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Shutdown accepted; the process exits once active work is durable */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShutdownResponse"];
+                    };
+                };
+                /** @description This process registered no shutdown handler, as with an embedded app that mounts the API routes without the daemon runtime */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            code: string;
+                        };
                     };
                 };
             };
@@ -20287,6 +20656,7 @@ export interface paths {
                             outcomes: {
                                 completed: number;
                                 stopped: number;
+                                interrupted: number;
                                 failed: number;
                                 running: number;
                             };
@@ -20311,12 +20681,95 @@ export interface paths {
                                 startedAt: number;
                                 durationMs: number | null;
                                 /** @enum {string} */
-                                outcome: "completed" | "stopped" | "failed" | "running";
+                                outcome: "completed" | "stopped" | "interrupted" | "failed" | "running";
                                 toolCalls: number;
                                 toolFailures: number;
                                 responseChars: number;
+                                /** @default null */
+                                model: string | null;
+                                /** @default null */
+                                usage: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                /** @default null */
+                                costUsd: number | null;
+                                /**
+                                 * @default unreadable
+                                 * @enum {string}
+                                 */
+                                usageSource: "recorded" | "estimated" | "unreadable";
                             }[];
                             turnTimelineTruncated: boolean;
+                            /**
+                             * @default {
+                             *       "totals": null,
+                             *       "attributed": null,
+                             *       "unattributed": null,
+                             *       "unattributedRequests": 0,
+                             *       "cacheHitRate": null,
+                             *       "cacheSavingsUsd": null,
+                             *       "totalCostUsd": null,
+                             *       "costComplete": false,
+                             *       "usageSource": "unreadable",
+                             *       "byModel": []
+                             *     }
+                             */
+                            usage: {
+                                totals: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                attributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributedRequests: number;
+                                cacheHitRate: number | null;
+                                cacheSavingsUsd: number | null;
+                                totalCostUsd: number | null;
+                                costComplete: boolean;
+                                /** @enum {string} */
+                                usageSource: "recorded" | "estimated" | "unreadable";
+                                byModel: {
+                                    model: string | null;
+                                    turns: number;
+                                    requests: number;
+                                    usage: {
+                                        input: number;
+                                        output: number;
+                                        cacheRead: number;
+                                        cacheWrite: number;
+                                        reasoning: number;
+                                        total: number;
+                                    };
+                                    costUsd: number | null;
+                                    cacheHitRate: number | null;
+                                    cacheSavingsUsd: number | null;
+                                    /** @enum {string} */
+                                    usageSource: "recorded" | "estimated" | "unreadable";
+                                }[];
+                            };
                             context: {
                                 backend: string;
                                 model: string | null;
@@ -24574,6 +25027,11 @@ export interface components {
             instance_id: string;
             /** @enum {boolean} */
             restarting: true;
+        };
+        ShutdownResponse: {
+            instance_id: string;
+            /** @enum {boolean} */
+            shutting_down: true;
         };
         McpToolResult: {
             result: string;

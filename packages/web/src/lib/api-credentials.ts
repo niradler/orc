@@ -1,5 +1,6 @@
 import type { ChatSettings, ComposerProfile, FavoriteModel } from "@orc/core/chat";
 import type { ProviderPaths } from "@orc/core/coding-agents";
+import type { ModelPricingMap } from "@orc/core/usage";
 import { activeApiHeaders } from "./api-hosts";
 
 export const API_ACCESS_CHANGED = "orc-api-access-changed";
@@ -24,6 +25,7 @@ export type WorkspacePreferences = {
   composer_revision?: string;
   agents?: string[];
   provider_paths?: ProviderPaths;
+  model_pricing?: ModelPricingMap;
   setup_dismissed?: boolean;
 };
 

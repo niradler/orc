@@ -7,7 +7,12 @@ import { ChatThreadSchema } from "@orc/core/chat";
 import { ChatAnalyticsSchema } from "@orc/core/chat-analytics";
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
-import { readChatAnalytics, readChatContext, skillLoaded } from "../sessions/chat-analytics";
+import {
+  chatAnalyticsFor,
+  readChatAnalytics,
+  readChatContext,
+  skillLoaded,
+} from "../sessions/chat-analytics";
 import { LIVE_CHAT_ID } from "../sessions/common";
 import { req, setupTestApp, teardownTestApp } from "./helpers";
 
@@ -264,4 +269,442 @@ test("should serve the same analytics from the session page", async () => {
   expect(analytics.toolCalls).toBe(4);
   expect(analytics.context?.backend).toBe("claude");
   expect((await req(app, "GET", "/sessions/live/unknown-session/analytics")).status).toBe(404);
+});
+
+function claudeLine(
+  id: string,
+  ts: number,
+  model: string,
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens: number;
+    cache_creation_input_tokens: number;
+    thinking_tokens?: number;
+  },
+) {
+  return JSON.stringify({
+    type: "assistant",
+    timestamp: new Date(ts).toISOString(),
+    message: {
+      id,
+      model,
+      usage: {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+        cache_read_input_tokens: usage.cache_read_input_tokens,
+        cache_creation_input_tokens: usage.cache_creation_input_tokens,
+        ...(usage.thinking_tokens !== undefined
+          ? { output_tokens_details: { thinking_tokens: usage.thinking_tokens } }
+          : {}),
+      },
+    },
+  });
+}
+
+function makeTurnMessages(baseTs: number, turns: Array<{ model?: string; durationMs?: number }>) {
+  return turns.flatMap((entry, idx) => {
+    const start = baseTs + idx * 60_000;
+    const durationMs = entry.durationMs ?? 20_000;
+    const finish = start + durationMs;
+    return [
+      {
+        id: `u-${idx + 1}`,
+        role: "user" as const,
+        content: `Prompt ${idx + 1}`,
+        timestamp: start - 1_000,
+      },
+      {
+        id: `a-${idx + 1}`,
+        role: "assistant" as const,
+        content: `Answer ${idx + 1}`,
+        timestamp: finish,
+        ...(entry.model ? { model: entry.model } : {}),
+        turn: {
+          startedAt: start,
+          finishedAt: finish,
+          durationMs,
+          outcome: "completed" as const,
+        },
+      },
+    ];
+  });
+}
+
+function memoryRuntime(content: string) {
+  const bytes = new TextEncoder().encode(content);
+  return {
+    isFile: async () => true,
+    readFile: async () => bytes,
+  };
+}
+
+test("should attribute a 5-turn Claude chat with multi-request summing, unreadable turns, unattributed bucket and cost", async () => {
+  const base = now - 600_000;
+  const fiveTurnThread = ChatThreadSchema.parse({
+    id: "22222222-2222-4222-8222-222222222222",
+    title: "Five turns",
+    config: { agent: "claude", model: "claude-sonnet-4-5" },
+    cwd: "/tmp",
+    host: null,
+    runtimeId: "native-5-turns",
+    backend: "claude",
+    sourceId: null,
+    updatedAt: now,
+    messages: makeTurnMessages(base, [
+      { model: "claude-sonnet-4-5" },
+      { model: "claude-sonnet-4-5" },
+      { model: "claude-sonnet-4-5" },
+      { model: "claude-sonnet-4-5" },
+      { model: "claude-sonnet-4-5" },
+    ]),
+  });
+
+  const transcript = [
+    claudeLine("pre-0", base - 120_000, "claude-sonnet-4-5", {
+      input_tokens: 1_000,
+      output_tokens: 200,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 500,
+    }),
+    claudeLine("t1-r1", base + 10_000, "claude-sonnet-4-5", {
+      input_tokens: 2_000,
+      output_tokens: 1_000,
+      cache_read_input_tokens: 10_000,
+      cache_creation_input_tokens: 2_000,
+      thinking_tokens: 300,
+    }),
+    claudeLine("t2-r1", base + 65_000, "claude-sonnet-4-5", {
+      input_tokens: 1_500,
+      output_tokens: 400,
+      cache_read_input_tokens: 12_000,
+      cache_creation_input_tokens: 1_000,
+    }),
+    claudeLine("t2-r2", base + 75_000, "claude-sonnet-4-5", {
+      input_tokens: 500,
+      output_tokens: 600,
+      cache_read_input_tokens: 14_000,
+      cache_creation_input_tokens: 0,
+    }),
+    claudeLine("t3-r1", base + 130_000, "claude-sonnet-4-5", {
+      input_tokens: 1_000,
+      output_tokens: 500,
+      cache_read_input_tokens: 15_000,
+      cache_creation_input_tokens: 0,
+    }),
+    claudeLine("t5-r1", base + 250_000, "claude-sonnet-4-5", {
+      input_tokens: 1_000,
+      output_tokens: 500,
+      cache_read_input_tokens: 19_000,
+      cache_creation_input_tokens: 0,
+    }),
+  ].join("\n");
+
+  const analytics = ChatAnalyticsSchema.parse(
+    await chatAnalyticsFor(
+      fiveTurnThread,
+      {
+        backend: "claude",
+        model: "claude-sonnet-4-5",
+        transcript_path: "/tmp/5turns.jsonl",
+        runtime_session_id: "native-5-turns",
+      },
+      memoryRuntime(transcript),
+      {},
+    ),
+  );
+
+  expect(analytics.turnTimeline).toHaveLength(5);
+  expect(analytics.turnTimeline[0]).toMatchObject({
+    index: 1,
+    model: "claude-sonnet-4-5",
+    usageSource: "recorded",
+    usage: {
+      input: 2_000,
+      output: 700,
+      reasoning: 300,
+      cacheRead: 10_000,
+      cacheWrite: 2_000,
+      total: 15_000,
+    },
+  });
+  expect(analytics.turnTimeline[1]?.usage).toEqual({
+    input: 2_000,
+    output: 1_000,
+    reasoning: 0,
+    cacheRead: 26_000,
+    cacheWrite: 1_000,
+    total: 30_000,
+  });
+  expect(analytics.turnTimeline[3]).toMatchObject({
+    index: 4,
+    usage: null,
+    costUsd: null,
+    usageSource: "unreadable",
+  });
+  expect(analytics.usage.unattributedRequests).toBe(1);
+  expect(analytics.usage.unattributed).toEqual({
+    input: 1_000,
+    output: 200,
+    cacheRead: 0,
+    cacheWrite: 500,
+    reasoning: 0,
+    total: 1_700,
+  });
+  expect(analytics.usage.attributed?.total).toBe(15_000 + 30_000 + 16_500 + 20_500);
+  expect(analytics.usage.totals?.total).toBe(
+    (analytics.usage.attributed?.total ?? 0) + (analytics.usage.unattributed?.total ?? 0),
+  );
+  expect(analytics.usage.costComplete).toBe(true);
+  expect(analytics.usage.totalCostUsd).toBeGreaterThan(0);
+  expect(analytics.usage.cacheSavingsUsd).toBeGreaterThan(0);
+  expect(analytics.usage.cacheHitRate).toBeCloseTo(70_000 / (7_000 + 70_000 + 3_500), 6);
+});
+
+test("should split tokens and cost by model when a chat switches models mid-session", async () => {
+  const base = now - 600_000;
+  const switchThread = ChatThreadSchema.parse({
+    id: "33333333-3333-4333-8333-333333333333",
+    title: "Model switch",
+    config: { agent: "claude", model: "claude-opus-4-1" },
+    cwd: "/tmp",
+    host: null,
+    runtimeId: "native-switch",
+    backend: "claude",
+    sourceId: null,
+    updatedAt: now,
+    messages: makeTurnMessages(base, [
+      { model: "claude-sonnet-4-5" },
+      { model: "claude-sonnet-4-5" },
+      { model: "claude-opus-4-1" },
+    ]),
+  });
+
+  const transcript = [
+    claudeLine("s1", base + 10_000, "claude-sonnet-4-5", {
+      input_tokens: 10_000,
+      output_tokens: 2_000,
+      cache_read_input_tokens: 20_000,
+      cache_creation_input_tokens: 5_000,
+    }),
+    claudeLine("s2", base + 70_000, "claude-sonnet-4-5", {
+      input_tokens: 10_000,
+      output_tokens: 3_000,
+      cache_read_input_tokens: 30_000,
+      cache_creation_input_tokens: 0,
+    }),
+    claudeLine("o1", base + 130_000, "claude-opus-4-1", {
+      input_tokens: 20_000,
+      output_tokens: 4_000,
+      cache_read_input_tokens: 50_000,
+      cache_creation_input_tokens: 0,
+    }),
+  ].join("\n");
+
+  const analytics = await chatAnalyticsFor(
+    switchThread,
+    {
+      backend: "claude",
+      model: "claude-opus-4-1",
+      transcript_path: "/tmp/switch.jsonl",
+      runtime_session_id: "native-switch",
+    },
+    memoryRuntime(transcript),
+    {},
+  );
+
+  expect(analytics.turnTimeline.map((t) => t.model)).toEqual([
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-5",
+    "claude-opus-4-1",
+  ]);
+  expect(analytics.usage.byModel).toHaveLength(2);
+  const sonnet = analytics.usage.byModel.find((m) => m.model === "claude-sonnet-4-5");
+  const opus = analytics.usage.byModel.find((m) => m.model === "claude-opus-4-1");
+  expect(sonnet?.turns).toBe(2);
+  expect(opus?.turns).toBe(1);
+  expect(sonnet?.costUsd).toBe(0.16875);
+  expect(opus?.costUsd).toBe(0.675);
+  expect(analytics.usage.totalCostUsd).toBe(0.84375);
+  expect(analytics.usage.totals?.total).toBe((sonnet?.usage.total ?? 0) + (opus?.usage.total ?? 0));
+});
+
+test("should return null cost for unpriced models (never $0) and honor config pricing overrides", async () => {
+  const base = now - 300_000;
+  const unpricedThread = ChatThreadSchema.parse({
+    id: "44444444-4444-4444-8444-444444444444",
+    title: "Unpriced model",
+    config: { agent: "claude", model: "acme/unpriced-v1" },
+    cwd: "/tmp",
+    host: null,
+    runtimeId: "native-unpriced",
+    backend: "claude",
+    sourceId: null,
+    updatedAt: now,
+    messages: makeTurnMessages(base, [{ model: "acme/unpriced-v1" }]),
+  });
+
+  const transcript = claudeLine("u1", base + 5_000, "acme/unpriced-v1", {
+    input_tokens: 50_000,
+    output_tokens: 10_000,
+    cache_read_input_tokens: 100_000,
+    cache_creation_input_tokens: 0,
+  });
+
+  const withoutPrice = await chatAnalyticsFor(
+    unpricedThread,
+    {
+      backend: "claude",
+      model: "acme/unpriced-v1",
+      transcript_path: "/tmp/unpriced.jsonl",
+      runtime_session_id: "native-unpriced",
+    },
+    memoryRuntime(transcript),
+    {},
+  );
+  expect(withoutPrice.turnTimeline[0]?.usageSource).toBe("recorded");
+  expect(withoutPrice.turnTimeline[0]?.usage?.total).toBe(160_000);
+  expect(withoutPrice.turnTimeline[0]?.costUsd).toBeNull();
+  expect(withoutPrice.usage.totalCostUsd).toBeNull();
+  expect(withoutPrice.usage.cacheSavingsUsd).toBeNull();
+  expect(withoutPrice.usage.costComplete).toBe(false);
+  expect(withoutPrice.usage.byModel[0]?.costUsd).toBeNull();
+
+  const withOverride = await chatAnalyticsFor(
+    unpricedThread,
+    {
+      backend: "claude",
+      model: "acme/unpriced-v1",
+      transcript_path: "/tmp/unpriced.jsonl",
+      runtime_session_id: "native-unpriced",
+    },
+    memoryRuntime(transcript),
+    {
+      "acme/unpriced-v1": {
+        inputPerMillion: 2,
+        outputPerMillion: 8,
+        cacheReadPerMillion: 0.2,
+      },
+    },
+  );
+  expect(withOverride.turnTimeline[0]?.costUsd).toBe(0.2);
+  expect(withOverride.usage.totalCostUsd).toBe(0.2);
+  expect(withOverride.usage.cacheSavingsUsd).toBe(0.18);
+  expect(withOverride.usage.costComplete).toBe(true);
+});
+
+test("should label Cursor sessions estimated and keep cost unknown unless explicitly configured", async () => {
+  const base = now - 300_000;
+  const cursorThread = ChatThreadSchema.parse({
+    id: "55555555-5555-4555-8555-555555555555",
+    title: "Cursor session",
+    config: { agent: "cursor", model: "claude-sonnet-4-5" },
+    cwd: "/tmp",
+    host: null,
+    runtimeId: "native-cursor",
+    backend: "cursor",
+    sourceId: null,
+    updatedAt: now,
+    messages: makeTurnMessages(base, [{ model: "claude-sonnet-4-5" }]),
+  });
+
+  const cursorSource = {
+    backend: "cursor",
+    model: "claude-sonnet-4-5",
+    transcript_path: null,
+    runtime_session_id: "native-cursor",
+    tokens_used: 25_000,
+  };
+
+  const defaultCursor = await chatAnalyticsFor(cursorThread, cursorSource, memoryRuntime(""), {});
+  expect(defaultCursor.context?.supported).toBe(false);
+  expect(defaultCursor.usage.usageSource).toBe("estimated");
+  expect(defaultCursor.usage.totals?.total).toBe(25_000);
+  expect(defaultCursor.usage.unattributed?.total).toBe(25_000);
+  expect(defaultCursor.usage.totalCostUsd).toBeNull();
+  expect(defaultCursor.usage.byModel[0]).toMatchObject({
+    model: "claude-sonnet-4-5",
+    usageSource: "estimated",
+    costUsd: null,
+  });
+
+  const configuredCursor = await chatAnalyticsFor(cursorThread, cursorSource, memoryRuntime(""), {
+    "claude-sonnet-4-5": {
+      inputPerMillion: 4,
+      outputPerMillion: 16,
+    },
+  });
+  expect(configuredCursor.usage.usageSource).toBe("estimated");
+  expect(configuredCursor.usage.totalCostUsd).toBe(0.1);
+});
+
+test("should keep payload bounded for a 200-turn chat while preserving full session totals", async () => {
+  const base = now - 200 * 60_000;
+  const turns = Array.from({ length: 200 }, () => ({ model: "claude-sonnet-4-5" }));
+  const longThread = ChatThreadSchema.parse({
+    id: "66666666-6666-4666-8666-666666666666",
+    title: "200 turns",
+    config: { agent: "claude", model: "claude-sonnet-4-5" },
+    cwd: "/tmp",
+    host: null,
+    runtimeId: "native-200",
+    backend: "claude",
+    sourceId: null,
+    updatedAt: now,
+    messages: makeTurnMessages(base, turns),
+  });
+  const transcript = turns
+    .map((_, idx) =>
+      claudeLine(`long-${idx}`, base + idx * 60_000 + 5_000, "claude-sonnet-4-5", {
+        input_tokens: 1_000,
+        output_tokens: 200,
+        cache_read_input_tokens: 5_000,
+        cache_creation_input_tokens: 100,
+      }),
+    )
+    .join("\n");
+
+  const analytics = ChatAnalyticsSchema.parse(
+    await chatAnalyticsFor(
+      longThread,
+      {
+        backend: "claude",
+        model: "claude-sonnet-4-5",
+        transcript_path: "/tmp/200.jsonl",
+        runtime_session_id: "native-200",
+      },
+      memoryRuntime(transcript),
+      {},
+    ),
+  );
+
+  expect(analytics.turns).toBe(200);
+  expect(analytics.turnTimeline).toHaveLength(80);
+  expect(analytics.turnTimelineTruncated).toBe(true);
+  expect(analytics.turnTimeline[0]?.index).toBe(121);
+  expect(analytics.turnTimeline.at(-1)?.index).toBe(200);
+  expect(analytics.usage.totals?.total).toBe(200 * 6_300);
+  expect(analytics.usage.byModel[0]?.turns).toBe(200);
+  expect(JSON.stringify(analytics).length).toBeLessThan(65_536);
+});
+
+test("should persist model_pricing overrides through settings and apply them to analytics", async () => {
+  const patch = await req(app, "PATCH", "/settings", {
+    model_pricing: {
+      "acme/saved-model": {
+        inputPerMillion: 5,
+        outputPerMillion: 20,
+        cacheReadPerMillion: 0.5,
+        cacheWritePerMillion: 6,
+      },
+    },
+  });
+  expect(patch.status).toBe(200);
+  const saved = (await patch.json()) as { model_pricing?: Record<string, unknown> };
+  expect(saved.model_pricing?.["acme/saved-model"]).toEqual({
+    inputPerMillion: 5,
+    outputPerMillion: 20,
+    cacheReadPerMillion: 0.5,
+    cacheWritePerMillion: 6,
+  });
 });

@@ -7,6 +7,7 @@ import { orcHome, userHome } from "./home.js";
 import { McpSettingsSchema } from "./mcp-settings.js";
 import { StoredProvidersSchema } from "./providers.js";
 import { decryptSecret } from "./secrets.js";
+import { ModelPricingMapSchema } from "./usage.js";
 
 export function localAgentBinary(name: string): string | null {
   const paths = loadConfig().preferences.provider_paths;
@@ -110,6 +111,7 @@ export const OrcConfigSchema = z.object({
       composer_profiles: ComposerProfilesSchema.optional(),
       agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
       provider_paths: ProviderPathsSchema.optional(),
+      model_pricing: ModelPricingMapSchema.optional(),
       setup_dismissed: z.boolean().optional(),
     })
     .default({}),
