@@ -111,6 +111,11 @@ test("slice 1 terminal menu, real shell and slice 2 worktree cleanup", async ({
 
   await page.getByTestId("worktree-manager-open").click();
   const manager = page.getByTestId("worktree-manager");
+  // Opening the dialog must not focus its help trigger: the tooltip would
+  // cover the filter row and swallow the clicks below. Anchor on the mounted
+  // dialog first; the buggy tooltip opens in the same commit as the filters.
+  await expect(manager.getByTestId("worktree-filter-pr")).toBeVisible();
+  await expect(page.getByTestId("worktree-help-content")).toHaveCount(0);
   const row = manager.getByTestId("registry-worktree").filter({ hasText: "orc/e2e-clean" });
   const squashed = manager.getByTestId("registry-worktree").filter({ hasText: "orc/e2e-squash" });
   const open = manager.getByTestId("registry-worktree").filter({ hasText: "orc/e2e-open" });
@@ -154,7 +159,14 @@ test("slice 1 terminal menu, real shell and slice 2 worktree cleanup", async ({
   await expect(squashed).toHaveCount(1);
 });
 
-test("checkouts and the worktree manager stay readable on a phone", async ({ page }, testInfo) => {
+test("checkouts and the worktree manager stay readable on a phone", async ({
+  page,
+  request,
+}, testInfo) => {
+  // Register the repo here too. A failed earlier test restarts the worker and
+  // its afterAll deletes the old temp folder, so relying on the previous test's
+  // project would leave this test with a registry pointing at a gone folder.
+  await apiPost(request, "/projects", { name: tid("git-e2e-phone"), scope: repo });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(
     (secret) =>
