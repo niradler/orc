@@ -167,6 +167,14 @@ export function WorktreeManager({
         <DialogContent
           aria-describedby={undefined}
           data-testid="worktree-manager"
+          tabIndex={-1}
+          onOpenAutoFocus={(event) => {
+            // Do not focus a help trigger: the dialog would open with its tooltip
+            // covering the filter row, blocking clicks and swallowing the Escape.
+            event.preventDefault();
+            const content = event.currentTarget as HTMLElement | null;
+            content?.focus();
+          }}
           className="max-w-3xl gap-3 bg-surface p-4 sm:p-6 border-surface-highest"
         >
           <DialogHeader className="pr-8 text-left">
