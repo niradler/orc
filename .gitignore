@@ -21,6 +21,10 @@ bun.lockb
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/orc-release/
+!.agents/skills/orc-build/
+!.agents/skills/orc-ui/
+!.agents/skills/orc-code-review/
+!.agents/skills/orc-maintenance/
 .cursor
 .vscode
 .demo
