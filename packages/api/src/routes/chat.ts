@@ -1660,6 +1660,7 @@ app.openapi(
               model: source.model ?? null,
               transcript_path: source.transcript_path ?? null,
               runtime_session_id: source.runtime_session_id ?? null,
+              tokens_used: source.tokens_used ?? null,
             }
           : null,
       ),

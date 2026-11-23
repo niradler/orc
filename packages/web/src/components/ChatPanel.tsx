@@ -31,7 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText, AgentTextStreamProvider } from "@/components/AgentMessageText";
@@ -277,6 +277,7 @@ export function ChatPanel({
   onToggleFullscreen,
 }: ChatPanelProps) {
   const {
+    surface,
     messages,
     streaming,
     reconnecting,
@@ -472,6 +473,8 @@ export function ChatPanel({
     setStopRequested(true);
     cancel();
   };
+  const { pathname } = useLocation();
+  const ownsSessionHome = fullscreen || pathname !== "/chat";
   const home = useSessionHome();
   const lineage = useSessionLineage(thread?.sourceId ? thread.id : null);
   const parentSession = thread?.sourceId ? (lineage.data?.parent ?? null) : null;
@@ -486,7 +489,11 @@ export function ChatPanel({
       if (parentSession.kind === "chat") {
         const next = await api.chat.get(parentSession.id);
         openThread(next);
-        home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
+        if (surface === "page") {
+          home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
+        } else if (ownsSessionHome && home.terminalId) {
+          home.go({ terminalId: null });
+        }
       } else await openSession(parentSession.id);
     } catch (cause) {
       setParentError(
@@ -501,15 +508,19 @@ export function ChatPanel({
       try {
         const next = await api.chat.get(sessionId);
         openThread(next);
-        home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
+        if (surface === "page") {
+          home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
+        } else if (ownsSessionHome && home.terminalId) {
+          home.go({ terminalId: null });
+        }
       } catch {
         await openSession(sessionId);
       }
     },
-    [home, openSession, openThread],
+    [home, openSession, openThread, ownsSessionHome, surface],
   );
   const terminalControl = useChatContinueInTerminal({
-    inChat: true,
+    inChat: ownsSessionHome,
     onOpened: (terminal) => home.go({ terminalId: terminal.id }),
   });
   const desktop = useBreakpoint("xl");
@@ -567,7 +578,7 @@ export function ChatPanel({
   });
   const docked = fullscreen && desktop && !home.listHidden;
   const rail = fullscreen && desktop && home.listHidden;
-  const terminalCenter = !!home.terminalId;
+  const terminalCenter = ownsSessionHome && !!home.terminalId;
   const viewId = fullscreen && !terminalCenter ? home.viewId : null;
   const viewed = useQuery({
     queryKey: ["sessions", "live-one", viewId],
@@ -576,7 +587,7 @@ export function ChatPanel({
     retry: false,
   }).data;
   const context = useSessionContext(
-    home.terminalId,
+    terminalCenter ? home.terminalId : null,
     viewId ? { id: viewId, session: viewed } : undefined,
   );
   // The drawer can take the conversation's space; collapsing or closing it
@@ -737,6 +748,11 @@ export function ChatPanel({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [analyticsFocusModel, setAnalyticsFocusModel] = useState<string | null>(null);
+  const openModelSplit = (model: string) => {
+    setAnalyticsFocusModel(model);
+    setAnalyticsOpen(true);
+  };
   const actionMenuRows = (includeSessionActions: boolean) => (
     <>
       <button
@@ -983,6 +999,7 @@ export function ChatPanel({
   return (
     <ThreadPrimitive.Root
       data-testid="chat-panel"
+      data-chat-surface={surface}
       data-streaming={streaming ? "true" : "false"}
       data-focus={focusChat ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
@@ -1077,7 +1094,7 @@ export function ChatPanel({
                   className={cn(iconButton, "min-h-11 min-w-11")}
                   onClick={() => {
                     newTab();
-                    home.go({ terminalId: null });
+                    if (ownsSessionHome) home.go({ terminalId: null });
                   }}
                 >
                   <SquarePen size={17} />
@@ -1294,6 +1311,7 @@ export function ChatPanel({
             )}
             <div className={cn("relative flex min-h-0 flex-col", !hero && "flex-1")}>
               <ChatSelectionToolbar
+                surface={surface}
                 resetKey={`${thread?.id ?? "new"}:${open ? "open" : "closed"}`}
                 resolveSource={resolveSelectionSource}
                 onAction={actOnSelection}
@@ -1359,8 +1377,12 @@ export function ChatPanel({
                       return (
                         <>
                           {dividers.byMessage.get(message.id)?.map((divider, index) => (
-                            // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
-                            <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                            <ChatTurnDivider
+                              // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                              key={`${divider.type}-${index}`}
+                              divider={divider}
+                              onOpenModelSplit={thread ? openModelSplit : undefined}
+                            />
                           ))}
                           <MessagePrimitive.Root
                             style={{
@@ -1463,8 +1485,12 @@ export function ChatPanel({
                     }}
                   </ThreadPrimitive.Messages>
                   {dividers.trailing.map((divider, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
-                    <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                    <ChatTurnDivider
+                      // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                      key={`${divider.type}-${index}`}
+                      divider={divider}
+                      onOpenModelSplit={thread ? openModelSplit : undefined}
+                    />
                   ))}
                 </div>
               </ThreadPrimitive.Viewport>
@@ -2083,13 +2109,25 @@ export function ChatPanel({
           }}
         />
       )}
-      <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
+      <Dialog
+        open={analyticsOpen}
+        onOpenChange={(open) => {
+          setAnalyticsOpen(open);
+          if (!open) setAnalyticsFocusModel(null);
+        }}
+      >
         <DialogContent
           data-testid="chat-analytics-dialog"
           className="max-h-[85dvh] w-[min(56rem,calc(100vw-24px))] max-w-none overflow-y-auto"
         >
           <DialogTitle className="sr-only">Session analytics</DialogTitle>
-          {analyticsOpen && <ChatSessionAnalytics threadId={thread?.id} streaming={false} />}
+          {analyticsOpen && (
+            <ChatSessionAnalytics
+              threadId={thread?.id}
+              streaming={false}
+              focusModel={analyticsFocusModel}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </ThreadPrimitive.Root>

@@ -713,6 +713,7 @@ app.openapi(
         model: row.model ?? null,
         transcript_path: row.transcript_path ?? null,
         runtime_session_id: row.runtime_session_id ?? null,
+        tokens_used: row.tokens_used ?? null,
       }),
       200,
     );

@@ -200,7 +200,7 @@ The same queue is available to agents through the `session_send` MCP tool
 (bind the connection with `?session=<session id>` or run stdio MCP inside the
 agent) and to chat channels with `/send <session id> <message>`. Agent-origin
 sends default to `mode: "queue"`; `steer` and `interrupt` are explicit choices.
-The delivery receipt reports `queued`, `steered`, `resumed`, or `unsupported`
+The delivery receipt reports `queued`, `steered`, `resumed`, `failed`, or `unsupported`
 so callers do not need to poll.
 
 ```text

@@ -13,15 +13,19 @@ export const TONE_DOT: Record<Tone, string> = {
 };
 
 /** Dashboard links keep a docked chat open, matching workspace navigation. */
-export function chatUiHref(href: string, currentSearch: string): string {
+export function chatUiHref(href: string, currentSearch: string, currentPathname = ""): string {
   if (!href.startsWith("/")) return href;
   const current = new URLSearchParams(currentSearch);
   if (current.get("chat") !== "open") return href;
   const target = new URL(href, "http://orc.local");
   const query = target.searchParams;
   query.set("chat", "open");
-  const thread = current.get("chatThread");
-  if (thread) query.set("chatThread", thread);
+  const fromChatPage = currentPathname === "/chat" || current.get("chat") === "full";
+  const sideThread = fromChatPage ? current.get("sideChatThread") : current.get("chatThread");
+  if (sideThread) {
+    if (target.pathname === "/chat") query.set("sideChatThread", sideThread);
+    else query.set("chatThread", sideThread);
+  }
   return `${target.pathname}?${query}${target.hash}`;
 }
 
@@ -43,7 +47,11 @@ export function UiLink({
   );
   if (href.startsWith("/"))
     return (
-      <Link data-testid={testId} to={chatUiHref(href, location.search)} className={classes}>
+      <Link
+        data-testid={testId}
+        to={chatUiHref(href, location.search, location.pathname)}
+        className={classes}
+      >
         {children}
       </Link>
     );

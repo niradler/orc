@@ -2612,8 +2612,91 @@ export interface paths {
                                 toolCalls: number;
                                 toolFailures: number;
                                 responseChars: number;
+                                /** @default null */
+                                model: string | null;
+                                /** @default null */
+                                usage: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                /** @default null */
+                                costUsd: number | null;
+                                /**
+                                 * @default unreadable
+                                 * @enum {string}
+                                 */
+                                usageSource: "recorded" | "estimated" | "unreadable";
                             }[];
                             turnTimelineTruncated: boolean;
+                            /**
+                             * @default {
+                             *       "totals": null,
+                             *       "attributed": null,
+                             *       "unattributed": null,
+                             *       "unattributedRequests": 0,
+                             *       "cacheHitRate": null,
+                             *       "cacheSavingsUsd": null,
+                             *       "totalCostUsd": null,
+                             *       "costComplete": false,
+                             *       "usageSource": "unreadable",
+                             *       "byModel": []
+                             *     }
+                             */
+                            usage: {
+                                totals: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                attributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributedRequests: number;
+                                cacheHitRate: number | null;
+                                cacheSavingsUsd: number | null;
+                                totalCostUsd: number | null;
+                                costComplete: boolean;
+                                /** @enum {string} */
+                                usageSource: "recorded" | "estimated" | "unreadable";
+                                byModel: {
+                                    model: string | null;
+                                    turns: number;
+                                    requests: number;
+                                    usage: {
+                                        input: number;
+                                        output: number;
+                                        cacheRead: number;
+                                        cacheWrite: number;
+                                        reasoning: number;
+                                        total: number;
+                                    };
+                                    costUsd: number | null;
+                                    cacheHitRate: number | null;
+                                    cacheSavingsUsd: number | null;
+                                    /** @enum {string} */
+                                    usageSource: "recorded" | "estimated" | "unreadable";
+                                }[];
+                            };
                             context: {
                                 backend: string;
                                 model: string | null;
@@ -9551,6 +9634,14 @@ export interface paths {
                                 claude?: string;
                                 codex?: string;
                             };
+                            model_pricing?: {
+                                [key: string]: {
+                                    inputPerMillion: number;
+                                    outputPerMillion: number;
+                                    cacheReadPerMillion?: number;
+                                    cacheWritePerMillion?: number;
+                                };
+                            };
                             /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
                             setup_dismissed?: boolean;
                         };
@@ -9695,6 +9786,14 @@ export interface paths {
                             claude?: string;
                             codex?: string;
                         };
+                        model_pricing?: {
+                            [key: string]: {
+                                inputPerMillion: number;
+                                outputPerMillion: number;
+                                cacheReadPerMillion?: number;
+                                cacheWritePerMillion?: number;
+                            };
+                        };
                         /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
                         setup_dismissed?: boolean;
                     };
@@ -9828,6 +9927,14 @@ export interface paths {
                             provider_paths?: {
                                 claude?: string;
                                 codex?: string;
+                            };
+                            model_pricing?: {
+                                [key: string]: {
+                                    inputPerMillion: number;
+                                    outputPerMillion: number;
+                                    cacheReadPerMillion?: number;
+                                    cacheWritePerMillion?: number;
+                                };
                             };
                             /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
                             setup_dismissed?: boolean;
@@ -20748,8 +20855,91 @@ export interface paths {
                                 toolCalls: number;
                                 toolFailures: number;
                                 responseChars: number;
+                                /** @default null */
+                                model: string | null;
+                                /** @default null */
+                                usage: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                /** @default null */
+                                costUsd: number | null;
+                                /**
+                                 * @default unreadable
+                                 * @enum {string}
+                                 */
+                                usageSource: "recorded" | "estimated" | "unreadable";
                             }[];
                             turnTimelineTruncated: boolean;
+                            /**
+                             * @default {
+                             *       "totals": null,
+                             *       "attributed": null,
+                             *       "unattributed": null,
+                             *       "unattributedRequests": 0,
+                             *       "cacheHitRate": null,
+                             *       "cacheSavingsUsd": null,
+                             *       "totalCostUsd": null,
+                             *       "costComplete": false,
+                             *       "usageSource": "unreadable",
+                             *       "byModel": []
+                             *     }
+                             */
+                            usage: {
+                                totals: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                attributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributedRequests: number;
+                                cacheHitRate: number | null;
+                                cacheSavingsUsd: number | null;
+                                totalCostUsd: number | null;
+                                costComplete: boolean;
+                                /** @enum {string} */
+                                usageSource: "recorded" | "estimated" | "unreadable";
+                                byModel: {
+                                    model: string | null;
+                                    turns: number;
+                                    requests: number;
+                                    usage: {
+                                        input: number;
+                                        output: number;
+                                        cacheRead: number;
+                                        cacheWrite: number;
+                                        reasoning: number;
+                                        total: number;
+                                    };
+                                    costUsd: number | null;
+                                    cacheHitRate: number | null;
+                                    cacheSavingsUsd: number | null;
+                                    /** @enum {string} */
+                                    usageSource: "recorded" | "estimated" | "unreadable";
+                                }[];
+                            };
                             context: {
                                 backend: string;
                                 model: string | null;

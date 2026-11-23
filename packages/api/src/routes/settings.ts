@@ -12,6 +12,7 @@ import {
   saveProviderSettings,
 } from "@orc/core/provider-service";
 import { ProviderAccountsSchema, ProviderSettingsSchema } from "@orc/core/providers";
+import { ModelPricingMapSchema } from "@orc/core/usage";
 import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { diffSummary, recordAudit } from "../lib/audit-actor.js";
@@ -225,6 +226,7 @@ const PreferencesSchema = z
       }),
     agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
     provider_paths: ProviderPathsSchema.optional(),
+    model_pricing: ModelPricingMapSchema.optional(),
     setup_dismissed: z.boolean().optional().openapi({
       description:
         "The first-run setup screen was dismissed; it stays hidden while no project exists.",

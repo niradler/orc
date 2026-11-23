@@ -1,6 +1,7 @@
 import { Bookmark, Check, ClipboardCopy, Copy, MessageSquareText, SquarePlus } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { ChatSurface } from "@/hooks/useChat";
 import {
   boundedText,
   type ChatSelectionAction,
@@ -40,10 +41,12 @@ function elementFor(node: Node | null): Element | null {
  * capture is read-only and stays out of text fields and the terminal layer.
  */
 export function ChatSelectionToolbar({
+  surface,
   resetKey,
   resolveSource,
   onAction,
 }: {
+  surface: ChatSurface;
   /** Thread id; a new conversation dismisses a toolbar left from the last one. */
   resetKey: string | undefined;
   resolveSource: (messageId: string) => SelectionSource;
@@ -84,6 +87,8 @@ export function ChatSelectionToolbar({
       if (!start || !end) return hide();
       const message = start.closest('[data-testid="chat-message"]');
       if (!message) return hide();
+      if (message.closest("[data-chat-surface]")?.getAttribute("data-chat-surface") !== surface)
+        return hide();
       // A drag that starts in one message and ends in another is not a quote of
       // either; a selection that trails into chat chrome (the live announcer) is.
       const endMessage = end.closest('[data-testid="chat-message"]');
@@ -155,7 +160,7 @@ export function ChatSelectionToolbar({
       document.removeEventListener("compositionend", onCompositionEnd);
       window.removeEventListener("resize", hide);
     };
-  }, [hide, resolveSource]);
+  }, [hide, resolveSource, surface]);
 
   useEffect(() => {
     if (!copied) return;

@@ -17,6 +17,7 @@ export function WorkspaceHeader({
   navButtonRef,
   chatButtonRef,
   chatPage = false,
+  chatOpen = false,
 }: {
   projectId: string;
   onOpenNav: () => void;
@@ -26,6 +27,7 @@ export function WorkspaceHeader({
   navButtonRef?: Ref<HTMLButtonElement>;
   chatButtonRef?: Ref<HTMLButtonElement>;
   chatPage?: boolean;
+  chatOpen?: boolean;
 }) {
   const { pathname, search } = useLocation();
   const sectionNav = useRef<HTMLElement>(null);
@@ -81,19 +83,19 @@ export function WorkspaceHeader({
           onProjectChange={onProjectChange}
           onOpenChat={onShowChat}
         />
-        {!chatPage && (
-          <Button
-            ref={chatButtonRef}
-            data-testid="chat-open-button"
-            variant="ghost"
-            size="sm"
-            onClick={onOpenChat}
-          >
-            <MessageSquare />
-            <span className="hidden sm:inline">Chat</span>
-            <span className="sr-only sm:hidden">Open chat</span>
-          </Button>
-        )}
+        <Button
+          ref={chatButtonRef}
+          data-testid="chat-open-button"
+          variant="ghost"
+          size="sm"
+          aria-pressed={chatPage ? chatOpen : undefined}
+          className={chatPage ? "hidden xl:inline-flex" : undefined}
+          onClick={onOpenChat}
+        >
+          <MessageSquare />
+          <span className="hidden sm:inline">{chatPage ? "Side chat" : "Chat"}</span>
+          <span className="sr-only sm:hidden">Open chat</span>
+        </Button>
       </header>
       {section && section.pages.length > 1 && (
         <nav
@@ -104,7 +106,7 @@ export function WorkspaceHeader({
           {section.pages.map((page) => (
             <NavLink
               key={page.id}
-              to={workspaceDestination(page.path, projectId, search)}
+              to={workspaceDestination(page.path, projectId, search, pathname)}
               end={page.path === "/packages"}
               data-testid={page.id === "knowledge" ? "section-knowledge" : `nav-${page.id}`}
               className={({ isActive }) =>
