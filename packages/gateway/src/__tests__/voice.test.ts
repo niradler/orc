@@ -288,6 +288,18 @@ test("barge_ms 0 keeps voice mode half-duplex", () => {
   ]);
 });
 
+test("a turn started before playback is not dropped if playback begins mid-turn", () => {
+  const detector = createTurnDetector({ silenceMs: 800, thresholdDb: -45 });
+  const before = detector.push(burst(220, 3000));
+  detector.setSpeaking(true);
+  const after = detector.push(concatPcm(burst(60, 3000), new Int16Array(16_000)));
+  const events = [...before, ...after, ...detector.flush()];
+  expect(events.map((event) => event.type)).toEqual(["start", "end"]);
+  const end = events[1] as Extract<TurnEvent, { type: "end" }>;
+  expect(end.audio).not.toBeNull();
+  expect(end.bargeBlocked).toBe(false);
+});
+
 test("the same sustained speech is a normal turn when nothing is playing", () => {
   const events = detect(concatPcm(burst(600, 3000), new Int16Array(16_000)), 320);
   expect(events.map((event) => event.type)).toEqual(["start", "end"]);

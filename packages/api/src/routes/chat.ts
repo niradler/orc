@@ -4022,7 +4022,7 @@ app.openapi(
   (c) => {
     const id = requireThread(c.req.valid("param").id).id;
     const found = threadRun(id);
-    logger.info("chat: live attach", { threadId: id, running: !!found });
+    logger.debug("chat: live attach", { threadId: id, running: !!found });
     return found ? follow(c, found[1]) : c.body(null, 204);
   },
 );

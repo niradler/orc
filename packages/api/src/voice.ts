@@ -108,13 +108,13 @@ function enqueueSpeech(ws: ServerWebSocket<VoiceSocketData>, text: string): Prom
   const epoch = ws.data.epoch;
   return serial(ws, "queue", async () => {
     if (ws.data.epoch !== epoch) {
-      logger.info("voice: dropped speech replaced by a newer turn", {
+      logger.debug("voice: dropped speech replaced by a newer turn", {
         threadId: ws.data.threadId,
       });
       return false;
     }
     if (ws.data.listening) {
-      logger.info("voice: skipped speech while the user is talking", {
+      logger.debug("voice: skipped speech while the user is talking", {
         threadId: ws.data.threadId,
       });
       return false;
@@ -129,13 +129,13 @@ async function hear(ws: ServerWebSocket<VoiceSocketData>, audio: Int16Array) {
   const text = (await stt.transcribe({ audio: pcm16Wav(audio), format: "wav" })).trim();
   ws.data.listening = false;
   if (!text || isFillerOnly(text)) {
-    logger.info("voice: transcript empty or filler", {
+    logger.debug("voice: transcript empty or filler", {
       threadId: ws.data.threadId,
       text: text.slice(0, 80),
     });
     return send(ws, { type: "ignored" });
   }
-  logger.info("voice: transcript", { threadId: ws.data.threadId, text: text.slice(0, 120) });
+  logger.debug("voice: transcript", { threadId: ws.data.threadId, text: text.slice(0, 120) });
   send(ws, { type: "transcript", text });
   const outcome = await voiceTurn(ws.data.threadId, text);
   if (outcome === "waiting") await enqueueSpeech(ws, ON_SCREEN);
@@ -185,7 +185,7 @@ async function speakTo(ws: ServerWebSocket<VoiceSocketData>, text: string): Prom
       });
       if (speech) ws.sendBinary(speech.audio);
     }
-    logger.info("voice: reply spoken", {
+    logger.debug("voice: reply spoken", {
       threadId: ws.data.threadId,
       sentences: sentences.length,
       interrupted: controller.signal.aborted,
@@ -236,7 +236,7 @@ export const voiceWebsocket: WebSocketHandler<VoiceSocketData> = {
       bargeMs: voice_mode.barge_ms,
       bargeMarginDb: voice_mode.barge_margin_db,
     });
-    logger.info("voice: connected", {
+    logger.debug("voice: connected", {
       threadId: ws.data.threadId,
       thresholdDb: voice_mode.threshold_db,
       bargeMs: voice_mode.barge_ms,
@@ -263,7 +263,7 @@ export const voiceWebsocket: WebSocketHandler<VoiceSocketData> = {
     for (const event of ws.data.detector?.push(pcm) ?? []) {
       if (event.type === "start") {
         ws.data.listening = true;
-        logger.info("voice: mic turn started", {
+        logger.debug("voice: mic turn started", {
           threadId: ws.data.threadId,
           replyPlaying: ws.data.sending === true || !!ws.data.clips?.size,
         });
@@ -275,14 +275,14 @@ export const voiceWebsocket: WebSocketHandler<VoiceSocketData> = {
         ws.data.epoch = (ws.data.epoch ?? 0) + 1;
         ws.data.speaking?.abort();
         endReply(ws);
-        logger.info("voice: barge-in", { threadId: ws.data.threadId });
+        logger.debug("voice: barge-in", { threadId: ws.data.threadId });
         send(ws, { type: "barge" });
         continue;
       }
       const audio = event.audio;
       if (!audio) {
         ws.data.listening = false;
-        logger.info("voice: mic turn dropped", {
+        logger.debug("voice: mic turn dropped", {
           threadId: ws.data.threadId,
           peakDb: event.peakDb,
           reason: event.bargeBlocked ? "held by the barge gate" : "too short",
@@ -290,7 +290,7 @@ export const voiceWebsocket: WebSocketHandler<VoiceSocketData> = {
         send(ws, { type: "speech_cancelled" });
         continue;
       }
-      logger.info("voice: mic turn captured", {
+      logger.debug("voice: mic turn captured", {
         threadId: ws.data.threadId,
         peakDb: event.peakDb,
         seconds: Math.round((audio.length / 16_000) * 10) / 10,
@@ -312,7 +312,7 @@ export const voiceWebsocket: WebSocketHandler<VoiceSocketData> = {
     }
   },
   close(ws) {
-    logger.info("voice: disconnected", { threadId: ws.data.threadId });
+    logger.debug("voice: disconnected", { threadId: ws.data.threadId });
     ws.data.speaking?.abort();
     endReply(ws);
     if (sockets.get(ws.data.threadId) === ws) sockets.delete(ws.data.threadId);

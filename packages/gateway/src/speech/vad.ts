@@ -42,6 +42,7 @@ export function createTurnDetector({
   let bargeQuiet = 0;
   let bargeSent = false;
   let speaking = false;
+  let turnDuringReply = false;
   let peakDb = Number.NEGATIVE_INFINITY;
   let onsetPeakDb = Number.NEGATIVE_INFINITY;
 
@@ -59,6 +60,7 @@ export function createTurnDetector({
     bargeVoiced = 0;
     bargeQuiet = 0;
     bargeSent = false;
+    turnDuringReply = false;
     peakDb = Number.NEGATIVE_INFINITY;
     onsetPeakDb = Number.NEGATIVE_INFINITY;
   };
@@ -72,8 +74,9 @@ export function createTurnDetector({
     // While a reply plays, only a confirmed interruption counts as a request.
     // Anything quieter is echo or a stray knock: the client unducks and the
     // reply carries on.
-    const voiced = voicedMs >= MIN_VOICED_MS && (!speaking || (bargeMs > 0 && bargeSent));
-    const bargeBlocked = speaking && voicedMs >= MIN_VOICED_MS && !bargeSent;
+    const gateActive = speaking && turnDuringReply;
+    const voiced = voicedMs >= MIN_VOICED_MS && (!gateActive || (bargeMs > 0 && bargeSent));
+    const bargeBlocked = gateActive && voicedMs >= MIN_VOICED_MS && !bargeSent;
     const loudest = Number.isFinite(peakDb) ? Math.round(peakDb * 10) / 10 : -Infinity;
     resetTurn();
     return { type: "end", audio: voiced ? audio : null, peakDb: loudest, bargeBlocked };
@@ -112,6 +115,7 @@ export function createTurnDetector({
             turn = preroll;
             preroll = [];
             voicedMs = onset * FRAME_MS;
+            turnDuringReply = speaking;
             peakDb = onsetPeakDb;
             onsetPeakDb = Number.NEGATIVE_INFINITY;
             events.push({ type: "start" });
