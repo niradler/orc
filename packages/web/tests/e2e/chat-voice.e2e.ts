@@ -135,6 +135,18 @@ for (const [label, size] of [
       voice.socket?.send(JSON.stringify({ type: "ignored" }));
       await expect(overlay).toHaveAttribute("data-cue", "listening");
 
+      voice.socket?.send(
+        JSON.stringify({ type: "speak", id: "2", text: "Second.", format: "wav" }),
+      );
+      voice.socket?.send(toneWav(3));
+      await expect(overlay).toHaveAttribute("data-cue", "speaking");
+      voice.socket?.send(JSON.stringify({ type: "speech_start" }));
+      await expect(overlay).toHaveAttribute("data-cue", "hearing");
+      voice.socket?.send(JSON.stringify({ type: "speech_end" }));
+      await expect(overlay).toHaveAttribute("data-cue", "thinking");
+      voice.socket?.send(JSON.stringify({ type: "ignored" }));
+      await expect(overlay).toHaveAttribute("data-cue", "listening");
+
       await page.getByTestId("chat-voice-mute").click();
       await expect(overlay).toHaveAttribute("data-muted", "true");
       await expect(page.getByTestId("chat-voice-cue")).toHaveText("Muted");

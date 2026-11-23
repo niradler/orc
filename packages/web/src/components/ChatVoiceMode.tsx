@@ -202,7 +202,7 @@ export function useVoiceMode(
           setHearing(true);
         } else if (event.type === "speech_end") {
           hearingNow = false;
-          duck(1);
+          silence();
           setHearing(false);
           setPending(true);
         } else if (event.type === "speech_cancelled") {

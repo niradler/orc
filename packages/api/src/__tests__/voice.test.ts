@@ -21,6 +21,7 @@ const oldMock = process.env.ORC_E2E_CHAT_MOCK;
 let app: ReturnType<typeof setupTestApp>;
 let transcript = "add a retry to the deploy step";
 let ttsDelayMs = 0;
+let sttGate: Promise<void> | null = null;
 let sttFails = false;
 let ttsFails = false;
 let heard: { size: number; header: string }[] = [];
@@ -30,6 +31,7 @@ const provider = Bun.serve({
   port: 0,
   async fetch(request) {
     if (new URL(request.url).pathname.endsWith("/audio/transcriptions")) {
+      if (sttGate) await sttGate;
       if (sttFails) return new Response("model not loaded", { status: 500 });
       const file = (await request.formData()).get("file") as File;
       const bytes = new Uint8Array(await file.arrayBuffer());
@@ -92,6 +94,7 @@ beforeEach(() => {
   configure();
   transcript = "add a retry to the deploy step";
   ttsDelayMs = 0;
+  sttGate = null;
   sttFails = false;
   ttsFails = false;
   heard = [];
@@ -349,6 +352,29 @@ test("sequential speak calls preserve unplayed clips from the first call", async
   voice.ws.send(JSON.stringify({ type: "played", id: speaks[1]?.id }));
   voice.say(burst(200, 3000));
   await voice.next("speech_cancelled");
+  voice.ws.close();
+});
+
+test("a finishing transcription does not clear listening for a new turn in progress", async () => {
+  const id = await chat("Reply with exactly: ok");
+  const voice = await connect(id);
+  transcript = "";
+  let releaseStt: (() => void) | undefined;
+  sttGate = new Promise<void>((resolve) => {
+    releaseStt = resolve;
+  });
+  voice.say(burst(300, 3000));
+  await voice.next("speech_end");
+  voice.ws.send(burst(200, 3000).buffer);
+  await until(async () => voice.messages.filter((m) => m.type === "speech_start").length === 2);
+  releaseStt?.();
+  await voice.next("ignored");
+  const res = await app.request(`/api/chat/threads/${id}/speak`, {
+    method: "POST",
+    headers: AUTH,
+    body: JSON.stringify({ text: "Should wait." }),
+  });
+  expect(await res.json()).toEqual({ posted: false, spoken: false });
   voice.ws.close();
 });
 

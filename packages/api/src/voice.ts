@@ -92,6 +92,7 @@ function beginReply(ws: ServerWebSocket<VoiceSocketData>) {
   if (!wasPlaying) ws.data.detector?.setSpeaking(true);
   if (ws.data.guard) clearTimeout(ws.data.guard);
   ws.data.guard = setTimeout(() => endReply(ws), REPLY_GUARD_MS);
+  ws.data.guard.unref?.();
 }
 
 function serial<T>(
@@ -127,7 +128,6 @@ async function hear(ws: ServerWebSocket<VoiceSocketData>, audio: Int16Array) {
   const stt = speechToText(loadConfig(), "voice_mode");
   if (!stt) return send(ws, { type: "error", message: "Speech is not configured on this server." });
   const text = (await stt.transcribe({ audio: pcm16Wav(audio), format: "wav" })).trim();
-  ws.data.listening = false;
   if (!text || isFillerOnly(text)) {
     logger.debug("voice: transcript empty or filler", {
       threadId: ws.data.threadId,
@@ -297,15 +297,12 @@ export const voiceWebsocket: WebSocketHandler<VoiceSocketData> = {
       });
       // A confirmed request replaces whatever the agent was saying, including
       // speech queued but not yet played.
+      ws.data.listening = false;
       ws.data.epoch = (ws.data.epoch ?? 0) + 1;
       ws.data.speaking?.abort();
       endReply(ws);
       send(ws, { type: "speech_end" });
-      void serial(ws, "turns", () =>
-        hear(ws, audio).finally(() => {
-          ws.data.listening = false;
-        }),
-      ).catch((err) => {
+      void serial(ws, "turns", () => hear(ws, audio)).catch((err) => {
         logger.warn("Voice turn failed", err);
         send(ws, { type: "error", message: errorText(err) });
       });
