@@ -320,7 +320,7 @@ export const toolDefinitions = [
   {
     name: "session_send",
     description:
-      "Send a short note to another live or idle ORC session. Target with the ORC live session id, a session_start id, or the agent's native session id plus backend. mode queue (default) delivers at the recipient's next safe point; steer injects it into a session's running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt only work on sessions you started. It cannot approve tools or change configuration. Pass a stable request_id when retrying the same note.",
+      "Send a short note to another live or idle ORC session. Target with the ORC live session id, a session_start id, or the agent's native session id plus backend. mode queue (default) waits for the recipient's next safe point (or starts a turn when idle); steer explicitly injects it into a running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt only work on sessions you started. The receipt reports queued, steered, resumed, or unsupported — do not poll; completion wakes you. It cannot approve tools or change configuration. Pass a stable request_id when retrying the same note.",
     inputSchema: SessionMessageCreateSchema,
   },
   {
@@ -332,7 +332,7 @@ export const toolDefinitions = [
   {
     name: "session_start",
     description:
-      "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree on a new branch cut from your committed HEAD, or from another project's checkout; uncommitted edits are not carried), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC pushes the child's final reply, failure, stop or human question into this session: steered into your live turn when the agent supports it, otherwise at your next safe point. Use session_wait to block instead, session_send to message it, session_stop to stop it.",
+      "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree on a new branch cut from your committed HEAD, or from another project's checkout; uncommitted edits are not carried), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC queues the child's final reply, failure, stop or human question for your next safe point (delivered when your current turn ends, or starts a turn when idle) without interrupting your running turn. Use session_wait to block instead, session_send to message it (with explicit mode steer or interrupt if needed), session_stop to stop it.",
     inputSchema: SessionSpawnSchema.omit({ project_id: true }).extend({ project: projectParam }),
   },
   {

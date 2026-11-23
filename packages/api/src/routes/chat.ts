@@ -96,6 +96,7 @@ import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
 import {
   SESSION_MESSAGE_HOP_LIMIT,
   SESSION_SPAWN_HOURLY_LIMIT,
+  type SessionDelivery,
   type SessionSpawn,
   type SessionStatus,
 } from "@orc/core/session-messages";
@@ -855,7 +856,12 @@ function steerable(
   );
 }
 
-async function steerRun(run: ChatRun, input: string, requestId: string): Promise<ChatThread> {
+async function steerRun(
+  run: ChatRun,
+  input: string,
+  requestId: string,
+  deliveries?: SessionDelivery[],
+): Promise<ChatThread> {
   if (run.permissions.size || run.questions.size)
     throw new ConflictError("Answer the pending prompt first. Queue a message instead.");
   if (!steerable(run))
@@ -884,6 +890,7 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       id: requestId,
       role: "user",
       content: input,
+      ...(deliveries?.length ? { deliveries } : {}),
       timestamp: Date.now(),
       activity: [
         {
@@ -2676,6 +2683,7 @@ type TurnSetup = {
   continuation?: string | undefined;
   /** The turn continues on a fresh session and must say so in the transcript. */
   recoveryNotice?: boolean | undefined;
+  deliveries?: SessionDelivery[] | undefined;
   prepare?: () => Promise<SessionFile[]>;
 };
 
@@ -2810,9 +2818,13 @@ async function beginTurn(
     role: "user",
     content: input,
     ...(attachments.length ? { attachments } : {}),
+    ...(setup.deliveries?.length ? { deliveries: setup.deliveries } : {}),
     timestamp: Date.now(),
   });
-  if (thread.title === "New chat") thread.title = input.slice(0, 100);
+  if (thread.title === "New chat") {
+    const firstDelivery = setup.deliveries?.[0];
+    thread.title = (firstDelivery ? firstDelivery.title : input).slice(0, 100);
+  }
   const startedAt = Date.now();
   run.startedAt = startedAt;
   const newSegment = (): ChatMessage => ({
@@ -3969,7 +3981,7 @@ function nativeRun(target: ChatTarget): [string, ChatRun] | undefined {
 }
 
 registerChatControl({
-  turn: (target, prompt) => {
+  turn: (target, prompt, options) => {
     const thread =
       "threadId" in target
         ? store().get(target.threadId)
@@ -3977,16 +3989,18 @@ registerChatControl({
             .byRuntime(target.backend, target.host, target.runtimeId)
             .sort((a, b) => b.updatedAt - a.updatedAt)[0];
     if (!thread || thread.spawnedBy?.prompt || threadRun(thread.id) || runs.size >= 4) return null;
-    return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
+    return beginTurn(thread, prompt, { reserved: true, deliveries: options?.deliveries }).then(
+      ({ done }) => done,
+    );
   },
   canSteer: (target) => {
     const run = nativeRun(target)?.[1];
     return steerable(run) && run.steering.size < STEER_LIMIT;
   },
-  steer: async (target, text) => {
+  steer: async (target, text, options) => {
     const run = nativeRun(target)?.[1];
     if (!steerable(run) || run.steering.size >= STEER_LIMIT) return false;
-    await steerRun(run, text, crypto.randomUUID());
+    await steerRun(run, text, crypto.randomUUID(), options?.deliveries);
     return true;
   },
   stop: (threadId) => {

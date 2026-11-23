@@ -1764,6 +1764,7 @@ function toThreadMessage(message: ChatMessage): ThreadMessageLike {
           // Kinds this build keeps verbatim, rendered as quiet rows.
           providerActivity: message.providerActivity,
           attachments: message.attachments,
+          deliveries: message.deliveries,
           // The message renderer needs the exact text for Copy; the parts tree
           // alone does not expose it outside the assistant-ui slot.
           content: message.content,

@@ -1093,7 +1093,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1185,6 +1185,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
@@ -1220,6 +1237,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -1489,7 +1532,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1581,6 +1624,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
@@ -1616,6 +1676,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -1821,7 +1907,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1913,6 +1999,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
@@ -1948,6 +2051,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -2156,7 +2285,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -2248,6 +2377,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
@@ -2283,6 +2429,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -2411,6 +2583,7 @@ export interface paths {
                             outcomes: {
                                 completed: number;
                                 stopped: number;
+                                interrupted: number;
                                 failed: number;
                                 running: number;
                             };
@@ -2435,7 +2608,7 @@ export interface paths {
                                 startedAt: number;
                                 durationMs: number | null;
                                 /** @enum {string} */
-                                outcome: "completed" | "stopped" | "failed" | "running";
+                                outcome: "completed" | "stopped" | "interrupted" | "failed" | "running";
                                 toolCalls: number;
                                 toolFailures: number;
                                 responseChars: number;
@@ -2695,7 +2868,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -2787,6 +2960,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
@@ -2822,6 +3012,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3096,7 +3312,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3188,6 +3404,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
@@ -3223,6 +3456,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3278,7 +3537,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3369,6 +3628,23 @@ export interface paths {
                                     size: number;
                                     mimeType: string;
                                     description?: string;
+                                }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
                                 }[];
                             }[];
                             before: number | null;
@@ -3578,7 +3854,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3670,6 +3946,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
@@ -3705,6 +3998,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3968,7 +4287,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -4060,6 +4379,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
@@ -4095,6 +4431,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -4164,7 +4526,7 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -4256,6 +4618,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             };
                         };
                     };
@@ -4313,6 +4692,7 @@ export interface paths {
                         permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                         /** @enum {string} */
                         sendWhileRunning?: "steer" | "queue";
+                        confirmBusy?: boolean;
                         agentOptions?: {
                             [key: string]: {
                                 /** @enum {string} */
@@ -11117,6 +11497,58 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["RestartResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop the daemon gracefully: refuse new chat turns, let active ones finish and persist their resumable session state, then exit */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Shutdown accepted; the process exits once active work is durable */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShutdownResponse"];
+                    };
+                };
+                /** @description This process registered no shutdown handler, as with an embedded app that mounts the API routes without the daemon runtime */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            code: string;
+                        };
                     };
                 };
             };
@@ -20287,6 +20719,7 @@ export interface paths {
                             outcomes: {
                                 completed: number;
                                 stopped: number;
+                                interrupted: number;
                                 failed: number;
                                 running: number;
                             };
@@ -20311,7 +20744,7 @@ export interface paths {
                                 startedAt: number;
                                 durationMs: number | null;
                                 /** @enum {string} */
-                                outcome: "completed" | "stopped" | "failed" | "running";
+                                outcome: "completed" | "stopped" | "interrupted" | "failed" | "running";
                                 toolCalls: number;
                                 toolFailures: number;
                                 responseChars: number;
@@ -21133,6 +21566,23 @@ export interface paths {
                                 sender_backend: string | null;
                                 sender_label: string;
                                 body: string;
+                                delivery?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                } | null;
                                 position: number;
                                 hop: number;
                                 /** @enum {string} */
@@ -21199,6 +21649,23 @@ export interface paths {
                                 sender_backend: string | null;
                                 sender_label: string;
                                 body: string;
+                                delivery?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                } | null;
                                 position: number;
                                 hop: number;
                                 /** @enum {string} */
@@ -21217,6 +21684,11 @@ export interface paths {
                                 status: string;
                                 /** @enum {string} */
                                 delivery: "hook" | "resume" | "unsupported" | "chat" | "steer";
+                            };
+                            receipt?: {
+                                /** @enum {string} */
+                                status: "queued" | "steered" | "resumed" | "unsupported";
+                                note: string;
                             };
                         };
                     };
@@ -21300,6 +21772,23 @@ export interface paths {
                                 sender_backend: string | null;
                                 sender_label: string;
                                 body: string;
+                                delivery?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                } | null;
                                 position: number;
                                 hop: number;
                                 /** @enum {string} */
@@ -21318,6 +21807,11 @@ export interface paths {
                                 status: string;
                                 /** @enum {string} */
                                 delivery: "hook" | "resume" | "unsupported" | "chat" | "steer";
+                            };
+                            receipt?: {
+                                /** @enum {string} */
+                                status: "queued" | "steered" | "resumed" | "unsupported";
+                                note: string;
                             };
                         };
                     };
@@ -21391,6 +21885,23 @@ export interface paths {
                             sender_backend: string | null;
                             sender_label: string;
                             body: string;
+                            delivery?: {
+                                id?: string;
+                                /** @enum {string} */
+                                kind: "child_outcome" | "relay";
+                                session_id?: string | null;
+                                title: string;
+                                /** @enum {string} */
+                                outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                /** @enum {string} */
+                                waiting_for?: "question" | "approval";
+                                summary: string;
+                                body?: string;
+                                /** @enum {string} */
+                                sender_kind?: "session" | "human" | "channel" | "system";
+                                hop?: number;
+                                timestamp?: number;
+                            } | null;
                             position: number;
                             hop: number;
                             /** @enum {string} */
@@ -21474,6 +21985,116 @@ export interface paths {
                             sender_backend: string | null;
                             sender_label: string;
                             body: string;
+                            delivery?: {
+                                id?: string;
+                                /** @enum {string} */
+                                kind: "child_outcome" | "relay";
+                                session_id?: string | null;
+                                title: string;
+                                /** @enum {string} */
+                                outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                /** @enum {string} */
+                                waiting_for?: "question" | "approval";
+                                summary: string;
+                                body?: string;
+                                /** @enum {string} */
+                                sender_kind?: "session" | "human" | "channel" | "system";
+                                hop?: number;
+                                timestamp?: number;
+                            } | null;
+                            position: number;
+                            hop: number;
+                            /** @enum {string} */
+                            state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                            /** @enum {string|null} */
+                            delivered_via: "hook" | "chat" | "resume" | "steer" | null;
+                            delivery_error: string | null;
+                            request_id: string | null;
+                            created_at: number;
+                            updated_at: number;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+                /** @description Session or message not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Message is no longer queued, or a safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages/{id}/deliver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Steer a queued session message into the active turn now */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session message */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string | null;
+                            target_session_id: string;
+                            target_native_id: string | null;
+                            target_backend: string;
+                            /** @enum {string} */
+                            sender_kind: "session" | "human" | "channel" | "system";
+                            sender_session_id: string | null;
+                            sender_native_id: string | null;
+                            sender_backend: string | null;
+                            sender_label: string;
+                            body: string;
+                            delivery?: {
+                                id?: string;
+                                /** @enum {string} */
+                                kind: "child_outcome" | "relay";
+                                session_id?: string | null;
+                                title: string;
+                                /** @enum {string} */
+                                outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                /** @enum {string} */
+                                waiting_for?: "question" | "approval";
+                                summary: string;
+                                body?: string;
+                                /** @enum {string} */
+                                sender_kind?: "session" | "human" | "channel" | "system";
+                                hop?: number;
+                                timestamp?: number;
+                            } | null;
                             position: number;
                             hop: number;
                             /** @enum {string} */
@@ -24574,6 +25195,11 @@ export interface components {
             instance_id: string;
             /** @enum {boolean} */
             restarting: true;
+        };
+        ShutdownResponse: {
+            instance_id: string;
+            /** @enum {boolean} */
+            shutting_down: true;
         };
         McpToolResult: {
             result: string;

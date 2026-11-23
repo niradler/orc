@@ -225,3 +225,14 @@ export function useMoveSessionMessage(sessionId: string | null) {
     onSuccess: refresh,
   });
 }
+
+export function useDeliverSessionMessage(sessionId: string | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (messageId: string) => api.sessions.deliverMessage(messageId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["sessions", "messages", sessionId] });
+      void qc.invalidateQueries({ queryKey: ["chat"] });
+    },
+  });
+}

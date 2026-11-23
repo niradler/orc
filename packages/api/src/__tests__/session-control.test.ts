@@ -237,8 +237,22 @@ describe("agent session control", () => {
       )
     ).json<SessionMessageResult>();
     expect(steered.target.delivery).toBe("steer");
+    expect(steered.receipt).toMatchObject({ status: "steered" });
+    expect(steered.receipt?.note).toContain("Do not poll");
     expect(steered.message).toMatchObject({ state: "delivered", delivered_via: "steer" });
     expect(childTurn.steers.join("\n")).toContain("Also check the retry path");
+    const childThread = await (await req(app, "GET", `/chat/threads/${child.session_id}`)).json<{
+      messages: { role: string; deliveries?: { kind: string; summary: string }[] }[];
+    }>();
+    expect(
+      childThread.messages.some(
+        (m) =>
+          m.role === "user" &&
+          m.deliveries?.some(
+            (d) => d.kind === "relay" && d.summary.includes("Also check the retry path"),
+          ),
+      ),
+    ).toBe(true);
 
     const waiting = req(
       app,
@@ -252,18 +266,56 @@ describe("agent session control", () => {
     expect(waited).toMatchObject({ status: "idle", timed_out: false });
     expect(waited.last_message).toContain("done: child: fix the flaky");
 
-    const notice = await until(
-      () => parentTurn.steers.find((text) => text.includes("Fix flaky test")),
-      "parent steer",
+    const queuedNotice = await until(
+      async () =>
+        (await inbox(parent.id)).find((message) => message.sender_session_id === child.session_id),
+      "parent notice queued",
     );
-    expect(notice).toContain("finished");
-    expect(notice).toContain("done: child: fix the flaky");
-    const parentInbox = await inbox(parent.id);
-    expect(parentInbox[0]).toMatchObject({
+    expect(parentTurn.steers).toEqual([]);
+    expect(queuedNotice).toMatchObject({
       sender_kind: "system",
       sender_session_id: child.session_id,
+      state: "queued",
+      delivery: {
+        kind: "child_outcome",
+        session_id: child.session_id,
+        title: "Fix flaky test",
+        outcome: "finished",
+      },
+    });
+    expect(queuedNotice.body).toContain("done: child: fix the flaky");
+
+    const deliveredNow = await req(app, "POST", `/session-messages/${queuedNotice.id}/deliver`);
+    expect(deliveredNow.status).toBe(200);
+    expect(await deliveredNow.json()).toMatchObject({
+      id: queuedNotice.id,
+      state: "delivered",
       delivered_via: "steer",
     });
+    const steeredNotice = await until(
+      () => parentTurn.steers.find((text) => text.includes("Fix flaky test")),
+      "parent steer after deliver now",
+    );
+    expect(steeredNotice).toContain("Delivery is not approval");
+    expect(steeredNotice).toContain("done: child: fix the flaky");
+    const parentThread = await (await req(app, "GET", `/chat/threads/${parent.id}`)).json<{
+      messages: {
+        role: string;
+        deliveries?: { kind: string; session_id?: string | null; outcome?: string }[];
+      }[];
+    }>();
+    expect(
+      parentThread.messages.some(
+        (m) =>
+          m.role === "user" &&
+          m.deliveries?.some(
+            (d) =>
+              d.kind === "child_outcome" &&
+              d.session_id === child.session_id &&
+              d.outcome === "finished",
+          ),
+      ),
+    ).toBe(true);
 
     const lineage = await (
       await req(app, "GET", `/sessions/live/${parent.id}/lineage`)
@@ -517,10 +569,39 @@ describe("agent session control", () => {
     await turnFor("worker four");
     expect((await status(queued.session_id)).status).toBe("running");
     const notice = await until(
-      () => leadTurn.steers.find((text) => text.includes(first.session_id)),
+      async () =>
+        (await inbox(lead.id)).find((message) => message.sender_session_id === first.session_id),
       "lead notified",
     );
-    expect(notice).toContain(`[orc child-session id=${first.session_id} outcome=finished]`);
+    expect(leadTurn.steers).toEqual([]);
+    expect(notice.state).toBe("queued");
+    expect(notice.body).toContain(`[orc child-session id=${first.session_id} outcome=finished]`);
+
+    leadTurn.release();
+    await until(() => !chatControl().running(lead.id), "lead finished turn");
+    const delivering = deliverIdleSessionMessages();
+    const followup = await turnFor(`[orc child-session id=${first.session_id} outcome=finished]`);
+    expect(followup.prompt).toContain("Delivery is not approval");
+    followup.release();
+    await delivering;
+    const leadThread = await (await req(app, "GET", `/chat/threads/${lead.id}`)).json<{
+      messages: {
+        role: string;
+        deliveries?: { kind: string; session_id?: string | null; outcome?: string }[];
+      }[];
+    }>();
+    expect(
+      leadThread.messages.some(
+        (m) =>
+          m.role === "user" &&
+          m.deliveries?.some(
+            (d) =>
+              d.kind === "child_outcome" &&
+              d.session_id === first.session_id &&
+              d.outcome === "finished",
+          ),
+      ),
+    ).toBe(true);
 
     const stopped = await req(app, "POST", `/sessions/live/${lead.id}/stop`);
     expect(stopped.status).toBe(200);
