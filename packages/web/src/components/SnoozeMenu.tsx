@@ -31,7 +31,7 @@ export function SnoozeMenu({
   trigger?: ReactNode;
   align?: "start" | "center" | "end";
 }) {
-  const desktop = useBreakpoint("sm");
+  const desktop = useBreakpoint("md");
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = (next: boolean) => {
@@ -69,26 +69,21 @@ export function SnoozeMenu({
   };
 
   const optionRowClass = cn(
-    "flex w-full items-center justify-between gap-2 rounded-md px-2.5 text-left text-sm text-on-surface hover:bg-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50",
+    "flex w-full items-center justify-between gap-2 rounded-md px-2.5 text-left text-sm text-on-surface hover:bg-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 pointer-coarse:min-h-11",
     desktop ? "min-h-8 py-1.5 text-[13px]" : "min-h-11 py-2.5 text-sm",
   );
 
   const body = customOpen ? (
-    <form
-      data-testid="snooze-custom-form"
-      className="space-y-2.5 p-1"
-      onSubmit={(event) => {
-        event.preventDefault();
-        submitCustom();
-      }}
-    >
+    <div data-testid="snooze-custom-form" className="space-y-2.5 p-1">
       <div className="flex items-center gap-1.5">
         <Button
           type="button"
           size="icon"
           variant="ghost"
           aria-label="Back to snooze presets"
-          className={desktop ? "size-7" : "min-h-11 min-w-11"}
+          className={
+            desktop ? "size-7 pointer-coarse:min-h-11 pointer-coarse:min-w-11" : "min-h-11 min-w-11"
+          }
           onClick={() => {
             setCustomOpen(false);
             setCustomError(null);
@@ -109,7 +104,14 @@ export function SnoozeMenu({
             setCustomValue(event.target.value);
             setCustomError(null);
           }}
-          className="min-h-11 w-full rounded-md border border-control-border bg-background px-2.5 text-base text-on-surface focus-visible:outline-2 focus-visible:outline-focus sm:min-h-8 sm:text-sm"
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.stopPropagation();
+              submitCustom();
+            }
+          }}
+          className="min-h-11 w-full rounded-md border border-control-border bg-background px-2.5 text-base text-on-surface focus-visible:outline-2 focus-visible:outline-focus md:min-h-8 md:text-sm pointer-coarse:min-h-11 pointer-coarse:text-base"
         />
       </label>
       {customError && (
@@ -122,22 +124,26 @@ export function SnoozeMenu({
           type="button"
           size="sm"
           variant="ghost"
-          className="max-sm:min-h-11"
+          className="max-md:min-h-11 pointer-coarse:min-h-11"
           onClick={() => setOpen(false)}
         >
           Cancel
         </Button>
         <Button
-          type="submit"
+          type="button"
           size="sm"
           data-testid="snooze-custom-submit"
           disabled={disabled}
-          className="max-sm:min-h-11"
+          className="max-md:min-h-11 pointer-coarse:min-h-11"
+          onClick={(event) => {
+            event.stopPropagation();
+            submitCustom();
+          }}
         >
           Snooze
         </Button>
       </div>
-    </form>
+    </div>
   ) : (
     <div className="space-y-0.5" role="menu" aria-label="Snooze options">
       {SNOOZE_PRESETS.map((preset) => (
@@ -272,7 +278,7 @@ export function SnoozedWaitingBanner({
         variant="ghost"
         data-testid="session-wake-now"
         disabled={busy}
-        className="max-sm:min-h-11 pointer-coarse:min-h-11 shrink-0"
+        className="max-md:min-h-11 pointer-coarse:min-h-11 shrink-0"
         onClick={onWake}
       >
         <BellRing className="size-3.5" aria-hidden="true" />

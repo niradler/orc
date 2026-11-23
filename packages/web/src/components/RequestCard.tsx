@@ -149,7 +149,7 @@ export function RequestCard({
           variant="outline"
           type="button"
           disabled={busy}
-          className="max-sm:min-h-11 pointer-coarse:min-h-11"
+          className="max-md:min-h-11 pointer-coarse:min-h-11"
           onClick={() => unsnooze.mutate()}
         >
           <BellRing size={14} /> {unsnooze.isPending ? "Waking…" : "Wake now"}
@@ -167,7 +167,7 @@ export function RequestCard({
               type="button"
               disabled={busy}
               aria-label={snoozed ? "Change snooze time" : "Snooze request"}
-              className="max-sm:min-h-11 pointer-coarse:min-h-11"
+              className="max-md:min-h-11 pointer-coarse:min-h-11"
             >
               <Clock size={14} /> {snooze.isPending ? "Snoozing…" : "Snooze"}
             </Button>

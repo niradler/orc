@@ -1,3 +1,4 @@
+import { changes } from "@orc/core/changes";
 import { type HumanRequest, parseSnoozeDurationSeconds } from "@orc/core/human-requests";
 import { currentHumanRequest, type HumanRequestStore } from "@orc/db/human-requests";
 import { redactSecrets } from "./redact.js";
@@ -215,6 +216,7 @@ export class HumanRequestChannels {
         if (!seconds)
           return "Use /attention <request-id> <version> snooze <duration> (for example 15m, 1h, 3h).";
         this.store.snooze(id, version, this.store.currentTime() + seconds * 1000);
+        changes.publish("human-requests", "notifications");
         return `Request snoozed for ${answer?.trim()}. You can still answer earlier here or in ORC.`;
       }
       if (request.input.kind === "question") {
@@ -224,6 +226,7 @@ export class HumanRequestChannels {
         if (operation === "answer") return "This action needs approve or deny.";
         this.store.respond(id, version, { kind: "approval", approved: operation === "approve" });
       }
+      changes.publish("human-requests", "notifications");
       return "Response saved. ORC will deliver it to the originating agent; check Notifications for delivery status.";
     } catch {
       return "This request is stale, cancelled, expired, or already answered. Reload Notifications in ORC.";

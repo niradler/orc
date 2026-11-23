@@ -452,6 +452,22 @@ test("should snooze and unsnooze pending requests, exclude them from unread coun
       })
     ).status,
   ).toBe(400);
+  expect(
+    (
+      await req(app, "POST", `/human-requests/${created.id}/snooze`, {
+        version: 1,
+        until: 9_000_000_000_000_000,
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await req(app, "POST", `/human-requests/${created.id}/snooze`, {
+        version: 1,
+        until: Date.now() + 400 * 86400 * 1000,
+      })
+    ).status,
+  ).toBe(400);
 
   // Snooze for 1 hour: leaves active notifications & drops unread count by 1.
   const snoozedRes = await req(app, "POST", `/human-requests/${created.id}/snooze`, {

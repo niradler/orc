@@ -143,16 +143,14 @@ export const HumanResponseSchema = z.discriminatedUnion("kind", [
     .strict(),
   z.object({ kind: z.literal("approval"), approved: z.boolean() }).strict(),
 ]);
+export const MAX_SNOOZE_SECONDS = 365 * 86400;
+const MAX_EPOCH_MS = 8_640_000_000_000_000;
+
 export const HumanRequestSnoozeSchema = z
   .object({
     version: z.number().int().positive(),
-    until: z.number().int().positive().optional(),
-    after_seconds: z
-      .number()
-      .int()
-      .min(1)
-      .max(365 * 86400)
-      .optional(),
+    until: z.number().int().positive().max(MAX_EPOCH_MS).optional(),
+    after_seconds: z.number().int().min(1).max(MAX_SNOOZE_SECONDS).optional(),
   })
   .strict()
   .refine(
@@ -205,6 +203,6 @@ export function parseSnoozeDurationSeconds(raw: string): number | null {
     if (!Number.isSafeInteger(amount) || !unit) return null;
     total += amount * unit;
   }
-  if (total < 1 || total > 365 * 86400) return null;
+  if (total < 1 || total > MAX_SNOOZE_SECONDS) return null;
   return total;
 }

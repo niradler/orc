@@ -49,7 +49,7 @@ test.beforeEach(async ({ request }) => {
   await dismissNotifications(request);
 });
 
-test("desktop snooze menu, bell unread drop, Snoozed group, Escape cancel, Wake now, and waiting banner @sanity", async ({
+test("desktop snooze menu, bell unread drop, Snoozed group, Escape cancel, Wake now, and early answer @sanity", async ({
   page,
   request,
 }) => {
@@ -339,6 +339,101 @@ test("phone snooze bottom sheet, 44px touch targets, zero overflow, and session 
     // Wake now from the session waiting banner clears the snooze immediately.
     await banner.getByTestId("session-wake-now").click();
     await expect(banner).toHaveCount(0);
+  } finally {
+    await cancelPendingRequests(request, createdIds);
+    await dismissNotifications(request);
+  }
+});
+
+test("custom snooze inside expanded question and command cards never submits respond or run, and 700px uses bottom sheet", async ({
+  page,
+  request,
+}) => {
+  const createdIds: string[] = [];
+  const unexpectedCalls: string[] = [];
+  try {
+    await page.route("**/api/human-requests/*/respond", async (route) => {
+      unexpectedCalls.push(route.request().url());
+      await route.continue();
+    });
+    await page.route("**/api/human-requests/*/run", async (route) => {
+      unexpectedCalls.push(route.request().url());
+      await route.continue();
+    });
+
+    const questionReq = await apiPost<HumanRequest>(request, "/human-requests", {
+      kind: "question",
+      title: "Custom snooze question isolation",
+      prompt: "Should we rotate keys?",
+      origin: { backend: "codex", session_id: tid("custom-q"), request_id: "custom-q" },
+    });
+    createdIds.push(questionReq.id);
+
+    const commandReq = await apiPost<HumanRequest>(request, "/human-requests", {
+      kind: "command",
+      title: "Custom snooze command isolation",
+      prompt: "Run diagnostics script",
+      origin: { backend: "codex", session_id: tid("custom-cmd"), request_id: "custom-cmd" },
+      command: { host: null, cwd: "/tmp", script: "echo should-not-run" },
+    });
+    createdIds.push(commandReq.id);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await gotoView(page, "tasks");
+    const bell = page.locator('[data-testid="notification-bell"]:visible').last();
+    await bell.click();
+
+    // Expand question card, fill an answer (so submit is enabled!), then submit Custom snooze.
+    const qCard = page.getByTestId(`attention-request-${questionReq.id}`);
+    await qCard.getByTestId("attention-review").click();
+    await expect(qCard.getByTestId("attention-answer")).toBeVisible();
+    await qCard.getByTestId("attention-answer").fill("Draft answer that must not send");
+    await qCard.getByTestId("attention-snooze").click();
+    await page.getByTestId("snooze-option-custom").click();
+    await expect(page.getByTestId("snooze-custom-input")).toBeVisible();
+    await page.getByTestId("snooze-custom-submit").click();
+
+    const snoozedSection = page.getByTestId("notifications-snoozed-section");
+    await expect(snoozedSection.locator(`[data-source-id="${questionReq.id}"]`)).toBeVisible();
+
+    // Expand command card and submit Custom snooze via Enter key on the datetime input.
+    const cmdCard = page.getByTestId(`attention-request-${commandReq.id}`);
+    await cmdCard.getByTestId("attention-review").click();
+    await expect(cmdCard.getByTestId("attention-snooze")).toBeVisible();
+    await cmdCard.getByTestId("attention-snooze").click();
+    await page.getByTestId("snooze-option-custom").click();
+    const customInput = page.getByTestId("snooze-custom-input");
+    await customInput.focus();
+    await page.keyboard.press("Enter");
+
+    await expect(snoozedSection.locator(`[data-source-id="${commandReq.id}"]`)).toBeVisible();
+    // Neither /respond nor /run may have been invoked, and both requests remain pending + snoozed.
+    expect(unexpectedCalls).toEqual([]);
+    for (const id of [questionReq.id, commandReq.id]) {
+      const current = await apiGet<HumanRequest>(request, `/human-requests/${id}/view`);
+      expect(current.status).toBe("pending");
+      expect(current.snooze_until).toBeGreaterThan(Date.now());
+    }
+
+    // At 700px (phone breakpoint < 768px), row Snooze opens a bottom sheet anchored at the bottom, not detached at (0,0).
+    await snoozedSection
+      .locator(`[data-source-id="${questionReq.id}"]`)
+      .getByTestId("notification-wake-now")
+      .click();
+    await page.setViewportSize({ width: 700, height: 844 });
+    await gotoView(page, "notifications");
+    const row = notificationInbox(page).locator(`[data-source-id="${questionReq.id}"]`);
+    await row.getByTestId("notification-actions").click();
+    await page.getByTestId("notification-snooze").click();
+    const sheet = page.getByTestId("snooze-menu");
+    await expect(sheet).toBeVisible();
+    await expect(sheet).toHaveAttribute("data-presentation", "sheet");
+    const box = await sheet.boundingBox();
+    expect(box).not.toBeNull();
+    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeGreaterThan(800);
+    expect(box?.y ?? 0).toBeGreaterThan(200);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
   } finally {
     await cancelPendingRequests(request, createdIds);
     await dismissNotifications(request);

@@ -29,6 +29,7 @@ const QUALIFIED_COLUMNS =
 const NOT_SNOOZED = `NOT (type='human.request' AND EXISTS (
   SELECT 1 FROM human_requests hr
   WHERE hr.id=notifications.source_id AND hr.status='pending'
+    AND hr.expires_at>?
     AND hr.snooze_until IS NOT NULL AND hr.snooze_until>?))`;
 const RELATED_SOURCES = `SELECT related.source_id FROM notification_session_sources related
   JOIN notification_session_sources current ON current.session_key=related.session_key
@@ -271,7 +272,7 @@ export class NotificationStore {
           : " AND n.project_id=?";
     const projectBindings = projectId === undefined || projectId === null ? [] : [projectId];
     const snoozeFilter = snoozeAware ? ` AND ${NOT_SNOOZED}` : "";
-    const snoozeBindings = snoozeAware ? [now] : [];
+    const snoozeBindings = snoozeAware ? [now, now] : [];
     const filter = `expires_at>? AND created_at>? AND dismissed_at IS NULL${project}${snoozeFilter} AND (${LATEST_FINISHED})${unreadOnly ? " AND read_at IS NULL" : ""}`;
     const rows = this.db
       .query<Row, (number | string)[]>(
@@ -293,11 +294,12 @@ export class NotificationStore {
                JOIN human_requests hr ON hr.id=n.source_id
                WHERE n.type='human.request'
                  AND n.expires_at>? AND n.created_at>? AND n.dismissed_at IS NULL
-                 AND hr.status='pending' AND hr.snooze_until IS NOT NULL AND hr.snooze_until>?${qualifiedProject}
+                 AND hr.status='pending' AND hr.expires_at>?
+                 AND hr.snooze_until IS NOT NULL AND hr.snooze_until>?${qualifiedProject}
                ORDER BY hr.snooze_until ASC,n.created_at DESC,n.id DESC
                LIMIT 100`,
             )
-            .all(now, cutoff, now, ...projectBindings)
+            .all(now, cutoff, now, now, ...projectBindings)
         : [];
     return {
       notifications: rows.slice(0, limit).map((row) => notification(row, maximumAge)),
@@ -385,7 +387,7 @@ export class NotificationStore {
     const projectBindings = projectId === undefined || projectId === null ? [] : [projectId];
     const snoozeAware = hasHumanRequestSnooze(this.db);
     const snoozeFilter = snoozeAware ? ` AND ${NOT_SNOOZED}` : "";
-    const snoozeBindings = snoozeAware ? [now] : [];
+    const snoozeBindings = snoozeAware ? [now, now] : [];
     this.db
       .transaction(() => {
         const updated = this.db

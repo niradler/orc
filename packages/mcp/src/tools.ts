@@ -217,7 +217,7 @@ const humanSnoozeParams = z
   .object({
     id: z.string().min(1).max(128),
     version: z.number().int().positive(),
-    until: z.number().int().positive().optional(),
+    until: z.number().int().positive().max(8_640_000_000_000_000).optional(),
     after_seconds: z
       .number()
       .int()

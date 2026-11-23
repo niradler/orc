@@ -710,15 +710,19 @@ export function NotificationListBody({ onOpenRequest }: { onOpenRequest?: (id: s
             </Button>
           </p>
         )}
-        {!center.loading && !center.error && shown.length === 0 && !center.selected && (
-          <p data-testid="notifications-empty" className="py-5 text-sm text-outline">
-            {center.needsYou
-              ? "Nothing needs you right now."
-              : center.showRead
-                ? "No notifications."
-                : "No unread notifications."}
-          </p>
-        )}
+        {!center.loading &&
+          !center.error &&
+          shown.length === 0 &&
+          snoozedItems.length === 0 &&
+          !center.selected && (
+            <p data-testid="notifications-empty" className="py-5 text-sm text-outline">
+              {center.needsYou
+                ? "Nothing needs you right now."
+                : center.showRead
+                  ? "No notifications."
+                  : "No unread notifications."}
+            </p>
+          )}
         {sections.map((section) => (
           <section key={section.id} aria-label={section.name ?? "Latest notifications"}>
             {section.name && (

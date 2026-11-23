@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, resetConfig } from "@orc/core/config";
 import { HumanRequestStore } from "../human-requests.js";
+import { NotificationStore } from "../notifications.js";
 
 const tempDirs: string[] = [];
 afterEach(() => {
@@ -609,6 +610,9 @@ test("should snooze pending requests without changing status or expires_at and r
     const pending = store.create(question);
     const originalExpiry = pending.expires_at;
     expect(() => store.snooze(pending.id, pending.version, now())).toThrow("future");
+    expect(() => store.snooze(pending.id, pending.version, now() + 366 * 86400 * 1000)).toThrow(
+      "365 days",
+    );
     expect(() => store.snooze(pending.id, pending.version + 1, now() + 5000)).toThrow("stale");
 
     const snoozed = store.snooze(pending.id, pending.version, now() + 60_000);
@@ -688,6 +692,9 @@ test("should clear snooze_until on answer, cancel, unavailable, and expire witho
     });
     store.snooze(toExpire.id, 1, now() + 60_000);
     advance(10_000);
+    // Even before expire() runs, NotificationStore.list() excludes already-expired requests from snoozed.
+    const beforeSweep = new NotificationStore(db, now).list();
+    expect(beforeSweep.snoozed.some((n) => n.source_id === toExpire.id)).toBe(false);
     expect(store.get(toExpire.id).status).toBe("expired");
     expect(store.get(toExpire.id).snooze_until).toBeNull();
     advance(60_000);

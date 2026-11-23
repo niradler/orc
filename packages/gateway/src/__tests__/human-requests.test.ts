@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
+import { changes } from "@orc/core/changes";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { HumanRequestChannels } from "../human-requests.js";
 import type { GatewayAdapter, IncomingMessage } from "../types.js";
@@ -257,25 +258,38 @@ test("should suppress channel reminders while snoozed, allow early channel answe
     expect(sent).toHaveLength(1);
     expect(sent[0]).toContain("Quiet while snoozed?");
 
-    // Channel snooze command snoozes it, and an early channel reply still answers & clears snooze.
-    expect(
-      channels.reply({
-        platform: "telegram",
-        chatId: "nir",
-        userId: "nir",
-        text: `/attention ${suppressed.id} 1 snooze 1h`,
-      }),
-    ).toContain("snoozed for 1h");
-    expect(store.get(suppressed.id).snooze_until).toBe(now + 3_600_000);
+    // Channel snooze command snoozes it and publishes change events; early channel reply still answers & clears snooze.
+    const published: string[][] = [];
+    const unsubscribe = changes.subscribe(({ resources }) => published.push([...resources]));
+    try {
+      expect(
+        channels.reply({
+          platform: "telegram",
+          chatId: "nir",
+          userId: "nir",
+          text: `/attention ${suppressed.id} 1 snooze 1h`,
+        }),
+      ).toContain("snoozed for 1h");
+      expect(store.get(suppressed.id).snooze_until).toBe(now + 3_600_000);
+      expect(
+        published.some((r) => r.includes("human-requests") && r.includes("notifications")),
+      ).toBe(true);
 
-    expect(
-      channels.reply({
-        platform: "telegram",
-        chatId: "nir",
-        userId: "nir",
-        text: `/attention ${suppressed.id} 1 answer Ship now`,
-      }),
-    ).toContain("Response saved");
+      published.length = 0;
+      expect(
+        channels.reply({
+          platform: "telegram",
+          chatId: "nir",
+          userId: "nir",
+          text: `/attention ${suppressed.id} 1 answer Ship now`,
+        }),
+      ).toContain("Response saved");
+      expect(
+        published.some((r) => r.includes("human-requests") && r.includes("notifications")),
+      ).toBe(true);
+    } finally {
+      unsubscribe();
+    }
     const answered = store.get(suppressed.id);
     expect(answered.status).toBe("answered");
     expect(answered.snooze_until).toBeNull();

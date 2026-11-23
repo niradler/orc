@@ -9,6 +9,7 @@ import {
   HumanRequestInputSchema,
   HumanRequestSchema,
   HumanResponseSchema,
+  MAX_SNOOZE_SECONDS,
 } from "@orc/core/human-requests";
 import { ulid } from "@orc/core/ids";
 import { AuditLog, installAudit } from "./audit.js";
@@ -440,6 +441,8 @@ export class HumanRequestStore {
     const now = this.now();
     if (!Number.isSafeInteger(snoozeUntil) || snoozeUntil <= now)
       throw new ValidationError("Snooze time must be in the future");
+    if (snoozeUntil > now + MAX_SNOOZE_SECONDS * 1000)
+      throw new ValidationError("Snooze time cannot be more than 365 days in the future");
     return this.db
       .transaction(() => {
         const request = this.get(id);
