@@ -103,7 +103,7 @@ export function readChatAnalytics(thread: ChatThread): Omit<ChatAnalytics, "cont
   const skills = new Map<string, ChatSkillStat>();
   const turnStats: ChatTurnStat[] = [];
   const durations: number[] = [];
-  const outcomes = { completed: 0, stopped: 0, failed: 0, running: 0 };
+  const outcomes = { completed: 0, stopped: 0, interrupted: 0, failed: 0, running: 0 };
   let userMessages = 0;
   let assistantMessages = 0;
   let toolCalls = 0;

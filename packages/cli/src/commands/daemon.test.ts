@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { volatileBinPath } from "./daemon.js";
+import { launchdPlist, volatileBinPath } from "./daemon.js";
 
 describe("daemon install binary path guard", () => {
   test("rejects the fnm per-shell path from the bug report", () => {
@@ -31,5 +31,18 @@ describe("daemon install binary path guard", () => {
     expect(volatileBinPath("C:\\Users\\nir\\.volta\\tools\\image\\node\\22.3.0\\orc.exe")).toBe(
       "/.volta/tools/",
     );
+  });
+});
+
+describe("macOS launchd agent", () => {
+  test("restarts a crash but stays stopped after a clean daemon stop", () => {
+    const plist = launchdPlist("/usr/local/bin/orc");
+    // KeepAlive: true would respawn the daemon the moment `orc daemon stop`
+    // exits 0, making stop look like it did nothing.
+    expect(plist).toContain(
+      "<key>KeepAlive</key>\n  <dict>\n    <key>SuccessfulExit</key>\n    <false/>",
+    );
+    expect(plist).not.toContain("<key>KeepAlive</key>\n  <true/>");
+    expect(plist).toContain("<string>/usr/local/bin/orc</string>\n    <string>daemon</string>");
   });
 });

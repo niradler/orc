@@ -113,7 +113,7 @@ export function createApp() {
       return c.json({ error: z.prettifyError(err), code: "VALIDATION_ERROR" }, 400);
     if (orcErr) {
       return c.json(
-        { error: orcErr.message, code: orcErr.code },
+        { ...orcErr.details, error: orcErr.message, code: orcErr.code },
         orcErr.statusCode as 400 | 401 | 403 | 404 | 409 | 500 | 503,
       );
     }

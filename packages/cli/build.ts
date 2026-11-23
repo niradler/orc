@@ -22,7 +22,18 @@ console.log("Building web dashboard...");
   if (proc.exitCode !== 0) process.exit(1);
 }
 
-// 2. Generate the embedded-asset manifest (import with { type: "file" })
+// 2. Bundle the OpenCode enforcement plugin, then generate the embedded-asset
+// manifests (web + plugin).
+console.log("Building OpenCode plugin...");
+{
+  const proc = Bun.spawnSync(["bun", "run", "build-opencode-plugin.ts"], {
+    stderr: "inherit",
+    stdout: "inherit",
+  });
+  if (proc.exitCode !== 0) process.exit(1);
+}
+
+// 3. Generate the embedded-asset manifest (import with { type: "file" })
 console.log("Generating web asset manifest...");
 {
   const proc = Bun.spawnSync(["bun", "run", "scripts/generate-web-manifest.ts"], {
@@ -55,7 +66,7 @@ export const CODE_WORKER_ASSETS = { script, wasm };
 `,
 );
 
-// 3. Cross-compile standalone binaries - each embeds the web dashboard.
+// 4. Cross-compile standalone binaries - each embeds the web dashboard and plugin bundle.
 const targets = [
   { target: "bun-linux-x64", out: "dist/orc-linux-x64" },
   { target: "bun-linux-arm64", out: "dist/orc-linux-arm64" },

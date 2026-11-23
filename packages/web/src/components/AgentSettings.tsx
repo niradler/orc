@@ -14,11 +14,12 @@ import {
   providerSecretName,
 } from "@orc/core/providers";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Copy, Plus, X } from "lucide-react";
+import { Copy, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { AgentIcon } from "@/components/AgentIcon";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -61,6 +62,7 @@ export function AgentSettings() {
   const [optionErrors, setOptionErrors] = useState<Record<string, string>>({});
   const [environmentKeys, setEnvironmentKeys] = useState<Record<string, string[]>>({});
   const [newOpen, setNewOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState("");
   const [agent, setAgent] = useState("claude");
   const [custom, setCustom] = useState("");
@@ -208,6 +210,24 @@ export function AgentSettings() {
     setCustom("");
     setSeparate(false);
     save.reset();
+  }
+  function removeProvider(): void {
+    if (!settings || !profile || settings.providers.length <= 1) return;
+    const id = profile.id;
+    const remaining = settings.providers.filter((item) => item.id !== id);
+    const nextDefault =
+      settings.default_provider_id === id
+        ? (remaining.find((item) => item.enabled) ?? remaining[0]).id
+        : settings.default_provider_id;
+    const without = <T,>(record: Record<string, T>): Record<string, T> =>
+      Object.fromEntries(Object.entries(record).filter(([key]) => key !== id));
+    save.reset();
+    setDraft({ ...settings, providers: remaining, default_provider_id: nextDefault });
+    setOptionDrafts(without);
+    setOptionErrors(without);
+    setEnvironmentKeys(without);
+    setEditing(nextDefault);
+    setDeleteOpen(false);
   }
   function changeOptions(value: string): void {
     if (!profile) return;
@@ -776,6 +796,24 @@ export function AgentSettings() {
                 )}
               </details>
             )}
+            <div className="flex items-center gap-1 border-t border-border pt-3">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                data-testid="provider-delete"
+                disabled={busy || settings.providers.length <= 1}
+                onClick={() => setDeleteOpen(true)}
+                className="text-error"
+              >
+                <Trash2 size={14} />
+                Delete provider
+              </Button>
+              <HelpPopover label="Delete provider" testId="provider-delete-help">
+                Removes this provider and its saved secrets when you save changes. Existing
+                conversations keep their provider; new sessions need another one.
+              </HelpPopover>
+            </div>
           </div>
         </div>
       )}
@@ -907,6 +945,25 @@ export function AgentSettings() {
           </div>
         </DialogContent>
       </Dialog>
+      {settings && profile && (
+        <ConfirmDialog
+          open={deleteOpen}
+          title="Delete provider"
+          description={`Remove "${profile.name}" and its saved secrets? Existing conversations keep this provider; new sessions need another one.${
+            settings.default_provider_id === profile.id
+              ? ` The default moves to "${
+                  (
+                    settings.providers.find((item) => item.id !== profile.id && item.enabled) ??
+                    settings.providers.find((item) => item.id !== profile.id)
+                  )?.name
+                }".`
+              : ""
+          } Save changes to apply.`}
+          confirmLabel="Delete"
+          onConfirm={removeProvider}
+          onCancel={() => setDeleteOpen(false)}
+        />
+      )}
     </section>
   );
 }

@@ -17,15 +17,45 @@ Requires OpenCode 2.x and the `orc` executable on `PATH`. Add the plugin to
 }
 ```
 
-Or copy the self-contained bundle into the project's plugin folder:
+Or point `plugins` at a directory that contains the plugin package (OpenCode 2.x
+resolves a plugin directory through its `package.json`; a single `.js` file is ignored):
 
-```bash
-cp node_modules/@orc/opencode/dist/plugin.js .opencode/plugins/orc.js
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["/absolute/path/to/@orc/opencode"]
+}
 ```
 
 Enable enforcement in ORC settings (`rules.enabled: true` or `ORC_RULES_ENABLED=true`) and
 activate a policy for the workspace on the **Rules** page or with `orc rules activate`.
 There is no `install-hook` step; OpenCode loads the plugin itself.
+
+## ORC-managed sessions
+
+A chat or worker that ORC starts with the OpenCode backend needs no manual install. ORC
+adds the bundled plugin and the dangerous-command permission baseline to a session-scoped
+`OPENCODE_CONFIG_CONTENT` document at spawn. ORC starts a dedicated `opencode acp`
+process per session, so the document applies to that process only and never changes the
+user's own OpenCode sessions. OpenCode merges that layer after global and
+project configuration, so the ORC entries win without editing the user's
+`opencode.json`; plugins from both layers load. The session also receives
+`ORC_COMMAND`, `ORC_DB_PATH`, `ORC_API_BASE` and `ORC_API_SECRET` so the hook child reads
+the same ORC database and API as the session.
+
+The baseline asks the human before `daemon stop`/`restart`, process kills, `sudo`,
+destructive `rm`/`rd`/`del`/`format`/`mkfs`, forced pushes, hard resets, `shutdown` and
+`reboot`. Everything else keeps OpenCode's own policy, so ordinary shell commands do not
+start prompting. The plugin's `execute.before` deny still runs first, and auto-approval
+cannot bypass it. A baseline `ask` follows the session's auto-approval setting: chat
+prompts the human, while a worker or KB digest session with auto-approval answers it
+automatically. A workspace `deny` or `ask_user` rule always keeps its own behavior.
+
+If rules are enabled and a policy covers the session folder, ORC refuses to start the
+session when the plugin bundle is missing, the database is in memory, or the session runs
+on a remote execution host. The error names the missing plugin and
+`ORC_OPENCODE_PLUGIN`, which can point at an explicit plugin directory. ORC never
+downgrades a protected session to advisory enforcement.
 
 ## What you get
 

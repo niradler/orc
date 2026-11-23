@@ -113,6 +113,95 @@ for (const width of [1440, 390]) {
   });
 }
 
+for (const width of [1440, 390]) {
+  test(`delete a provider and reassign the default at ${width}px`, async ({
+    page,
+    request,
+  }, testInfo) => {
+    const initial = await apiGet<Settings>(request, "/settings/providers");
+    try {
+      const withExtra: Settings = {
+        ...initial,
+        default_provider_id: "claude-delete-me",
+        providers: [
+          ...initial.providers,
+          {
+            id: "claude-delete-me",
+            name: "Claude Delete Me",
+            agent: "claude",
+            enabled: true,
+            executable: "",
+            model: "",
+            environment: [
+              { name: "ANTHROPIC_AUTH_TOKEN", value: "fixture-delete-secret", secret: true },
+            ],
+          },
+        ],
+      };
+      const saved = await request.put(`${API_BASE}/settings/providers`, {
+        headers: AUTH_HEADERS,
+        data: withExtra,
+      });
+      expect(saved.ok()).toBe(true);
+      await page.addInitScript(secretInit(), API_SECRET);
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto("/settings");
+      await settingsSection(page, "agents");
+      await page.getByTestId("provider-select-claude-delete-me").click();
+      await page.getByTestId("provider-delete").click();
+      await expect(page.getByTestId("confirm-dialog-confirm")).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath(`provider-delete-confirm-${width}.png`),
+      });
+      // Cancel keeps the provider and its draft state.
+      await page.getByTestId("confirm-dialog-cancel").click();
+      await expect(page.getByTestId("provider-select-claude-delete-me")).toBeVisible();
+      await page.getByTestId("provider-delete").click();
+      await page.getByTestId("confirm-dialog-confirm").click();
+      await expect(page.getByTestId("provider-select-claude-delete-me")).toHaveCount(0);
+      await page.getByTestId("agent-settings-save").click();
+      await expect(page.getByTestId("agent-settings-saved")).toBeVisible();
+      const after = await apiGet<Settings>(request, "/settings/providers");
+      expect(after.providers.some((item) => item.id === "claude-delete-me")).toBe(false);
+      expect(after.default_provider_id).not.toBe("claude-delete-me");
+      expect(
+        after.providers.some((item) => item.id === after.default_provider_id && item.enabled),
+      ).toBe(true);
+      expect(JSON.stringify(after)).not.toContain("fixture-delete-secret");
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      ).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath(`provider-delete-${width}.png`) });
+    } finally {
+      await restoreProviders(request, initial);
+    }
+  });
+}
+
+test("delete is disabled for the last provider", async ({ page, request }) => {
+  const initial = await apiGet<Settings>(request, "/settings/providers");
+  try {
+    const first = initial.providers[0];
+    const single: Settings = {
+      ...initial,
+      providers: [first],
+      default_provider_id: first.id,
+    };
+    const saved = await request.put(`${API_BASE}/settings/providers`, {
+      headers: AUTH_HEADERS,
+      data: single,
+    });
+    expect(saved.ok()).toBe(true);
+    await page.addInitScript(secretInit(), API_SECRET);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto("/settings");
+    await settingsSection(page, "agents");
+    await expect(page.getByTestId("provider-delete")).toBeDisabled();
+  } finally {
+    await restoreProviders(request, initial);
+  }
+});
+
 test("duplicate logins are flagged without exposing credentials", async ({ page, request }) => {
   const initial = await apiGet<Settings>(request, "/settings/providers");
   const accountHome = join(fixtureRoot, "dup");

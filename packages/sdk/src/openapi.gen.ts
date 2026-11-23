@@ -13969,6 +13969,73 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/rules/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    workspace?: string;
+                    days?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Aggregated rule volume, abstain rate and denials per rule */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            days: number;
+                            totals: {
+                                events: number;
+                                abstains: number;
+                                outcomes: number;
+                                denials: number;
+                                abstain_rate: number;
+                            };
+                            per_workspace: {
+                                workspace: string;
+                                events: number;
+                                abstains: number;
+                                outcomes: number;
+                                last_seen: number;
+                            }[];
+                            per_rule: {
+                                workspace: string;
+                                revision_id: string;
+                                rule_id: string;
+                                outcome: string;
+                                count: number;
+                                last_seen: number;
+                            }[];
+                            per_day: {
+                                day: number;
+                                events: number;
+                                abstains: number;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/rules/activate": {
         parameters: {
             query?: never;

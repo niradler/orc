@@ -66,7 +66,15 @@ test("should execute synchronous scripts once, pass stdin, retain the result, an
   expect(result.context).toEqual(["Use an ordinary edit"]);
   expect(readFileSync(join(root, "marker.txt"), "utf8")).toBe("block-me");
   expect(store.evaluate(event)).toEqual(result);
-  expect(store.decisions().length).toBe(2);
+  // The ordinary command abstained, so it is a counter, not a stored decision.
+  expect(store.decisions().length).toBe(1);
+  expect(
+    db
+      .query<{ abstains: number }, []>(
+        "SELECT abstains FROM rule_counters WHERE phase='pre_tool' AND tool='Bash'",
+      )
+      .get()?.abstains,
+  ).toBe(1);
   expect(JSON.stringify(store.decisions())).not.toContain("input-secret");
   expect(() => store.evaluate({ ...event, input: { command: "changed" } })).toThrow(
     "identity reused",
