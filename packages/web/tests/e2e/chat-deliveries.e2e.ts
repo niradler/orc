@@ -6,6 +6,7 @@ import {
   sessionMessageContext,
 } from "@orc/core/session-messages";
 import { expect, type Page, test } from "@playwright/test";
+import { holdChatStream } from "./_chat-stream";
 import { API_SECRET, repoRoot } from "./_helpers";
 
 const headers = { Authorization: `Bearer ${API_SECRET}` };
@@ -376,7 +377,113 @@ test("shows queued agent messages in the pending disclosure with Deliver now and
     await page.screenshot({ path: `${screenshotDir}/deliveries-queue-desktop.png` });
   }
 
+  await page.setViewportSize({ width: 390, height: 844 });
+  const phoneQueueOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
+  );
+  expect(phoneQueueOverflow).toBe(false);
+  await page.setViewportSize({ width: 1440, height: 900 });
+
   await row.getByTestId("chat-queued-session-cancel").click();
   await expect.poll(() => cancelledId).toBe("01J00000000000000000000081");
   await expect(page.getByTestId("chat-message-queue")).toHaveCount(0);
+});
+
+test("enables and triggers Deliver now on a live steerable turn even with sendWhileRunning=queue", async ({
+  page,
+  request,
+}) => {
+  await request.patch("/api/settings", {
+    headers: { Authorization: `Bearer ${API_SECRET}` },
+    data: { chat: ChatSettingsSchema.parse({ sendWhileRunning: "queue" }) },
+  });
+
+  const threadId = crypto.randomUUID();
+  const childId = crypto.randomUUID();
+  const messageId = "01J00000000000000000000082";
+  seedThread({
+    ...makeThread(threadId, "Steerable queue test", [
+      { id: "m-init", role: "user", content: "Start session", timestamp: Date.now() - 10_000 },
+      { id: "m-init-reply", role: "assistant", content: "Ready.", timestamp: Date.now() - 9_000 },
+    ]),
+    capabilities: {
+      version: 1,
+      source: "adapter",
+      resume: true,
+      modelSelection: true,
+      images: true,
+      toolOutput: true,
+      approvals: true,
+      questions: true,
+      livePermissions: true,
+      interrupt: true,
+      steering: true,
+      mcp: true,
+      fork: true,
+      rollback: false,
+      approvalFeedback: true,
+      permissionModes: ["default", "plan", "acceptEdits", "bypassPermissions"],
+    },
+  });
+
+  let deliveredId: string | null = null;
+  let queuedMessages = [
+    {
+      id: messageId,
+      project_id: null,
+      target_session_id: threadId,
+      target_native_id: null,
+      target_backend: "claude",
+      sender_kind: "system",
+      sender_session_id: childId,
+      sender_native_id: null,
+      sender_backend: "claude",
+      sender_label: "child session Test worker",
+      body: "[orc child-session id=live-child outcome=finished]\nReady.",
+      delivery: {
+        kind: "child_outcome",
+        session_id: childId,
+        title: "Test worker",
+        outcome: "finished",
+        summary: "Unit suite passed",
+      },
+      position: 0,
+      hop: 0,
+      state: "queued",
+      delivered_via: null,
+      delivery_error: null,
+      request_id: null,
+      created_at: Date.now() - 2_000,
+      updated_at: Date.now() - 2_000,
+      delivered_at: null,
+    },
+  ];
+
+  await page.route(`**/api/sessions/live/${threadId}/messages`, (route) =>
+    route.fulfill({ json: { messages: queuedMessages } }),
+  );
+  await page.route(`**/api/session-messages/${messageId}/deliver`, (route) => {
+    deliveredId = messageId;
+    queuedMessages = [];
+    return route.fulfill({ json: { id: messageId, state: "delivered", delivered_via: "steer" } });
+  });
+
+  await openChatThread(page, threadId, 1440, 900);
+
+  const panel = page.getByTestId("chat-panel");
+  const release = await holdChatStream(page);
+  try {
+    await panel.getByTestId("chat-input").fill("Respond after 2500ms. Reply with: RUNNING.");
+    await panel.getByTestId("chat-send-button").click();
+    await expect(panel).toHaveAttribute("data-streaming", "true");
+
+    await expect(page.getByTestId("chat-message-queue")).toBeVisible();
+    await page.getByTestId("chat-queue-toggle").click();
+    const deliverButton = page.getByTestId("chat-queued-deliver-now");
+    await expect(deliverButton).toBeEnabled();
+    await deliverButton.click();
+    await expect.poll(() => deliveredId).toBe(messageId);
+  } finally {
+    await release();
+  }
 });

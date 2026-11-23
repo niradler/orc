@@ -21687,7 +21687,7 @@ export interface paths {
                             };
                             receipt?: {
                                 /** @enum {string} */
-                                status: "queued" | "steered" | "resumed" | "unsupported";
+                                status: "queued" | "steered" | "resumed" | "unsupported" | "failed";
                                 note: string;
                             };
                         };
@@ -21810,7 +21810,7 @@ export interface paths {
                             };
                             receipt?: {
                                 /** @enum {string} */
-                                status: "queued" | "steered" | "resumed" | "unsupported";
+                                status: "queued" | "steered" | "resumed" | "unsupported" | "failed";
                                 note: string;
                             };
                         };

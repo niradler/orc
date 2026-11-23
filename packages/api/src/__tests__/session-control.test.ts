@@ -9,6 +9,7 @@ import {
   type AgentSession,
   createBackend,
   registerBackend,
+  SteerNotConsumedError,
 } from "@orc/agent-runtime";
 import type { ChatEvent, ChatThread } from "@orc/core/chat";
 import { resetConfig, updateGlobalConfig } from "@orc/core/config";
@@ -30,6 +31,7 @@ type Turn = { prompt: string; steers: string[]; release: () => void; cwd: string
 
 let slow: Promise<void> = Promise.resolve();
 let failPreflight = false;
+let fakeBackend: () => AgentBackend;
 let app: ReturnType<typeof createApp>;
 let original: AgentBackend;
 const turns: Turn[] = [];
@@ -154,7 +156,7 @@ beforeAll(() => {
   });
   original = createBackend("claude");
   let count = 0;
-  registerBackend("claude", () => ({
+  fakeBackend = () => ({
     ...original,
     preflight: async () => {
       await slow;
@@ -162,7 +164,8 @@ beforeAll(() => {
     },
     startSession: async (opts) => fakeSession(opts.cwd, `native-${++count}`),
     resumeSession: async (id, opts) => fakeSession(opts.cwd, id),
-  }));
+  });
+  registerBackend("claude", fakeBackend);
 });
 
 afterAll(() => {
@@ -810,6 +813,157 @@ describe("agent session control", () => {
     for (const turn of turns) turn.release();
     await req(app, "POST", `/sessions/live/${lead.id}/stop`);
   });
+
+  test("keeps queued messages waiting while parent holds a human approval prompt and rejects Deliver now with 409", async () => {
+    let releaseApproval = () => {};
+    let releaseTurn = () => {};
+    registerBackend("claude", () => ({
+      ...fakeBackend(),
+      startSession: async (opts) => {
+        const base = fakeSession(opts.cwd, `native-perm-${crypto.randomUUID()}`);
+        const approvalGate = new Promise<void>((resolve) => {
+          releaseApproval = resolve;
+        });
+        const turnGate = new Promise<void>((resolve) => {
+          releaseTurn = resolve;
+        });
+        return {
+          ...base,
+          respondPermission: () => releaseApproval(),
+          interrupt: async () => {
+            releaseApproval();
+            releaseTurn();
+          },
+          close: async () => {
+            releaseApproval();
+            releaseTurn();
+          },
+          async *events(): AsyncIterable<AgentEvent> {
+            yield {
+              type: "permission_request",
+              data: { requestId: "perm-1", tool: "bash", command: "rm -rf /tmp/x" },
+            };
+            await approvalGate;
+            yield { type: "text", data: "approved and finished" };
+            await turnGate;
+            yield { type: "result", data: { runtimeSessionId: base.id } };
+          },
+        };
+      },
+    }));
+    try {
+      const parent = await startParent("parent: needs human approval", repo);
+      await until(() => Boolean(chatControl().waiting(parent.id)), "parent waiting on approval");
+
+      const queued = await (
+        await req(app, "POST", `/sessions/live/${parent.id}/messages`, {
+          body: "Child completed while you wait",
+          mode: "queue",
+        })
+      ).json<SessionMessageResult>();
+      expect(queued.message.state).toBe("queued");
+
+      const deliverNow = await req(app, "POST", `/session-messages/${queued.message.id}/deliver`);
+      expect(deliverNow.status).toBe(409);
+      expect(turns.some((turn) => turn.prompt.includes("Child completed while you wait"))).toBe(
+        false,
+      );
+      expect((await inbox(parent.id)).find((m) => m.id === queued.message.id)?.state).toBe(
+        "queued",
+      );
+
+      const activeThread = await (
+        await req(app, "GET", `/chat/threads/${parent.id}`)
+      ).json<ChatThread>();
+      const runId = activeThread.turn?.runId;
+      expect(runId).toBeTruthy();
+      expect(
+        (
+          await req(app, "POST", `/chat/runs/${runId}/permission`, {
+            requestId: "perm-1",
+            decision: "approved",
+          })
+        ).status,
+      ).toBe(200);
+      releaseTurn();
+      await until(() => !chatControl().running(parent.id), "parent turn ended");
+      const delivering = deliverIdleSessionMessages();
+      const deliveryTurn = await turnFor("Child completed while you wait");
+      deliveryTurn.release();
+      await delivering;
+      expect((await inbox(parent.id)).find((m) => m.id === queued.message.id)?.state).toBe(
+        "delivered",
+      );
+      await until(async () => (await status(parent.id)).status === "idle", "parent idle");
+    } finally {
+      releaseApproval();
+      releaseTurn();
+      registerBackend("claude", fakeBackend);
+    }
+  });
+
+  test("marks STEER_UNCONFIRMED as failed without requeuing and releases SteerNotConsumedError back to queued", async () => {
+    let steerMode: "not-consumed" | "unconfirmed" = "not-consumed";
+    registerBackend("claude", () => ({
+      ...fakeBackend(),
+      startSession: async (opts) => {
+        const base = fakeSession(opts.cwd, `native-steer-err-${crypto.randomUUID()}`);
+        return {
+          ...base,
+          steer: async () => {
+            if (steerMode === "not-consumed") throw new SteerNotConsumedError();
+            throw new Error("transport dropped mid-steer");
+          },
+        };
+      },
+    }));
+    try {
+      const parent = await startParent("parent: steer error handling", repo);
+      const parentTurn = await turnFor("parent: steer error handling");
+      await until(
+        () => chatControl().canSteer({ threadId: parent.id }),
+        "parent steerable before steer errors",
+      );
+
+      steerMode = "not-consumed";
+      const soft = await (
+        await req(app, "POST", `/sessions/live/${parent.id}/messages`, {
+          body: "soft steer refusal",
+          mode: "steer",
+        })
+      ).json<SessionMessageResult>();
+      expect(soft.message.state).toBe("queued");
+      expect(soft.receipt?.status).toBe("queued");
+
+      const retryDeliver = await req(app, "POST", `/session-messages/${soft.message.id}/deliver`);
+      expect(retryDeliver.status).toBe(409);
+      expect((await inbox(parent.id)).find((m) => m.id === soft.message.id)?.state).toBe("queued");
+
+      steerMode = "unconfirmed";
+      const hardSend = await (
+        await req(app, "POST", `/sessions/live/${parent.id}/messages`, {
+          body: "hard steer failure",
+          mode: "steer",
+        })
+      ).json<SessionMessageResult>();
+      expect(hardSend.message.state).toBe("failed");
+      expect(hardSend.receipt?.status).toBe("failed");
+
+      const deliverUnconfirmed = await req(
+        app,
+        "POST",
+        `/session-messages/${soft.message.id}/deliver`,
+      );
+      expect(deliverUnconfirmed.status).toBe(409);
+      const afterUnconfirmed = (await inbox(parent.id)).find((m) => m.id === soft.message.id);
+      expect(afterUnconfirmed?.state).toBe("failed");
+
+      parentTurn.release();
+      await until(async () => (await status(parent.id)).status === "idle", "parent idle");
+    } finally {
+      registerBackend("claude", fakeBackend);
+    }
+  });
 });
 
 describe("child work rollup", () => {
@@ -904,7 +1058,7 @@ describe("child work rollup", () => {
       await until(async () => (await status(parent.id)).status === "stopped", "turn drained");
       expect((await status(parent.id)).stopping).toBe(false);
     } finally {
-      registerBackend("claude", () => wrapper);
+      registerBackend("claude", fakeBackend);
     }
   });
 });

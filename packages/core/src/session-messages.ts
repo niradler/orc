@@ -31,6 +31,7 @@ export const SessionMessageReceiptStatusSchema = z.enum([
   "steered",
   "resumed",
   "unsupported",
+  "failed",
 ]);
 export type SessionMessageReceiptStatus = z.infer<typeof SessionMessageReceiptStatusSchema>;
 
@@ -123,7 +124,13 @@ export type SessionMessageResult = z.infer<typeof SessionMessageResultSchema>;
 
 export function sessionMessageReceipt(
   delivery: SessionMessageResult["target"]["delivery"],
+  state?: SessionMessage["state"],
 ): SessionMessageReceipt {
+  if (state === "failed")
+    return {
+      status: "failed",
+      note: "Delivery failed; inspect the message error before retrying.",
+    };
   if (delivery === "steer")
     return {
       status: "steered",
@@ -228,8 +235,8 @@ export function parseChildNotice(body: string): ParsedChildNotice | null {
     `\\r?\\n\\r?\\nRead more with session_status \\{"session_id":"${sessionId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"\\}; reply with session_send\\.$`,
   );
   rest = rest.replace(tailPattern, "");
-  const replyIndex = rest.indexOf("\n\nLast reply:\n");
-  const reply = replyIndex >= 0 ? rest.slice(replyIndex + "\n\nLast reply:\n".length).trim() : "";
+  const replyMatch = /\r?\n\r?\nLast reply:\r?\n/.exec(rest);
+  const reply = replyMatch ? rest.slice(replyMatch.index + replyMatch[0].length).trim() : "";
   return {
     sessionId,
     outcome,

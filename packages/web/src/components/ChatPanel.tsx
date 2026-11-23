@@ -370,6 +370,15 @@ export function ChatPanel({
   const deliverSessionMessage = useDeliverSessionMessage(threadInboxId);
   const cancelSessionMessage = useCancelSessionMessage(threadInboxId);
   const moveSessionMessage = useMoveSessionMessage(threadInboxId);
+  const resetSessionQueueMutations = useCallback(() => {
+    deliverSessionMessage.reset();
+    cancelSessionMessage.reset();
+    moveSessionMessage.reset();
+  }, [deliverSessionMessage.reset, cancelSessionMessage.reset, moveSessionMessage.reset]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset stale mutation errors when switching threads
+  useEffect(() => {
+    resetSessionQueueMutations();
+  }, [threadInboxId, resetSessionQueueMutations]);
   const sessionQueueError =
     deliverSessionMessage.error ?? cancelSessionMessage.error ?? moveSessionMessage.error;
   const runElsewhere = !!session.data?.running && !streaming && !refreshing;
@@ -1633,11 +1642,11 @@ export function ChatPanel({
                       message={entry}
                       canMoveUp={index > 0}
                       canMoveDown={index < queuedSessionMessages.length - 1}
-                      canDeliverNow={canSteerLive && !permission && !question}
+                      canDeliverNow={steerAvailable && !permission && !question}
                       deliverDisabledReason={
                         permission || question
                           ? "Answer the pending prompt first"
-                          : !canSteerLive
+                          : !steerAvailable
                             ? "Wait for the current response to finish or become steerable"
                             : undefined
                       }
@@ -1648,21 +1657,30 @@ export function ChatPanel({
                       }
                       onOpenSource={
                         entry.sender_session_id
-                          ? () =>
+                          ? () => {
                               void openDeliverySession(
                                 entry.sender_session_id as string,
                                 entry.delivery?.kind ?? "relay",
-                              )
+                              ).catch(() => {});
+                            }
                           : undefined
                       }
-                      onMoveUp={() =>
-                        moveSessionMessage.mutate({ messageId: entry.id, direction: "up" })
-                      }
-                      onMoveDown={() =>
-                        moveSessionMessage.mutate({ messageId: entry.id, direction: "down" })
-                      }
-                      onDeliverNow={() => deliverSessionMessage.mutate(entry.id)}
-                      onCancel={() => cancelSessionMessage.mutate(entry.id)}
+                      onMoveUp={() => {
+                        resetSessionQueueMutations();
+                        moveSessionMessage.mutate({ messageId: entry.id, direction: "up" });
+                      }}
+                      onMoveDown={() => {
+                        resetSessionQueueMutations();
+                        moveSessionMessage.mutate({ messageId: entry.id, direction: "down" });
+                      }}
+                      onDeliverNow={() => {
+                        resetSessionQueueMutations();
+                        deliverSessionMessage.mutate(entry.id);
+                      }}
+                      onCancel={() => {
+                        resetSessionQueueMutations();
+                        cancelSessionMessage.mutate(entry.id);
+                      }}
                     />
                   ))}
                   {queued.map((entry, index) => (
@@ -2256,9 +2274,9 @@ function QueuedSessionMessage({
     <li
       data-testid="chat-queued-session-message"
       data-message-id={message.id}
-      className="flex min-h-11 items-center gap-1.5 border-t border-outline-variant text-xs sm:min-h-9"
+      className="flex min-h-11 flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-outline-variant py-1 text-xs sm:min-h-9 sm:flex-nowrap sm:py-0"
     >
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+      <div className="flex min-w-0 flex-1 basis-48 items-center gap-1.5 overflow-hidden">
         {onOpenSource ? (
           <button
             type="button"
@@ -2286,52 +2304,54 @@ function QueuedSessionMessage({
           {preview}
         </span>
       </div>
-      <button
-        type="button"
-        data-testid="chat-queued-deliver-now"
-        disabled={!canDeliverNow || busy}
-        title={deliverDisabledReason ?? "Deliver into the active turn now"}
-        onClick={onDeliverNow}
-        className="min-h-11 shrink-0 rounded-md border border-control-border px-2 text-xs font-medium text-on-surface hover:bg-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 sm:min-h-7"
-      >
-        Deliver now
-      </button>
-      <ActionHelp label="Move pending message up">
+      <div className="ml-auto flex shrink-0 items-center gap-1">
         <button
           type="button"
-          data-testid="chat-queued-session-up"
-          disabled={!canMoveUp || busy}
-          aria-label="Move pending message up"
-          onClick={onMoveUp}
-          className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          data-testid="chat-queued-deliver-now"
+          disabled={!canDeliverNow || busy}
+          title={deliverDisabledReason ?? "Deliver into the active turn now"}
+          onClick={onDeliverNow}
+          className="min-h-11 shrink-0 rounded-md border border-control-border px-2 text-xs font-medium text-on-surface hover:bg-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 sm:min-h-7"
         >
-          <ArrowUp size={14} />
+          Deliver now
         </button>
-      </ActionHelp>
-      <ActionHelp label="Move pending message down">
-        <button
-          type="button"
-          data-testid="chat-queued-session-down"
-          disabled={!canMoveDown || busy}
-          aria-label="Move pending message down"
-          onClick={onMoveDown}
-          className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
-        >
-          <ArrowDown size={14} />
-        </button>
-      </ActionHelp>
-      <ActionHelp label="Cancel pending message">
-        <button
-          type="button"
-          data-testid="chat-queued-session-cancel"
-          disabled={busy}
-          aria-label="Cancel pending message"
-          onClick={onCancel}
-          className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
-        >
-          <Trash2 size={14} />
-        </button>
-      </ActionHelp>
+        <ActionHelp label="Move pending message up">
+          <button
+            type="button"
+            data-testid="chat-queued-session-up"
+            disabled={!canMoveUp || busy}
+            aria-label="Move pending message up"
+            onClick={onMoveUp}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <ArrowUp size={14} />
+          </button>
+        </ActionHelp>
+        <ActionHelp label="Move pending message down">
+          <button
+            type="button"
+            data-testid="chat-queued-session-down"
+            disabled={!canMoveDown || busy}
+            aria-label="Move pending message down"
+            onClick={onMoveDown}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <ArrowDown size={14} />
+          </button>
+        </ActionHelp>
+        <ActionHelp label="Cancel pending message">
+          <button
+            type="button"
+            data-testid="chat-queued-session-cancel"
+            disabled={busy}
+            aria-label="Cancel pending message"
+            onClick={onCancel}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <Trash2 size={14} />
+          </button>
+        </ActionHelp>
+      </div>
     </li>
   );
 }

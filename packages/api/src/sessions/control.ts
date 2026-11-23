@@ -79,20 +79,26 @@ export async function sendToSession(
         delivery = "steer";
       } else mails.release(message.id);
     } catch (error) {
-      mails.failed([message.id], error instanceof Error ? error.message : String(error));
+      if (error instanceof ConflictError && error.code !== "STEER_UNCONFIRMED") {
+        mails.release(message.id);
+      } else {
+        mails.failed([message.id], error instanceof Error ? error.message : String(error));
+      }
     }
   }
   if (chat && mode === "interrupt") chatControl().stop(target.id);
   changes.publish("session-messages", "sessions");
+  const saved = mails.get(message.id);
+  if (saved.delivered_via === "steer") delivery = "steer";
   return {
-    message: mails.get(message.id),
+    message: saved,
     target: {
       session_id: target.id,
       backend: sessionMessageBackend(target.backend),
       status: chat ? (chatControl().running(target.id) ? "running" : "idle") : target.status,
       delivery,
     },
-    receipt: sessionMessageReceipt(delivery),
+    receipt: sessionMessageReceipt(delivery, saved.state),
   };
 }
 
@@ -127,7 +133,7 @@ export async function deliverSessionMessageNow(id: string): Promise<SessionMessa
     changes.publish("session-messages", "sessions");
     return mails.get(message.id);
   } catch (error) {
-    if (error instanceof ConflictError) {
+    if (error instanceof ConflictError && error.code !== "STEER_UNCONFIRMED") {
       mails.release(message.id);
       changes.publish("session-messages", "sessions");
       throw error;
@@ -329,10 +335,11 @@ export function notifySpawner(thread: ChatThread, eventId: string, outcome: Chil
     .join("\n\n");
   const normalizedOutcome = outcome === "question" || outcome === "approval" ? "waiting" : outcome;
   const waitingFor = outcome === "question" || outcome === "approval" ? outcome : undefined;
+  const safeTitle = (thread.title.trim() || thread.id).slice(0, 200);
   const structuredDelivery: SessionDelivery = {
     kind: "child_outcome",
     session_id: thread.id,
-    title: thread.title.slice(0, 200),
+    title: safeTitle,
     outcome: normalizedOutcome,
     ...(waitingFor ? { waiting_for: waitingFor } : {}),
     summary: childOutcomeSummary(normalizedOutcome, reply, waitingFor),
