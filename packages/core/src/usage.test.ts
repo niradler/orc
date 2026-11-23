@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   estimateCacheSavings,
   estimateUsageCost,
+  ModelPricingMapSchema,
   resolveModelPrice,
   SessionCacheUsageSchema,
 } from "./usage";
@@ -51,10 +52,42 @@ test("should resolve default and overridden model prices with boundary matching 
   expect(resolveModelPrice("anthropic/claude-sonnet-4-5-20250929")).toEqual(
     resolveModelPrice("claude-sonnet-4-5"),
   );
+  expect(resolveModelPrice("claude-sonnet-4-5-2025-09-29")).toEqual(
+    resolveModelPrice("claude-sonnet-4-5"),
+  );
   expect(resolveModelPrice("claude-opus-4-6[1m]")).toEqual(resolveModelPrice("claude-opus-4-6"));
-  expect(resolveModelPrice("gpt-50")).toBeNull();
-  expect(resolveModelPrice("acme/unpriced-custom")).toBeNull();
+  expect(resolveModelPrice("gpt-4o-latest")).toEqual(resolveModelPrice("gpt-4o"));
+  expect(resolveModelPrice("gpt-5-preview")).toEqual(resolveModelPrice("gpt-5"));
+  expect(resolveModelPrice("claude-sonnet-4-5@20250929")).toEqual(
+    resolveModelPrice("claude-sonnet-4-5"),
+  );
+  expect(resolveModelPrice("claude-sonnet-4-5:thinking")).toEqual(
+    resolveModelPrice("claude-sonnet-4-5"),
+  );
+  for (const distinctTier of [
+    "gpt-50",
+    "gpt-4o-mini",
+    "o3-mini",
+    "o3-pro",
+    "gpt-4.1-nano",
+    "gpt-5-nano",
+    "claude-opus-4-7",
+    "acme/unpriced-custom",
+  ]) {
+    expect(resolveModelPrice(distinctTier)).toBeNull();
+  }
   expect(resolveModelPrice(null)).toBeNull();
+
+  for (const reserved of ["constructor", "prototype"]) {
+    const payload = JSON.parse(`{"${reserved}":{"inputPerMillion":1,"outputPerMillion":2}}`);
+    expect(ModelPricingMapSchema.safeParse(payload).success).toBe(false);
+  }
+  const protoPayload = JSON.parse('{"__proto__":{"inputPerMillion":1,"outputPerMillion":2}}');
+  const protoResult = ModelPricingMapSchema.safeParse(protoPayload);
+  if (protoResult.success) {
+    expect(Object.keys(protoResult.data)).toEqual([]);
+    expect(Object.getPrototypeOf(protoResult.data)).toBe(Object.prototype);
+  }
 
   const overrides = {
     "claude-sonnet-4-5": {

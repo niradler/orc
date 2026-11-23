@@ -893,6 +893,8 @@ type PriceDraft = {
   cacheWritePerMillion: string;
 };
 
+const FORBIDDEN_MODEL_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
 function formatRate(value: number | undefined): string {
   if (value === undefined) return "—";
   return `$${value}`;
@@ -923,6 +925,7 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
     },
   });
 
+  const canMutate = settings.isSuccess && !saveMutation.isPending;
   const overrides = settings.data?.model_pricing ?? {};
   const overrideEntries = Object.entries(overrides).sort(([a], [b]) => a.localeCompare(b));
   const defaultEntries = Object.entries(DEFAULT_MODEL_PRICING).sort(([a], [b]) =>
@@ -937,6 +940,7 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
   );
 
   function startEdit(model = "", existing?: ModelPrice) {
+    if (!settings.isSuccess) return;
     setFormError(null);
     setEditing(model || "__new__");
     setDraft({
@@ -952,10 +956,14 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
 
   function submitDraft(event: React.FormEvent) {
     event.preventDefault();
-    if (!draft) return;
+    if (!draft || !settings.isSuccess) return;
     const modelId = draft.model.trim();
     if (!modelId) {
       setFormError("Enter a model name.");
+      return;
+    }
+    if (FORBIDDEN_MODEL_KEYS.has(modelId.toLowerCase())) {
+      setFormError("That model name is reserved.");
       return;
     }
     const parseRequired = (raw: string, label: string): number | null => {
@@ -984,23 +992,29 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
     const cacheWrite = parseOptional(draft.cacheWritePerMillion, "Cache write rate");
     if (cacheWrite === null) return;
 
-    const next: ModelPricingMap = { ...overrides };
-    if (editing && editing !== "__new__" && editing !== modelId) {
-      delete next[editing];
-    }
-    next[modelId] = {
+    const entries = Object.entries(overrides).filter(
+      ([key]) => !(editing && editing !== "__new__" && editing !== modelId && key === editing),
+    );
+    const nextPrice: ModelPrice = {
       inputPerMillion: input,
       outputPerMillion: output,
       ...(cacheRead !== undefined ? { cacheReadPerMillion: cacheRead } : {}),
       ...(cacheWrite !== undefined ? { cacheWritePerMillion: cacheWrite } : {}),
     };
-    saveMutation.mutate(next);
+    const nextMap = Object.fromEntries([
+      ...entries.filter(([key]) => key !== modelId),
+      [modelId, nextPrice],
+    ]) as ModelPricingMap;
+    saveMutation.mutate(nextMap);
   }
 
   function removeOverride(modelId: string) {
-    const next: ModelPricingMap = { ...overrides };
-    delete next[modelId];
-    saveMutation.mutate(next);
+    if (!settings.isSuccess) return;
+    setFormError(null);
+    const nextMap = Object.fromEntries(
+      Object.entries(overrides).filter(([key]) => key !== modelId),
+    ) as ModelPricingMap;
+    saveMutation.mutate(nextMap);
   }
 
   return (
@@ -1014,13 +1028,33 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
           </HelpPopover>
         </span>
         <span className="text-xs font-normal text-muted-foreground">
-          {overrideEntries.length > 0
-            ? `${count.format(overrideEntries.length)} custom · built-in defaults`
-            : `${count.format(defaultEntries.length)} built-in defaults`}
+          {settings.isPending
+            ? "Loading…"
+            : settings.isError
+              ? "Unavailable"
+              : overrideEntries.length > 0
+                ? `${count.format(overrideEntries.length)} custom · built-in defaults`
+                : `${count.format(defaultEntries.length)} built-in defaults`}
         </span>
       </summary>
 
       <div className="mt-3 space-y-3">
+        {settings.isPending && (
+          <p role="status" className="text-xs text-muted-foreground">
+            Loading saved pricing overrides…
+          </p>
+        )}
+        {settings.isError && (
+          <p role="alert" className="text-xs text-error">
+            Saved pricing settings could not be loaded. Reload or retry before editing.
+          </p>
+        )}
+        {formError && (
+          <p role="alert" data-testid="usage-pricing-error" className="text-xs text-error">
+            {formError}
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-muted-foreground">
             Prices are USD per 1M tokens. Unpriced models show - in session analytics.
@@ -1031,6 +1065,7 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
               size="sm"
               variant="outline"
               data-testid="usage-pricing-add"
+              disabled={!canMutate}
               onClick={() => startEdit()}
               className="min-h-11 sm:min-h-8"
             >
@@ -1116,17 +1151,12 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
                 />
               </label>
             </div>
-            {formError && (
-              <p role="alert" className="text-xs text-error">
-                {formError}
-              </p>
-            )}
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="submit"
                 size="sm"
                 data-testid="usage-pricing-save"
-                disabled={saveMutation.isPending}
+                disabled={!canMutate}
                 className="min-h-11 sm:min-h-8"
               >
                 {saveMutation.isPending ? "Saving…" : "Save price"}
@@ -1171,6 +1201,7 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
                     type="button"
                     size="sm"
                     variant="ghost"
+                    disabled={!canMutate}
                     onClick={() => startEdit(modelId, price)}
                     className="min-h-11 sm:min-h-8"
                   >
@@ -1180,7 +1211,7 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
                     type="button"
                     size="sm"
                     variant="ghost"
-                    disabled={saveMutation.isPending}
+                    disabled={!canMutate}
                     onClick={() => removeOverride(modelId)}
                     className="min-h-11 sm:min-h-8"
                   >
@@ -1193,7 +1224,7 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
         )}
 
         <details className="border-t border-border/60 pt-2">
-          <summary className="cursor-pointer py-1 text-xs text-muted-foreground">
+          <summary className="flex min-h-11 cursor-pointer items-center py-1 text-xs text-muted-foreground sm:min-h-0">
             Built-in defaults ({count.format(defaultEntries.length)})
           </summary>
           <div className="mt-1 divide-y divide-border/60">
@@ -1215,6 +1246,7 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
                   type="button"
                   size="sm"
                   variant="ghost"
+                  disabled={!canMutate}
                   onClick={() => startEdit(modelId, overrides[modelId] ?? price)}
                   className="min-h-11 sm:min-h-8"
                 >

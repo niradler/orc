@@ -15,9 +15,9 @@ import { agentLabel, codingAgent } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import { execHostFor, type HostRuntime, hostRuntime } from "@orc/core/exec-host";
 import {
-  estimateCacheSavings,
   estimateUsageCost,
   type ModelPricingMap,
+  netCacheSavingsUsd,
   resolveModelPrice,
   roundUsd,
 } from "@orc/core/usage";
@@ -138,7 +138,8 @@ function requestToUsage(request: SessionRequestUsage): ChatTurnUsage {
   };
 }
 
-function cacheHitRateFor(usage: ChatTurnUsage): number | null {
+function cacheHitRateFor(usage: ChatTurnUsage, supported: boolean): number | null {
+  if (!supported) return null;
   const totalInput = usage.input + usage.cacheRead + usage.cacheWrite;
   return totalInput > 0 ? usage.cacheRead / totalInput : null;
 }
@@ -148,11 +149,10 @@ function effectiveModel(
   requestModel: string | null,
   fallbackModel: string | null,
 ): string | null {
-  if (messageModel) return messageModel;
-  if (requestModel && (!GENERIC_MODELS.has(requestModel.toLowerCase()) || !fallbackModel)) {
+  if (requestModel && !GENERIC_MODELS.has(requestModel.toLowerCase())) {
     return requestModel;
   }
-  return fallbackModel ?? requestModel;
+  return messageModel ?? fallbackModel ?? requestModel;
 }
 
 type TurnEntry = {
@@ -213,7 +213,7 @@ type ModelAccumulator = {
   usage: ChatTurnUsage;
   costUsd: number;
   hasUnpriced: boolean;
-  cacheSavingsUsd: number;
+  rawCacheSavingsUsd: number;
   hasPricedSavings: boolean;
   estimated: boolean;
 };
@@ -224,6 +224,7 @@ export type ChatAnalyticsOptions = {
   pricing?: ModelPricingMap | null;
   estimatedSessionTokens?: number | null;
   estimatedBackend?: boolean;
+  cacheSupported?: boolean;
 };
 
 /**
@@ -296,6 +297,7 @@ export function readChatAnalytics(
   const fallbackModel = text(options.fallbackModel) ?? text(thread.config.model);
   const pricing = options.pricing ?? null;
   const requests = options.requests ?? [];
+  const cacheSupported = options.cacheSupported ?? !options.estimatedBackend;
   const windows = buildTurnWindows(turnEntries);
   const matchedByTurn: SessionRequestUsage[][] = turnEntries.map(() => []);
   const unattributedList: SessionRequestUsage[] = [];
@@ -337,7 +339,7 @@ export function readChatAnalytics(
         usage: emptyUsage(),
         costUsd: 0,
         hasUnpriced: false,
-        cacheSavingsUsd: 0,
+        rawCacheSavingsUsd: 0,
         hasPricedSavings: false,
         estimated: false,
       };
@@ -355,9 +357,7 @@ export function readChatAnalytics(
     }
     const cost = estimateUsageCost(reqUsage, price);
     bucket.costUsd = roundUsd(bucket.costUsd + cost);
-    bucket.cacheSavingsUsd = roundUsd(
-      bucket.cacheSavingsUsd + estimateCacheSavings(reqUsage, price),
-    );
+    bucket.rawCacheSavingsUsd += netCacheSavingsUsd(reqUsage, price);
     bucket.hasPricedSavings = true;
     return cost;
   };
@@ -505,9 +505,11 @@ export function readChatAnalytics(
         requests: bucket.requests,
         usage: bucket.usage,
         costUsd: bucket.hasUnpriced ? null : bucket.costUsd,
-        cacheHitRate: cacheHitRateFor(bucket.usage),
+        cacheHitRate: cacheHitRateFor(bucket.usage, cacheSupported),
         cacheSavingsUsd:
-          !bucket.hasUnpriced && bucket.hasPricedSavings ? bucket.cacheSavingsUsd : null,
+          !bucket.hasUnpriced && bucket.hasPricedSavings
+            ? roundUsd(Math.max(0, bucket.rawCacheSavingsUsd))
+            : null,
         usageSource: bucket.estimated ? "estimated" : "recorded",
       }));
 
@@ -531,7 +533,7 @@ export function readChatAnalytics(
       attributed,
       unattributed,
       unattributedRequests,
-      cacheHitRate: cacheHitRateFor(totals),
+      cacheHitRate: cacheHitRateFor(totals, cacheSupported),
       cacheSavingsUsd,
       totalCostUsd,
       costComplete,
@@ -689,6 +691,7 @@ export async function chatAnalyticsFor(
     pricing,
     estimatedSessionTokens: source?.tokens_used ?? null,
     estimatedBackend,
+    cacheSupported: context?.supported ?? !estimatedBackend,
   });
   return { ...analytics, context };
 }

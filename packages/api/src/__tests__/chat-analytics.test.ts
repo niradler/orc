@@ -621,10 +621,12 @@ test("should label Cursor sessions estimated and keep cost unknown unless explic
   expect(defaultCursor.usage.usageSource).toBe("estimated");
   expect(defaultCursor.usage.totals?.total).toBe(25_000);
   expect(defaultCursor.usage.unattributed?.total).toBe(25_000);
+  expect(defaultCursor.usage.cacheHitRate).toBeNull();
   expect(defaultCursor.usage.totalCostUsd).toBeNull();
   expect(defaultCursor.usage.byModel[0]).toMatchObject({
     model: "claude-sonnet-4-5",
     usageSource: "estimated",
+    cacheHitRate: null,
     costUsd: null,
   });
 
@@ -688,7 +690,155 @@ test("should keep payload bounded for a 200-turn chat while preserving full sess
   expect(JSON.stringify(analytics).length).toBeLessThan(65_536);
 });
 
-test("should persist model_pricing overrides through settings and apply them to analytics", async () => {
+test("should prefer non-generic transcript model over CLI alias on assistant message", async () => {
+  const base = now - 300_000;
+  const aliasThread = ChatThreadSchema.parse({
+    id: "77777777-7777-4777-8777-777777777777",
+    title: "Alias model",
+    config: { agent: "claude", model: "opus[1m]" },
+    cwd: "/tmp",
+    host: null,
+    runtimeId: "native-alias",
+    backend: "claude",
+    sourceId: null,
+    updatedAt: now,
+    messages: makeTurnMessages(base, [{ model: "opus[1m]" }]),
+  });
+
+  const transcript = claudeLine("alias-1", base + 5_000, "claude-opus-4-6", {
+    input_tokens: 100_000,
+    output_tokens: 10_000,
+    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: 0,
+  });
+
+  const analytics = await chatAnalyticsFor(
+    aliasThread,
+    {
+      backend: "claude",
+      model: "opus[1m]",
+      transcript_path: "/tmp/alias.jsonl",
+      runtime_session_id: "native-alias",
+    },
+    memoryRuntime(transcript),
+    {},
+  );
+
+  expect(analytics.turnTimeline[0]?.model).toBe("claude-opus-4-6");
+  expect(analytics.turnTimeline[0]?.costUsd).toBe(0.75);
+  expect(analytics.usage.byModel[0]?.model).toBe("claude-opus-4-6");
+  expect(analytics.usage.totalCostUsd).toBe(0.75);
+});
+
+test("should net cache-write surcharges against cache-read savings at the bucket level", async () => {
+  const base = now - 300_000;
+  const cacheThread = ChatThreadSchema.parse({
+    id: "88888888-8888-4888-8888-888888888888",
+    title: "Cache write netting",
+    config: { agent: "claude", model: "claude-sonnet-4-5" },
+    cwd: "/tmp",
+    host: null,
+    runtimeId: "native-cache-net",
+    backend: "claude",
+    sourceId: null,
+    updatedAt: now,
+    messages: makeTurnMessages(base, [
+      { model: "claude-sonnet-4-5" },
+      { model: "claude-sonnet-4-5" },
+      { model: "claude-sonnet-4-5" },
+    ]),
+  });
+
+  const transcript = [
+    claudeLine("cw-1", base + 5_000, "claude-sonnet-4-5", {
+      input_tokens: 1_000,
+      output_tokens: 100,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 100_000,
+    }),
+    claudeLine("cw-2", base + 65_000, "claude-sonnet-4-5", {
+      input_tokens: 1_000,
+      output_tokens: 100,
+      cache_read_input_tokens: 20_000,
+      cache_creation_input_tokens: 0,
+    }),
+    claudeLine("cw-3", base + 125_000, "claude-sonnet-4-5", {
+      input_tokens: 1_000,
+      output_tokens: 100,
+      cache_read_input_tokens: 20_000,
+      cache_creation_input_tokens: 0,
+    }),
+  ].join("\n");
+
+  const twoTurns = ChatThreadSchema.parse({
+    ...cacheThread,
+    messages: cacheThread.messages.slice(0, 4),
+  });
+  const afterTwo = await chatAnalyticsFor(
+    twoTurns,
+    {
+      backend: "claude",
+      model: "claude-sonnet-4-5",
+      transcript_path: "/tmp/cw2.jsonl",
+      runtime_session_id: "native-cache-net-2",
+    },
+    memoryRuntime(transcript.split("\n").slice(0, 2).join("\n")),
+    {},
+  );
+  expect(afterTwo.usage.cacheSavingsUsd).toBe(0);
+
+  const afterThree = await chatAnalyticsFor(
+    cacheThread,
+    {
+      backend: "claude",
+      model: "claude-sonnet-4-5",
+      transcript_path: "/tmp/cw3.jsonl",
+      runtime_session_id: "native-cache-net-3",
+    },
+    memoryRuntime(transcript),
+    {},
+  );
+  expect(afterThree.usage.cacheSavingsUsd).toBe(0.033);
+  expect(afterThree.usage.byModel[0]?.cacheSavingsUsd).toBe(0.033);
+});
+
+test("should persist model_pricing overrides through settings and apply them to GET /chat/threads/:id/analytics", async () => {
+  const base = now - 300_000;
+  const savedThread = ChatThreadSchema.parse({
+    id: "99999999-9999-4999-8999-999999999999",
+    title: "Configured pricing E2E",
+    config: { agent: "claude", model: "acme/saved-model" },
+    cwd: "/tmp",
+    host: null,
+    runtimeId: "native-saved-pricing",
+    backend: "claude",
+    sourceId: null,
+    updatedAt: now,
+    messages: makeTurnMessages(base, [{ model: "acme/saved-model" }]),
+  });
+  const transcriptPath = join(root, "saved-pricing.jsonl");
+  writeFileSync(
+    transcriptPath,
+    claudeLine("sp-1", base + 5_000, "acme/saved-model", {
+      input_tokens: 100_000,
+      output_tokens: 10_000,
+      cache_read_input_tokens: 0,
+      cache_creation_input_tokens: 0,
+    }),
+  );
+  const sqlite = getSqlite();
+  sqlite.run(
+    "INSERT INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, transcript_path, model) VALUES ('live-saved-pricing', ?, 'claude', 'direct', 'native-saved-pricing', ?, 'acme/saved-model')",
+    [LIVE_CHAT_ID, transcriptPath],
+  );
+  new ChatStore(sqlite).save(savedThread);
+
+  const beforeResponse = await req(app, "GET", `/chat/threads/${savedThread.id}/analytics`);
+  expect(beforeResponse.status).toBe(200);
+  const before = ChatAnalyticsSchema.parse(await beforeResponse.json());
+  expect(before.usage.totalCostUsd).toBeNull();
+  expect(before.turnTimeline[0]?.costUsd).toBeNull();
+
   const patch = await req(app, "PATCH", "/settings", {
     model_pricing: {
       "acme/saved-model": {
@@ -707,4 +857,10 @@ test("should persist model_pricing overrides through settings and apply them to 
     cacheReadPerMillion: 0.5,
     cacheWritePerMillion: 6,
   });
+
+  const afterResponse = await req(app, "GET", `/chat/threads/${savedThread.id}/analytics`);
+  expect(afterResponse.status).toBe(200);
+  const after = ChatAnalyticsSchema.parse(await afterResponse.json());
+  expect(after.usage.totalCostUsd).toBe(0.7);
+  expect(after.turnTimeline[0]?.costUsd).toBe(0.7);
 });

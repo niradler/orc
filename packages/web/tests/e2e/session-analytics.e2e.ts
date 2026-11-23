@@ -308,6 +308,10 @@ for (const viewport of [
     await expect(modelSplit).toContainText("claude-opus-4-1");
     await expect(modelSplit).toContainText("claude-sonnet-4-5");
     await expect(modelSplit).toContainText("acme/custom-local-v1");
+    const highlightedRow = modelSplit.locator('[data-highlighted="true"]:visible');
+    await expect(highlightedRow).toHaveCount(1);
+    await expect(highlightedRow).toContainText("claude-opus-4-1");
+    await expect(highlightedRow).toHaveClass(/bg-surface-highest/);
 
     const tokensChart = dialog.getByTestId("chat-turn-tokens-chart");
     await tokensChart.scrollIntoViewIfNeeded();
@@ -323,22 +327,22 @@ for (const viewport of [
       await expect(table.getByTestId("chat-turn-row")).toHaveCount(3);
       await expect(table.getByTestId("chat-turn-row").nth(2)).toContainText("-");
       const unpricedHelp = table.getByTestId("chat-turn-unpriced-3");
-      await unpricedHelp.click();
+      await unpricedHelp.hover();
       await expect(page.getByTestId("chat-turn-unpriced-3-content")).toContainText(
         "No price configured for this model. Add one in Settings -> Usage.",
       );
-      await unpricedHelp.click();
+      await page.mouse.move(0, 0);
     } else {
       const mobileList = dialog.getByTestId("chat-turn-list-mobile");
       await expect(mobileList).toBeVisible();
       await expect(mobileList.getByTestId("chat-turn-row-mobile")).toHaveCount(3);
       await expect(mobileList.getByTestId("chat-turn-row-mobile").nth(2)).toContainText("-");
       const unpricedHelp = mobileList.getByTestId("chat-turn-unpriced-mobile-3");
-      await unpricedHelp.click();
+      await unpricedHelp.hover();
       await expect(page.getByTestId("chat-turn-unpriced-mobile-3-content")).toContainText(
         "No price configured for this model. Add one in Settings -> Usage.",
       );
-      await unpricedHelp.click();
+      await page.mouse.move(0, 0);
     }
 
     const overflow = await dialog.evaluate((node) => ({
@@ -440,6 +444,44 @@ test("model pricing override editor in Settings -> Usage saves custom rates", as
   await expect(row).toHaveCount(1);
   await expect(row).toContainText("acme/custom-local-v1");
   await expect(row).toContainText("In $2");
+
+  await page.getByTestId("usage-pricing-add").click();
+  await page.getByTestId("usage-pricing-model-input").fill("__proto__");
+  await page.getByTestId("usage-pricing-input-rate").fill("1");
+  await page.getByTestId("usage-pricing-output-rate").fill("2");
+  await page.getByTestId("usage-pricing-save").click();
+  await expect(page.getByTestId("usage-pricing-error")).toContainText("reserved");
+
   const section = page.getByTestId("settings-usage");
   expect(await section.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+});
+
+test("model-change divider with CLI alias highlights the resolved API model row", async ({
+  page,
+}) => {
+  const now = Date.now();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await mockSessionHome(page, now);
+  const aliasThread = buildThread(now);
+  aliasThread.messages = aliasThread.messages.map((message, index) =>
+    index === 3 ? { ...message, model: "opus[1m]" } : message,
+  );
+  await page.route(`**/api/chat/threads/${HOME.chatA}`, (route) =>
+    route.fulfill({ json: aliasThread }),
+  );
+  await page.route(`**/api/chat/threads/${HOME.chatA}/analytics`, (route) =>
+    route.fulfill({ json: buildAnalytics(now) }),
+  );
+  await page.goto(`/chat?project=all&chatThread=${HOME.chatA}`);
+  const dividerLink = page.getByTestId("chat-turn-divider-model-link");
+  await expect(dividerLink).toContainText("opus[1m]");
+  await dividerLink.click();
+  const modelSplit = page
+    .getByTestId("chat-analytics-dialog")
+    .getByTestId("chat-analytics-model-split");
+  const highlighted = modelSplit.locator('[data-highlighted="true"]:visible');
+  await expect(highlighted).toHaveCount(1);
+  await expect(highlighted).toContainText("claude-opus-4-1");
+  await expect(highlighted).toHaveClass(/bg-surface-highest/);
 });

@@ -49,6 +49,28 @@ function formatTurnStart(startedAt: number): string {
   return new Date(startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function normalizeModelToken(model: string): string {
+  const lower = model
+    .trim()
+    .toLowerCase()
+    .replace(/\[[^\]]+\]$/, "");
+  const slash = lower.lastIndexOf("/");
+  return slash >= 0 ? lower.slice(slash + 1) : lower;
+}
+
+export function matchesFocusedModel(rowModel: string | null, focusModel: string | null): boolean {
+  if (!rowModel || !focusModel) return false;
+  const rowRaw = rowModel.trim().toLowerCase();
+  const focusRaw = focusModel.trim().toLowerCase();
+  if (rowRaw === focusRaw) return true;
+  const rowNorm = normalizeModelToken(rowRaw);
+  const focusNorm = normalizeModelToken(focusRaw);
+  if (!rowNorm || !focusNorm) return false;
+  if (rowNorm === focusNorm) return true;
+  const segments = rowNorm.split(/[-:]/);
+  return segments.includes(focusNorm);
+}
+
 function UnpricedHelp({ testId }: { testId: string }) {
   return (
     <span className="-my-2 inline-flex items-center">
@@ -84,7 +106,11 @@ export function ChatSessionAnalytics({
 
   useEffect(() => {
     if (!focusModel || !data) return;
-    modelSplitRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    modelSplitRef.current?.scrollIntoView({
+      behavior: reducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
   }, [focusModel, data]);
 
   if (!id)
@@ -588,12 +614,13 @@ function ModelSplitTable({
           {rows.map((row) => {
             const name = row.model ?? "Unknown model";
             const share = totalTokens > 0 ? (row.usage.total / totalTokens) * 100 : 0;
-            const highlighted = Boolean(focusModel && row.model === focusModel);
+            const highlighted = matchesFocusedModel(row.model, focusModel);
             return (
               <tr
                 key={row.model ?? "__unknown__"}
                 data-testid="chat-model-split-row"
-                className={cn("border-t border-border/60", highlighted && "bg-selected")}
+                data-highlighted={highlighted ? "true" : undefined}
+                className={cn("border-t border-border/60", highlighted && "bg-surface-highest")}
               >
                 <td className="max-w-52 truncate py-1.5 font-mono text-[11px]" title={name}>
                   {name}
@@ -629,12 +656,16 @@ function ModelSplitTable({
         {rows.map((row) => {
           const name = row.model ?? "Unknown model";
           const share = totalTokens > 0 ? (row.usage.total / totalTokens) * 100 : 0;
-          const highlighted = Boolean(focusModel && row.model === focusModel);
+          const highlighted = matchesFocusedModel(row.model, focusModel);
           return (
             <div
               key={row.model ?? "__unknown__"}
               data-testid="chat-model-split-row-mobile"
-              className={cn("py-2 text-xs tabular-nums", highlighted && "rounded bg-selected px-2")}
+              data-highlighted={highlighted ? "true" : undefined}
+              className={cn(
+                "py-2 text-xs tabular-nums",
+                highlighted && "rounded bg-surface-highest px-2",
+              )}
             >
               <div className="flex min-w-0 items-center justify-between gap-2">
                 <span className="min-w-0 truncate font-mono text-[11px]" title={name}>

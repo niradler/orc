@@ -168,8 +168,20 @@ export const ModelPriceSchema = z
   .strict();
 export type ModelPrice = z.infer<typeof ModelPriceSchema>;
 
+const FORBIDDEN_PRICING_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+const ModelPricingKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine(
+    (key) => !FORBIDDEN_PRICING_KEYS.has(key.toLowerCase()),
+    "Reserved model names are not allowed",
+  );
+
 export const ModelPricingMapSchema = z
-  .record(z.string().trim().min(1).max(200), ModelPriceSchema)
+  .record(ModelPricingKeySchema, ModelPriceSchema)
   .refine((value) => Object.keys(value).length <= 200, "At most 200 model price overrides");
 export type ModelPricingMap = z.infer<typeof ModelPricingMapSchema>;
 
@@ -332,9 +344,8 @@ function stripModelProvider(model: string): string {
   return slash >= 0 ? model.slice(slash + 1) : model;
 }
 
-function isModelBoundary(char: string | undefined): boolean {
-  return char === undefined || char === "-" || char === "@" || char === ":" || char === "[";
-}
+const ALLOWED_MODEL_SUFFIX =
+  /^(?:-(?:\d{8}|\d{4}-\d{2}-\d{2}|latest|preview)|@[^\s]+|:[^\s]+|\[[^\]]+\])+$/;
 
 function lookupPriceTable(
   normalized: string,
@@ -356,7 +367,7 @@ function lookupPriceTable(
     const candidate = stripModelProvider(key);
     if (
       stripped.startsWith(candidate) &&
-      isModelBoundary(stripped[candidate.length]) &&
+      ALLOWED_MODEL_SUFFIX.test(stripped.slice(candidate.length)) &&
       candidate.length > bestKey.length
     ) {
       bestKey = candidate;
@@ -406,14 +417,18 @@ export function estimateUsageCost(tokens: TokenCostInput, price: ModelPrice): nu
   return roundUsd(Math.max(0, usd));
 }
 
-export function estimateCacheSavings(tokens: TokenCostInput, price: ModelPrice): number {
+export function netCacheSavingsUsd(tokens: TokenCostInput, price: ModelPrice): number {
   const cacheReadRate = price.cacheReadPerMillion ?? price.inputPerMillion;
   const cacheWriteRate = price.cacheWritePerMillion ?? price.inputPerMillion;
-  const savings =
+  return (
     (tokens.cacheRead * (price.inputPerMillion - cacheReadRate) -
       tokens.cacheWrite * (cacheWriteRate - price.inputPerMillion)) /
-    1_000_000;
-  return roundUsd(Math.max(0, savings));
+    1_000_000
+  );
+}
+
+export function estimateCacheSavings(tokens: TokenCostInput, price: ModelPrice): number {
+  return roundUsd(Math.max(0, netCacheSavingsUsd(tokens, price)));
 }
 
 /**
