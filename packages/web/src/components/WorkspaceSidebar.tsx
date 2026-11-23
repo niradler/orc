@@ -90,7 +90,7 @@ export function WorkspaceSidebar({
               aria-current={active === section.id ? "page" : undefined}
               aria-label={section.label}
               onClick={() => {
-                navigate(workspaceDestination(section.path, projectId, search));
+                navigate(workspaceDestination(section.path, projectId, search, pathname));
                 onNavigate?.();
               }}
               className={cn(

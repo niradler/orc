@@ -158,6 +158,279 @@ export const SessionCacheUsageSchema = z.object({
 export type CacheTokenUsage = z.infer<typeof CacheTokenUsageSchema>;
 export type SessionCacheUsage = z.infer<typeof SessionCacheUsageSchema>;
 
+export const ModelPriceSchema = z
+  .object({
+    inputPerMillion: z.number().finite().nonnegative(),
+    outputPerMillion: z.number().finite().nonnegative(),
+    cacheReadPerMillion: z.number().finite().nonnegative().optional(),
+    cacheWritePerMillion: z.number().finite().nonnegative().optional(),
+  })
+  .strict();
+export type ModelPrice = z.infer<typeof ModelPriceSchema>;
+
+const FORBIDDEN_PRICING_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+const ModelPricingKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine(
+    (key) => !FORBIDDEN_PRICING_KEYS.has(key.toLowerCase()),
+    "Reserved model names are not allowed",
+  );
+
+export const ModelPricingMapSchema = z
+  .record(ModelPricingKeySchema, ModelPriceSchema)
+  .refine((value) => Object.keys(value).length <= 200, "At most 200 model price overrides");
+export type ModelPricingMap = z.infer<typeof ModelPricingMapSchema>;
+
+export const DEFAULT_MODEL_PRICING: Readonly<Record<string, ModelPrice>> = {
+  "claude-opus-4-6": {
+    inputPerMillion: 5,
+    outputPerMillion: 25,
+    cacheReadPerMillion: 0.5,
+    cacheWritePerMillion: 6.25,
+  },
+  "claude-opus-4-5": {
+    inputPerMillion: 5,
+    outputPerMillion: 25,
+    cacheReadPerMillion: 0.5,
+    cacheWritePerMillion: 6.25,
+  },
+  "claude-opus-4-1": {
+    inputPerMillion: 15,
+    outputPerMillion: 75,
+    cacheReadPerMillion: 1.5,
+    cacheWritePerMillion: 18.75,
+  },
+  "claude-opus-4": {
+    inputPerMillion: 15,
+    outputPerMillion: 75,
+    cacheReadPerMillion: 1.5,
+    cacheWritePerMillion: 18.75,
+  },
+  "claude-sonnet-4-6": {
+    inputPerMillion: 3,
+    outputPerMillion: 15,
+    cacheReadPerMillion: 0.3,
+    cacheWritePerMillion: 3.75,
+  },
+  "claude-sonnet-4-5": {
+    inputPerMillion: 3,
+    outputPerMillion: 15,
+    cacheReadPerMillion: 0.3,
+    cacheWritePerMillion: 3.75,
+  },
+  "claude-sonnet-4": {
+    inputPerMillion: 3,
+    outputPerMillion: 15,
+    cacheReadPerMillion: 0.3,
+    cacheWritePerMillion: 3.75,
+  },
+  "claude-3-7-sonnet": {
+    inputPerMillion: 3,
+    outputPerMillion: 15,
+    cacheReadPerMillion: 0.3,
+    cacheWritePerMillion: 3.75,
+  },
+  "claude-3-5-sonnet": {
+    inputPerMillion: 3,
+    outputPerMillion: 15,
+    cacheReadPerMillion: 0.3,
+    cacheWritePerMillion: 3.75,
+  },
+  "claude-haiku-4-5": {
+    inputPerMillion: 1,
+    outputPerMillion: 5,
+    cacheReadPerMillion: 0.1,
+    cacheWritePerMillion: 1.25,
+  },
+  "claude-3-5-haiku": {
+    inputPerMillion: 0.8,
+    outputPerMillion: 4,
+    cacheReadPerMillion: 0.08,
+    cacheWritePerMillion: 1,
+  },
+  "gpt-5.4": {
+    inputPerMillion: 2.5,
+    outputPerMillion: 15,
+    cacheReadPerMillion: 0.25,
+  },
+  "gpt-5.3-codex": {
+    inputPerMillion: 1.75,
+    outputPerMillion: 14,
+    cacheReadPerMillion: 0.175,
+  },
+  "gpt-5.2-codex": {
+    inputPerMillion: 1.75,
+    outputPerMillion: 14,
+    cacheReadPerMillion: 0.175,
+  },
+  "gpt-5.2": {
+    inputPerMillion: 1.75,
+    outputPerMillion: 14,
+    cacheReadPerMillion: 0.175,
+  },
+  "gpt-5.1-codex-mini": {
+    inputPerMillion: 0.25,
+    outputPerMillion: 2,
+    cacheReadPerMillion: 0.025,
+  },
+  "gpt-5.1-codex": {
+    inputPerMillion: 1.25,
+    outputPerMillion: 10,
+    cacheReadPerMillion: 0.125,
+  },
+  "gpt-5.1": {
+    inputPerMillion: 1.25,
+    outputPerMillion: 10,
+    cacheReadPerMillion: 0.125,
+  },
+  "gpt-5-codex": {
+    inputPerMillion: 1.25,
+    outputPerMillion: 10,
+    cacheReadPerMillion: 0.125,
+  },
+  "gpt-5-mini": {
+    inputPerMillion: 0.25,
+    outputPerMillion: 2,
+    cacheReadPerMillion: 0.025,
+  },
+  "gpt-5": {
+    inputPerMillion: 1.25,
+    outputPerMillion: 10,
+    cacheReadPerMillion: 0.125,
+  },
+  "gpt-4.1-mini": {
+    inputPerMillion: 0.4,
+    outputPerMillion: 1.6,
+    cacheReadPerMillion: 0.1,
+  },
+  "gpt-4.1": {
+    inputPerMillion: 2,
+    outputPerMillion: 8,
+    cacheReadPerMillion: 0.5,
+  },
+  "gpt-4o": {
+    inputPerMillion: 2.5,
+    outputPerMillion: 10,
+    cacheReadPerMillion: 1.25,
+  },
+  o3: {
+    inputPerMillion: 2,
+    outputPerMillion: 8,
+    cacheReadPerMillion: 0.5,
+  },
+  "o4-mini": {
+    inputPerMillion: 1.1,
+    outputPerMillion: 4.4,
+    cacheReadPerMillion: 0.275,
+  },
+  "gemini-2.5-pro": {
+    inputPerMillion: 1.25,
+    outputPerMillion: 10,
+    cacheReadPerMillion: 0.31,
+  },
+  "gemini-2.5-flash": {
+    inputPerMillion: 0.15,
+    outputPerMillion: 0.6,
+    cacheReadPerMillion: 0.0375,
+  },
+};
+
+function stripModelProvider(model: string): string {
+  const slash = model.lastIndexOf("/");
+  return slash >= 0 ? model.slice(slash + 1) : model;
+}
+
+const ALLOWED_MODEL_SUFFIX =
+  /^(?:-(?:\d{8}|\d{4}-\d{2}-\d{2}|latest|preview)|@[^\s]+|:[^\s]+|\[[^\]]+\])+$/;
+
+function lookupPriceTable(
+  normalized: string,
+  stripped: string,
+  table: Readonly<Record<string, ModelPrice>>,
+): ModelPrice | null {
+  const entries = Object.entries(table).map(
+    ([key, price]) => [key.trim().toLowerCase(), price] as const,
+  );
+  for (const [key, price] of entries) {
+    if (key === normalized) return price;
+  }
+  for (const [key, price] of entries) {
+    if (stripModelProvider(key) === stripped) return price;
+  }
+  let bestKey = "";
+  let bestPrice: ModelPrice | null = null;
+  for (const [key, price] of entries) {
+    const candidate = stripModelProvider(key);
+    if (
+      stripped.startsWith(candidate) &&
+      ALLOWED_MODEL_SUFFIX.test(stripped.slice(candidate.length)) &&
+      candidate.length > bestKey.length
+    ) {
+      bestKey = candidate;
+      bestPrice = price;
+    }
+  }
+  return bestPrice;
+}
+
+export function resolveModelPrice(
+  model: string | null | undefined,
+  overrides?: Readonly<Record<string, ModelPrice>> | null,
+  options?: { includeDefaults?: boolean },
+): ModelPrice | null {
+  const raw = model?.trim().toLowerCase();
+  if (!raw) return null;
+  const stripped = stripModelProvider(raw);
+  if (overrides) {
+    const custom = lookupPriceTable(raw, stripped, overrides);
+    if (custom) return custom;
+  }
+  if (options?.includeDefaults === false) return null;
+  return lookupPriceTable(raw, stripped, DEFAULT_MODEL_PRICING);
+}
+
+export type TokenCostInput = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  reasoning: number;
+};
+
+export function roundUsd(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+export function estimateUsageCost(tokens: TokenCostInput, price: ModelPrice): number {
+  const cacheReadRate = price.cacheReadPerMillion ?? price.inputPerMillion;
+  const cacheWriteRate = price.cacheWritePerMillion ?? price.inputPerMillion;
+  const usd =
+    (tokens.input * price.inputPerMillion +
+      (tokens.output + tokens.reasoning) * price.outputPerMillion +
+      tokens.cacheRead * cacheReadRate +
+      tokens.cacheWrite * cacheWriteRate) /
+    1_000_000;
+  return roundUsd(Math.max(0, usd));
+}
+
+export function netCacheSavingsUsd(tokens: TokenCostInput, price: ModelPrice): number {
+  const cacheReadRate = price.cacheReadPerMillion ?? price.inputPerMillion;
+  const cacheWriteRate = price.cacheWritePerMillion ?? price.inputPerMillion;
+  return (
+    (tokens.cacheRead * (price.inputPerMillion - cacheReadRate) -
+      tokens.cacheWrite * (cacheWriteRate - price.inputPerMillion)) /
+    1_000_000
+  );
+}
+
+export function estimateCacheSavings(tokens: TokenCostInput, price: ModelPrice): number {
+  return roundUsd(Math.max(0, netCacheSavingsUsd(tokens, price)));
+}
+
 /**
  * Best-effort token count from a backend's raw `result` usage, for run budgets.
  * Backends report different shapes (Claude input/output, Codex totalTokens,

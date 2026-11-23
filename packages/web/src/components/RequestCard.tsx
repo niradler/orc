@@ -12,7 +12,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { type CommandRequestDraft, CommandRequestForm } from "@/components/CommandRequestForm";
 import { HelpPopover } from "@/components/HelpPopover";
@@ -99,6 +99,7 @@ export function RequestCard({
   const setEditingAnswer = (editingAnswer: boolean) => updateDraft({ editingAnswer });
   const client = useQueryClient();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [params] = useSearchParams();
   const respond = useMutation({
     mutationFn: (response: HumanResponse) =>
@@ -126,7 +127,7 @@ export function RequestCard({
             const next = new URLSearchParams(params);
             next.delete("notifications");
             next.delete("request");
-            next.set("chat", "open");
+            if (pathname !== "/chat") next.set("chat", "open");
             next.set("chatThread", request.input.origin.chat_thread_id ?? "");
             navigate({ search: next.toString() });
           }}

@@ -69,11 +69,18 @@ regular page: the workspace header keeps your navigation and notifications, and
 conversation is open, including the side chat, to give the conversation the width;
 leaving chat restores the width you had, and expanding it during chat keeps your
 choice.
-The chat panel's full-screen button in the **Terminals** session list opens the
-same page.
+The chat panel's full-screen button expands the side chat's current conversation
+into the Chat page. On wide screens (1280px and wider), the side chat and the Chat
+page hold independent sessions: switching sessions in one does not change the other,
+and both can stay open side by side (use **Side chat** in the header on `/chat`, or
+navigate to **Chat** while the side chat is open). Deep links open in the surface
+they target (`chatThread` for the Chat page or docked side chat, and
+`sideChatThread` when both are open on `/chat`), and open-chat notification
+suppression recognizes both visible conversations.
 
 Below 1280px wide, the chat has no side panel: starting a chat from any page
-opens the chat page instead.
+opens the chat page instead, and narrowing a window with the side chat open carries
+the side chat's current conversation into the Chat page.
 
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from every coding agent, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Every list has the same search, state filters, agent filter, sort order, hidden-session toggle and stable ordering.
   - **Search** matches titles and summaries; the sparkle toggle also searches inside transcripts (ripgrep) and archived conversations (embeddings when configured). The result snippet shows the matching passage.
@@ -245,7 +252,7 @@ Live and ended sessions from Claude Code, Codex, Cursor, Gemini CLI, OpenCode an
 
 Filter with **All**, **Needs you**, **Working** and **Done**; each filter shows its count, and failed sessions count as Needs you. A Claude Code session that waits on you names why and which tool, such as **permission · Bash**, and an idle session whose background shell still runs shows a pulse icon. While a turn runs, the composer says whether Send steers the turn or queues until it ends. While your pointer is over the list, or a row has keyboard focus, rows stay where they are and an **N updated** pill applies the new order when you choose it.
 
-The **view** button on a session row opens the read-only viewer: transcript search with match navigation, tokens and start/end timing, task link, rename, hide, scratchpads, cache usage, lineage and the queued-message inbox. **Analytics** opens from that page and shows message, turn and tool counts for the chat behind the session, plus context growth with cache reuse and compaction markers, per-tool call and failure bars, and turn-duration bars when the agent records usage. Agents without readable usage still show the chat-derived counts with an explanation. Resumable sessions also offer **Continue in chat** and a copyable CLI resume command. Cursor sessions stay readable here because chat cannot resume Cursor's separate CLI store. Archived sessions open the same viewer for their stored transcript and offer resume into chat from a pushed commit.
+The **view** button on a session row opens the read-only viewer: transcript search with match navigation, tokens and start/end timing, task link, rename, hide, scratchpads, cache usage, lineage and the queued-message inbox. **Analytics** opens from that page (and from chat's Analytics action or any model-change divider's **View split** link) and shows total tokens, cache hit rate, estimated cache savings and cost, per-model token and cost splits, message, turn and tool counts, context growth with cache reuse and compaction markers, stacked per-turn token bars, a per-turn breakdown table, per-tool call and failure bars, and turn-duration bars when the agent records usage. Unpriced models show `-` with a help popover pointing to **Settings → Usage** instead of `$0`, and estimated sources such as Cursor label their token counts estimated. Agents without readable usage still show the chat-derived counts with an explanation. Resumable sessions also offer **Continue in chat** and a copyable CLI resume command. Cursor sessions stay readable here because chat cannot resume Cursor's separate CLI store. Archived sessions open the same viewer for their stored transcript and offer resume into chat from a pushed commit.
 
 ![Session analytics on the session page with context growth, cache reuse and compaction](/screens/chat-session-analytics-desktop.png)
 ![Session analytics tool usage, failures and turn durations on the session page](/screens/chat-session-analytics-tools-desktop.png)

@@ -20,7 +20,7 @@ export function useSessionJump({
 }) {
   const chat = useChat();
   const navigate = useNavigate();
-  const { search } = useLocation();
+  const { pathname, search } = useLocation();
   const { data: live } = useActiveLiveSessions();
   const seen = useSessionSeen();
   const visited = useRef(new Set<string>());
@@ -70,6 +70,7 @@ export function useSessionJump({
             `/chat?sessionLive=${encodeURIComponent(session.id)}${list ? `&sessionList=${encodeURIComponent(list)}` : ""}`,
             projectId,
             search,
+            pathname,
           ),
         );
       },

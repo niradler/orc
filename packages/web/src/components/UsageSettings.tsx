@@ -1,10 +1,13 @@
-import type {
-  UsageBucket,
-  UsageModelBreakdown,
-  UsageReport,
-  UsageTokenTotals,
+import {
+  DEFAULT_MODEL_PRICING,
+  type ModelPrice,
+  type ModelPricingMap,
+  type UsageBucket,
+  type UsageModelBreakdown,
+  type UsageReport,
+  type UsageTokenTotals,
 } from "@orc/core/usage";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
@@ -874,6 +877,386 @@ export function UsageSettings() {
           </p>
         )}
       </details>
+
+      <ModelPricingSection
+        observedModels={models.map((row) => row.model).filter((m): m is string => Boolean(m))}
+      />
     </section>
+  );
+}
+
+type PriceDraft = {
+  model: string;
+  inputPerMillion: string;
+  outputPerMillion: string;
+  cacheReadPerMillion: string;
+  cacheWritePerMillion: string;
+};
+
+const FORBIDDEN_MODEL_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function formatRate(value: number | undefined): string {
+  if (value === undefined) return "—";
+  return `$${value}`;
+}
+
+function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
+  const queryClient = useQueryClient();
+  const settings = useQuery({
+    queryKey: ["settings"],
+    queryFn: api.settings.get,
+    staleTime: 30_000,
+  });
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState<PriceDraft | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const saveMutation = useMutation({
+    mutationFn: (nextPricing: ModelPricingMap) => api.settings.save({ model_pricing: nextPricing }),
+    onSuccess: () => {
+      setEditing(null);
+      setDraft(null);
+      setFormError(null);
+      void queryClient.invalidateQueries({ queryKey: ["settings"] });
+      void queryClient.invalidateQueries({ queryKey: ["chat-analytics"] });
+    },
+    onError: (error) => {
+      setFormError(error instanceof Error ? error.message : "Could not save model pricing.");
+    },
+  });
+
+  const canMutate = settings.isSuccess && !saveMutation.isPending;
+  const overrides = settings.data?.model_pricing ?? {};
+  const overrideEntries = Object.entries(overrides).sort(([a], [b]) => a.localeCompare(b));
+  const defaultEntries = Object.entries(DEFAULT_MODEL_PRICING).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  const modelSuggestions = useMemo(
+    () =>
+      [...new Set([...observedModels, ...Object.keys(DEFAULT_MODEL_PRICING)])].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [observedModels],
+  );
+
+  function startEdit(model = "", existing?: ModelPrice) {
+    if (!settings.isSuccess) return;
+    setFormError(null);
+    setEditing(model || "__new__");
+    setDraft({
+      model,
+      inputPerMillion: existing ? String(existing.inputPerMillion) : "",
+      outputPerMillion: existing ? String(existing.outputPerMillion) : "",
+      cacheReadPerMillion:
+        existing?.cacheReadPerMillion !== undefined ? String(existing.cacheReadPerMillion) : "",
+      cacheWritePerMillion:
+        existing?.cacheWritePerMillion !== undefined ? String(existing.cacheWritePerMillion) : "",
+    });
+  }
+
+  function submitDraft(event: React.FormEvent) {
+    event.preventDefault();
+    if (!draft || !settings.isSuccess) return;
+    const modelId = draft.model.trim();
+    if (!modelId) {
+      setFormError("Enter a model name.");
+      return;
+    }
+    if (FORBIDDEN_MODEL_KEYS.has(modelId.toLowerCase())) {
+      setFormError("That model name is reserved.");
+      return;
+    }
+    const parseRequired = (raw: string, label: string): number | null => {
+      const value = Number(raw.trim());
+      if (!raw.trim() || !Number.isFinite(value) || value < 0) {
+        setFormError(`${label} must be a non-negative number.`);
+        return null;
+      }
+      return value;
+    };
+    const parseOptional = (raw: string, label: string): number | undefined | null => {
+      if (!raw.trim()) return undefined;
+      const value = Number(raw.trim());
+      if (!Number.isFinite(value) || value < 0) {
+        setFormError(`${label} must be a non-negative number.`);
+        return null;
+      }
+      return value;
+    };
+    const input = parseRequired(draft.inputPerMillion, "Input rate");
+    if (input === null) return;
+    const output = parseRequired(draft.outputPerMillion, "Output rate");
+    if (output === null) return;
+    const cacheRead = parseOptional(draft.cacheReadPerMillion, "Cache read rate");
+    if (cacheRead === null) return;
+    const cacheWrite = parseOptional(draft.cacheWritePerMillion, "Cache write rate");
+    if (cacheWrite === null) return;
+
+    const entries = Object.entries(overrides).filter(
+      ([key]) => !(editing && editing !== "__new__" && editing !== modelId && key === editing),
+    );
+    const nextPrice: ModelPrice = {
+      inputPerMillion: input,
+      outputPerMillion: output,
+      ...(cacheRead !== undefined ? { cacheReadPerMillion: cacheRead } : {}),
+      ...(cacheWrite !== undefined ? { cacheWritePerMillion: cacheWrite } : {}),
+    };
+    const nextMap = Object.fromEntries([
+      ...entries.filter(([key]) => key !== modelId),
+      [modelId, nextPrice],
+    ]) as ModelPricingMap;
+    saveMutation.mutate(nextMap);
+  }
+
+  function removeOverride(modelId: string) {
+    if (!settings.isSuccess) return;
+    setFormError(null);
+    const nextMap = Object.fromEntries(
+      Object.entries(overrides).filter(([key]) => key !== modelId),
+    ) as ModelPricingMap;
+    saveMutation.mutate(nextMap);
+  }
+
+  return (
+    <details className="border-t border-border pt-4" data-testid="usage-model-pricing">
+      <summary className="flex min-h-11 cursor-pointer flex-wrap items-center justify-between gap-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
+        <span className="flex items-center gap-1">
+          Model pricing
+          <HelpPopover label="model pricing" testId="usage-pricing-help">
+            USD per million tokens for session cost estimates. Custom entries override built-in
+            rates per model and cache class.
+          </HelpPopover>
+        </span>
+        <span className="text-xs font-normal text-muted-foreground">
+          {settings.isPending
+            ? "Loading…"
+            : settings.isError
+              ? "Unavailable"
+              : overrideEntries.length > 0
+                ? `${count.format(overrideEntries.length)} custom · built-in defaults`
+                : `${count.format(defaultEntries.length)} built-in defaults`}
+        </span>
+      </summary>
+
+      <div className="mt-3 space-y-3">
+        {settings.isPending && (
+          <p role="status" className="text-xs text-muted-foreground">
+            Loading saved pricing overrides…
+          </p>
+        )}
+        {settings.isError && (
+          <p role="alert" className="text-xs text-error">
+            Saved pricing settings could not be loaded. Reload or retry before editing.
+          </p>
+        )}
+        {formError && (
+          <p role="alert" data-testid="usage-pricing-error" className="text-xs text-error">
+            {formError}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs text-muted-foreground">
+            Prices are USD per 1M tokens. Unpriced models show - in session analytics.
+          </p>
+          {!draft && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="usage-pricing-add"
+              disabled={!canMutate}
+              onClick={() => startEdit()}
+              className="min-h-11 sm:min-h-8"
+            >
+              Add model price
+            </Button>
+          )}
+        </div>
+
+        {draft && (
+          <form
+            data-testid="usage-pricing-form"
+            onSubmit={submitDraft}
+            className="space-y-3 rounded-md border border-border p-3"
+          >
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:col-span-2">
+                Model
+                <input
+                  type="text"
+                  list="usage-pricing-models"
+                  data-testid="usage-pricing-model-input"
+                  value={draft.model}
+                  onChange={(event) => setDraft({ ...draft, model: event.target.value })}
+                  placeholder="e.g. claude-sonnet-4-5 or acme/custom-v1"
+                  className="form-control min-h-11 w-full text-base sm:min-h-9 sm:text-sm"
+                />
+                <datalist id="usage-pricing-models">
+                  {modelSuggestions.map((modelId) => (
+                    <option key={modelId} value={modelId} />
+                  ))}
+                </datalist>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Input ($ / 1M)
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  data-testid="usage-pricing-input-rate"
+                  value={draft.inputPerMillion}
+                  onChange={(event) => setDraft({ ...draft, inputPerMillion: event.target.value })}
+                  className="form-control min-h-11 w-full text-base sm:min-h-9 sm:text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Output ($ / 1M)
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  data-testid="usage-pricing-output-rate"
+                  value={draft.outputPerMillion}
+                  onChange={(event) => setDraft({ ...draft, outputPerMillion: event.target.value })}
+                  className="form-control min-h-11 w-full text-base sm:min-h-9 sm:text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Cache read ($ / 1M, optional)
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  data-testid="usage-pricing-cache-read-rate"
+                  value={draft.cacheReadPerMillion}
+                  onChange={(event) =>
+                    setDraft({ ...draft, cacheReadPerMillion: event.target.value })
+                  }
+                  className="form-control min-h-11 w-full text-base sm:min-h-9 sm:text-sm"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                Cache write ($ / 1M, optional)
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  data-testid="usage-pricing-cache-write-rate"
+                  value={draft.cacheWritePerMillion}
+                  onChange={(event) =>
+                    setDraft({ ...draft, cacheWritePerMillion: event.target.value })
+                  }
+                  className="form-control min-h-11 w-full text-base sm:min-h-9 sm:text-sm"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="submit"
+                size="sm"
+                data-testid="usage-pricing-save"
+                disabled={!canMutate}
+                className="min-h-11 sm:min-h-8"
+              >
+                {saveMutation.isPending ? "Saving…" : "Save price"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={saveMutation.isPending}
+                onClick={() => {
+                  setEditing(null);
+                  setDraft(null);
+                  setFormError(null);
+                }}
+                className="min-h-11 sm:min-h-8"
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+
+        {overrideEntries.length > 0 && (
+          <div data-testid="usage-pricing-overrides" className="divide-y divide-border/60">
+            {overrideEntries.map(([modelId, price]) => (
+              <div
+                key={modelId}
+                data-testid="usage-pricing-override-row"
+                className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-[11px]">{modelId}</p>
+                  <p className="text-muted-foreground tabular-nums">
+                    In {formatRate(price.inputPerMillion)} · Out{" "}
+                    {formatRate(price.outputPerMillion)} · Cache R{" "}
+                    {formatRate(price.cacheReadPerMillion)} / W{" "}
+                    {formatRate(price.cacheWritePerMillion)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={!canMutate}
+                    onClick={() => startEdit(modelId, price)}
+                    className="min-h-11 sm:min-h-8"
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    disabled={!canMutate}
+                    onClick={() => removeOverride(modelId)}
+                    className="min-h-11 sm:min-h-8"
+                  >
+                    Remove
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <details className="border-t border-border/60 pt-2">
+          <summary className="flex min-h-11 cursor-pointer items-center py-1 text-xs text-muted-foreground sm:min-h-0">
+            Built-in defaults ({count.format(defaultEntries.length)})
+          </summary>
+          <div className="mt-1 divide-y divide-border/60">
+            {defaultEntries.map(([modelId, price]) => (
+              <div
+                key={modelId}
+                className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-[11px]">{modelId}</p>
+                  <p className="text-muted-foreground tabular-nums">
+                    In {formatRate(price.inputPerMillion)} · Out{" "}
+                    {formatRate(price.outputPerMillion)} · Cache R{" "}
+                    {formatRate(price.cacheReadPerMillion)} / W{" "}
+                    {formatRate(price.cacheWritePerMillion)}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={!canMutate}
+                  onClick={() => startEdit(modelId, overrides[modelId] ?? price)}
+                  className="min-h-11 sm:min-h-8"
+                >
+                  Override
+                </Button>
+              </div>
+            ))}
+          </div>
+        </details>
+      </div>
+    </details>
   );
 }

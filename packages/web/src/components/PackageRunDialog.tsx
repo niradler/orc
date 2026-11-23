@@ -44,7 +44,7 @@ export function PackageRunDialog({
   const terminals = useTerminals();
   const ssh = useSsh();
   const projects = useProjects();
-  const chat = useChat();
+  const chat = useChat("side");
   const host = setup.host === undefined ? (ssh.data?.host ?? null) : setup.host;
   const [destination, setDestination] = useState<"terminal" | "chat" | "command">("terminal");
   const [step, setStep] = useState("context");
