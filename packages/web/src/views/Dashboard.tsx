@@ -1,6 +1,7 @@
 import "./ActivityPreview.css";
 import type { UsageReport } from "@orc/core/usage";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Bar, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { api, type LiveSession, type Project } from "@/api/client";
@@ -88,6 +89,7 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
     queryKey: WORKSPACE_PREFERENCES_KEY,
     queryFn: api.settings.get,
   });
+  const [holdSetup, setHoldSetup] = useState(false);
   const sessionsQuery = useLiveSessions(false, scopeParams?.project_id);
   const usageQuery = useQuery({
     queryKey: ["usage-report", "30", "day", "", "", projectId],
@@ -129,14 +131,15 @@ export default function Dashboard({ projectId: savedProjectId }: DashboardProps)
   // setup screen (detected agents + suggested projects) above the quiet empty
   // activity. Dismissing hides it until a project exists.
   const showFirstRun =
-    Array.isArray(projects) &&
-    projects.length === 0 &&
-    preferences !== undefined &&
-    preferences.setup_dismissed !== true;
+    holdSetup ||
+    (Array.isArray(projects) &&
+      projects.length === 0 &&
+      preferences !== undefined &&
+      preferences.setup_dismissed !== true);
 
   return (
     <div data-activity-preview data-testid="activity-preview" className="activity-preview">
-      {showFirstRun && <FirstRunSetup />}
+      {showFirstRun && <FirstRunSetup onHoldChange={setHoldSetup} />}
       <ViewHeader
         title="Activity"
         meta={scopeLabel || "All projects"}

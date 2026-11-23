@@ -210,9 +210,11 @@ test.describe("first-run setup", () => {
   }) => {
     await mockFreshWorkspace(page);
     let createdCount = 0;
+    let projectsGetsAfterCreate = 0;
     await page.unroute("**/api/projects*");
     await page.route("**/api/projects*", (route) => {
       if (route.request().method() === "GET") {
+        if (createdCount > 0) projectsGetsAfterCreate += 1;
         return route.fulfill({
           json: {
             projects: createdCount > 0 ? [{ id: "p-1", name: "orc", status: "active" }] : [],
@@ -233,6 +235,10 @@ test.describe("first-run setup", () => {
     await expect(page.getByTestId("first-run-create")).toHaveText("Create 2 projects");
     await page.getByTestId("first-run-create").click();
     await expect(page.getByTestId("first-run-suggestion-created-0")).toBeVisible();
+    await expect(page.getByTestId("first-run-suggestion-error-1")).toContainText("Name taken");
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect.poll(() => projectsGetsAfterCreate).toBeGreaterThan(0);
+    await expect(page.getByTestId("first-run-setup")).toBeVisible();
     await expect(page.getByTestId("first-run-suggestion-error-1")).toContainText("Name taken");
     await expect(page.getByTestId("first-run-create")).toHaveText("Create 1 project");
     await expect(page.getByTestId("first-run-continue")).toBeVisible();

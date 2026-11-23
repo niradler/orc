@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getSqlite } from "@orc/db/client";
@@ -250,7 +250,7 @@ test("suggestedProjectName produces a name POST /projects accepts", () => {
 
 describe("suggestSetupProjects", () => {
   let app: ReturnType<typeof setupTestApp>;
-  const root = mkdtempSync(join(tmpdir(), "orc-setup-suggest-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "orc-setup-suggest-")));
   const repoA = join(root, "repoA");
   const repoAClone = join(root, "clone", "repoA");
   const plainB = join(root, "My Project!");

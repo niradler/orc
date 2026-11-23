@@ -37,7 +37,7 @@ function StatusMark({ agent }: { agent: SetupAgent }) {
   return <Check size={14} className="shrink-0 text-success" aria-hidden />;
 }
 
-export function FirstRunSetup() {
+export function FirstRunSetup({ onHoldChange }: { onHoldChange?: (hold: boolean) => void } = {}) {
   const queryClient = useQueryClient();
   const setup = useSetupStatus();
   const dismiss = useDismissSetup();
@@ -84,9 +84,11 @@ export function FirstRunSetup() {
   async function finishSetup(): Promise<void> {
     await queryClient.invalidateQueries({ queryKey: ["projects"] });
     void queryClient.invalidateQueries({ queryKey: ["setup-status"] });
+    onHoldChange?.(false);
   }
 
   async function createSelected(): Promise<void> {
+    onHoldChange?.(true);
     setCreating(true);
     let created = 0;
     let failed = 0;
@@ -105,7 +107,8 @@ export function FirstRunSetup() {
       }
     }
     setCreating(false);
-    if (created > 0 && failed === 0) await finishSetup();
+    if (failed === 0 && (created > 0 || hasCreated)) await finishSetup();
+    else if (!hasCreated && created === 0) onHoldChange?.(false);
   }
 
   return (
@@ -130,8 +133,11 @@ export function FirstRunSetup() {
           size="icon"
           aria-label="Dismiss setup"
           data-testid="first-run-dismiss"
-          disabled={dismiss.isPending}
-          onClick={() => dismiss.mutate()}
+          disabled={dismiss.isPending || creating}
+          onClick={() => {
+            if (hasCreated) void finishSetup();
+            else dismiss.mutate();
+          }}
         >
           <X size={16} aria-hidden />
         </Button>
