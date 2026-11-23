@@ -24,6 +24,7 @@ export type WorkspacePreferences = {
   composer_revision?: string;
   agents?: string[];
   provider_paths?: ProviderPaths;
+  setup_dismissed?: boolean;
 };
 
 const endpoint = (apiUrl: string, path: string) => `${apiUrl.replace(/\/$/, "")}${path}`;

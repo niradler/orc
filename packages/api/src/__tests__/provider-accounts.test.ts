@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,27 +11,8 @@ import {
 } from "../provider-accounts.js";
 
 const home = mkdtempSync(join(tmpdir(), "orc-provider-accounts-"));
-const oldHome = process.env.HOME;
-const oldProfile = process.env.USERPROFILE;
-const oldClaudeHome = process.env.CLAUDE_CONFIG_DIR;
-const oldCodexHome = process.env.CODEX_HOME;
 
-beforeAll(() => {
-  process.env.HOME = home;
-  process.env.USERPROFILE = home;
-  delete process.env.CLAUDE_CONFIG_DIR;
-  delete process.env.CODEX_HOME;
-});
 afterAll(() => {
-  for (const [key, value] of [
-    ["HOME", oldHome],
-    ["USERPROFILE", oldProfile],
-    ["CLAUDE_CONFIG_DIR", oldClaudeHome],
-    ["CODEX_HOME", oldCodexHome],
-  ] as const) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
-  }
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -48,13 +29,17 @@ const claudeProfile = (overrides: Partial<ProviderProfile> = {}): ProviderProfil
 
 const accountHome = join(home, "accounts", "claude-work");
 
-function dependencies(files: Record<string, unknown>) {
+function dependencies(
+  files: Record<string, unknown>,
+  env: Record<string, string | undefined> = {},
+) {
   const reads: string[] = [];
   return {
     reads,
     deps: {
       home,
       platform: "linux" as NodeJS.Platform,
+      env,
       read: async (path: string) => {
         reads.push(path);
         if (!(path in files)) throw new Error("private missing path");
@@ -100,6 +85,35 @@ describe("provider account identity", () => {
     expect(identity.label).toBe("personal@example.com");
     expect(reads).toContain(join(home, ".claude.json"));
     expect(reads).not.toContain(join(home, ".claude", ".claude.json"));
+  });
+
+  test("reads the agent config directory from the injected environment", async () => {
+    const claudeDir = join(home, "injected-claude");
+    const codexDir = join(home, "injected-codex");
+    const payload = Buffer.from(JSON.stringify({ email: "env-codex@example.com" })).toString(
+      "base64url",
+    );
+    const { deps, reads } = dependencies(
+      {
+        [join(claudeDir, ".claude.json")]: {
+          oauthAccount: { emailAddress: "env-claude@example.com" },
+        },
+        [join(codexDir, "auth.json")]: {
+          tokens: { access_token: "private-env-token", id_token: `header.${payload}.signature` },
+        },
+      },
+      { CLAUDE_CONFIG_DIR: claudeDir, CODEX_HOME: codexDir },
+    );
+    const claude = await readClaudeIdentity(claudeProfile(), deps);
+    expect(claude).toMatchObject({ status: "signed_in", label: "env-claude@example.com" });
+    const codex = await readCodexIdentity(
+      { ...claudeProfile(), id: "codex-env", agent: "codex" },
+      deps,
+    );
+    expect(codex).toMatchObject({ status: "signed_in", label: "env-codex@example.com" });
+    expect(reads).toContain(join(claudeDir, ".claude.json"));
+    expect(reads).toContain(join(codexDir, "auth.json"));
+    expect(JSON.stringify(claude) + JSON.stringify(codex)).not.toContain("private-env-token");
   });
 
   test("reads Codex claims from CODEX_HOME and treats a missing login as signed out", async () => {
