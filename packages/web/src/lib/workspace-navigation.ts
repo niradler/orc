@@ -62,15 +62,24 @@ export function pathMatches(pathname: string, path: string) {
 }
 
 /** Carry global workspace state, without leaking a page's filters into another feature. */
-export function workspaceDestination(path: string, projectId: string, currentSearch: string) {
+export function workspaceDestination(
+  path: string,
+  projectId: string,
+  currentSearch: string,
+  currentPathname = "",
+) {
   const [pathname, destinationSearch = ""] = path.split("?", 2);
   const query = new URLSearchParams(destinationSearch);
   query.set("project", projectId);
   const current = new URLSearchParams(currentSearch);
   if (current.get("chat") === "open") {
     query.set("chat", "open");
-    const thread = current.get("chatThread");
-    if (thread) query.set("chatThread", thread);
+    const fromChatPage = currentPathname === "/chat" || current.get("chat") === "full";
+    const sideThread = fromChatPage ? current.get("sideChatThread") : current.get("chatThread");
+    if (sideThread) {
+      if (pathname === "/chat") query.set("sideChatThread", sideThread);
+      else query.set("chatThread", sideThread);
+    }
   }
   return `${pathname}?${query}`;
 }

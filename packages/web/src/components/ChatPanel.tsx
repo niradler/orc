@@ -933,6 +933,7 @@ export function ChatPanel({
   return (
     <ThreadPrimitive.Root
       data-testid="chat-panel"
+      data-chat-surface={fullscreen ? "page" : "side"}
       data-streaming={streaming ? "true" : "false"}
       data-focus={focusChat ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}

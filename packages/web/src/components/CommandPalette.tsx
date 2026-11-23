@@ -217,7 +217,7 @@ export function CommandPalette({
     staleTime: 15_000,
   });
   const go = (path: string, project = projectId) =>
-    navigate(workspaceDestination(path, project, location.search));
+    navigate(workspaceDestination(path, project, location.search, location.pathname));
   const entries: Entry[] = [];
   if (filter === "All" || filter === "Terminals") {
     const recent = recentTerminals.current;

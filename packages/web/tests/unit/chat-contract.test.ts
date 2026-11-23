@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ChatSettingsSchema } from "@orc/core/chat";
 import {
+  chatSurfaceLinks,
   parseChatEvent,
   parseChatPreferences,
   parseChatTabs,
@@ -38,12 +39,80 @@ describe("chat preferences", () => {
 
   test("open tabs keep only valid conversation ids", () => {
     const id = "3f0c831c-500d-4ae5-9c83-0d2bc6c431fa";
+    const sideId = "4f0c831c-500d-4ae5-9c83-0d2bc6c431fb";
     expect(parseChatTabs(JSON.stringify({ threads: [id, "../x", 4], active: id }))).toEqual({
       threads: [id],
       active: id,
     });
+    expect(
+      parseChatTabs(JSON.stringify({ threads: [id, sideId], active: id, sideActive: sideId })),
+    ).toEqual({
+      threads: [id, sideId],
+      active: id,
+      sideActive: sideId,
+    });
+    expect(parseChatTabs(JSON.stringify({ threads: [id], active: id, sideActive: null }))).toEqual({
+      threads: [id],
+      active: id,
+      sideActive: null,
+    });
+    expect(
+      parseChatTabs(JSON.stringify({ threads: [id], active: id, sideActive: "other" })).sideActive,
+    ).toBeNull();
     expect(parseChatTabs(JSON.stringify({ threads: [id], active: "other" })).active).toBeNull();
     expect(parseChatTabs("broken")).toEqual({ threads: [], active: null });
+  });
+
+  test("surface URL targeting keeps Chat page and side chat thread params independent", () => {
+    const pageId = "3f0c831c-500d-4ae5-9c83-0d2bc6c431fa";
+    const sideId = "4f0c831c-500d-4ae5-9c83-0d2bc6c431fb";
+    expect(chatSurfaceLinks("/chat", `?chatThread=${pageId}`, true)).toEqual({
+      pageShown: true,
+      sideShown: false,
+      redirecting: false,
+      pageParam: "chatThread",
+      sideParam: null,
+      pageLinked: pageId,
+      sideLinked: null,
+    });
+    expect(chatSurfaceLinks("/activity", `?chat=open&chatThread=${sideId}`, true)).toEqual({
+      pageShown: false,
+      sideShown: true,
+      redirecting: false,
+      pageParam: null,
+      sideParam: "chatThread",
+      pageLinked: null,
+      sideLinked: sideId,
+    });
+    expect(
+      chatSurfaceLinks("/chat", `?chat=open&chatThread=${pageId}&sideChatThread=${sideId}`, true),
+    ).toEqual({
+      pageShown: true,
+      sideShown: true,
+      redirecting: false,
+      pageParam: "chatThread",
+      sideParam: "sideChatThread",
+      pageLinked: pageId,
+      sideLinked: sideId,
+    });
+    expect(chatSurfaceLinks("/activity", `?chat=open&chatThread=${sideId}`, false)).toEqual({
+      pageShown: false,
+      sideShown: false,
+      redirecting: true,
+      pageParam: null,
+      sideParam: null,
+      pageLinked: null,
+      sideLinked: null,
+    });
+    expect(chatSurfaceLinks("/tasks", `?chat=full&chatThread=${pageId}`, true)).toEqual({
+      pageShown: true,
+      sideShown: false,
+      redirecting: true,
+      pageParam: "chatThread",
+      sideParam: null,
+      pageLinked: pageId,
+      sideLinked: null,
+    });
   });
 
   test("workspace project hints survive reload without trusting unrelated or malformed storage", () => {

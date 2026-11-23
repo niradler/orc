@@ -35,6 +35,7 @@ import {
 import { useLocation, useSearchParams } from "react-router-dom";
 import { ApiError, api, getApiUrl } from "@/api/client";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
+import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
 import { API_ACCESS_CHANGED } from "@/lib/api-credentials";
 import { activeApiHeaders } from "@/lib/api-hosts";
@@ -48,20 +49,25 @@ import { permissionModes } from "@/lib/composer-chips";
 import { folderHistory, rememberFolder } from "@/lib/folder-history";
 import { reconnectDelay, waitToReconnect } from "@/lib/reconnect";
 import { getResourceConnection, subscribeResourceConnection } from "@/lib/resource-events";
+import { SESSION_LIVE_PARAM } from "@/lib/session-home";
 import {
   CHAT_PREFERENCES_KEY,
   CHAT_TABS_KEY,
+  CHAT_THREAD_PARAM,
   type ChatConfig,
+  type ChatSurface,
+  chatSurfaceLinks,
   DEFAULT_CONFIG,
-  isChatThreadId,
   parseChatEvent,
   parseChatPreferences,
   parseChatTabs,
+  SIDE_CHAT_THREAD_PARAM,
   withPreferences,
 } from "./chat-contract";
 import { type ProviderDrafts, providerSelection } from "./chat-provider-config";
 
 export type { ChatMessage } from "@orc/core/chat";
+export { CHAT_THREAD_PARAM, type ChatSurface, SIDE_CHAT_THREAD_PARAM };
 
 function wakeOnConnectivity(wake: () => void): () => void {
   const visible = () => {
@@ -79,14 +85,12 @@ function wakeOnConnectivity(wake: () => void): () => void {
   };
 }
 
-/** URL parameter naming the open conversation, so a chat link can be shared. */
-export const CHAT_THREAD_PARAM = "chatThread";
-
 /** The dashboard page the user is chatting from, without the chat's own URL state. */
 export function currentRoute(): string {
   const params = new URLSearchParams(window.location.search);
   params.delete("chat");
   params.delete(CHAT_THREAD_PARAM);
+  params.delete(SIDE_CHAT_THREAD_PARAM);
   const query = params.toString();
   const route = `${window.location.pathname}${query ? `?${query}` : ""}`;
   // The server caps the route; a page path alone still says where the user is.
@@ -262,8 +266,9 @@ function steersLive(tab: ChatTab): boolean {
   return tab.config.sendWhileRunning === "steer" && tab.files.length === 0 && canSteer(tab);
 }
 
-function useChatController() {
+function useChatStore(desktopViewport: boolean) {
   const [params] = useSearchParams();
+  const { pathname, search } = useLocation();
   const selectedProject = params.get("project") ?? readStorage("orc_selected_project");
   const projects = useProjects();
   const projectFolders = useMemo(
@@ -283,13 +288,17 @@ function useChatController() {
       : selectedProject && selectedProject !== "all"
         ? selectedProject
         : undefined;
-  const [initial] = useState(() =>
-    blankTab(
-      withPreferences(DEFAULT_CONFIG, parseChatPreferences(readStorage(CHAT_PREFERENCES_KEY))),
-      creationProject.current,
-    ),
-  );
-  const [tabs, setTabs] = useState<ChatTab[]>([initial]);
+  const [initials] = useState(() => {
+    const config = withPreferences(
+      DEFAULT_CONFIG,
+      parseChatPreferences(readStorage(CHAT_PREFERENCES_KEY)),
+    );
+    return {
+      page: blankTab(config, creationProject.current),
+      side: blankTab(config, creationProject.current),
+    };
+  });
+  const [tabs, setTabs] = useState<ChatTab[]>(() => [initials.page, initials.side]);
   useEffect(() => {
     if (
       !tabs.some(
@@ -304,29 +313,34 @@ function useChatController() {
     window.addEventListener("beforeunload", protectUploads);
     return () => window.removeEventListener("beforeunload", protectUploads);
   }, [tabs]);
-  const [activeKey, setActiveKey] = useState(initial.key);
-  const workspacePickerSession = useFolderPickerSession();
-  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
-  const pickerConversation = useRef(activeKey);
-  useEffect(() => {
-    if (pickerConversation.current === activeKey) return;
-    pickerConversation.current = activeKey;
-    setWorkspacePickerOpen(false);
-    workspacePickerSession.reset("");
-  }, [activeKey, workspacePickerSession.reset]);
+  const [activeKeys, setActiveKeys] = useState<Record<ChatSurface, string>>(() => ({
+    page: initials.page.key,
+    side: initials.side.key,
+  }));
   const [ready, setReady] = useState(false);
   const [responding, setResponding] = useState(false);
   const queryClient = useQueryClient();
-  // Refs hold the latest tabs synchronously, so concurrent streams never update stale copies.
   const tabsRef = useRef(tabs);
-  const activeRef = useRef(activeKey);
-  // `cancel` waits for the server to name the run; `closed` marks a tab that is gone but
-  // whose stream is kept open only so that pending cancel can still be sent.
+  const activeKeysRef = useRef<Record<ChatSurface, string>>(activeKeys);
+  const urlState = chatSurfaceLinks(pathname, search, desktopViewport);
+  const visibleSurfacesRef = useRef({ page: urlState.pageShown, side: urlState.sideShown });
+  visibleSurfacesRef.current = { page: urlState.pageShown, side: urlState.sideShown };
+  const isTabVisible = useCallback(
+    (key: string) =>
+      (visibleSurfacesRef.current.page && activeKeysRef.current.page === key) ||
+      (visibleSurfacesRef.current.side && activeKeysRef.current.side === key),
+    [],
+  );
+  const isActiveElsewhere = useCallback(
+    (surface: ChatSurface, key: string) =>
+      activeKeysRef.current[surface === "page" ? "side" : "page"] === key,
+    [],
+  );
   const streams = useRef(
     new Map<string, { controller: AbortController; cancel: boolean; closed: boolean }>(),
   );
   const queueHolds = useRef(new Map<string, AbortController>());
-  const defaults = useRef(initial.config);
+  const defaults = useRef(initials.page.config);
 
   const mutate = useCallback((change: (tabs: ChatTab[]) => ChatTab[]) => {
     tabsRef.current = change(tabsRef.current);
@@ -340,12 +354,18 @@ function useChatController() {
     [mutate],
   );
   const activate = useCallback(
-    (key: string) => {
-      activeRef.current = key;
-      setActiveKey(key);
+    (surface: ChatSurface, key: string) => {
+      activeKeysRef.current = { ...activeKeysRef.current, [surface]: key };
+      setActiveKeys(activeKeysRef.current);
       update(key, () => ({ attention: false, hidden: false }));
     },
     [update],
+  );
+  const handoff = useCallback(
+    (from: ChatSurface, to: ChatSurface) => {
+      activate(to, activeKeysRef.current[from]);
+    },
+    [activate],
   );
   const find = useCallback((key: string) => tabsRef.current.find((tab) => tab.key === key), []);
 
@@ -382,9 +402,10 @@ function useChatController() {
       );
       setReady(true);
     } catch (cause) {
-      update(activeRef.current, () => ({
-        error: message(cause, "Chat settings could not be loaded."),
-      }));
+      const text = message(cause, "Chat settings could not be loaded.");
+      update(activeKeysRef.current.page, () => ({ error: text }));
+      if (activeKeysRef.current.side !== activeKeysRef.current.page)
+        update(activeKeysRef.current.side, () => ({ error: text }));
     }
   }, [mutate, update]);
   useEffect(() => {
@@ -407,7 +428,7 @@ function useChatController() {
 
   const apply = useCallback(
     (key: string, event: ChatEvent) => {
-      const background = key !== activeRef.current;
+      const background = !isTabVisible(key);
       if (event.type === "thread") {
         const stream = streams.current.get(key);
         if (stream?.cancel)
@@ -505,7 +526,7 @@ function useChatController() {
           return { activity: appendChatActivity(tab.activity, event) };
         });
     },
-    [update],
+    [isTabVisible, update],
   );
   const finish = useCallback(
     (key: string) =>
@@ -533,9 +554,9 @@ function useChatController() {
         turn: undefined,
         permissions: [],
         questions: [],
-        attention: tab.attention || (tab.streaming && key !== activeRef.current),
+        attention: tab.attention || (tab.streaming && !isTabVisible(key)),
       })),
-    [update],
+    [isTabVisible, update],
   );
   /**
    * A finished turn is assembled locally, so its message carries a client id and
@@ -805,15 +826,14 @@ function useChatController() {
   );
 
   const refresh = useCallback(
-    async (rebuild = false) => {
-      const key = activeRef.current;
+    async (surface: ChatSurface, rebuild = false) => {
+      const key = activeKeysRef.current[surface];
       const tab = find(key);
       if (!tab?.thread || tab.refreshing) return;
       update(key, () => ({ refreshing: true, error: null }));
       try {
         const fresh = await (rebuild ? api.chat.refresh : api.chat.get)(tab.thread.id);
         if (!find(key)) return;
-        // Detach only this browser's reader; the server keeps the existing turn alive.
         const previous = streams.current.get(key);
         streams.current.delete(key);
         previous?.controller.abort();
@@ -841,12 +861,11 @@ function useChatController() {
 
   const openThread = useCallback(
     (
+      surface: ChatSurface,
       next: ChatThread,
       options: { activate?: boolean; follow?: boolean; projectId?: string | null } = {},
     ) => {
       const existing = tabsRef.current.find((tab) => tab.thread?.id === next.id);
-      // A stored project wins, including an explicit `null`; a folder that matches
-      // nothing stays unknown rather than claiming to be unassigned.
       const inferred = next.projectId === undefined ? projectForCwd(next.cwd) : next.projectId;
       const loaded = {
         projectId:
@@ -869,8 +888,13 @@ function useChatController() {
         else if (options.projectId !== undefined)
           update(key, () => ({ projectId: options.projectId }));
       } else {
-        const active = find(activeRef.current);
-        if (active && isBlank(active) && options.activate !== false) {
+        const active = find(activeKeysRef.current[surface]);
+        if (
+          active &&
+          isBlank(active) &&
+          options.activate !== false &&
+          !isActiveElsewhere(surface, active.key)
+        ) {
           key = active.key;
           update(key, () => loaded);
         } else {
@@ -879,28 +903,39 @@ function useChatController() {
           mutate((current) => [...current, tab]);
         }
       }
-      if (options.activate !== false) activate(key);
-      if (existing?.streaming) return;
+      if (options.activate !== false) activate(surface, key);
+      if (existing?.streaming) return key;
       if (options.follow !== false) void attach(key, next.id);
+      return key;
     },
-    [activate, attach, mutate, update, find, projectForCwd],
+    [activate, attach, isActiveElsewhere, mutate, update, find, projectForCwd],
   );
   const showThread = useCallback(
-    async (id: string) => {
+    async (surface: ChatSurface, id: string) => {
       const open = tabsRef.current.find((tab) => tab.thread?.id === id);
-      if (open) return activate(open.key);
-      openThread(await api.chat.get(id));
+      if (open) {
+        activate(surface, open.key);
+        return;
+      }
+      openThread(surface, await api.chat.get(id));
     },
     [activate, openThread],
   );
   const newTab = useCallback(
-    (options: { projectId?: string | null; fresh?: boolean; workspace?: ChatWorkspace } = {}) => {
+    (
+      surface: ChatSurface,
+      options: { projectId?: string | null; fresh?: boolean; workspace?: ChatWorkspace } = {},
+    ) => {
       const projectId =
         options.projectId !== undefined
           ? options.projectId
           : ((options.workspace?.cwd ? projectForCwd(options.workspace.cwd) : null) ??
             creationProject.current);
-      const blank = !options.fresh && tabsRef.current.find(isBlank);
+      const blank =
+        !options.fresh &&
+        tabsRef.current.find(
+          (candidate) => isBlank(candidate) && !isActiveElsewhere(surface, candidate.key),
+        );
       if (blank) {
         update(blank.key, () => ({
           config: defaults.current,
@@ -908,17 +943,18 @@ function useChatController() {
           ...(options.workspace ? { workspace: options.workspace } : {}),
           error: null,
         }));
-        return activate(blank.key);
+        return activate(surface, blank.key);
       }
       const tab = blankTab(defaults.current, projectId);
       if (options.workspace) tab.workspace = options.workspace;
       mutate((current) => [...current, tab]);
-      activate(tab.key);
+      activate(surface, tab.key);
     },
-    [activate, mutate, update, projectForCwd],
+    [activate, isActiveElsewhere, mutate, update, projectForCwd],
   );
   const startAgentConversation = useCallback(
     (
+      surface: ChatSurface,
       agent: string,
       providerId?: string,
       model = "",
@@ -939,13 +975,13 @@ function useChatController() {
         creationProject.current,
       );
       mutate((current) => [...current, next]);
-      activate(next.key);
+      activate(surface, next.key);
     },
     [activate, mutate],
   );
   const selectProvider = useCallback(
-    (profile: ProviderProfile) => {
-      const current = find(activeRef.current);
+    (surface: ChatSurface, profile: ProviderProfile) => {
+      const current = find(activeKeysRef.current[surface]);
       if (!current) return;
       const next = providerSelection(current.config, current.providerDrafts, profile);
       update(current.key, () => next);
@@ -956,34 +992,48 @@ function useChatController() {
   const closeTab = useCallback(
     (key: string) => {
       update(key, () => ({ hidden: true, queuePaused: true }));
-      if (activeRef.current !== key) return;
-      const next = tabsRef.current.find((tab) => !tab.hidden);
-      if (next) activate(next.key);
-      else {
-        const blank = blankTab(defaults.current, creationProject.current);
-        mutate((current) => [...current, blank]);
-        activate(blank.key);
+      for (const surface of ["page", "side"] as const) {
+        if (activeKeysRef.current[surface] !== key) continue;
+        const next = tabsRef.current.find(
+          (tab) => !tab.hidden && (!isBlank(tab) || !isActiveElsewhere(surface, tab.key)),
+        );
+        if (next) activate(surface, next.key);
+        else {
+          const blank = blankTab(defaults.current, creationProject.current);
+          mutate((current) => [...current, blank]);
+          activate(surface, blank.key);
+        }
       }
     },
-    [activate, mutate, update],
+    [activate, isActiveElsewhere, mutate, update],
   );
 
-  // Reopen this browser's tabs; a shared link's conversation takes focus over the stored one.
-  const linked = useRef(params.get(CHAT_THREAD_PARAM));
+  const initialLinks = useRef(urlState);
   useEffect(() => {
     const stored = parseChatTabs(readStorage(CHAT_TABS_KEY));
+    const restoreSideId =
+      stored.sideActive !== undefined
+        ? stored.sideActive
+        : !initialLinks.current.pageShown && initialLinks.current.sideShown
+          ? stored.active
+          : null;
     void Promise.allSettled(stored.threads.map((id) => api.chat.get(id))).then((results) => {
-      for (const result of results)
-        if (result.status === "fulfilled")
-          openThread(result.value, {
-            activate: !linked.current && result.value.id === stored.active,
-            projectId: stored.projectIds?.[result.value.id],
-          });
+      for (const result of results) {
+        if (result.status !== "fulfilled") continue;
+        const activatePage = !initialLinks.current.pageLinked && result.value.id === stored.active;
+        const activateSide = !initialLinks.current.sideLinked && result.value.id === restoreSideId;
+        const key = openThread("page", result.value, {
+          activate: activatePage,
+          projectId: stored.projectIds?.[result.value.id],
+        });
+        if (activateSide) activate("side", key);
+      }
     });
-  }, [openThread]);
+  }, [activate, openThread]);
   useEffect(() => {
     const threads = tabs.flatMap((tab) => (tab.thread && !tab.hidden ? [tab.thread.id] : []));
-    const active = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
+    const active = tabs.find((tab) => tab.key === activeKeys.page)?.thread?.id ?? null;
+    const sideActive = tabs.find((tab) => tab.key === activeKeys.side)?.thread?.id ?? null;
     const projectIds = Object.fromEntries(
       tabs.flatMap((tab) =>
         tab.thread && !tab.hidden && tab.projectId !== undefined
@@ -996,39 +1046,47 @@ function useChatController() {
       JSON.stringify({
         threads,
         active,
+        sideActive,
         ...(Object.keys(projectIds).length ? { projectIds } : {}),
       }),
     );
-  }, [tabs, activeKey]);
+  }, [tabs, activeKeys]);
 
-  const tab = tabs.find((candidate) => candidate.key === activeKey) ?? tabs[0] ?? initial;
-  const permission = tab.permissions[0] ?? null;
-  const question = tab.questions[0] ?? null;
+  const tabFor = useCallback(
+    (surface: ChatSurface) =>
+      tabs.find((candidate) => candidate.key === activeKeys[surface]) ??
+      tabs[0] ??
+      initials[surface],
+    [tabs, activeKeys, initials],
+  );
 
   const setConfig = useCallback(
-    (next: ChatConfig) => {
-      update(activeRef.current, () => ({ config: next }));
+    (surface: ChatSurface, next: ChatConfig) => {
+      update(activeKeysRef.current[surface], () => ({ config: next }));
       savePreferences(next);
     },
     [update],
   );
-  const loadOlder = useCallback(async () => {
-    const key = activeRef.current;
-    const current = find(key);
-    if (!current?.thread || current.historyBefore === null || current.loadingHistory) return;
-    update(key, () => ({ loadingHistory: true, error: null }));
-    try {
-      const page = await api.chat.history(current.thread.id, current.historyBefore);
-      update(key, (tab) => ({
-        historyBefore: page.before,
-        messages: [...page.messages, ...tab.messages],
-      }));
-    } catch (cause) {
-      update(key, () => ({ error: message(cause, "Older messages could not be loaded.") }));
-    } finally {
-      update(key, () => ({ loadingHistory: false }));
-    }
-  }, [update, find]);
+  const loadOlder = useCallback(
+    async (surface: ChatSurface) => {
+      const key = activeKeysRef.current[surface];
+      const current = find(key);
+      if (!current?.thread || current.historyBefore === null || current.loadingHistory) return;
+      update(key, () => ({ loadingHistory: true, error: null }));
+      try {
+        const page = await api.chat.history(current.thread.id, current.historyBefore);
+        update(key, (tab) => ({
+          historyBefore: page.before,
+          messages: [...page.messages, ...tab.messages],
+        }));
+      } catch (cause) {
+        update(key, () => ({ error: message(cause, "Older messages could not be loaded.") }));
+      } finally {
+        update(key, () => ({ loadingHistory: false }));
+      }
+    },
+    [update, find],
+  );
 
   const releaseQueue = useCallback(
     (key: string) => {
@@ -1262,7 +1320,10 @@ function useChatController() {
     },
     [ready, find, update],
   );
-  const send = useCallback((input: string) => queueFor(activeRef.current, input), [queueFor]);
+  const send = useCallback(
+    (surface: ChatSurface, input: string) => queueFor(activeKeysRef.current[surface], input),
+    [queueFor],
+  );
 
   const stop = useCallback(
     (key: string) => {
@@ -1284,16 +1345,18 @@ function useChatController() {
     [update, find],
   );
 
-  const cancel = useCallback(() => {
-    const key = activeRef.current;
-    update(key, () => ({ queuePaused: true }));
-    stop(key);
-  }, [stop, update]);
+  const cancel = useCallback(
+    (surface: ChatSurface) => {
+      const key = activeKeysRef.current[surface];
+      update(key, () => ({ queuePaused: true }));
+      stop(key);
+    },
+    [stop, update],
+  );
 
-  /** Keep the open tab's row honest while its children work after the turn ends. */
   const setChildWork = useCallback(
-    (workingChildren: number, waitingChildren: number) =>
-      update(activeRef.current, (current) =>
+    (surface: ChatSurface, workingChildren: number, waitingChildren: number) =>
+      update(activeKeysRef.current[surface], (current) =>
         current.workingChildren === workingChildren && current.waitingChildren === waitingChildren
           ? {}
           : { workingChildren, waitingChildren },
@@ -1302,8 +1365,8 @@ function useChatController() {
   );
 
   const editQueued = useCallback(
-    (id: string | null, content?: string) => {
-      const key = activeRef.current;
+    (surface: ChatSurface, id: string | null, content?: string) => {
+      const key = activeKeysRef.current[surface];
       update(key, (tab) => {
         if (id && !tab.queued.some((entry) => entry.id === id)) return {};
         if (content !== undefined && !content.trim()) return {};
@@ -1326,8 +1389,8 @@ function useChatController() {
   );
 
   const setDraft = useCallback(
-    (next: string | ((current: string) => string)) =>
-      update(activeRef.current, (tab) => {
+    (surface: ChatSurface, next: string | ((current: string) => string)) =>
+      update(activeKeysRef.current[surface], (tab) => {
         const draft = typeof next === "function" ? next(tab.draft) : next;
         return {
           draft,
@@ -1337,8 +1400,8 @@ function useChatController() {
     [update],
   );
   const removeQueued = useCallback(
-    (id: string) =>
-      update(activeRef.current, (tab) => ({
+    (surface: ChatSurface, id: string) =>
+      update(activeKeysRef.current[surface], (tab) => ({
         queued: tab.queued.filter((entry) => entry.id !== id),
         queueHeld: tab.queued.some((entry) => entry.id !== id) && tab.queueHeld,
         queuedFiles: Object.fromEntries(
@@ -1349,13 +1412,14 @@ function useChatController() {
     [update],
   );
   const setQueuedDraft = useCallback(
-    (queuedDraft: string) => update(activeRef.current, () => ({ queuedDraft })),
+    (surface: ChatSurface, queuedDraft: string) =>
+      update(activeKeysRef.current[surface], () => ({ queuedDraft })),
     [update],
   );
 
   const forceQueued = useCallback(
-    (id: string) => {
-      const key = activeRef.current;
+    (surface: ChatSurface, id: string) => {
+      const key = activeKeysRef.current[surface];
       const tab = find(key);
       const entry = tab?.queued.find((entry) => entry.id === id);
       if (!tab || !entry || tab.refreshing || tab.editingQueuedId) return;
@@ -1371,8 +1435,8 @@ function useChatController() {
     [find, stop, update],
   );
   const moveQueued = useCallback(
-    (id: string, direction: -1 | 1) => {
-      update(activeRef.current, (tab) => {
+    (surface: ChatSurface, id: string, direction: -1 | 1) => {
+      update(activeKeysRef.current[surface], (tab) => {
         const index = tab.queued.findIndex((entry) => entry.id === id);
         const target = index + direction;
         if (index < 0 || target < 0 || target >= tab.queued.length) return {};
@@ -1460,10 +1524,9 @@ function useChatController() {
     },
     [find, update, syncThread],
   );
-  /** Enter/Send: steer the live turn or queue, following the chat's send preference. */
   const deliver = useCallback(
-    async (input: string): Promise<"steered" | "queued" | "failed"> => {
-      const key = activeRef.current;
+    async (surface: ChatSurface, input: string): Promise<"steered" | "queued" | "failed"> => {
+      const key = activeKeysRef.current[surface];
       const current = find(key);
       if (!ready || !current) return "failed";
       if (steersLive(current)) {
@@ -1475,28 +1538,34 @@ function useChatController() {
     },
     [find, queueFor, ready, steerInput],
   );
-  /** The explicit steer control; queues the message when the turn cannot take it. */
-  const steer = useCallback(async () => {
-    const key = activeRef.current;
-    const current = find(key);
-    if (
-      !current?.streaming ||
-      !current.runId ||
-      !current.draft.trim() ||
-      current.files.length ||
-      responding
-    )
-      return;
-    const input = current.draft;
-    const outcome = await steerInput(key, input);
-    if (outcome === "unavailable") await queueFor(key, input);
-    if (outcome !== "failed")
-      update(key, (tab) => ({ draft: tab.draft === input ? "" : tab.draft }));
-  }, [find, queueFor, responding, steerInput, update]);
+  const steer = useCallback(
+    async (surface: ChatSurface) => {
+      const key = activeKeysRef.current[surface];
+      const current = find(key);
+      if (
+        !current?.streaming ||
+        !current.runId ||
+        !current.draft.trim() ||
+        current.files.length ||
+        responding
+      )
+        return;
+      const input = current.draft;
+      const outcome = await steerInput(key, input);
+      if (outcome === "unavailable") await queueFor(key, input);
+      if (outcome !== "failed")
+        update(key, (tab) => ({ draft: tab.draft === input ? "" : tab.draft }));
+    },
+    [find, queueFor, responding, steerInput, update],
+  );
 
   const respondPermission = useCallback(
-    async (decision: "approved" | "session" | "denied", feedback?: string) => {
-      const key = activeRef.current;
+    async (
+      surface: ChatSurface,
+      decision: "approved" | "session" | "denied",
+      feedback?: string,
+    ) => {
+      const key = activeKeysRef.current[surface];
       const current = find(key);
       const pending = current?.permissions[0];
       if (!current || !pending || responding) return;
@@ -1515,8 +1584,8 @@ function useChatController() {
     [responding, update, find],
   );
   const respondQuestion = useCallback(
-    async (answers: Record<string, string[]>) => {
-      const key = activeRef.current;
+    async (surface: ChatSurface, answers: Record<string, string[]>) => {
+      const key = activeKeysRef.current[surface];
       const current = find(key);
       const pending = current?.questions[0];
       if (!current || !pending || responding) return;
@@ -1536,8 +1605,6 @@ function useChatController() {
               : {}),
           };
         });
-        // A response processed after the turn ended must not split the finished
-        // transcript (or the next turn's buffer); the stored thread owns the order.
         if (!live) void syncThread(key);
       } catch (cause) {
         update(key, () => ({ error: message(cause, "Answer could not be sent.") }));
@@ -1547,12 +1614,10 @@ function useChatController() {
     },
     [responding, update, find, syncThread],
   );
-  // While the agent is responding the change goes to the live run, which approves prompts
-  // the new mode would not ask for; otherwise it applies to the next message.
   const changePermissions = useCallback(
-    async (next: ChatConfig) => {
-      const key = activeRef.current;
-      setConfig(next);
+    async (surface: ChatSurface, next: ChatConfig) => {
+      const key = activeKeysRef.current[surface];
+      setConfig(surface, next);
       const current = find(key);
       const mode = next.permissionMode;
       if (!mode || !current?.streaming || !current.runId) return;
@@ -1577,8 +1642,8 @@ function useChatController() {
     [setConfig, update, find],
   );
   const changeSendMode = useCallback(
-    async (sendWhileRunning: ChatConfig["sendWhileRunning"]) => {
-      const key = activeRef.current;
+    async (surface: ChatSurface, sendWhileRunning: ChatConfig["sendWhileRunning"]) => {
+      const key = activeKeysRef.current[surface];
       const current = find(key);
       if (!current) return;
       const previous = current.config.sendWhileRunning;
@@ -1588,7 +1653,6 @@ function useChatController() {
         const updated = await api.chat.configure(current.thread.id, { sendWhileRunning });
         update(key, (tab) => (tab.thread?.id === updated.id ? { thread: updated } : {}));
       } catch (cause) {
-        // Keep the composer on what the conversation actually stored.
         update(key, (tab) => ({
           config: { ...tab.config, sendWhileRunning: previous },
           error: message(cause, "The send preference could not be saved."),
@@ -1598,8 +1662,8 @@ function useChatController() {
     [find, update],
   );
   const applyAgentOptions = useCallback(
-    async (agent: string, options: ChatAgentOptions) => {
-      const key = activeRef.current;
+    async (surface: ChatSurface, agent: string, options: ChatAgentOptions) => {
+      const key = activeKeysRef.current[surface];
       const current = find(key);
       if (!current) return false;
       const agentOptions = { ...current.config.agentOptions, [agent]: options };
@@ -1618,22 +1682,9 @@ function useChatController() {
     },
     [update, find],
   );
-  return {
-    projectScope: selectedProject ?? "all",
-    projectId: tab.projectId ?? null,
-    tabs,
-    activeKey,
-    selectTab: activate,
-    closeTab,
-    newTab,
-    startAgentConversation,
-    selectProvider,
-    showThread,
-    messages: tab.messages,
-    draft: tab.draft,
-    files: tab.files,
-    addFiles: (files: File[]) =>
-      update(activeRef.current, (current) => {
+  const addFiles = useCallback(
+    (surface: ChatSurface, files: File[]) =>
+      update(activeKeysRef.current[surface], (current) => {
         const next = [...new Set([...current.files, ...files])];
         if (
           next.length > UPLOAD_MAX_FILES ||
@@ -1642,10 +1693,223 @@ function useChatController() {
           return { error: "Attach at most 10 files, totaling at most 20 MB" };
         return { files: next, error: null };
       }),
-    removeFile: (index: number) =>
-      update(activeRef.current, (current) => ({
+    [update],
+  );
+  const removeFile = useCallback(
+    (surface: ChatSurface, index: number) =>
+      update(activeKeysRef.current[surface], (current) => ({
         files: current.files.filter((_, candidate) => candidate !== index),
       })),
+    [update],
+  );
+  const setWorkspace = useCallback(
+    (surface: ChatSurface, workspace: ChatWorkspace) =>
+      update(activeKeysRef.current[surface], (current) =>
+        current.thread || current.streaming
+          ? {}
+          : {
+              workspace,
+              ...(workspace.cwd
+                ? { projectId: workspace.host ? null : projectForCwd(workspace.cwd) }
+                : {}),
+            },
+      ),
+    [projectForCwd, update],
+  );
+
+  return {
+    projectScope: selectedProject ?? "all",
+    tabs,
+    activeKeys,
+    tabFor,
+    handoff,
+    selectTab: activate,
+    closeTab,
+    newTab,
+    startAgentConversation,
+    selectProvider,
+    showThread,
+    addFiles,
+    removeFile,
+    setDraft,
+    setQueuedDraft,
+    editQueued,
+    removeQueued,
+    moveQueued,
+    forceQueued,
+    refresh,
+    setChildWork,
+    setWorkspace,
+    setConfig,
+    changePermissions,
+    changeSendMode,
+    applyAgentOptions,
+    ready,
+    openThread,
+    loadOlder,
+    steer,
+    respondPermission,
+    respondQuestion,
+    responding,
+    send,
+    deliver,
+    cancel,
+  };
+}
+
+type ChatStore = ReturnType<typeof useChatStore>;
+
+function useChatSurfaceController(store: ChatStore, surface: ChatSurface) {
+  const tab = store.tabFor(surface);
+  const activeKey = tab.key;
+  const workspacePickerSession = useFolderPickerSession();
+  const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
+  const pickerConversation = useRef(activeKey);
+  useEffect(() => {
+    if (pickerConversation.current === activeKey) return;
+    pickerConversation.current = activeKey;
+    setWorkspacePickerOpen(false);
+    workspacePickerSession.reset("");
+  }, [activeKey, workspacePickerSession.reset]);
+
+  const selectTab = useCallback(
+    (key: string) => store.selectTab(surface, key),
+    [store.selectTab, surface],
+  );
+  const newTab = useCallback(
+    (options?: { projectId?: string | null; fresh?: boolean; workspace?: ChatWorkspace }) =>
+      store.newTab(surface, options),
+    [store.newTab, surface],
+  );
+  const startAgentConversation = useCallback(
+    (
+      agent: string,
+      providerId?: string,
+      model?: string,
+      options?: ChatAgentOptions,
+      permissionMode?: ChatConfig["permissionMode"],
+    ) => store.startAgentConversation(surface, agent, providerId, model, options, permissionMode),
+    [store.startAgentConversation, surface],
+  );
+  const selectProvider = useCallback(
+    (profile: ProviderProfile) => store.selectProvider(surface, profile),
+    [store.selectProvider, surface],
+  );
+  const showThread = useCallback(
+    (id: string) => store.showThread(surface, id),
+    [store.showThread, surface],
+  );
+  const openThread = useCallback(
+    (
+      next: ChatThread,
+      options?: { activate?: boolean; follow?: boolean; projectId?: string | null },
+    ) => store.openThread(surface, next, options),
+    [store.openThread, surface],
+  );
+  const addFiles = useCallback(
+    (files: File[]) => store.addFiles(surface, files),
+    [store.addFiles, surface],
+  );
+  const removeFile = useCallback(
+    (index: number) => store.removeFile(surface, index),
+    [store.removeFile, surface],
+  );
+  const setDraft = useCallback(
+    (next: string | ((current: string) => string)) => store.setDraft(surface, next),
+    [store.setDraft, surface],
+  );
+  const setQueuedDraft = useCallback(
+    (queuedDraft: string) => store.setQueuedDraft(surface, queuedDraft),
+    [store.setQueuedDraft, surface],
+  );
+  const editQueued = useCallback(
+    (id: string | null, content?: string) => store.editQueued(surface, id, content),
+    [store.editQueued, surface],
+  );
+  const removeQueued = useCallback(
+    (id: string) => store.removeQueued(surface, id),
+    [store.removeQueued, surface],
+  );
+  const moveQueued = useCallback(
+    (id: string, direction: -1 | 1) => store.moveQueued(surface, id, direction),
+    [store.moveQueued, surface],
+  );
+  const forceQueued = useCallback(
+    (id: string) => store.forceQueued(surface, id),
+    [store.forceQueued, surface],
+  );
+  const refresh = useCallback(
+    (rebuild?: boolean) => store.refresh(surface, rebuild),
+    [store.refresh, surface],
+  );
+  const setChildWork = useCallback(
+    (workingChildren: number, waitingChildren: number) =>
+      store.setChildWork(surface, workingChildren, waitingChildren),
+    [store.setChildWork, surface],
+  );
+  const openWorkspacePicker = useCallback(
+    (initial: string) => {
+      workspacePickerSession.reset(initial);
+      setWorkspacePickerOpen(true);
+    },
+    [workspacePickerSession.reset],
+  );
+  const setWorkspace = useCallback(
+    (workspace: ChatWorkspace) => store.setWorkspace(surface, workspace),
+    [store.setWorkspace, surface],
+  );
+  const setConfig = useCallback(
+    (next: ChatConfig) => store.setConfig(surface, next),
+    [store.setConfig, surface],
+  );
+  const changePermissions = useCallback(
+    (next: ChatConfig) => store.changePermissions(surface, next),
+    [store.changePermissions, surface],
+  );
+  const changeSendMode = useCallback(
+    (sendWhileRunning: ChatConfig["sendWhileRunning"]) =>
+      store.changeSendMode(surface, sendWhileRunning),
+    [store.changeSendMode, surface],
+  );
+  const applyAgentOptions = useCallback(
+    (agent: string, options: ChatAgentOptions) => store.applyAgentOptions(surface, agent, options),
+    [store.applyAgentOptions, surface],
+  );
+  const loadOlder = useCallback(() => store.loadOlder(surface), [store.loadOlder, surface]);
+  const steer = useCallback(() => store.steer(surface), [store.steer, surface]);
+  const respondPermission = useCallback(
+    (decision: "approved" | "session" | "denied", feedback?: string) =>
+      store.respondPermission(surface, decision, feedback),
+    [store.respondPermission, surface],
+  );
+  const respondQuestion = useCallback(
+    (answers: Record<string, string[]>) => store.respondQuestion(surface, answers),
+    [store.respondQuestion, surface],
+  );
+  const send = useCallback((input: string) => store.send(surface, input), [store.send, surface]);
+  const deliver = useCallback(
+    (input: string) => store.deliver(surface, input),
+    [store.deliver, surface],
+  );
+  const cancel = useCallback(() => store.cancel(surface), [store.cancel, surface]);
+
+  return {
+    surface,
+    projectScope: store.projectScope,
+    projectId: tab.projectId ?? null,
+    tabs: store.tabs,
+    activeKey,
+    selectTab,
+    closeTab: store.closeTab,
+    newTab,
+    startAgentConversation,
+    selectProvider,
+    showThread,
+    messages: tab.messages,
+    draft: tab.draft,
+    files: tab.files,
+    addFiles,
+    removeFile,
     setDraft,
     queued: tab.queued,
     queuePaused: tab.queuePaused,
@@ -1668,21 +1932,8 @@ function useChatController() {
     workspacePickerSession,
     workspacePickerOpen,
     setWorkspacePickerOpen,
-    openWorkspacePicker: (initial: string) => {
-      workspacePickerSession.reset(initial);
-      setWorkspacePickerOpen(true);
-    },
-    setWorkspace: (workspace: ChatWorkspace) =>
-      update(activeRef.current, (current) =>
-        current.thread || current.streaming
-          ? {}
-          : {
-              workspace,
-              ...(workspace.cwd
-                ? { projectId: workspace.host ? null : projectForCwd(workspace.cwd) }
-                : {}),
-            },
-      ),
+    openWorkspacePicker,
+    setWorkspace,
     config: tab.config,
     setConfig,
     changePermissions,
@@ -1690,18 +1941,18 @@ function useChatController() {
     canSteerLive: steersLive(tab),
     steerAvailable: canSteer(tab),
     applyAgentOptions,
-    ready,
+    ready: store.ready,
     thread: tab.thread,
     openThread,
     historyBefore: tab.historyBefore,
     loadingHistory: tab.loadingHistory,
     loadOlder,
-    permission,
+    permission: tab.permissions[0] ?? null,
     steer,
     respondPermission,
-    question,
+    question: tab.questions[0] ?? null,
     respondQuestion,
-    responding,
+    responding: store.responding,
     send,
     deliver,
     cancel,
@@ -1710,45 +1961,90 @@ function useChatController() {
     turn: tab.turn,
   };
 }
-const ChatContext = createContext<ReturnType<typeof useChatController> | null>(null);
 
-/** Keeps `?chatThread=` naming the open conversation while chat is shown, and opens linked ones. */
-function useChatLink(chat: ReturnType<typeof useChatController>) {
+type ChatController = ReturnType<typeof useChatSurfaceController>;
+
+const ChatStoreContext = createContext<ChatStore | null>(null);
+const ChatContext = createContext<ChatController | null>(null);
+const ChatPageContext = createContext<ChatController | null>(null);
+const ChatSideContext = createContext<ChatController | null>(null);
+
+function useChatLinks(store: ChatStore, desktopViewport: boolean) {
   const [params, setParams] = useSearchParams();
-  const { pathname } = useLocation();
-  const param = params.get(CHAT_THREAD_PARAM);
-  const linked = param && isChatThreadId(param) ? param : null;
-  // The thread is written to the URL for the side panel and for the chat page.
-  const chatShown = !!params.get("chat") || pathname === "/chat";
-  // While a linked conversation loads the link leads; once it has opened (or failed to), the
-  // shown conversation does.
-  const loading = useRef<string | null>(null);
-  const [_settled, setSettled] = useState(0);
-  const { showThread } = chat;
-  const current = chat.thread?.id ?? null;
+  const { pathname, search } = useLocation();
+  const links = chatSurfaceLinks(pathname, search, desktopViewport);
+  const hasLiveLink = params.has(SESSION_LIVE_PARAM);
+  const loadingPage = useRef<string | null>(null);
+  const loadingSide = useRef<string | null>(null);
+  const [settled, setSettled] = useState(0);
+  const { showThread } = store;
+  const pageCurrent = store.tabFor("page").thread?.id ?? null;
+  const sideCurrent = store.tabFor("side").thread?.id ?? null;
+
   useEffect(() => {
-    if (!linked || linked === loading.current) return;
-    loading.current = linked;
-    showThread(linked)
-      .catch(() => {
-        /* a stale or foreign link leaves the current conversation open */
-      })
+    if (links.redirecting || !links.pageLinked || links.pageLinked === loadingPage.current) return;
+    loadingPage.current = links.pageLinked;
+    showThread("page", links.pageLinked)
+      .catch(() => {})
       .finally(() => {
-        loading.current = null;
+        loadingPage.current = null;
         setSettled((count) => count + 1);
       });
-  }, [linked, showThread]);
+  }, [links.redirecting, links.pageLinked, showThread]);
+
   useEffect(() => {
-    if (!chatShown || loading.current || current === linked) return;
-    const next = new URLSearchParams(window.location.search);
-    if (current) next.set(CHAT_THREAD_PARAM, current);
-    else next.delete(CHAT_THREAD_PARAM);
-    setParams(next, { replace: true });
-  }, [current, chatShown, linked, setParams]);
+    if (links.redirecting || !links.sideLinked || links.sideLinked === loadingSide.current) return;
+    loadingSide.current = links.sideLinked;
+    showThread("side", links.sideLinked)
+      .catch(() => {})
+      .finally(() => {
+        loadingSide.current = null;
+        setSettled((count) => count + 1);
+      });
+  }, [links.redirecting, links.sideLinked, showThread]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: settled triggers re-sync once a link load finishes
+  useEffect(() => {
+    if (links.redirecting) return;
+    const current = new URLSearchParams(window.location.search);
+    const next = new URLSearchParams(current);
+    if (
+      links.pageShown &&
+      links.pageParam &&
+      !loadingPage.current &&
+      !hasLiveLink &&
+      pageCurrent !== links.pageLinked
+    ) {
+      if (pageCurrent) next.set(links.pageParam, pageCurrent);
+      else next.delete(links.pageParam);
+    }
+    if (
+      links.sideShown &&
+      links.sideParam &&
+      !loadingSide.current &&
+      sideCurrent !== links.sideLinked
+    ) {
+      if (sideCurrent) next.set(links.sideParam, sideCurrent);
+      else next.delete(links.sideParam);
+    }
+    if (next.toString() !== current.toString()) setParams(next, { replace: true });
+  }, [
+    links.redirecting,
+    links.pageShown,
+    links.pageParam,
+    links.pageLinked,
+    links.sideShown,
+    links.sideParam,
+    links.sideLinked,
+    hasLiveLink,
+    pageCurrent,
+    sideCurrent,
+    setParams,
+    settled,
+  ]);
 }
 
 const threadMessages = new WeakMap<ChatMessage, ThreadMessageLike>();
-// Reusing each stored message's converted form keeps assistant-ui's per-message cache warm while tokens stream.
 function toThreadMessage(message: ChatMessage): ThreadMessageLike {
   let converted = threadMessages.get(message);
   if (!converted) {
@@ -1761,11 +2057,8 @@ function toThreadMessage(message: ChatMessage): ThreadMessageLike {
         custom: {
           agent: message.agent,
           activity: message.activity,
-          // Kinds this build keeps verbatim, rendered as quiet rows.
           providerActivity: message.providerActivity,
           attachments: message.attachments,
-          // The message renderer needs the exact text for Copy; the parts tree
-          // alone does not expose it outside the assistant-ui slot.
           content: message.content,
           turn: message.turn,
         },
@@ -1777,9 +2070,7 @@ function toThreadMessage(message: ChatMessage): ThreadMessageLike {
 }
 const asThreadMessage = (message: ThreadMessageLike) => message;
 
-export function ChatProvider({ children }: { children: ReactNode }) {
-  const chat = useChatController();
-  useChatLink(chat);
+function useSurfaceRuntime(chat: ChatController) {
   const messages = useMemo<ThreadMessageLike[]>(() => {
     const history = groupChatMessages(chat.messages).messages.map(toThreadMessage);
     if (chat.streaming)
@@ -1807,7 +2098,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     chat.activity,
     chat.turn,
   ]);
-  const runtime = useExternalStoreRuntime({
+  return useExternalStoreRuntime({
     messages,
     convertMessage: asThreadMessage,
     isRunning: chat.streaming,
@@ -1821,14 +2112,73 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     },
     onCancel: async () => chat.cancel(),
   });
+}
+
+export function ChatProvider({
+  children,
+  desktopViewport: desktopOverride,
+}: {
+  children: ReactNode;
+  desktopViewport?: boolean;
+}) {
+  const detectedDesktop = useBreakpoint("xl");
+  const desktopViewport = desktopOverride ?? detectedDesktop;
+  const store = useChatStore(desktopViewport);
+  useChatLinks(store, desktopViewport);
+  const page = useChatSurfaceController(store, "page");
+  const side = useChatSurfaceController(store, "side");
+  return createElement(
+    ChatStoreContext.Provider,
+    { value: store },
+    createElement(
+      ChatPageContext.Provider,
+      { value: page },
+      createElement(
+        ChatSideContext.Provider,
+        { value: side },
+        createElement(ChatContext.Provider, { value: page }, children),
+      ),
+    ),
+  );
+}
+
+export function ChatSurfaceProvider({
+  surface,
+  children,
+}: {
+  surface: ChatSurface;
+  children: ReactNode;
+}) {
+  const store = useContext(ChatStoreContext);
+  if (!store) throw new Error("ChatSurfaceProvider must be used inside ChatProvider");
+  const chat = useChatSurfaceController(store, surface);
+  const runtime = useSurfaceRuntime(chat);
   return createElement(
     ChatContext.Provider,
     { value: chat },
     createElement(AssistantRuntimeProvider, { runtime }, children),
   );
 }
-export function useChat() {
-  const chat = useContext(ChatContext);
-  if (!chat) throw new Error("useChat must be used inside ChatProvider");
-  return chat;
+
+export function useChat(surface?: ChatSurface) {
+  const current = useContext(ChatContext);
+  const page = useContext(ChatPageContext);
+  const side = useContext(ChatSideContext);
+  if (!current || !page || !side) throw new Error("useChat must be used inside ChatProvider");
+  if (surface === "side") return side;
+  if (surface === "page") return page;
+  return current;
+}
+
+export function useChatSurfaces() {
+  const store = useContext(ChatStoreContext);
+  if (!store) throw new Error("useChatSurfaces must be used inside ChatProvider");
+  return {
+    projectScope: store.projectScope,
+    tabs: store.tabs,
+    activeKeys: store.activeKeys,
+    page: store.tabFor("page"),
+    side: store.tabFor("side"),
+    handoff: store.handoff,
+  };
 }

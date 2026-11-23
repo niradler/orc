@@ -69,11 +69,18 @@ regular page: the workspace header keeps your navigation and notifications, and
 conversation is open, including the side chat, to give the conversation the width;
 leaving chat restores the width you had, and expanding it during chat keeps your
 choice.
-The chat panel's full-screen button in the **Terminals** session list opens the
-same page.
+The chat panel's full-screen button expands the side chat's current conversation
+into the Chat page. On wide screens (1280px and wider), the side chat and the Chat
+page hold independent sessions: switching sessions in one does not change the other,
+and both can stay open side by side (use **Side chat** in the header on `/chat`, or
+navigate to **Chat** while the side chat is open). Deep links open in the surface
+they target (`chatThread` for the Chat page or docked side chat, and
+`sideChatThread` when both are open on `/chat`), and open-chat notification
+suppression recognizes both visible conversations.
 
 Below 1280px wide, the chat has no side panel: starting a chat from any page
-opens the chat page instead.
+opens the chat page instead, and narrowing a window with the side chat open carries
+the side chat's current conversation into the Chat page.
 
 - **Session list**: chats, coding agents running in ORC terminals, and live sessions discovered from every coding agent, each with its state. The full-screen session home also lists running shell terminals. Click a chat to read it, a terminal agent to see its terminal, or a discovered session to resume it in chat. Every list has the same search, state filters, agent filter, sort order, hidden-session toggle and stable ordering.
   - **Search** matches titles and summaries; the sparkle toggle also searches inside transcripts (ripgrep) and archived conversations (embeddings when configured). The result snippet shows the matching passage.
