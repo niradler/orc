@@ -110,6 +110,7 @@ export const OrcConfigSchema = z.object({
       composer_profiles: ComposerProfilesSchema.optional(),
       agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
       provider_paths: ProviderPathsSchema.optional(),
+      setup_dismissed: z.boolean().optional(),
     })
     .default({}),
   skills: z
@@ -626,4 +627,13 @@ export function updateGlobalConfig(mutate: (raw: Record<string, unknown>) => voi
   renameSync(temp, path);
   resetConfig();
   return loadConfig();
+}
+
+/** The first-run setup screen stays dismissed only until a project exists. */
+export function clearSetupDismissal(): void {
+  if (!loadConfig().preferences.setup_dismissed) return;
+  updateGlobalConfig((raw) => {
+    const preferences = raw.preferences as Record<string, unknown> | undefined;
+    if (preferences) delete preferences.setup_dismissed;
+  });
 }

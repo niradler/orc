@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { createRoute, z } from "@hono/zod-openapi";
+import { clearSetupDismissal } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { GitRemoteUrlSchema } from "@orc/core/git-remote";
 import {
@@ -426,6 +427,7 @@ app.openapi(createRoute_, async (c) => {
     where: eq(projects.id, id),
   });
   if (!project) throw new Error("Expected project to exist after write");
+  clearSetupDismissal();
   reassignSessions();
   return c.json(toDto(project), 201);
 });

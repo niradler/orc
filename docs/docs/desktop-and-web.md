@@ -221,6 +221,8 @@ says so; the figures are left out rather than shown as zero.
 
 The **Activity** page: task metrics plus recent jobs, memories and sessions for the selected project.
 
+With no projects yet, Activity leads with the first-run **Set up ORC** screen: detected coding agents (installed / signed in / version, each with a copyable fix command), a default-agent choice, and one-click creation of projects suggested from the agents' own session history. Dismiss hides it until a project exists. See [Quick start](./quick-start.md#first-run-setup).
+
 ## Tasks
 
 ![Tasks](/screens/tasks.png)

@@ -9171,6 +9171,8 @@ export interface paths {
                                 claude?: string;
                                 codex?: string;
                             };
+                            /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
+                            setup_dismissed?: boolean;
                         };
                     };
                 };
@@ -9313,6 +9315,8 @@ export interface paths {
                             claude?: string;
                             codex?: string;
                         };
+                        /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
+                        setup_dismissed?: boolean;
                     };
                 };
             };
@@ -9445,11 +9449,52 @@ export interface paths {
                                 claude?: string;
                                 codex?: string;
                             };
+                            /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
+                            setup_dismissed?: boolean;
                         };
                     };
                 };
             };
         };
+        trace?: never;
+    };
+    "/api/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * First-run status: detected agents and projects suggested from their session history
+         * @description Powers the web first-run screen: which coding agents are installed and signed in on the ORC host, which folders their discovered sessions were last used in, and the current default agent. Detection is file- and PATH-based; it does not start any agent.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description First-run setup status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SetupStatus"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/usage/history": {
@@ -24484,6 +24529,36 @@ export interface components {
             expires_at: number;
             read_at: number | null;
             dismissed_at: number | null;
+        };
+        SetupStatus: {
+            agents: components["schemas"]["SetupAgent"][];
+            suggestions: components["schemas"]["SetupProjectSuggestion"][];
+            /** @description Agent of the default provider profile (Settings → Providers). */
+            default_agent: string | null;
+        };
+        SetupAgent: {
+            /** @enum {string} */
+            agent: "claude" | "codex" | "opencode" | "pi" | "cursor";
+            label: string;
+            installed: boolean;
+            path: string | null;
+            version: string | null;
+            /** @description Null when the credential store cannot be inspected (e.g. macOS keychain). */
+            signed_in: boolean | null;
+            account_label: string | null;
+            /** @description The one action that unblocks this agent, when one exists. */
+            fix: {
+                label: string;
+                command: string;
+            } | null;
+        };
+        SetupProjectSuggestion: {
+            path: string;
+            name: string;
+            agents: string[];
+            sessions: number;
+            /** Format: date-time */
+            last_activity_at: string;
         };
         SystemAbout: {
             version: string;

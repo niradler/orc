@@ -188,7 +188,7 @@ function hostKey(runtime: HostRuntime): string {
 }
 
 /** The main checkout can sit anywhere on disk; a worktree's common git dir names it. */
-async function repoRootFor(cwd: string, runtime: HostRuntime): Promise<string | null> {
+export async function repoRootFor(cwd: string, runtime: HostRuntime): Promise<string | null> {
   const key = `${hostKey(runtime)}:${cwd}`;
   const cached = repoRootByCwd.get(key);
   if (cached !== undefined) return cached;

@@ -38,6 +38,10 @@ import type { components } from "./openapi.gen.js";
 export type ProjectPage = components["schemas"]["ProjectPage"];
 export type JobPage = components["schemas"]["JobPage"];
 
+export type SetupStatus = components["schemas"]["SetupStatus"];
+export type SetupAgent = components["schemas"]["SetupAgent"];
+export type SetupProjectSuggestion = components["schemas"]["SetupProjectSuggestion"];
+
 export type PullReview = components["schemas"]["PullReview"];
 export type PullCommentInput = components["schemas"]["PullCommentInput"];
 

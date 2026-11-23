@@ -7,7 +7,7 @@ import {
   updateAgent,
 } from "@orc/core/agent-service";
 import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
-import { loadConfig, resolveApiBase } from "@orc/core/config";
+import { clearSetupDismissal, loadConfig, resolveApiBase } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { isGitRemoteUrl } from "@orc/core/git-remote";
 import {
@@ -2777,6 +2777,7 @@ export async function executeTool(
         throw error;
       }
       if (scope) options.projectsChanged?.();
+      clearSetupDismissal();
       const link = new URL(
         `/tasks?project=${encodeURIComponent(name)}`,
         options.publicApiBaseUrl ?? orcApiBase(),
