@@ -228,10 +228,12 @@ Notification failures retry through durable leases; a repeated notification cann
 cause a repeated decision. Telegram/Slack routing is tested at the adapter boundary;
 live provider credentials were not used during validation.
 
-A channel-originated turn has no chat surface to fall back to, so a question or
-approval that cannot enter the durable inbox stops the turn with a visible failure
-in the originating chat instead of leaving the agent waiting silently. The reason
-is recorded in the ORC logs.
+A channel-originated turn has no chat surface to fall back to, so a secret
+question or any question or approval that cannot enter the durable inbox stops
+the turn with a visible failure in the originating chat instead of leaving the
+agent waiting silently. Secret input is never written to the inbox or channel
+logs; continue in ORC chat or the agent's native client when a tool requires a
+secret. The failure reason is recorded in the ORC logs.
 
 ## Lifecycle and limits
 
