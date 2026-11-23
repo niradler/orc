@@ -22,6 +22,7 @@ async function hook(event: string, payload: Record<string, unknown>) {
       ...process.env,
       USERPROFILE: home,
       HOME: home,
+      ORC_HOME: join(home, ".orc"),
       ORC_DB_PATH: database,
       ORC_RULES_ENABLED: "true",
     },

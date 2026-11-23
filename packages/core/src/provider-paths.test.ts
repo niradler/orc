@@ -9,9 +9,11 @@ import { resolvePackageAgentBinary } from "./package-launch.js";
 const directory = mkdtempSync(join(tmpdir(), "orc-provider-paths-"));
 const previousHome = process.env.HOME;
 const previousProfile = process.env.USERPROFILE;
+const previousOrcHome = process.env.ORC_HOME;
 beforeAll(() => {
   process.env.HOME = directory;
   process.env.USERPROFILE = directory;
+  process.env.ORC_HOME = join(directory, ".orc");
   resetConfig();
 });
 afterAll(() => {
@@ -19,6 +21,8 @@ afterAll(() => {
   else process.env.HOME = previousHome;
   if (previousProfile === undefined) delete process.env.USERPROFILE;
   else process.env.USERPROFILE = previousProfile;
+  if (previousOrcHome === undefined) delete process.env.ORC_HOME;
+  else process.env.ORC_HOME = previousOrcHome;
   resetConfig();
   rmSync(directory, { recursive: true, force: true });
 });

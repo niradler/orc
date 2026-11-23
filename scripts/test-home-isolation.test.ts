@@ -1,11 +1,18 @@
 import { afterAll, afterEach, expect, test } from "bun:test";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanerSource, isolateTestHome } from "./test-home-isolation.js";
 
-const KEYS = ["HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME"] as const;
+const KEYS = [
+  "HOME",
+  "USERPROFILE",
+  "ORC_HOME",
+  "APPDATA",
+  "LOCALAPPDATA",
+  "XDG_CONFIG_HOME",
+] as const;
 const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
 const created: string[] = [];
 
@@ -41,8 +48,72 @@ test("an already isolated home is left untouched", () => {
   created.push(isolated);
   process.env.HOME = isolated;
   process.env.USERPROFILE = isolated;
+  delete process.env.ORC_HOME;
   isolateTestHome();
   expect(process.env.HOME).toBe(isolated);
+});
+
+test("strips an inherited ORC_HOME outside the temp root even when HOME is isolated", () => {
+  const realish = realpathSync(join(import.meta.dir, ".."));
+  const isolated = mkdtempSync(join(tmpdir(), "orc-home-guard-"));
+  created.push(isolated);
+  process.env.HOME = isolated;
+  process.env.USERPROFILE = isolated;
+  process.env.ORC_HOME = join(realish, ".orc");
+  isolateTestHome();
+  expect(process.env.HOME).toBe(isolated);
+  expect(process.env.ORC_HOME).toBeUndefined();
+
+  process.env.HOME = realish;
+  process.env.USERPROFILE = realish;
+  process.env.ORC_HOME = realish;
+  isolateTestHome();
+  created.push(process.env.HOME as string);
+  expect(process.env.ORC_HOME).toBeUndefined();
+  expect(realpathSync(process.env.HOME as string).startsWith(realpathSync(tmpdir()))).toBe(true);
+});
+
+test("preserves an ORC_HOME already inside the temp root and strips sibling paths", () => {
+  const isolated = mkdtempSync(join(tmpdir(), "orc-home-guard-"));
+  created.push(isolated);
+  process.env.HOME = isolated;
+  process.env.USERPROFILE = isolated;
+  const nestedOrcHome = join(isolated, "custom-orc");
+  process.env.ORC_HOME = nestedOrcHome;
+  isolateTestHome();
+  expect(process.env.ORC_HOME).toBe(nestedOrcHome);
+
+  process.env.ORC_HOME = `${realpathSync(tmpdir())}-evil`;
+  isolateTestHome();
+  expect(process.env.ORC_HOME).toBeUndefined();
+});
+
+test("strips ORC_HOME pointing through a dangling symlink or a symlink outside the temp root", () => {
+  const realish = realpathSync(join(import.meta.dir, ".."));
+  const isolated = mkdtempSync(join(tmpdir(), "orc-home-symlink-"));
+  created.push(isolated);
+  process.env.HOME = isolated;
+  process.env.USERPROFILE = isolated;
+
+  const outsideLink = join(isolated, "outside-link");
+  symlinkSync(realish, outsideLink, "junction");
+  process.env.ORC_HOME = outsideLink;
+  isolateTestHome();
+  expect(process.env.ORC_HOME).toBeUndefined();
+
+  process.env.ORC_HOME = join(outsideLink, "nested-orc");
+  isolateTestHome();
+  expect(process.env.ORC_HOME).toBeUndefined();
+
+  const danglingLink = join(isolated, "dangling-link");
+  symlinkSync(join(realish, "nonexistent-orc-target"), danglingLink, "junction");
+  process.env.ORC_HOME = danglingLink;
+  isolateTestHome();
+  expect(process.env.ORC_HOME).toBeUndefined();
+
+  process.env.ORC_HOME = join(danglingLink, "nested-orc");
+  isolateTestHome();
+  expect(process.env.ORC_HOME).toBeUndefined();
 });
 
 test("the cleaner abandons a live owner's home at the deadline", async () => {

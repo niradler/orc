@@ -121,6 +121,7 @@ ${body}
       ...process.env,
       HOME: dir,
       USERPROFILE: dir,
+      ORC_HOME: join(dir, ".orc"),
       PATH: `${dir}:${process.env.PATH}`,
       ORC_LOG_FILE: "1",
     },
