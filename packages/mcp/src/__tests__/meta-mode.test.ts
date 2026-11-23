@@ -121,11 +121,41 @@ describe("meta mode", () => {
     expect(body.inputSchema.type).toBe("object");
   });
 
-  test("tool_describe on an unknown name errors with close names", async () => {
+  test("tool_describe on an unknown name errors with close names from the active catalog only", async () => {
     const client = await connect("meta");
     const res = await client.callTool({ name: "tool_describe", arguments: { name: "memory" } });
     expect(res.isError).toBe(true);
     expect(textOf(res)).toContain("memory_list");
+    expect(textOf(res)).not.toContain("tool_execute");
+
+    const bogus = await client.callTool({
+      name: "tool_describe",
+      arguments: { name: "tools.orc.tool_execute" },
+    });
+    expect(bogus.isError).toBe(true);
+    const bogusText = textOf(bogus);
+    expect(bogusText).toContain("Unknown tool: tools.orc.tool_execute.");
+    const suggested =
+      bogusText
+        .split("Close names:")[1]
+        ?.split(",")
+        .map((s) => s.trim()) ?? [];
+    const catalog = new Set<string>(
+      [...toolDefinitions, ...specToolDefinitions]
+        .filter((tool) => !tool.name.startsWith("preview_") && tool.name !== "speak")
+        .map((tool) => tool.name),
+    );
+    for (const suggestion of suggested) {
+      expect(catalog.has(suggestion)).toBe(true);
+      expect(suggestion).not.toContain("tool_execute");
+    }
+
+    const hidden = await client.callTool({
+      name: "tool_describe",
+      arguments: { name: "speak" },
+    });
+    expect(hidden.isError).toBe(true);
+    expect(textOf(hidden)).not.toContain("Close names: speak");
   });
 
   test("tool_invoke runs a real tool", async () => {

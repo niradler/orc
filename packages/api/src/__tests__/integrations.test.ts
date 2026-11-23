@@ -527,14 +527,18 @@ test("should use the same meta discovery and enabled Spec bindings for direct ca
         const hits = await tools.search("getPage", target);
         const tool = await tools.describe(hits.tools[0].name, target);
         const page = await tools.call(tool.id, {}, target);
-        return page.body.match(/<title>([^<]*)<\\/title>/)?.[1];`,
+        return page.ok ? page.data.body.match(/<title>([^<]*)<\\/title>/)?.[1] : null;`,
     });
     expect(scripted.structuredContent.result).toBe("Fixture release notes");
     expect(JSON.stringify(scripted)).not.toContain("omit this page body");
     const denied = await call("tool_execute", {
       code: 'return await tools.call("disabledPage", {}, {connection:"page-fixture"});',
     });
-    expect(denied.isError).toBe(true);
+    expect(denied.isError).toBeUndefined();
+    expect(denied.structuredContent.result).toMatchObject({
+      ok: false,
+      error: { code: expect.any(String), message: expect.any(String) },
+    });
   } finally {
     if (previousBase === undefined) delete process.env.ORC_API_BASE;
     else process.env.ORC_API_BASE = previousBase;

@@ -51,9 +51,15 @@ app.openapi(mcpToolRoute, async (c) => {
   const parsed = toolDef.inputSchema.safeParse(args ?? {});
   if (!parsed.success) throw new ValidationError(`Invalid args: ${parsed.error.message}`);
 
+  const sessionSchema = z.string().trim().min(1).max(200).optional();
+  const agentSessionId =
+    sessionSchema.parse(c.req.query("session")) ??
+    sessionSchema.parse(c.req.header("X-ORC-Session") || undefined);
+
   const result = await executeTool(name as Parameters<typeof executeTool>[0], parsed.data, {
     publicApiBaseUrl: clientOrigin(c.req.raw),
     projectsChanged: reassignSessions,
+    ...(agentSessionId ? { agentSessionId } : {}),
     skillDownload: (skill, ref, projectId) =>
       skillDownloads.mint(skill, ref, projectId, clientOrigin(c.req.raw)),
     padContentUrl: (id, mode, author, ifRevision) =>

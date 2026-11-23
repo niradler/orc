@@ -193,8 +193,10 @@ restarts become `interrupted` and are never retried; queued messages remain
 queued.
 
 The same queue is available to agents through the `session_send` MCP tool
-(bind the connection with `?session=<session id>` or run stdio MCP inside the
-agent) and to chat channels with `/send <session id> <message>`.
+(ORC-managed sessions bind the connection automatically with `?session=<session id>`
+and `X-ORC-Session`, and stdio MCP reads `ORC_SESSION_ID`; an explicitly unbound
+MCP client can still `queue` via the human-relay fallback, while `steer` and
+`interrupt` require a bound ancestor session) and to chat channels with `/send <session id> <message>`.
 
 ```text
 /send                  list live sessions

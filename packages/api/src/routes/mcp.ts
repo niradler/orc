@@ -46,7 +46,10 @@ app.all("/mcp", async (c) => {
     .parse({ sessionId: c.req.query("preview_session"), clientId: c.req.query("preview_client") });
   if (preview.clientId && !preview.sessionId)
     throw new ValidationError("preview_client requires preview_session");
-  const agentSessionId = z.string().min(1).max(200).optional().parse(c.req.query("session"));
+  const sessionSchema = z.string().trim().min(1).max(200).optional();
+  const querySession = sessionSchema.parse(c.req.query("session"));
+  const headerSession = sessionSchema.parse(c.req.header("X-ORC-Session") || undefined);
+  const agentSessionId = querySession ?? headerSession ?? preview.sessionId;
   const server = createMcpServer({
     publicApiBaseUrl: origin,
     projectsChanged: reassignSessions,

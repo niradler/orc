@@ -42,7 +42,7 @@ async function execute(client: Client, code: string, timeoutMs?: number) {
 }
 
 describe("MCP code mode", () => {
-  test("should discover and combine scoped real tools without returning intermediate payloads", async () => {
+  test("should discover and combine scoped real tools with structured envelopes without returning intermediate payloads", async () => {
     await withClient(async (client) => {
       const result = await execute(
         client,
@@ -53,18 +53,21 @@ describe("MCP code mode", () => {
         const definitions = await Promise.all([
           tools.describe(tasks.tools[0].name), tools.describe(memories.tools[0].name)
         ]);
-        const [list, notes, otherProject, hiddenTool] = await Promise.allSettled([
-          tools.call(definitions[0].name), tools.call(definitions[1].name),
-          tools.call("task_list", { project: "Beta" }),
-          tools.call("preview_browser_act", {})
+        const [list, notes, otherProject, hiddenTool] = await tools.allSettled([
+          { name: definitions[0].name },
+          { name: definitions[1].name },
+          { name: "task_list", args: { project: "Beta" } },
+          { name: "preview_browser_act", args: {} },
         ]);
         return {
           discovered: definitions.map(tool => tool.name),
-          count: list.value.split("\\n").length,
-          alpha: list.value.includes("Alpha fixture"),
-          beta: list.value.includes("Beta fixture"),
-          notes: notes.status,
-          rejected: [otherProject.status, hiddenTool.status],
+          count: list.ok ? list.data.count : -1,
+          firstTitle: list.ok ? list.data.tasks[0]?.title : null,
+          alphaText: list.ok ? list.text.includes("Alpha fixture") : false,
+          betaText: list.ok ? list.text.includes("Beta fixture") : false,
+          notesOk: notes.ok,
+          otherCode: otherProject.ok ? null : otherProject.error.code,
+          hiddenCode: hiddenTool.ok ? null : hiddenTool.error.code,
         };
       `,
       );
@@ -73,17 +76,56 @@ describe("MCP code mode", () => {
         result: {
           discovered: ["task_list", "memory_list"],
           count: 1,
-          alpha: true,
-          beta: false,
-          notes: "fulfilled",
-          rejected: ["rejected", "rejected"],
+          firstTitle: "Alpha fixture",
+          alphaText: true,
+          betaText: false,
+          notesOk: true,
+          otherCode: "FORBIDDEN",
+          hiddenCode: "NOT_FOUND",
         },
         logs: [],
         truncated: false,
       });
-      expect(JSON.stringify(result.content)).not.toContain("Alpha fixture");
+      expect(JSON.stringify(result.content)).not.toContain("Beta fixture");
       expect((await client.callTool({ name: "task_list" })).isError).toBeUndefined();
       expect((await client.callTool({ name: "spec_list" })).isError).toBe(true);
+    });
+  });
+
+  test("should return structured data and errors across a batch of three calls without throwing", async () => {
+    await withClient(async (client) => {
+      const result = await execute(
+        client,
+        `
+        const [tasks, projects, missing] = await tools.allSettled([
+          { name: "task_list", args: {} },
+          { name: "project_list", args: {} },
+          { name: "does_not_exist", args: {} },
+        ]);
+        return {
+          tasksOk: tasks.ok,
+          pickedTasks: tasks.ok ? tools.pick(tasks.data.tasks, ["id", "status"]) : null,
+          projectsOk: projects.ok,
+          projectNames: projects.ok ? projects.data.projects.map((p) => p.name) : null,
+          missingOk: missing.ok,
+          missingCode: missing.ok ? null : missing.error.code,
+          missingMessage: missing.ok ? null : missing.error.message,
+        };
+      `,
+      );
+      expect(result.isError).toBeUndefined();
+      expect(result.structuredContent?.result).toMatchObject({
+        tasksOk: true,
+        pickedTasks: [{ id: "alpha-task", status: "todo" }],
+        projectsOk: true,
+        projectNames: ["Alpha"],
+        missingOk: false,
+        missingCode: "NOT_FOUND",
+      });
+      expect(
+        (result.structuredContent?.result as { missingMessage?: string } | undefined)
+          ?.missingMessage,
+      ).not.toContain("tool_execute");
     });
   });
 
@@ -92,19 +134,67 @@ describe("MCP code mode", () => {
       const result = await execute(
         client,
         `
-        const invalid = await Promise.allSettled([tools.call("task_create", { title: 7 })]);
+        const invalid = await tools.call("task_create", { title: 7 });
         const task = await tools.describe("task_create");
-        await tools.call(task.name, { title: "Created from code mode" });
+        const created = await tools.call(task.name, { title: "Created from code mode" });
         const tasks = await tools.call("task_list");
-        return { invalid: invalid[0].reason.message.startsWith("Invalid args"), observed: tasks.includes("Created from code mode") };
+        return {
+          invalidOk: invalid.ok,
+          invalidCode: invalid.ok ? null : invalid.error.code,
+          invalidPrefix: invalid.ok ? false : invalid.error.message.startsWith("Invalid args"),
+          createdOk: created.ok,
+          observed: tasks.ok && tasks.data.tasks.some((t) => t.title === "Created from code mode"),
+        };
       `,
       );
-      expect(result.structuredContent?.result).toEqual({ invalid: true, observed: true });
+      expect(result.structuredContent?.result).toEqual({
+        invalidOk: false,
+        invalidCode: "INVALID_ARGS",
+        invalidPrefix: true,
+        createdOk: true,
+        observed: true,
+      });
       expect(
         getSqlite()
           .query("SELECT project_id FROM tasks WHERE title=?")
           .get("Created from code mode"),
       ).toEqual({ project_id: "alpha" });
+    });
+  });
+
+  test("should reject unknown describe names with catalog-only hints", async () => {
+    await withClient(async (client) => {
+      const result = await execute(
+        client,
+        `
+        const tryDescribe = async (name) => {
+          try {
+            return { ok: true, value: await tools.describe(name) };
+          } catch (error) {
+            return { ok: false, message: String(error.message ?? error) };
+          }
+        };
+        const [bogus, nonScriptable, nearMiss] = await Promise.all([
+          tryDescribe("tools.orc.tool_execute"),
+          tryDescribe("task_delete"),
+          tryDescribe("task_foo"),
+        ]);
+        return { bogus, nonScriptable, nearMiss };
+      `,
+      );
+      const out = result.structuredContent?.result as {
+        bogus: { ok: boolean; message: string };
+        nonScriptable: { ok: boolean; message: string };
+        nearMiss: { ok: boolean; message: string };
+      };
+      expect(out.bogus.ok).toBe(false);
+      expect(out.bogus.message).toContain("Unknown tool: tools.orc.tool_execute");
+      expect(out.bogus.message).not.toContain("Close names:");
+      expect(out.nonScriptable.ok).toBe(false);
+      expect(out.nonScriptable.message).toContain("Unknown tool:");
+      expect(out.nearMiss.ok).toBe(false);
+      expect(out.nearMiss.message).toContain("task_list");
+      expect(out.nearMiss.message).not.toContain("tool_execute");
     });
   });
 
@@ -193,10 +283,57 @@ test("should overlap reads and serialize writes in one worker execution", async 
       };
     },
   );
-  expect(outcome.result).toEqual(["read1", "read2", "write", "read3"]);
+  expect(outcome.result).toEqual([
+    { ok: true, data: "read1", text: "read1" },
+    { ok: true, data: "read2", text: "read2" },
+    { ok: true, data: "write", text: "write" },
+    { ok: true, data: "read3", text: "read3" },
+  ]);
   expect(peak).toBe(2);
   expect(writeOverlap).toBe(false);
   expect(events.indexOf("end write")).toBeLessThan(events.indexOf("start read3"));
+});
+
+test("should time out a slow per-call tool without discarding fast calls in the same batch", async () => {
+  const releaseSlow = Promise.withResolvers<void>();
+  try {
+    const outcome = await runCodeWorker(
+      `return await tools.allSettled([
+        { name: "fast1", args: {} },
+        { name: "slow", args: {}, timeout_ms: 80 },
+        { name: "fast2", args: {} },
+      ]);`,
+      5000,
+      new AbortController().signal,
+      (payload) => {
+        const parsed = JSON.parse(payload) as { name: string; timeout_ms?: number };
+        return {
+          serial: false,
+          toolName: parsed.name,
+          envelope: true,
+          ...(parsed.timeout_ms !== undefined ? { timeoutMs: parsed.timeout_ms } : {}),
+          async dispatch() {
+            if (parsed.name === "slow") {
+              await releaseSlow.promise;
+              return JSON.stringify({ ok: true, data: "late", text: "late" });
+            }
+            await Bun.sleep(10);
+            return JSON.stringify({ ok: true, data: { name: parsed.name }, text: parsed.name });
+          },
+        };
+      },
+    );
+    expect(outcome.result).toEqual([
+      { ok: true, data: { name: "fast1" }, text: "fast1" },
+      {
+        ok: false,
+        error: { code: "TIMEOUT", message: 'Tool call "slow" timed out after 80ms' },
+      },
+      { ok: true, data: { name: "fast2" }, text: "fast2" },
+    ]);
+  } finally {
+    releaseSlow.resolve();
+  }
 });
 
 test("should cancel queued calls and retain admission until an in-flight call settles", async () => {

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { resetConfig } from "@orc/core/config";
 import { OrcError } from "@orc/core/errors";
-import { closeDb, createTestDb } from "@orc/db/client";
+import { ChatStore } from "@orc/db/chat";
+import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { Hono } from "hono";
 import { mcpRouter } from "../routes/mcp.js";
 import { createApp } from "../server.js";
@@ -202,6 +203,237 @@ describe("MCP HTTP endpoint mode", () => {
     } finally {
       if (previous === undefined) delete process.env.ORC_API_SECRET;
       else process.env.ORC_API_SECRET = previous;
+      resetConfig();
+    }
+  });
+});
+
+describe("MCP HTTP session caller identity and code mode integration", () => {
+  test("propagates bound session identity into direct and sandboxed session_list/session_send, enforces ancestry, and falls back to human relay only for unbound queue", async () => {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: app.fetch,
+    });
+    const previousBase = process.env.ORC_API_BASE;
+    process.env.ORC_API_BASE = String(server.url).replace(/\/$/, "");
+    resetConfig();
+
+    const chats = new ChatStore(getSqlite());
+    const now = Date.now();
+    const baseConfig = {
+      agent: "opencode" as const,
+      model: "",
+      models: [],
+      permissionMode: "default" as const,
+      sendWhileRunning: "queue" as const,
+      autoApprove: false,
+      mcp: "orc" as const,
+      system: "",
+      agentOptions: {},
+    };
+    const parentId = crypto.randomUUID();
+    const childId = crypto.randomUUID();
+    const unrelatedId = crypto.randomUUID();
+    chats.save({
+      id: parentId,
+      title: "Parent Chat",
+      cwd: "/tmp/orc-521",
+      host: null,
+      backend: "opencode",
+      runtimeId: "ses_parent_521",
+      sourceId: null,
+      config: baseConfig,
+      messages: [],
+      updatedAt: now,
+    });
+    chats.save({
+      id: childId,
+      title: "Child Worker",
+      cwd: "/tmp/orc-521",
+      host: null,
+      backend: "opencode",
+      runtimeId: "ses_child_521",
+      sourceId: null,
+      spawnedBy: { sessionId: parentId, notify: true, at: now },
+      config: baseConfig,
+      messages: [],
+      updatedAt: now,
+    });
+    chats.save({
+      id: unrelatedId,
+      title: "Unrelated Chat",
+      cwd: "/tmp/orc-521",
+      host: null,
+      backend: "opencode",
+      runtimeId: "ses_other_521",
+      sourceId: null,
+      config: baseConfig,
+      messages: [],
+      updatedAt: now,
+    });
+
+    const callMcp = async (
+      query: string,
+      name: string,
+      args: Record<string, unknown>,
+      extraHeaders: Record<string, string> = {},
+    ) => {
+      const res = await app.request(`/mcp${query}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+          Authorization: "Bearer test-secret",
+          ...extraHeaders,
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
+        }),
+      });
+      expect(res.status).toBe(200);
+      const raw = await res.text();
+      return JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)).result as {
+        content: { text: string }[];
+        isError?: boolean;
+        structuredContent?: Record<string, unknown>;
+      };
+    };
+
+    try {
+      const listedViaQuery = await callMcp(`?mode=meta&session=${parentId}`, "session_list", {});
+      expect(listedViaQuery.isError).toBeUndefined();
+      expect(JSON.parse(listedViaQuery.content[0]?.text ?? "{}").sessions).toMatchObject([
+        { session_id: childId },
+      ]);
+
+      const listedViaHeader = await callMcp(
+        "?mode=meta",
+        "session_list",
+        {},
+        {
+          "X-ORC-Session": parentId,
+        },
+      );
+      expect(listedViaHeader.isError).toBeUndefined();
+      expect(JSON.parse(listedViaHeader.content[0]?.text ?? "{}").sessions).toMatchObject([
+        { session_id: childId },
+      ]);
+
+      const directSend = await callMcp(`?mode=meta&session=${parentId}`, "session_send", {
+        session_id: childId,
+        mode: "queue",
+        body: "Direct bound message",
+      });
+      expect(directSend.isError).toBeUndefined();
+      expect(JSON.parse(directSend.content[0]?.text ?? "{}").message).toMatchObject({
+        sender_kind: "session",
+        sender_session_id: parentId,
+        sender_native_id: "ses_parent_521",
+        sender_backend: "opencode",
+      });
+
+      const directSteerAllowed = await callMcp(
+        "?mode=meta",
+        "session_send",
+        {
+          session_id: childId,
+          mode: "steer",
+          body: "Ancestor steer",
+        },
+        { "X-ORC-Session": parentId },
+      );
+      expect(directSteerAllowed.isError).toBeUndefined();
+      expect(JSON.parse(directSteerAllowed.content[0]?.text ?? "{}").message).toMatchObject({
+        sender_kind: "session",
+        sender_session_id: parentId,
+      });
+
+      const nonAncestorSteer = await callMcp(`?mode=meta&session=${unrelatedId}`, "session_send", {
+        session_id: childId,
+        mode: "steer",
+        body: "Not an ancestor",
+      });
+      expect(nonAncestorSteer.isError).toBe(true);
+      expect(nonAncestorSteer.content[0]?.text).toContain("Only the session that started");
+
+      const unboundQueue = await callMcp("?mode=meta", "session_send", {
+        session_id: childId,
+        mode: "queue",
+        body: "Unbound relay queue",
+      });
+      expect(unboundQueue.isError).toBeUndefined();
+      expect(JSON.parse(unboundQueue.content[0]?.text ?? "{}").message).toMatchObject({
+        sender_kind: "human",
+        sender_session_id: null,
+      });
+
+      const unboundSteer = await callMcp("?mode=meta", "session_send", {
+        session_id: childId,
+        mode: "steer",
+        body: "Unbound steer must fail",
+      });
+      expect(unboundSteer.isError).toBe(true);
+      expect(unboundSteer.content[0]?.text).toContain("requires a bound calling session identity");
+
+      const scriptedBound = await callMcp(
+        "?mode=meta",
+        "tool_execute",
+        {
+          code: `
+            const [list, sent] = await tools.allSettled([
+              { name: "session_list", args: {} },
+              { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "queue", body: "From sandbox" } },
+            ]);
+            return {
+              listOk: list.ok,
+              children: list.ok ? list.data.sessions.map((s) => s.session_id) : [],
+              sentOk: sent.ok,
+              sender: sent.ok ? tools.pick(sent.data.message, ["sender_kind", "sender_session_id", "sender_native_id", "sender_backend"]) : null,
+            };
+          `,
+        },
+        { "X-ORC-Session": parentId },
+      );
+      expect(scriptedBound.isError).toBeUndefined();
+      expect(scriptedBound.structuredContent?.result).toEqual({
+        listOk: true,
+        children: [childId],
+        sentOk: true,
+        sender: {
+          sender_kind: "session",
+          sender_session_id: parentId,
+          sender_native_id: "ses_parent_521",
+          sender_backend: "opencode",
+        },
+      });
+
+      const scriptedUnbound = await callMcp("?mode=meta", "tool_execute", {
+        code: `
+          const [queued, steered] = await tools.allSettled([
+            { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "queue", body: "Sandbox unbound queue" } },
+            { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "steer", body: "Sandbox unbound steer" } },
+          ]);
+          return {
+            queuedKind: queued.ok ? queued.data.message.sender_kind : null,
+            steeredOk: steered.ok,
+            steeredCode: steered.ok ? null : steered.error.code,
+          };
+        `,
+      });
+      expect(scriptedUnbound.isError).toBeUndefined();
+      expect(scriptedUnbound.structuredContent?.result).toEqual({
+        queuedKind: "human",
+        steeredOk: false,
+        steeredCode: "FORBIDDEN",
+      });
+    } finally {
+      server.stop(true);
+      if (previousBase === undefined) delete process.env.ORC_API_BASE;
+      else process.env.ORC_API_BASE = previousBase;
       resetConfig();
     }
   });

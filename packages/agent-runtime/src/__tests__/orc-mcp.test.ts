@@ -147,6 +147,7 @@ describe("ORC MCP injection for tool-restricted sessions", () => {
     expect(url.searchParams.get("mode")).toBe("meta");
     expect(url.searchParams.has("auth")).toBe(false);
     expect(server.headers?.Authorization).toBe("Bearer s3cret");
+    expect(server.headers?.["X-ORC-Session"]).toBe("chat-preview-123");
   });
 
   test("should build an http mcp server keyed orc with bearer auth", () => {
