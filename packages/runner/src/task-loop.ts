@@ -10,6 +10,7 @@ import {
   drainPendingNodes,
   getActiveFlowRunForTask,
   getActiveWorkerCount,
+  reconcileFlowNodeLiveness,
   recoverOrphanedFlowSessions,
   startFlowForTask,
   sweepFlowTimeouts,
@@ -41,6 +42,9 @@ export async function cleanupStaleSessions(): Promise<number> {
 async function runCycle(): Promise<string> {
   const config = loadConfig();
   const lines: string[] = [];
+
+  const reconciled = await reconcileFlowNodeLiveness();
+  if (reconciled > 0) lines.push(`Reconciled ${reconciled} dead flow worker(s)`);
 
   const cleaned = await cleanupStaleSessions();
   if (cleaned > 0) lines.push(`Cleaned ${cleaned} stale session(s)`);
@@ -212,6 +216,10 @@ async function runRecordedCycle(): Promise<void> {
 let loopCron: Cron | null = null;
 
 export async function startTaskLoop(): Promise<void> {
+  const recovered = await recoverOrphanedFlowSessions();
+  if (recovered > 0)
+    logger.info(`Recovered ${recovered} orphaned worker session(s) from the previous daemon`);
+
   const config = loadConfig();
   if (!config.agent_loop.enabled) {
     logger.info("Agent loop disabled");
@@ -220,12 +228,6 @@ export async function startTaskLoop(): Promise<void> {
 
   const _jobId = await ensureSystemJob();
   const cronExpr = `*/${config.agent_loop.poll_interval_minutes} * * * *`;
-
-  // A restart orphaned the previous daemon's workers: settle them and queue
-  // resume retries before the first cycle claims their slots.
-  const recovered = await recoverOrphanedFlowSessions();
-  if (recovered > 0)
-    logger.info(`Recovered ${recovered} orphaned worker session(s) from the previous daemon`);
 
   logger.info(
     `Task loop started (cron: ${cronExpr}, max ${config.agent_loop.max_workers} workers, ` +

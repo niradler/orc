@@ -1094,6 +1094,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1533,6 +1534,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1908,6 +1910,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -2286,6 +2289,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -2952,6 +2956,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3396,6 +3401,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3621,6 +3627,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3938,6 +3945,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -4371,6 +4379,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -4610,6 +4619,7 @@ export interface paths {
                                     durationMs?: number;
                                     /** @enum {string} */
                                     outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -11970,6 +11980,48 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read recent structured daemon logs and spawn diagnostics */
+        get: {
+            parameters: {
+                query?: {
+                    lines?: number;
+                    level?: "debug" | "info" | "warn" | "error";
+                    ns?: string;
+                    q?: string;
+                    source?: "orc" | "daemon" | "all";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Recent daemon log entries */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemLogs"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -22703,6 +22755,12 @@ export interface paths {
                             cwd: string;
                             started_at: number | null;
                             updated_at: number;
+                            last_activity_at?: number | null;
+                            last_activity?: string | null;
+                            activity_count?: number;
+                            start_error?: string | null;
+                            native_session_id?: string | null;
+                            live_session_id?: string | null;
                         };
                     };
                 };
@@ -22787,6 +22845,12 @@ export interface paths {
                             cwd: string;
                             started_at: number | null;
                             updated_at: number;
+                            last_activity_at?: number | null;
+                            last_activity?: string | null;
+                            activity_count?: number;
+                            start_error?: string | null;
+                            native_session_id?: string | null;
+                            live_session_id?: string | null;
                         };
                     };
                 };
@@ -22860,6 +22924,12 @@ export interface paths {
                                 cwd: string;
                                 started_at: number | null;
                                 updated_at: number;
+                                last_activity_at?: number | null;
+                                last_activity?: string | null;
+                                activity_count?: number;
+                                start_error?: string | null;
+                                native_session_id?: string | null;
+                                live_session_id?: string | null;
                             }[];
                         };
                     };
@@ -23043,6 +23113,12 @@ export interface paths {
                             cwd: string;
                             started_at: number | null;
                             updated_at: number;
+                            last_activity_at?: number | null;
+                            last_activity?: string | null;
+                            activity_count?: number;
+                            start_error?: string | null;
+                            native_session_id?: string | null;
+                            live_session_id?: string | null;
                             timed_out: boolean;
                         };
                     };
@@ -23133,6 +23209,12 @@ export interface paths {
                                 cwd: string;
                                 started_at: number | null;
                                 updated_at: number;
+                                last_activity_at?: number | null;
+                                last_activity?: string | null;
+                                activity_count?: number;
+                                start_error?: string | null;
+                                native_session_id?: string | null;
+                                live_session_id?: string | null;
                             }[];
                             timed_out: boolean;
                         };
@@ -23209,6 +23291,12 @@ export interface paths {
                             cwd: string;
                             started_at: number | null;
                             updated_at: number;
+                            last_activity_at?: number | null;
+                            last_activity?: string | null;
+                            activity_count?: number;
+                            start_error?: string | null;
+                            native_session_id?: string | null;
+                            live_session_id?: string | null;
                         };
                     };
                 };
@@ -25706,6 +25794,21 @@ export interface components {
             instance_id: string;
             /** @enum {boolean} */
             shutting_down: true;
+        };
+        SystemLogs: {
+            path: string;
+            daemon_log_path: string;
+            entries: {
+                ts: string | null;
+                /** @enum {string|null} */
+                level: "debug" | "info" | "warn" | "error" | null;
+                ns: string | null;
+                msg: string;
+                data?: string;
+                /** @enum {string} */
+                source: "orc" | "daemon";
+            }[];
+            total: number;
         };
         McpToolResult: {
             result: string;

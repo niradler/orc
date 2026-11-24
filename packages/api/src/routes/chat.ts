@@ -61,9 +61,15 @@ import {
 } from "@orc/core/chat-context";
 import { chatTurnLeaseIsLive } from "@orc/core/chat-lease";
 import { ChatAgentOptionsMapSchema, unsupportedPermissionMode } from "@orc/core/chat-options";
-import { supportsModelDiscovery } from "@orc/core/coding-agents";
+import { canonicalAgentId, codingAgent, supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
-import { ConflictError, NotFoundError, OrcError, ValidationError } from "@orc/core/errors";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  OrcError,
+  ValidationError,
+} from "@orc/core/errors";
 import {
   execHostFor,
   hostHome,
@@ -97,6 +103,7 @@ import {
   SESSION_MESSAGE_HOP_LIMIT,
   SESSION_SPAWN_HOURLY_LIMIT,
   type SessionDelivery,
+  type SessionMessageSender,
   type SessionSpawn,
   type SessionStatus,
 } from "@orc/core/session-messages";
@@ -132,15 +139,17 @@ import { loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
 import { chatHistory } from "../sessions/chat-history.js";
 import { isClaudeProcessName } from "../sessions/claude.js";
-import { projectIdFor } from "../sessions/common.js";
+import { isAlive, projectIdFor } from "../sessions/common.js";
 import {
   childWorkCounts,
   childWorkCountsMany,
   notifySpawner,
+  requireAncestor,
   spawnChain,
 } from "../sessions/control.js";
 import { opencodeSessionUpdated } from "../sessions/opencode.js";
 import { codexWriterOwned } from "../sessions/ownership.js";
+import { resolveSessionRef } from "../sessions/resolve.js";
 import { readTranscriptBytes, type TranscriptTurn } from "../sessions/transcript.js";
 import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
 import { activeTurns, type ChatTarget, registerChatControl, turnKey } from "../sessions/turns.js";
@@ -189,6 +198,9 @@ interface ChatRun {
   key: string;
   runId: string;
   startedAt: number;
+  lastActivityAt: number;
+  lastActivity: string | null;
+  activityCount: number;
   /** Identity this turn resumed, so a shutdown flush never swaps it silently. */
   runtimeIdAtStart?: string | null;
   /** This turn continued on a fresh session because the pinned one was gone. */
@@ -1009,8 +1021,9 @@ async function newThread(
   },
   providerId?: string,
 ): Promise<ChatThread> {
-  const config = providerChatDefaults(providerId, agent, chatMockEnabled());
-  if (agent) config.agent = agent;
+  const normalizedAgent = agent ? canonicalAgentId(agent) : undefined;
+  const config = providerChatDefaults(providerId, normalizedAgent, chatMockEnabled());
+  if (normalizedAgent) config.agent = normalizedAgent;
   if (model !== undefined) config.model = model;
   const host = launch ? selectedTerminalHost(loadConfig(), launch.host) : resolveExecHost();
   const cwd = launch
@@ -2544,7 +2557,7 @@ async function openChat(
   if (body.threadId && body.workspace)
     throw new ValidationError("An existing conversation keeps its working folder.");
   rememberTerminalFolder(thread.cwd, thread.host);
-  if (body.threadId && body.agent && body.agent !== thread.config.agent)
+  if (body.threadId && body.agent && canonicalAgentId(body.agent) !== thread.config.agent)
     throw new ValidationError("Start a new chat to change agents.");
   const input = [...body.messages]
     .reverse()
@@ -2761,6 +2774,9 @@ async function beginTurn(
     key,
     runId,
     startedAt: Date.now(),
+    lastActivityAt: Date.now(),
+    lastActivity: null,
+    activityCount: 0,
     finalized,
     markFinalized: () => markFinalized(),
     events: [],
@@ -2828,6 +2844,7 @@ async function beginTurn(
   }
   const startedAt = Date.now();
   run.startedAt = startedAt;
+  run.lastActivityAt = startedAt;
   const newSegment = (): ChatMessage => ({
     id: crypto.randomUUID(),
     role: "assistant",
@@ -2938,12 +2955,16 @@ async function beginTurn(
       run.stop();
     };
     let lastLeaseBeat = startedAt;
-    const touch = () => {
+    const touch = (activityLabel?: string) => {
       clearTimeout(timer);
       timer = setTimeout(expire, turnLimits.idleMs);
-      // Debounced durable heartbeat so a lease's freshness survives a crash of
-      // this process; the beat is a targeted write, streaming never pays a save.
       const now = Date.now();
+      run.lastActivityAt = now;
+      thread.updatedAt = Math.max(thread.updatedAt, now);
+      if (activityLabel) {
+        run.lastActivity = activityLabel.slice(0, 200);
+        run.activityCount++;
+      }
       if (now - lastLeaseBeat >= turnLimits.leaseHeartbeatMs) {
         lastLeaseBeat = now;
         if (thread.turn?.runId === runId && thread.turn.status === "running") {
@@ -3033,11 +3054,13 @@ async function beginTurn(
           Bun.sleep(Math.min(Number(input.match(/after (\d+)ms/i)?.[1] ?? 75), 10000)),
           halted,
         ]);
-        if (!stopped)
+        if (!stopped) {
+          touch("text");
           await emit({
             type: "text",
             text: input.match(/Reply with exactly:\s*([^.?!\n]+)[.?!]?/i)?.[1]?.trim() || input,
           });
+        }
         await Bun.sleep(75);
         thread.runtimeId ??= `mock-${thread.id}`;
         completed = !stopped;
@@ -3287,7 +3310,19 @@ async function beginTurn(
           // After a Stop, drain remaining events without emitting them; the loop ends
           // at the result above or when the session closes (bounded by stopFallback).
           if (stopped) continue;
-          touch();
+          const activityLabel =
+            event.type === "tool_use"
+              ? `tool:${event.data.name}`
+              : event.type === "permission_request"
+                ? "waiting:approval"
+                : event.type === "question_request"
+                  ? "waiting:question"
+                  : event.type === "system_status"
+                    ? "status"
+                    : event.type === "capabilities"
+                      ? undefined
+                      : event.type;
+          touch(activityLabel);
           if (!nativeKey) {
             const nativeId = run.session?.getRuntimeSessionId?.();
             if (nativeId) {
@@ -3387,7 +3422,15 @@ async function beginTurn(
           });
       }
     } catch (error) {
-      logger.error("Chat turn failed", { error, runId });
+      logger.error("Chat turn failed", {
+        error,
+        runId,
+        threadId: thread.id,
+        agent: thread.config.agent,
+        backend: thread.backend,
+        providerId: thread.config.providerId,
+        spawnedBy: thread.spawnedBy?.sessionId,
+      });
       const message =
         error instanceof Error ? error.message : "The agent could not complete the response.";
       failure ??= message;
@@ -3427,19 +3470,29 @@ async function beginTurn(
         captureTurnUsage(thread, startedAt, agentContextWindow),
         Bun.sleep(5000).then(() => undefined),
       ]);
+      const turnOutcome = timedOut
+        ? "failed"
+        : stopped || agentOutcome === "stopped"
+          ? "stopped"
+          : failure || agentOutcome === "failed"
+            ? "failed"
+            : "completed";
+      const turnError =
+        turnOutcome === "failed"
+          ? (failure ?? "The agent could not complete the response.").slice(0, 2000)
+          : undefined;
       assistant.turn = {
         startedAt,
         finishedAt,
         durationMs: agentDurationMs ?? Math.max(0, finishedAt - startedAt),
-        outcome: timedOut
-          ? "failed"
-          : stopped || agentOutcome === "stopped"
-            ? "stopped"
-            : failure || agentOutcome === "failed"
-              ? "failed"
-              : "completed",
+        outcome: turnOutcome,
+        ...(turnError ? { error: turnError } : {}),
         ...(frozenUsage ? { usage: frozenUsage } : {}),
       };
+      if (thread.spawnedBy) {
+        if (turnError) thread.spawnedBy.startError = turnError;
+        else if (turnOutcome === "completed") delete thread.spawnedBy.startError;
+      }
       assistant.timestamp = finishedAt;
       // The lease mirrors the turn's outcome. A lease this process no longer
       // owns (a shutdown flush already wrote through) is left alone; the save
@@ -3670,7 +3723,8 @@ async function startChild(
         : null;
   if (!base) throw new ValidationError("The calling session has no folder to start from");
   const source = store().get(parentId);
-  const agent = input.agent ?? parent.agent ?? undefined;
+  const rawAgent = input.agent ?? parent.agent ?? undefined;
+  const agent = rawAgent ? canonicalAgentId(rawAgent) : undefined;
   const sameAgent = !!source && agent === source.config.agent;
   if (source?.toolAllowlist && agent !== "claude")
     throw new ValidationError(
@@ -3705,6 +3759,13 @@ async function startChild(
   if (runs.size >= 4) return queueChild(body, input, spawnedBy, source?.toolAllowlist);
   const run = await openChat(body, [], spawnedBy, source?.toolAllowlist).catch((error) => {
     if (error instanceof ConflictError && runs.size >= 4) return null;
+    logger.error("Failed to spawn child session", {
+      parentId,
+      agent: body.agent,
+      providerId: body.providerId,
+      cwd: body.workspace?.cwd,
+      error: error instanceof Error ? error.message : String(error),
+    });
     throw error;
   });
   if (!run) return queueChild(body, input, spawnedBy, source?.toolAllowlist);
@@ -3932,47 +3993,257 @@ export async function voiceTurn(threadId: string, text: string): Promise<"sent" 
 }
 
 export function chatStatus(id: string): SessionStatus {
-  const thread = requireThread(id);
-  const run = threadRun(id)?.[1];
-  const last = [...thread.messages].reverse().find((message) => message.role === "assistant");
-  const waitingFor = run?.permissions.size ? "approval" : run?.questions.size ? "question" : null;
-  const outcome = last?.turn?.outcome;
+  const resolved = resolveSessionRef(id);
+  if (!resolved) throw new NotFoundError("Session", id);
+
+  if (resolved.thread) {
+    const thread = resolved.thread;
+    const run = threadRun(thread.id)?.[1];
+    const last = [...thread.messages].reverse().find((message) => message.role === "assistant");
+    const waitingFor = run?.permissions.size ? "approval" : run?.questions.size ? "question" : null;
+    const outcome = last?.turn?.outcome;
+    const queue = new SessionMessageStore(getSqlite())
+      .queued(thread.id)
+      .map(({ id: msgId, state, position }) => ({ id: msgId, state, position }));
+    const childWork = childWorkCounts(thread.id);
+    const startError = run
+      ? null
+      : outcome === "failed"
+        ? (last?.turn?.error ?? thread.spawnedBy?.startError ?? null)
+        : !last
+          ? (thread.spawnedBy?.startError ?? null)
+          : null;
+    const lastActivityAt =
+      run?.lastActivityAt ??
+      thread.turn?.lastHeartbeatAt ??
+      last?.turn?.finishedAt ??
+      resolved.gateway?.last_activity_at?.getTime() ??
+      thread.updatedAt;
+    const updatedAt = Math.max(thread.updatedAt, lastActivityAt);
+    return {
+      session_id: thread.id,
+      title: thread.title,
+      agent: thread.config.agent,
+      status: run
+        ? waitingFor
+          ? "waiting"
+          : "running"
+        : thread.spawnedBy?.prompt
+          ? "queued"
+          : queue.length
+            ? "running"
+            : outcome === "failed" || (thread.spawnedBy?.startError && !last)
+              ? "failed"
+              : outcome === "stopped" || (thread.spawnedBy?.cancelled && !last)
+                ? "stopped"
+                : "idle",
+      waiting_for: waitingFor,
+      last_message: last?.content || startError || null,
+      queue,
+      parent_session_id: thread.spawnedBy?.sessionId ?? null,
+      children: store()
+        .children([thread.id])
+        .map((child) => child.id),
+      working_children: childWork.working,
+      waiting_children: childWork.waiting,
+      stopping: run?.stopping === true,
+      project_id: thread.projectId ?? null,
+      cwd: thread.cwd,
+      started_at: thread.spawnedBy?.at ?? null,
+      updated_at: updatedAt,
+      last_activity_at: lastActivityAt,
+      last_activity: run ? (waitingFor ? `waiting:${waitingFor}` : run.lastActivity) : null,
+      activity_count: run?.activityCount ?? 0,
+      start_error: startError,
+      native_session_id: resolved.nativeId,
+      live_session_id: resolved.liveId,
+    };
+  }
+
+  const row = resolved.gateway;
+  if (!row) throw new NotFoundError("Session", id);
+  const live = liveRunFields(
+    row.backend,
+    row.execution_host ?? null,
+    row.runtime_session_id ?? null,
+  );
+  const waitingFor: "question" | "approval" | null = live.waiting_for_human
+    ? live.waiting_for?.reason === "question"
+      ? "question"
+      : "approval"
+    : null;
   const queue = new SessionMessageStore(getSqlite())
-    .queued(thread.id)
-    .map(({ id, state, position }) => ({ id, state, position }));
-  const childWork = childWorkCounts(thread.id);
-  return {
-    session_id: thread.id,
-    title: thread.title,
-    agent: thread.config.agent,
-    status: run
+    .queued(row.id)
+    .map(({ id: msgId, state, position }) => ({ id: msgId, state, position }));
+  const childWork = childWorkCounts(row.id);
+  const lastActivityAt = (row.last_activity_at ?? row.updated_at).getTime();
+  const updatedAt = Math.max(row.updated_at.getTime(), lastActivityAt);
+  const startError = row.last_error ?? null;
+  const derivedStatus: SessionStatus["status"] =
+    row.status === "running"
       ? waitingFor
         ? "waiting"
         : "running"
-      : thread.spawnedBy?.prompt
-        ? "queued"
-        : queue.length
-          ? "running"
-          : outcome === "failed" || (thread.spawnedBy?.startError && !last)
-            ? "failed"
-            : outcome === "stopped" || (thread.spawnedBy?.cancelled && !last)
-              ? "stopped"
-              : "idle",
+      : row.status === "error"
+        ? "failed"
+        : row.status === "stopped"
+          ? "stopped"
+          : "idle";
+  const childIds = [...new Set([row.id, row.runtime_session_id].filter((v): v is string => !!v))];
+  return {
+    session_id: row.id,
+    title: row.display_title ?? row.title ?? row.id,
+    agent: row.backend,
+    status: derivedStatus,
     waiting_for: waitingFor,
-    last_message: last ? last.content || null : (thread.spawnedBy?.startError ?? null),
+    last_message: startError ?? row.summary ?? null,
     queue,
-    parent_session_id: thread.spawnedBy?.sessionId ?? null,
+    parent_session_id: row.parent_session_id ?? row.spawned_from_session_id ?? null,
     children: store()
-      .children([thread.id])
+      .children(childIds)
       .map((child) => child.id),
     working_children: childWork.working,
     waiting_children: childWork.waiting,
-    stopping: run?.stopping === true,
-    project_id: thread.projectId ?? null,
-    cwd: thread.cwd,
-    started_at: thread.spawnedBy?.at ?? null,
-    updated_at: thread.updatedAt,
+    stopping: false,
+    project_id: row.project_id ?? null,
+    cwd: row.cwd ?? "",
+    started_at: row.created_at.getTime(),
+    updated_at: updatedAt,
+    last_activity_at: lastActivityAt,
+    last_activity: waitingFor ? `waiting:${waitingFor}` : null,
+    activity_count: 0,
+    start_error: startError,
+    native_session_id: row.runtime_session_id ?? null,
+    live_session_id: row.id,
   };
+}
+
+function inspectLocalProcessCommand(pid: number): string | null {
+  try {
+    const command =
+      process.platform === "win32"
+        ? [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { "$($p.Name) $($p.CommandLine)" }`,
+          ]
+        : ["ps", "-o", "comm=,args=", "-p", String(pid)];
+    const out = Bun.spawnSync(command, {
+      stdout: "pipe",
+      stderr: "ignore",
+      timeout: 1500,
+      windowsHide: true,
+    });
+    if (out.exitCode !== 0) return null;
+    const text = out.stdout.toString().trim();
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
+function backendProcessTokens(backend: string): string[] {
+  const canonical = canonicalAgentId(backend);
+  const agent = codingAgent(canonical);
+  return [
+    ...new Set(
+      [canonical, backend.toLowerCase(), ...(agent?.binaries ?? [])].filter((token) =>
+        Boolean(token),
+      ),
+    ),
+  ];
+}
+
+function commandMatchesBackend(commandLine: string, backend: string): boolean {
+  const lower = commandLine.toLowerCase();
+  return backendProcessTokens(backend).some((token) => {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[/\\\\\\s"'=])${escaped}(\\.exe)?($|[\\s"'\\/:])`, "i").test(lower);
+  });
+}
+
+export type SignalLiveProcessDeps = {
+  alive?: (pid: number) => boolean;
+  inspectCommand?: (pid: number) => string | null;
+  kill?: (pid: number, signal: NodeJS.Signals) => void;
+};
+
+export function signalLiveSessionProcess(
+  row: {
+    status: string;
+    chat_id: string | null;
+    pid: number | null;
+    execution_host: string | null;
+    backend: string;
+  },
+  deps: SignalLiveProcessDeps = {},
+): boolean {
+  if (row.status !== "running" || row.chat_id !== LIVE_CHAT_ID) return false;
+  if (!row.pid || row.pid <= 0 || row.pid === process.pid) return false;
+  if (row.execution_host && row.execution_host !== "local") return false;
+  const alive = deps.alive ?? isAlive;
+  if (!alive(row.pid)) return false;
+  const inspect = deps.inspectCommand ?? inspectLocalProcessCommand;
+  const command = inspect(row.pid);
+  if (!command || !commandMatchesBackend(command, row.backend)) return false;
+  try {
+    (deps.kill ?? ((pid, sig) => process.kill(pid, sig)))(row.pid, "SIGTERM");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function stopSession(
+  id: string,
+  cascade: boolean,
+  sender: SessionMessageSender,
+  signalDeps?: SignalLiveProcessDeps,
+): SessionStatus {
+  const resolved = resolveSessionRef(id);
+  if (!resolved) throw new NotFoundError("Session", id);
+
+  if (resolved.thread) {
+    requireAncestor(sender, resolved.thread.id);
+    stopChat(resolved.thread.id, cascade, sender.session_id ?? null);
+    if (
+      resolved.gateway &&
+      resolved.gateway.status === "running" &&
+      !threadRun(resolved.thread.id)
+    ) {
+      getSqlite()
+        .query(
+          "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?",
+        )
+        .run(resolved.gateway.id);
+      changes.publish("sessions");
+    }
+    return chatStatus(resolved.thread.id);
+  }
+
+  const row = resolved.gateway;
+  if (!row) throw new NotFoundError("Session", id);
+  if (sender.kind === "session") {
+    const senderIds = [sender.session_id, sender.native_id].filter((v): v is string => !!v);
+    const parentIds = [row.parent_session_id, row.spawned_from_session_id].filter(
+      (v): v is string => !!v,
+    );
+    if (!parentIds.some((parentId) => senderIds.includes(parentId))) {
+      throw new ForbiddenError(
+        "Only the session that started this session (or one of its ancestors) can steer, interrupt or stop it; queue a message instead",
+      );
+    }
+  }
+  const messages = new SessionMessageStore(getSqlite());
+  for (const message of messages.queued(row.id)) messages.cancel(message.id);
+  signalLiveSessionProcess(row, signalDeps);
+  getSqlite()
+    .query("UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?")
+    .run(row.id);
+  changes.publish("sessions");
+  return chatStatus(row.id);
 }
 
 function nativeRun(target: ChatTarget): [string, ChatRun] | undefined {

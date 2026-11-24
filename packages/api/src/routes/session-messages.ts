@@ -22,12 +22,12 @@ import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
 import {
   deliverSessionMessageNow,
-  requireAncestor,
   sendToSession,
   sessionLineage,
   sessionSubagents,
 } from "../sessions/control.js";
-import { chatStatus, spawnChat, stopChat } from "./chat.js";
+import { resolveSessionRef } from "../sessions/resolve.js";
+import { chatStatus, spawnChat, stopSession } from "./chat.js";
 
 const app = createRouter();
 app.use("/session-messages/*", bodyLimit({ maxSize: 20000 }));
@@ -255,12 +255,13 @@ app.openapi(
   }),
   (c) => {
     const id = c.req.valid("param").id;
-    const ids = new Set([id]);
-    try {
-      const sender = store().resolveSender(id, "session");
-      if (sender.session_id) ids.add(sender.session_id);
-      if (sender.native_id) ids.add(sender.native_id);
-    } catch {}
+    const resolved = resolveSessionRef(id);
+    const ids = new Set<string>([id]);
+    if (resolved) {
+      for (const candidate of [resolved.chatId, resolved.liveId, resolved.nativeId]) {
+        if (candidate) ids.add(candidate);
+      }
+    }
     return c.json(
       {
         sessions: new ChatStore(getSqlite())
@@ -429,11 +430,8 @@ app.openapi(
   }),
   (c) => {
     const id = c.req.valid("param").id;
-    chatStatus(id);
     const sender = caller(c.req.header("X-ORC-Session"));
-    requireAncestor(sender, id);
-    stopChat(id, c.req.valid("query").cascade === "true", sender.session_id ?? null);
-    return c.json(chatStatus(id), 200);
+    return c.json(stopSession(id, c.req.valid("query").cascade === "true", sender), 200);
   },
 );
 

@@ -1,12 +1,13 @@
 #!/usr/bin/env bun
 import { existsSync, statSync } from "node:fs";
 import { globalConfigPath, loadConfig } from "@orc/core/config";
+import { getLogFilePath } from "@orc/core/logger";
 import { ORC_VERSION } from "@orc/core/version";
 import { Command } from "commander";
 import { agentCommand, agentPackageCommand } from "./commands/agent.js";
 import { attentionCommand } from "./commands/attention.js";
 import { channelsCommand } from "./commands/channels.js";
-import { daemonCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
+import { daemonCommand, logsCommand, ORC_HOME, ORC_PID, readDaemonPid } from "./commands/daemon.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { flowCommand } from "./commands/flow.js";
 import { jobCommand } from "./commands/job.js";
@@ -74,6 +75,7 @@ program.addCommand(padCommand());
 program.addCommand(jobCommand());
 program.addCommand(sessionCommand());
 program.addCommand(daemonCommand());
+program.addCommand(logsCommand());
 program.addCommand(channelsCommand());
 program.addCommand(skillCommand());
 program.addCommand(agentCommand());
@@ -105,6 +107,7 @@ program
       { label: "DB", path: config.db.path },
       { label: "config", path: globalConfigPath() },
       { label: "pid", path: ORC_PID },
+      { label: "orc log", path: getLogFilePath() },
       { label: "daemon log", path: `${ORC_HOME}/daemon.log` },
     ];
 
