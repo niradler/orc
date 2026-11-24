@@ -1,11 +1,23 @@
 import type { HumanRequest } from "@orc/core/human-requests";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { ApiError, api } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  COMMAND_ARGUMENT_MANUAL,
+  commandArgumentFromPicker,
+  commandArgumentPickerValue,
+} from "@/lib/secret-ui";
 
 export type CommandRequestDraft = {
   script: string;
@@ -25,6 +37,13 @@ export function CommandRequestForm({
   onDraftChange?: (update: Partial<CommandRequestDraft>) => void;
 }) {
   const spec = request.input.command;
+  const projectId = request.input.project_id;
+  const secretsQuery = useQuery({
+    queryKey: ["project-secrets", projectId],
+    queryFn: () => api.projectSecrets.list(projectId ?? ""),
+    enabled: Boolean(projectId),
+  });
+  const savedSecrets = secretsQuery.data?.secrets ?? [];
   const [localDraft, setLocalDraft] = useState<CommandRequestDraft>({
     script:
       request.response?.kind === "command"
@@ -123,49 +142,86 @@ export function CommandRequestForm({
         </div>
         <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2">
           {pending &&
-            spec.arguments.map((arg) => (
-              <label
-                htmlFor={`argument-${request.id}-${arg.name}`}
-                className="block min-w-0 space-y-1 text-xs"
-                key={arg.name}
-              >
-                <span className="flex flex-wrap items-baseline gap-x-2">
-                  <span>
-                    {arg.label}
-                    {!arg.required ? " (optional)" : ""}
+            spec.arguments.map((arg) => {
+              const value = values[arg.name] ?? "";
+              const isSavedRef = commandArgumentPickerValue(value) !== COMMAND_ARGUMENT_MANUAL;
+              const inputId = `argument-${request.id}-${arg.name}`;
+              return (
+                <div className="block min-w-0 space-y-1 text-xs" key={arg.name}>
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <label htmlFor={inputId}>
+                      {arg.label}
+                      {!arg.required ? " (optional)" : ""}
+                    </label>
+                    <code
+                      data-testid={`attention-argument-name-${arg.name}`}
+                      className="break-all font-mono text-xs text-muted-foreground"
+                    >
+                      {`ORC_INPUT_${arg.name}`}
+                    </code>
                   </span>
-                  <code
-                    data-testid={`attention-argument-name-${arg.name}`}
-                    className="break-all font-mono text-xs text-muted-foreground"
-                  >
-                    {`ORC_INPUT_${arg.name}`}
-                  </code>
-                </span>
-                <Input
-                  id={`argument-${request.id}-${arg.name}`}
-                  type="password"
-                  autoComplete="off"
-                  data-testid={`attention-argument-${arg.name}`}
-                  value={values[arg.name] ?? ""}
-                  required={arg.required}
-                  maxLength={16000}
-                  aria-describedby={
-                    arg.description ? `argument-help-${request.id}-${arg.name}` : undefined
-                  }
-                  onChange={(event) =>
-                    setValues((previous) => ({ ...previous, [arg.name]: event.target.value }))
-                  }
-                />
-                {arg.description && (
-                  <span
-                    id={`argument-help-${request.id}-${arg.name}`}
-                    className="block text-muted-foreground"
-                  >
-                    {arg.description}
-                  </span>
-                )}
-              </label>
-            ))}
+                  {savedSecrets.length > 0 && (
+                    <Select
+                      value={commandArgumentPickerValue(value)}
+                      onValueChange={(next) =>
+                        setValues((previous) => ({
+                          ...previous,
+                          [arg.name]: commandArgumentFromPicker(next),
+                        }))
+                      }
+                    >
+                      <SelectTrigger
+                        data-testid={`attention-argument-secret-${arg.name}`}
+                        aria-label={`Use a saved secret for ${arg.label}`}
+                        className="min-h-11 w-full sm:min-h-8 [@media(pointer:coarse)]:min-h-11"
+                      >
+                        <SelectValue placeholder="Use a saved secret" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={COMMAND_ARGUMENT_MANUAL}>Type a value</SelectItem>
+                        {savedSecrets.map((secret) => (
+                          <SelectItem key={secret.reference} value={secret.reference}>
+                            {secret.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {isSavedRef ? (
+                    <p
+                      data-testid={`attention-argument-ref-${arg.name}`}
+                      className="wrap-anywhere rounded-sm bg-surface px-2 py-1.5 font-mono text-xs text-muted-foreground"
+                    >
+                      {value}
+                    </p>
+                  ) : (
+                    <Input
+                      id={inputId}
+                      type="password"
+                      autoComplete="off"
+                      data-testid={`attention-argument-${arg.name}`}
+                      value={value}
+                      required={arg.required}
+                      maxLength={16000}
+                      aria-describedby={
+                        arg.description ? `argument-help-${request.id}-${arg.name}` : undefined
+                      }
+                      onChange={(event) =>
+                        setValues((previous) => ({ ...previous, [arg.name]: event.target.value }))
+                      }
+                    />
+                  )}
+                  {arg.description && (
+                    <span
+                      id={`argument-help-${request.id}-${arg.name}`}
+                      className="block text-muted-foreground"
+                    >
+                      {arg.description}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
         </div>
         {(pending || run.isPending || request.status === "running") && (
           <div className="flex flex-wrap items-center gap-1">
@@ -183,8 +239,8 @@ export function CommandRequestForm({
             </Button>
             {pending && actions}
             <HelpPopover label="Secure input handling" testId="attention-input-help">
-              All entered values are used only for this run and redacted from its output. The agent
-              receives the result without the raw inputs.
+              Typed values and picked saved secrets are used only for this run and redacted from its
+              output. The agent receives the result without the raw inputs.
             </HelpPopover>
           </div>
         )}

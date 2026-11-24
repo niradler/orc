@@ -20,6 +20,16 @@ Use the execution host's shell syntax for environment variables, for example
 `my-cli login --password "$env:ORC_INPUT_PASSWORD"` in PowerShell.
 Do not include secrets in the tool call, script, prompt or argument labels.
 
+When the request belongs to a project with saved secrets, each argument also offers
+a **Use a saved secret** picker. Choosing one supplies the `project/<name>` reference
+instead of a typed value; ORC resolves it to the stored value at Run time, injects it
+as `ORC_INPUT_<name>`, updates the secret's `last_used_at`, and redacts it from output
+exactly like a typed value. The reference is shown in the field (it is not secret);
+the stored value is never displayed or returned to the agent. A request without a
+project cannot use saved references and fails the Run with a clear error if one is
+supplied. Manage saved secrets in **Settings → Secrets**; see
+[Human requests](./human-requests.md).
+
 The request does not execute anything. Notifications show compact rows; opening a
 request reveals its purpose, host/folder, exact command and input descriptions.
 The command is read-only until **Edit command** is selected. The user fills the

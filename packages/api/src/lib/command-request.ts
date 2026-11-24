@@ -3,6 +3,8 @@ import { ConflictError, ValidationError } from "@orc/core/errors";
 import { expandHostPath, hostBinary, hostExec, hostIsDirectory } from "@orc/core/exec-host";
 import { CommandRunSchema, type HumanRequest } from "@orc/core/human-requests";
 import { getRegisteredSecrets } from "@orc/core/secret-redactor";
+import { getSqlite } from "@orc/db/client";
+import { resolveProjectSecretEnv } from "@orc/db/project-secrets";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps } from "../terminals/service.js";
 import { commandShell } from "./command-shell.js";
@@ -67,6 +69,10 @@ export async function prepareCommand(request: HumanRequest, raw: unknown) {
   const bun = await hostBinary(host, "bun");
   if (!bun) throw new ValidationError("Command execution requires Bun on the selected host");
   const shell = commandShell(await launchDeps(config, host));
+  // An argument may carry a project/<name> reference instead of a typed value;
+  // resolve it here so a missing project or secret fails the Run with a clear
+  // error, and the real value only ever travels on stdin to the redacted exec.
+  const resolved = resolveProjectSecretEnv(getSqlite(), request.input.project_id, run.values);
   return {
     execute: async () => {
       try {
@@ -75,8 +81,8 @@ export async function prepareCommand(request: HumanRequest, raw: unknown) {
             script: run.script,
             cwd,
             shell,
-            values: run.values,
-            extraSecrets: getRegisteredSecrets(),
+            values: resolved.env,
+            extraSecrets: [...getRegisteredSecrets(), ...resolved.secrets],
             timeout: spec.timeout_seconds,
           }),
           timeoutMs: (spec.timeout_seconds + 10) * 1000,

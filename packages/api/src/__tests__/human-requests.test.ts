@@ -530,3 +530,74 @@ test("should snooze and unsnooze pending requests, exclude them from unread coun
   });
   expect(rejectNonPending.status).toBe(409);
 });
+
+test("should resolve a saved project secret for a command argument, inject and redact it, and fail closed without a project", async () => {
+  const cwd = tempDir("orc-command-ref-");
+  const project = await (await req(app, "POST", "/projects", { name: "command-ref-proj" })).json<{
+    id: string;
+  }>();
+  const secretValue = "sk-command-ref-secret-3131";
+  expect(
+    (
+      await req(app, "POST", `/projects/${project.id}/secrets`, {
+        name: "deploy-token",
+        value: secretValue,
+      })
+    ).status,
+  ).toBe(201);
+
+  const entry = await (
+    await req(app, "POST", "/human-requests", {
+      kind: "command",
+      project_id: project.id,
+      prompt: "Run with a saved secret",
+      origin: { backend: "test", session_id: "command-ref", request_id: "command-ref-1" },
+      command: {
+        host: null,
+        cwd,
+        script: "true",
+        arguments: [{ name: "TOKEN", label: "Deploy token" }],
+      },
+    })
+  ).json<HumanRequest>();
+
+  const script =
+    process.platform === "win32"
+      ? '[Console]::Out.Write("LEN=" + ($env:ORC_INPUT_TOKEN).Length + " RAW=" + $env:ORC_INPUT_TOKEN)'
+      : 'printf "LEN=%s RAW=%s" "$(printf %s "$ORC_INPUT_TOKEN" | wc -c | tr -d " ")" "$ORC_INPUT_TOKEN"';
+  const runRes = await req(app, "POST", `/human-requests/${entry.id}/run`, {
+    version: entry.version,
+    script,
+    values: { TOKEN: "project/deploy-token" },
+  });
+  expect(runRes.status).toBe(200);
+  const completed = await runRes.json<HumanRequest>();
+  expect(completed.response).toMatchObject({ kind: "command", exit_code: 0 });
+  if (completed.response?.kind === "command") {
+    expect(completed.response.stdout).toContain(`LEN=${secretValue.length}`);
+    expect(completed.response.stdout).toContain("RAW=[REDACTED]");
+    expect(completed.response.stdout).not.toContain(secretValue);
+  }
+  const stored = getSqlite().query("SELECT * FROM human_requests WHERE id=?").get(entry.id);
+  expect(JSON.stringify(stored)).not.toContain(secretValue);
+  const listed = await (await req(app, "GET", `/projects/${project.id}/secrets`)).json<{
+    secrets: { last_used_at: string | null }[];
+  }>();
+  expect(listed.secrets[0]?.last_used_at).not.toBeNull();
+
+  // A command request without a project cannot resolve a reference: fail closed.
+  const noProject = await (
+    await req(app, "POST", "/human-requests", {
+      kind: "command",
+      prompt: "No project",
+      origin: { backend: "test", session_id: "command-ref", request_id: "command-ref-2" },
+      command: { host: null, cwd, script: "true", arguments: [{ name: "TOKEN", label: "Token" }] },
+    })
+  ).json<HumanRequest>();
+  const failRes = await req(app, "POST", `/human-requests/${noProject.id}/run`, {
+    version: noProject.version,
+    script: "true",
+    values: { TOKEN: "project/deploy-token" },
+  });
+  expect(failRes.status).toBe(400);
+});
