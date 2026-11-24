@@ -18,10 +18,23 @@ const makeTempDir = () => {
   return dir;
 };
 
-afterEach(() => {
+afterEach(async () => {
   resetRedactedSecrets();
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+  // sqlite.close() stops the fs-watch tracker, but Windows lags the handle
+  // release. Bun ignores rmSync maxRetries, so retry like changes.test.ts does.
+  Bun.gc(true);
+  for (const dir of tempDirs.splice(0)) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 100) throw error;
+        await Bun.sleep(100);
+      }
+    }
+  }
+}, 15_000);
 
 describe("project_secrets migration and store", () => {
   test("migrates an existing database without project_secrets cleanly without data loss", () => {
