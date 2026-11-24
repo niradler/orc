@@ -224,9 +224,7 @@ function parseLogLine(raw: string, source: "orc" | "daemon"): LogEntry | null {
         ...(typeof parsed.data === "string" ? { data: parsed.data } : {}),
         source,
       };
-    } catch {
-      // fall through to plain-text parsing
-    }
+    } catch {}
   }
   const clean = stripVTControlCharacters(trimmed);
   const matched = clean.match(STDERR_LOG_PATTERN);

@@ -20,7 +20,12 @@ import { getSqlite } from "@orc/db/client";
 import { SessionMessageStore } from "@orc/db/session-messages";
 import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
-import { sendToSession, sessionLineage, sessionSubagents } from "../sessions/control.js";
+import {
+  deliverSessionMessageNow,
+  sendToSession,
+  sessionLineage,
+  sessionSubagents,
+} from "../sessions/control.js";
 import { resolveSessionRef } from "../sessions/resolve.js";
 import { chatStatus, spawnChat, stopSession } from "./chat.js";
 
@@ -168,6 +173,18 @@ app.openapi(
   },
 );
 
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/session-messages/{id}/deliver",
+    tags: ["Sessions"],
+    summary: "Steer a queued session message into the active turn now",
+    request: { params },
+    responses: message,
+  }),
+  async (c) => c.json(await deliverSessionMessageNow(c.req.valid("param").id), 200),
+);
+
 function callerSession(identifier: string | undefined): string {
   if (!identifier)
     throw new ValidationError("Pass X-ORC-Session with the calling session id to start sessions");
@@ -239,18 +256,17 @@ app.openapi(
   (c) => {
     const id = c.req.valid("param").id;
     const resolved = resolveSessionRef(id);
-    const ids = resolved
-      ? [
-          ...new Set(
-            [id, resolved.chatId, resolved.liveId, resolved.nativeId].filter(
-              (v): v is string => !!v,
-            ),
-          ),
-        ]
-      : [id];
+    const ids = new Set<string>([id]);
+    if (resolved) {
+      for (const candidate of [resolved.chatId, resolved.liveId, resolved.nativeId]) {
+        if (candidate) ids.add(candidate);
+      }
+    }
     return c.json(
       {
-        sessions: new ChatStore(getSqlite()).children(ids).map((child) => chatStatus(child.id)),
+        sessions: new ChatStore(getSqlite())
+          .children([...ids])
+          .map((child) => chatStatus(child.id)),
       },
       200,
     );

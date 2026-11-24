@@ -30,6 +30,7 @@ test("requires auth for the session message inbox", async () => {
     ["POST", "/sessions/live/session-a/messages"],
     ["POST", "/session-messages/missing/cancel"],
     ["POST", "/session-messages/missing/move"],
+    ["POST", "/session-messages/missing/deliver"],
   ] as const)
     expect((await app.request(`/api${path}`, { method })).status).toBe(401);
 });
@@ -47,6 +48,12 @@ test("queues, lists, reorders and cancels a human message", async () => {
     state: "queued",
   });
   expect(result.target).toMatchObject({ session_id: "session-b", delivery: "hook" });
+  expect(result.receipt).toMatchObject({ status: "queued" });
+  expect(result.receipt?.note).toContain("Do not poll");
+
+  expect((await req(app, "POST", `/session-messages/${result.message.id}/deliver`)).status).toBe(
+    409,
+  );
 
   const second = await (
     await req(app, "POST", "/sessions/live/session-b/messages", { body: "Second note" })

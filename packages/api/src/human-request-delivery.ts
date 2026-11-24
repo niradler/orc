@@ -6,6 +6,7 @@ import { loadConfig } from "@orc/core/config";
 import { execHostFor, hostRuntime } from "@orc/core/exec-host";
 import type { HumanRequest } from "@orc/core/human-requests";
 import { createLogger } from "@orc/core/logger";
+import type { SessionDelivery } from "@orc/core/session-messages";
 import { getDb, getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { gateway_sessions } from "@orc/db/schema";
@@ -16,6 +17,7 @@ import { codexWriterOwned } from "./sessions/ownership.js";
 import {
   activeTurns,
   type ChatTarget,
+  type ChatTurnOptions,
   chatControl,
   runChatTurn,
   turnKey,
@@ -43,7 +45,7 @@ export type DeliveryDeps = {
   idle(target: PushTarget): Promise<boolean>;
   resumed(target: PushTarget): Promise<void>;
   backend(name: string): AgentBackend;
-  chatTurn(target: PushTarget, prompt: string): Promise<void> | null;
+  chatTurn(target: PushTarget, prompt: string, options?: ChatTurnOptions): Promise<void> | null;
 };
 
 function nativeBackend(name: string): string {
@@ -225,6 +227,7 @@ export async function runTurn(
     interactive: false,
     model: target.model ?? undefined,
     orcMcp: true,
+    orcPreviewSessionId: target.threadId ?? target.sourceId,
     orcMcpMode: loadConfig().mcp.default_mode,
     acpxAgent: target.agent,
     acpxNativeSessionId: target.backend === "acpx" ? target.runtimeId : undefined,
@@ -307,6 +310,7 @@ async function steer(
 export type DeliveryBatch<T> = {
   claim(): T[];
   prompt(items: T[]): string;
+  deliveries?(items: T[]): SessionDelivery[];
   delivered(items: T[], via: "chat" | "resume"): void;
   failed(items: T[], error: string): void;
   changed(): void;
@@ -333,7 +337,8 @@ export async function deliverWhenIdle<T>(
     if (!claimed.length) return;
     batch.changed();
     const prompt = batch.prompt(claimed);
-    const inChat = deps.chatTurn(target, prompt);
+    const deliveries = batch.deliveries?.(claimed);
+    const inChat = deps.chatTurn(target, prompt, deliveries?.length ? { deliveries } : undefined);
     if (inChat) await inChat;
     else {
       await runTurn(deps, target, prompt);

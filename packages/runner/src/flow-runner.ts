@@ -1601,49 +1601,50 @@ async function startNodeSession(nodeRun: NodeRunRow, claims: string[]): Promise<
   }
 
   const now = new Date();
-  await getDb()
-    .insert(gateway_sessions)
-    .values({
-      id: sessionId,
-      chat_id: "__task-loop__",
-      backend: backendName,
-      execution_host: executionHost,
-      mode: `agent:${backendName}`,
-      cwd,
-      title: `${loaded.def.name}/${nodeRun.node_id}: ${task.title}`,
-      status: "running",
-      auto_approve: loadConfig().agent_loop.worker_auto_approve,
-      task_id: task.id,
-      role: node.role ?? "worker",
-      pid: process.pid,
-      project_id: task.project_id,
-      ...(model ? { model } : {}),
-      review_rounds: 0,
-      created_at: now,
-      updated_at: now,
-    });
+  startingSessions.set(sessionId, Date.now());
+  try {
+    await getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: sessionId,
+        chat_id: "__task-loop__",
+        backend: backendName,
+        execution_host: executionHost,
+        mode: `agent:${backendName}`,
+        cwd,
+        title: `${loaded.def.name}/${nodeRun.node_id}: ${task.title}`,
+        status: "running",
+        auto_approve: loadConfig().agent_loop.worker_auto_approve,
+        task_id: task.id,
+        role: node.role ?? "worker",
+        pid: process.pid,
+        project_id: task.project_id,
+        ...(model ? { model } : {}),
+        review_rounds: 0,
+        created_at: now,
+        updated_at: now,
+      });
 
-  // Conditional claim: if another drain already took this node, drop the session
-  // row we just made and leave it alone.
-  const claimed = sqlite
-    .query(
-      "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = unixepoch() WHERE id = ? AND status = 'pending'",
-    )
-    .run(sessionId, nodeRun.id);
-  if (claimed.changes === 0) {
-    logger.debug(`Node run ${nodeRun.id} was already claimed; skipping`);
-    sqlite.query("DELETE FROM gateway_sessions WHERE id = ?").run(sessionId);
-    return false;
+    const claimed = sqlite
+      .query(
+        "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = unixepoch() WHERE id = ? AND status = 'pending'",
+      )
+      .run(sessionId, nodeRun.id);
+    if (claimed.changes === 0) {
+      startingSessions.delete(sessionId);
+      logger.debug(`Node run ${nodeRun.id} was already claimed; skipping`);
+      sqlite.query("DELETE FROM gateway_sessions WHERE id = ?").run(sessionId);
+      return false;
+    }
+
+    const runningStatus: TaskStatus =
+      node.task_status ?? (node.role === "reviewer" ? "review" : "doing");
+    await setTaskStatus(task.id, runningStatus, undefined, nodeRun.flow_run_id);
+  } catch (err) {
+    startingSessions.delete(sessionId);
+    throw err;
   }
 
-  // Now that an agent is really running, the node's declared status is honest.
-  // A node that declares none still must not leave the task looking `queued`
-  // while its session works, so fall back to the role's natural status.
-  const runningStatus: TaskStatus =
-    node.task_status ?? (node.role === "reviewer" ? "review" : "doing");
-  await setTaskStatus(task.id, runningStatus, undefined, nodeRun.flow_run_id);
-
-  startingSessions.set(sessionId, Date.now());
   driveNodeSession({
     sessionId,
     nodeRunId: nodeRun.id,
@@ -1977,60 +1978,60 @@ async function runCommandNode(nodeRun: NodeRunRow): Promise<boolean> {
  */
 async function retryNodeRun(nodeRunId: string, reason: string): Promise<boolean> {
   const sqlite = getSqlite();
-  const row = sqlite
-    .query("SELECT * FROM flow_node_runs WHERE id = ?")
-    .get(nodeRunId) as NodeRunRow | null;
-  if (!row) return false;
-
-  const loaded = loadRun(row.flow_run_id);
-  if (loaded?.state.status !== "running") return false;
-  if (!loaded.state.active.some((a) => a.nodeId === row.node_id && a.attempt === row.attempt)) {
-    return false;
-  }
-
-  // Retries are counted per graph visit, and numbered in their own coordinate —
-  // `attempt` belongs to the engine, which will hand out the next value itself
-  // when the graph next enters this node.
-  const retries = sqlite
-    .query(
-      "SELECT COALESCE(MAX(retry), 0) AS last FROM flow_node_runs WHERE flow_run_id = ? AND node_id = ? AND attempt = ?",
-    )
-    .get(row.flow_run_id, row.node_id, row.attempt) as { last: number };
-  const retriesUsed = retries.last;
   const maxRetries = loadConfig().agent_loop.max_node_retries;
-  if (retriesUsed >= maxRetries) return false;
 
-  sqlite
-    .query(
-      "UPDATE flow_node_runs SET status = 'failed', error = COALESCE(?, error), ended_at = unixepoch() WHERE id = ?",
-    )
-    .run(reason, nodeRunId);
+  const outcome = sqlite.transaction(() => {
+    const row = sqlite
+      .query("SELECT * FROM flow_node_runs WHERE id = ?")
+      .get(nodeRunId) as NodeRunRow | null;
+    if (row?.status !== "running") return null;
 
-  const nextRetry = retriesUsed + 1;
-  // Resume the native session when one exists: an infrastructure death (idle,
-  // lifetime, crash, daemon restart) loses the turn, not the conversation. The
-  // resumeSince prompt carries the ledger and new comments since that session.
-  const resumable = previousNodeSession(row.flow_run_id, row.node_id) !== null;
-  sqlite
-    .query(
-      `INSERT INTO flow_node_runs
-         (id, flow_run_id, task_id, node_id, node_kind, attempt, retry, status, skill_name, resume_session, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, unixepoch())`,
-    )
-    .run(
-      ulid(),
-      row.flow_run_id,
-      row.task_id,
-      row.node_id,
-      loaded.def.nodes[row.node_id]?.kind ?? "agent",
-      row.attempt,
-      nextRetry,
-      row.skill_name,
-      resumable ? 1 : 0,
-    );
+    const loaded = loadRun(row.flow_run_id);
+    if (loaded?.state.status !== "running") return null;
+    if (!loaded.state.active.some((a) => a.nodeId === row.node_id && a.attempt === row.attempt)) {
+      return null;
+    }
 
-  // No engine state changes: same visit, same `attempt`, so the eventual report
-  // still matches the active entry and the loop budget is untouched.
+    const retries = sqlite
+      .query(
+        "SELECT COALESCE(MAX(retry), 0) AS last FROM flow_node_runs WHERE flow_run_id = ? AND node_id = ? AND attempt = ?",
+      )
+      .get(row.flow_run_id, row.node_id, row.attempt) as { last: number };
+    const retriesUsed = retries.last;
+    if (retriesUsed >= maxRetries) return null;
+
+    const claimed = sqlite
+      .query(
+        "UPDATE flow_node_runs SET status = 'failed', error = COALESCE(?, error), ended_at = unixepoch() WHERE id = ? AND status = 'running'",
+      )
+      .run(reason, nodeRunId);
+    if (claimed.changes !== 1) return null;
+
+    const nextRetry = retriesUsed + 1;
+    const resumable = previousNodeSession(row.flow_run_id, row.node_id) !== null;
+    sqlite
+      .query(
+        `INSERT INTO flow_node_runs
+           (id, flow_run_id, task_id, node_id, node_kind, attempt, retry, status, skill_name, resume_session, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, unixepoch())`,
+      )
+      .run(
+        ulid(),
+        row.flow_run_id,
+        row.task_id,
+        row.node_id,
+        loaded.def.nodes[row.node_id]?.kind ?? "agent",
+        row.attempt,
+        nextRetry,
+        row.skill_name,
+        resumable ? 1 : 0,
+      );
+    return { row, nextRetry };
+  })();
+
+  if (!outcome) return false;
+  const { row, nextRetry } = outcome;
+
   await addTaskComment(
     row.task_id,
     `Node **${row.node_id}** was reclaimed (${reason}); retrying it (${nextRetry}/${maxRetries}).`,
@@ -2470,7 +2471,18 @@ function releaseClaimedTaskWithoutNode(taskId: string): void {
   });
 }
 
-export async function reconcileFlowNodeLiveness(
+let activeLivenessReconcile: Promise<number> | null = null;
+
+export function reconcileFlowNodeLiveness(opts: ReconcileLivenessOptions = {}): Promise<number> {
+  if (activeLivenessReconcile) return activeLivenessReconcile;
+  const run = reconcileFlowNodeLivenessUnlocked(opts).finally(() => {
+    if (activeLivenessReconcile === run) activeLivenessReconcile = null;
+  });
+  activeLivenessReconcile = run;
+  return run;
+}
+
+async function reconcileFlowNodeLivenessUnlocked(
   opts: ReconcileLivenessOptions = {},
 ): Promise<number> {
   const sqlite = getSqlite();
@@ -2481,15 +2493,20 @@ export async function reconcileFlowNodeLiveness(
 
   const runningSessions = sqlite
     .query(
-      `SELECT id, task_id, role, pid, last_activity_at, updated_at, created_at
+      `SELECT id, task_id, role, pid, execution_host, last_activity_at, updated_at, created_at
        FROM gateway_sessions
-       WHERE role IN ('worker', 'reviewer') AND status = 'running'`,
+       WHERE role IN ('worker', 'reviewer')
+         AND status = 'running'
+         AND (mode LIKE 'agent:%' OR EXISTS (
+           SELECT 1 FROM flow_node_runs fnr WHERE fnr.gateway_session_id = gateway_sessions.id
+         ))`,
     )
     .all() as {
     id: string;
     task_id: string | null;
     role: string;
     pid: number | null;
+    execution_host: string | null;
     last_activity_at: number | null;
     updated_at: number | null;
     created_at: number;
@@ -2504,7 +2521,9 @@ export async function reconcileFlowNodeLiveness(
       )
       .get(session.id) as { id: string; task_id: string; status: string } | null;
 
-    if (nodeRun && !["running", "pending", "awaiting_human"].includes(nodeRun.status)) {
+    if (nodeRun?.status === "awaiting_human") continue;
+
+    if (nodeRun && !["running", "pending"].includes(nodeRun.status)) {
       const updated = sqlite
         .query(
           "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ? AND status = 'running'",
@@ -2520,6 +2539,9 @@ export async function reconcileFlowNodeLiveness(
       }
       continue;
     }
+
+    const isRemote = !!session.execution_host && session.execution_host !== "local";
+    if (isRemote) continue;
 
     let reason: string | null = null;
     const latestTouch = Math.max(

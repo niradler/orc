@@ -1523,6 +1523,8 @@ export const api = {
       req<SessionMessage>("POST", `/session-messages/${encodeURIComponent(messageId)}/move`, {
         direction,
       }),
+    deliverMessage: (messageId: string) =>
+      req<SessionMessage>("POST", `/session-messages/${encodeURIComponent(messageId)}/deliver`),
   },
 
   skills: {

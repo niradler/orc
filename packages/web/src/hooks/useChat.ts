@@ -2081,6 +2081,7 @@ function toThreadMessage(message: ChatMessage): ThreadMessageLike {
           activity: message.activity,
           providerActivity: message.providerActivity,
           attachments: message.attachments,
+          deliveries: message.deliveries,
           content: message.content,
           turn: message.turn,
         },

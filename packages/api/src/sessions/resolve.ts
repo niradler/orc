@@ -45,15 +45,12 @@ function pickBestGateway(
 ): GatewayLookupId | null {
   let candidates = rows;
   if (backend) {
-    const filtered = candidates.filter((row) => backendMatches(row.backend, backend));
-    if (filtered.length) candidates = filtered;
+    candidates = candidates.filter((row) => backendMatches(row.backend, backend));
   }
   if (host !== undefined) {
-    const hostFiltered = candidates.filter(
-      (row) => (row.execution_host ?? null) === (host ?? null),
-    );
-    if (hostFiltered.length) candidates = hostFiltered;
+    candidates = candidates.filter((row) => (row.execution_host ?? null) === (host ?? null));
   }
+  if (!candidates.length) return null;
   candidates.sort((a, b) => {
     const liveA = a.chat_id === LIVE_CHAT_ID ? 0 : 1;
     const liveB = b.chat_id === LIVE_CHAT_ID ? 0 : 1;

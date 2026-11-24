@@ -9,6 +9,7 @@ import {
   type AgentSession,
   createBackend,
   registerBackend,
+  SteerNotConsumedError,
 } from "@orc/agent-runtime";
 import type { ChatEvent, ChatThread } from "@orc/core/chat";
 import { resetConfig, updateGlobalConfig } from "@orc/core/config";
@@ -30,6 +31,7 @@ type Turn = { prompt: string; steers: string[]; release: () => void; cwd: string
 
 let slow: Promise<void> = Promise.resolve();
 let failPreflight = false;
+let fakeBackend: () => AgentBackend;
 let app: ReturnType<typeof createApp>;
 let original: AgentBackend;
 const turns: Turn[] = [];
@@ -154,7 +156,7 @@ beforeAll(() => {
   });
   original = createBackend("claude");
   let count = 0;
-  registerBackend("claude", () => ({
+  fakeBackend = () => ({
     ...original,
     preflight: async () => {
       await slow;
@@ -162,7 +164,8 @@ beforeAll(() => {
     },
     startSession: async (opts) => fakeSession(opts.cwd, `native-${++count}`),
     resumeSession: async (id, opts) => fakeSession(opts.cwd, id),
-  }));
+  });
+  registerBackend("claude", fakeBackend);
 });
 
 afterAll(() => {
@@ -237,8 +240,22 @@ describe("agent session control", () => {
       )
     ).json<SessionMessageResult>();
     expect(steered.target.delivery).toBe("steer");
+    expect(steered.receipt).toMatchObject({ status: "steered" });
+    expect(steered.receipt?.note).toContain("Do not poll");
     expect(steered.message).toMatchObject({ state: "delivered", delivered_via: "steer" });
     expect(childTurn.steers.join("\n")).toContain("Also check the retry path");
+    const childThread = await (await req(app, "GET", `/chat/threads/${child.session_id}`)).json<{
+      messages: { role: string; deliveries?: { kind: string; summary: string }[] }[];
+    }>();
+    expect(
+      childThread.messages.some(
+        (m) =>
+          m.role === "user" &&
+          m.deliveries?.some(
+            (d) => d.kind === "relay" && d.summary.includes("Also check the retry path"),
+          ),
+      ),
+    ).toBe(true);
 
     const waiting = req(
       app,
@@ -252,18 +269,56 @@ describe("agent session control", () => {
     expect(waited).toMatchObject({ status: "idle", timed_out: false });
     expect(waited.last_message).toContain("done: child: fix the flaky");
 
-    const notice = await until(
-      () => parentTurn.steers.find((text) => text.includes("Fix flaky test")),
-      "parent steer",
+    const queuedNotice = await until(
+      async () =>
+        (await inbox(parent.id)).find((message) => message.sender_session_id === child.session_id),
+      "parent notice queued",
     );
-    expect(notice).toContain("finished");
-    expect(notice).toContain("done: child: fix the flaky");
-    const parentInbox = await inbox(parent.id);
-    expect(parentInbox[0]).toMatchObject({
+    expect(parentTurn.steers).toEqual([]);
+    expect(queuedNotice).toMatchObject({
       sender_kind: "system",
       sender_session_id: child.session_id,
+      state: "queued",
+      delivery: {
+        kind: "child_outcome",
+        session_id: child.session_id,
+        title: "Fix flaky test",
+        outcome: "finished",
+      },
+    });
+    expect(queuedNotice.body).toContain("done: child: fix the flaky");
+
+    const deliveredNow = await req(app, "POST", `/session-messages/${queuedNotice.id}/deliver`);
+    expect(deliveredNow.status).toBe(200);
+    expect(await deliveredNow.json()).toMatchObject({
+      id: queuedNotice.id,
+      state: "delivered",
       delivered_via: "steer",
     });
+    const steeredNotice = await until(
+      () => parentTurn.steers.find((text) => text.includes("Fix flaky test")),
+      "parent steer after deliver now",
+    );
+    expect(steeredNotice).toContain("Delivery is not approval");
+    expect(steeredNotice).toContain("done: child: fix the flaky");
+    const parentThread = await (await req(app, "GET", `/chat/threads/${parent.id}`)).json<{
+      messages: {
+        role: string;
+        deliveries?: { kind: string; session_id?: string | null; outcome?: string }[];
+      }[];
+    }>();
+    expect(
+      parentThread.messages.some(
+        (m) =>
+          m.role === "user" &&
+          m.deliveries?.some(
+            (d) =>
+              d.kind === "child_outcome" &&
+              d.session_id === child.session_id &&
+              d.outcome === "finished",
+          ),
+      ),
+    ).toBe(true);
 
     const lineage = await (
       await req(app, "GET", `/sessions/live/${parent.id}/lineage`)
@@ -517,10 +572,39 @@ describe("agent session control", () => {
     await turnFor("worker four");
     expect((await status(queued.session_id)).status).toBe("running");
     const notice = await until(
-      () => leadTurn.steers.find((text) => text.includes(first.session_id)),
+      async () =>
+        (await inbox(lead.id)).find((message) => message.sender_session_id === first.session_id),
       "lead notified",
     );
-    expect(notice).toContain(`[orc child-session id=${first.session_id} outcome=finished]`);
+    expect(leadTurn.steers).toEqual([]);
+    expect(notice.state).toBe("queued");
+    expect(notice.body).toContain(`[orc child-session id=${first.session_id} outcome=finished]`);
+
+    leadTurn.release();
+    await until(() => !chatControl().running(lead.id), "lead finished turn");
+    const delivering = deliverIdleSessionMessages();
+    const followup = await turnFor(`[orc child-session id=${first.session_id} outcome=finished]`);
+    expect(followup.prompt).toContain("Delivery is not approval");
+    followup.release();
+    await delivering;
+    const leadThread = await (await req(app, "GET", `/chat/threads/${lead.id}`)).json<{
+      messages: {
+        role: string;
+        deliveries?: { kind: string; session_id?: string | null; outcome?: string }[];
+      }[];
+    }>();
+    expect(
+      leadThread.messages.some(
+        (m) =>
+          m.role === "user" &&
+          m.deliveries?.some(
+            (d) =>
+              d.kind === "child_outcome" &&
+              d.session_id === first.session_id &&
+              d.outcome === "finished",
+          ),
+      ),
+    ).toBe(true);
 
     const stopped = await req(app, "POST", `/sessions/live/${lead.id}/stop`);
     expect(stopped.status).toBe(200);
@@ -729,6 +813,157 @@ describe("agent session control", () => {
     for (const turn of turns) turn.release();
     await req(app, "POST", `/sessions/live/${lead.id}/stop`);
   });
+
+  test("keeps queued messages waiting while parent holds a human approval prompt and rejects Deliver now with 409", async () => {
+    let releaseApproval = () => {};
+    let releaseTurn = () => {};
+    registerBackend("claude", () => ({
+      ...fakeBackend(),
+      startSession: async (opts) => {
+        const base = fakeSession(opts.cwd, `native-perm-${crypto.randomUUID()}`);
+        const approvalGate = new Promise<void>((resolve) => {
+          releaseApproval = resolve;
+        });
+        const turnGate = new Promise<void>((resolve) => {
+          releaseTurn = resolve;
+        });
+        return {
+          ...base,
+          respondPermission: () => releaseApproval(),
+          interrupt: async () => {
+            releaseApproval();
+            releaseTurn();
+          },
+          close: async () => {
+            releaseApproval();
+            releaseTurn();
+          },
+          async *events(): AsyncIterable<AgentEvent> {
+            yield {
+              type: "permission_request",
+              data: { requestId: "perm-1", tool: "bash", command: "rm -rf /tmp/x" },
+            };
+            await approvalGate;
+            yield { type: "text", data: "approved and finished" };
+            await turnGate;
+            yield { type: "result", data: { runtimeSessionId: base.id } };
+          },
+        };
+      },
+    }));
+    try {
+      const parent = await startParent("parent: needs human approval", repo);
+      await until(() => Boolean(chatControl().waiting(parent.id)), "parent waiting on approval");
+
+      const queued = await (
+        await req(app, "POST", `/sessions/live/${parent.id}/messages`, {
+          body: "Child completed while you wait",
+          mode: "queue",
+        })
+      ).json<SessionMessageResult>();
+      expect(queued.message.state).toBe("queued");
+
+      const deliverNow = await req(app, "POST", `/session-messages/${queued.message.id}/deliver`);
+      expect(deliverNow.status).toBe(409);
+      expect(turns.some((turn) => turn.prompt.includes("Child completed while you wait"))).toBe(
+        false,
+      );
+      expect((await inbox(parent.id)).find((m) => m.id === queued.message.id)?.state).toBe(
+        "queued",
+      );
+
+      const activeThread = await (
+        await req(app, "GET", `/chat/threads/${parent.id}`)
+      ).json<ChatThread>();
+      const runId = activeThread.turn?.runId;
+      expect(runId).toBeTruthy();
+      expect(
+        (
+          await req(app, "POST", `/chat/runs/${runId}/permission`, {
+            requestId: "perm-1",
+            decision: "approved",
+          })
+        ).status,
+      ).toBe(200);
+      releaseTurn();
+      await until(() => !chatControl().running(parent.id), "parent turn ended");
+      const delivering = deliverIdleSessionMessages();
+      const deliveryTurn = await turnFor("Child completed while you wait");
+      deliveryTurn.release();
+      await delivering;
+      expect((await inbox(parent.id)).find((m) => m.id === queued.message.id)?.state).toBe(
+        "delivered",
+      );
+      await until(async () => (await status(parent.id)).status === "idle", "parent idle");
+    } finally {
+      releaseApproval();
+      releaseTurn();
+      registerBackend("claude", fakeBackend);
+    }
+  });
+
+  test("marks STEER_UNCONFIRMED as failed without requeuing and releases SteerNotConsumedError back to queued", async () => {
+    let steerMode: "not-consumed" | "unconfirmed" = "not-consumed";
+    registerBackend("claude", () => ({
+      ...fakeBackend(),
+      startSession: async (opts) => {
+        const base = fakeSession(opts.cwd, `native-steer-err-${crypto.randomUUID()}`);
+        return {
+          ...base,
+          steer: async () => {
+            if (steerMode === "not-consumed") throw new SteerNotConsumedError();
+            throw new Error("transport dropped mid-steer");
+          },
+        };
+      },
+    }));
+    try {
+      const parent = await startParent("parent: steer error handling", repo);
+      const parentTurn = await turnFor("parent: steer error handling");
+      await until(
+        () => chatControl().canSteer({ threadId: parent.id }),
+        "parent steerable before steer errors",
+      );
+
+      steerMode = "not-consumed";
+      const soft = await (
+        await req(app, "POST", `/sessions/live/${parent.id}/messages`, {
+          body: "soft steer refusal",
+          mode: "steer",
+        })
+      ).json<SessionMessageResult>();
+      expect(soft.message.state).toBe("queued");
+      expect(soft.receipt?.status).toBe("queued");
+
+      const retryDeliver = await req(app, "POST", `/session-messages/${soft.message.id}/deliver`);
+      expect(retryDeliver.status).toBe(409);
+      expect((await inbox(parent.id)).find((m) => m.id === soft.message.id)?.state).toBe("queued");
+
+      steerMode = "unconfirmed";
+      const hardSend = await (
+        await req(app, "POST", `/sessions/live/${parent.id}/messages`, {
+          body: "hard steer failure",
+          mode: "steer",
+        })
+      ).json<SessionMessageResult>();
+      expect(hardSend.message.state).toBe("failed");
+      expect(hardSend.receipt?.status).toBe("failed");
+
+      const deliverUnconfirmed = await req(
+        app,
+        "POST",
+        `/session-messages/${soft.message.id}/deliver`,
+      );
+      expect(deliverUnconfirmed.status).toBe(409);
+      const afterUnconfirmed = (await inbox(parent.id)).find((m) => m.id === soft.message.id);
+      expect(afterUnconfirmed?.state).toBe("failed");
+
+      parentTurn.release();
+      await until(async () => (await status(parent.id)).status === "idle", "parent idle");
+    } finally {
+      registerBackend("claude", fakeBackend);
+    }
+  });
 });
 
 describe("child work rollup", () => {
@@ -823,7 +1058,7 @@ describe("child work rollup", () => {
       await until(async () => (await status(parent.id)).status === "stopped", "turn drained");
       expect((await status(parent.id)).stopping).toBe(false);
     } finally {
-      registerBackend("claude", () => wrapper);
+      registerBackend("claude", fakeBackend);
     }
   });
 });
@@ -1085,6 +1320,121 @@ describe("observable worker sessions (#533)", () => {
       expect(stoppedBody.status).toBe("stopped");
     } finally {
       sqlite.query("DELETE FROM gateway_sessions WHERE id IN (?, ?)").run(liveId, discoveryId);
+    }
+  });
+
+  test("stopSession never signals stopped, non-live, or non-matching OS processes", async () => {
+    const { signalLiveSessionProcess, stopSession } = await import("../routes/chat");
+    const kills: { pid: number; signal: NodeJS.Signals }[] = [];
+    const deps = {
+      alive: () => true,
+      inspectCommand: (pid: number) =>
+        pid === 424242 ? "/usr/local/bin/opencode acp" : "/usr/bin/vim",
+      kill: (pid: number, signal: NodeJS.Signals) => {
+        kills.push({ pid, signal });
+      },
+    };
+
+    expect(
+      signalLiveSessionProcess(
+        {
+          status: "stopped",
+          chat_id: "__live-sessions__",
+          pid: 424242,
+          execution_host: null,
+          backend: "opencode",
+        },
+        deps,
+      ),
+    ).toBe(false);
+    expect(
+      signalLiveSessionProcess(
+        {
+          status: "running",
+          chat_id: "__task-loop__",
+          pid: 424242,
+          execution_host: null,
+          backend: "opencode",
+        },
+        deps,
+      ),
+    ).toBe(false);
+    expect(
+      signalLiveSessionProcess(
+        {
+          status: "running",
+          chat_id: "__live-sessions__",
+          pid: 424243,
+          execution_host: null,
+          backend: "opencode",
+        },
+        deps,
+      ),
+    ).toBe(false);
+    expect(kills).toHaveLength(0);
+
+    const sqlite = getSqlite();
+    const id = `disc-pid-${crypto.randomUUID().slice(0, 8)}`;
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions
+           (id, chat_id, backend, mode, status, role, pid, runtime_session_id, title, cwd, created_at, updated_at, last_activity_at)
+         VALUES (?, '__live-sessions__', 'opencode', 'direct', 'running', 'worker', 424242, ?, 'Live OpenCode', ?, unixepoch(), unixepoch(), unixepoch())`,
+      )
+      .run(id, `ses_${id}`, repo);
+    try {
+      const stopped = stopSession(id, true, { kind: "human", label: "human" }, deps);
+      expect(stopped.status).toBe("stopped");
+      expect(kills).toEqual([{ pid: 424242, signal: "SIGTERM" }]);
+    } finally {
+      sqlite.query("DELETE FROM gateway_sessions WHERE id = ?").run(id);
+    }
+  });
+
+  test("resolveSessionRef enforces strict backend and execution_host filtering", async () => {
+    const { resolveSessionRef } = await import("../sessions/resolve");
+    const parent = await startParent("parent: strict resolve", repo);
+    const parentTurn = await turnFor("parent: strict resolve");
+    parentTurn.release();
+    await until(async () => (await status(parent.id)).status === "idle", "parent idle");
+
+    const thread = await (await req(app, "GET", `/chat/threads/${parent.id}`)).json<{
+      runtimeId: string | null;
+    }>();
+    const nativeId = thread.runtimeId as string;
+    const sqlite = getSqlite();
+    const wrongHostId = `host-${crypto.randomUUID().slice(0, 8)}`;
+    const wrongBackendId = `backend-${crypto.randomUUID().slice(0, 8)}`;
+
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions
+           (id, chat_id, backend, execution_host, mode, status, role, runtime_session_id, title, cwd, created_at, updated_at, last_activity_at)
+         VALUES (?, '__live-sessions__', 'claude', 'remote-box', 'direct', 'idle', 'worker', ?, 'Remote Session', ?, unixepoch(), unixepoch(), unixepoch())`,
+      )
+      .run(wrongHostId, nativeId, repo);
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions
+           (id, chat_id, backend, execution_host, mode, status, role, runtime_session_id, title, cwd, created_at, updated_at, last_activity_at)
+         VALUES (?, '__live-sessions__', 'opencode', NULL, 'direct', 'idle', 'worker', ?, 'Other Backend', ?, unixepoch(), unixepoch(), unixepoch())`,
+      )
+      .run(wrongBackendId, nativeId, repo);
+
+    try {
+      const resolvedThread = resolveSessionRef(parent.id);
+      expect(resolvedThread?.thread?.id).toBe(parent.id);
+      expect(resolvedThread?.gateway).toBeNull();
+
+      const resolvedCodex = resolveSessionRef(nativeId, { backend: "codex" });
+      expect(resolvedCodex).toBeNull();
+
+      const resolvedOpencode = resolveSessionRef(nativeId, { backend: "opencode" });
+      expect(resolvedOpencode?.gateway?.id).toBe(wrongBackendId);
+    } finally {
+      sqlite
+        .query("DELETE FROM gateway_sessions WHERE id IN (?, ?)")
+        .run(wrongHostId, wrongBackendId);
     }
   });
 });

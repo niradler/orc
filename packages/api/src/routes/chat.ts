@@ -61,7 +61,7 @@ import {
 } from "@orc/core/chat-context";
 import { chatTurnLeaseIsLive } from "@orc/core/chat-lease";
 import { ChatAgentOptionsMapSchema, unsupportedPermissionMode } from "@orc/core/chat-options";
-import { canonicalAgentId, supportsModelDiscovery } from "@orc/core/coding-agents";
+import { canonicalAgentId, codingAgent, supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import {
   ConflictError,
@@ -102,6 +102,7 @@ import { storeSessionFiles, uploadPrompt } from "@orc/core/session-files";
 import {
   SESSION_MESSAGE_HOP_LIMIT,
   SESSION_SPAWN_HOURLY_LIMIT,
+  type SessionDelivery,
   type SessionMessageSender,
   type SessionSpawn,
   type SessionStatus,
@@ -867,7 +868,12 @@ function steerable(
   );
 }
 
-async function steerRun(run: ChatRun, input: string, requestId: string): Promise<ChatThread> {
+async function steerRun(
+  run: ChatRun,
+  input: string,
+  requestId: string,
+  deliveries?: SessionDelivery[],
+): Promise<ChatThread> {
   if (run.permissions.size || run.questions.size)
     throw new ConflictError("Answer the pending prompt first. Queue a message instead.");
   if (!steerable(run))
@@ -896,6 +902,7 @@ async function steerRun(run: ChatRun, input: string, requestId: string): Promise
       id: requestId,
       role: "user",
       content: input,
+      ...(deliveries?.length ? { deliveries } : {}),
       timestamp: Date.now(),
       activity: [
         {
@@ -2690,6 +2697,7 @@ type TurnSetup = {
   continuation?: string | undefined;
   /** The turn continues on a fresh session and must say so in the transcript. */
   recoveryNotice?: boolean | undefined;
+  deliveries?: SessionDelivery[] | undefined;
   prepare?: () => Promise<SessionFile[]>;
 };
 
@@ -2827,9 +2835,13 @@ async function beginTurn(
     role: "user",
     content: input,
     ...(attachments.length ? { attachments } : {}),
+    ...(setup.deliveries?.length ? { deliveries: setup.deliveries } : {}),
     timestamp: Date.now(),
   });
-  if (thread.title === "New chat") thread.title = input.slice(0, 100);
+  if (thread.title === "New chat") {
+    const firstDelivery = setup.deliveries?.[0];
+    thread.title = (firstDelivery ? firstDelivery.title : input).slice(0, 100);
+  }
   const startedAt = Date.now();
   run.startedAt = startedAt;
   run.lastActivityAt = startedAt;
@@ -4106,10 +4118,89 @@ export function chatStatus(id: string): SessionStatus {
   };
 }
 
+function inspectLocalProcessCommand(pid: number): string | null {
+  try {
+    const command =
+      process.platform === "win32"
+        ? [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            `$p = Get-CimInstance Win32_Process -Filter "ProcessId=${pid}"; if ($p) { "$($p.Name) $($p.CommandLine)" }`,
+          ]
+        : ["ps", "-o", "comm=,args=", "-p", String(pid)];
+    const out = Bun.spawnSync(command, {
+      stdout: "pipe",
+      stderr: "ignore",
+      timeout: 1500,
+      windowsHide: true,
+    });
+    if (out.exitCode !== 0) return null;
+    const text = out.stdout.toString().trim();
+    return text || null;
+  } catch {
+    return null;
+  }
+}
+
+function backendProcessTokens(backend: string): string[] {
+  const canonical = canonicalAgentId(backend);
+  const agent = codingAgent(canonical);
+  return [
+    ...new Set(
+      [canonical, backend.toLowerCase(), ...(agent?.binaries ?? [])].filter((token) =>
+        Boolean(token),
+      ),
+    ),
+  ];
+}
+
+function commandMatchesBackend(commandLine: string, backend: string): boolean {
+  const lower = commandLine.toLowerCase();
+  return backendProcessTokens(backend).some((token) => {
+    const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[/\\\\\\s"'=])${escaped}(\\.exe)?($|[\\s"'\\/:])`, "i").test(lower);
+  });
+}
+
+export type SignalLiveProcessDeps = {
+  alive?: (pid: number) => boolean;
+  inspectCommand?: (pid: number) => string | null;
+  kill?: (pid: number, signal: NodeJS.Signals) => void;
+};
+
+export function signalLiveSessionProcess(
+  row: {
+    status: string;
+    chat_id: string;
+    pid: number | null;
+    execution_host: string | null;
+    backend: string;
+  },
+  deps: SignalLiveProcessDeps = {},
+): boolean {
+  if (row.status !== "running" || row.chat_id !== LIVE_CHAT_ID) return false;
+  if (!row.pid || row.pid <= 0 || row.pid === process.pid) return false;
+  if (row.execution_host && row.execution_host !== "local") return false;
+  const alive = deps.alive ?? isAlive;
+  if (!alive(row.pid)) return false;
+  const inspect = deps.inspectCommand ?? inspectLocalProcessCommand;
+  const command = inspect(row.pid);
+  if (!command || !commandMatchesBackend(command, row.backend)) return false;
+  try {
+    (deps.kill ?? ((pid, sig) => process.kill(pid, sig)))(row.pid, "SIGTERM");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function stopSession(
   id: string,
   cascade: boolean,
   sender: SessionMessageSender,
+  signalDeps?: SignalLiveProcessDeps,
 ): SessionStatus {
   const resolved = resolveSessionRef(id);
   if (!resolved) throw new NotFoundError("Session", id);
@@ -4147,13 +4238,7 @@ export function stopSession(
   }
   const messages = new SessionMessageStore(getSqlite());
   for (const message of messages.queued(row.id)) messages.cancel(message.id);
-  if (row.pid && !row.execution_host && row.pid !== process.pid && isAlive(row.pid)) {
-    try {
-      process.kill(row.pid, "SIGTERM");
-    } catch {
-      // Process may have exited between check and signal.
-    }
-  }
+  signalLiveSessionProcess(row, signalDeps);
   getSqlite()
     .query("UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ?")
     .run(row.id);
@@ -4168,7 +4253,7 @@ function nativeRun(target: ChatTarget): [string, ChatRun] | undefined {
 }
 
 registerChatControl({
-  turn: (target, prompt) => {
+  turn: (target, prompt, options) => {
     const thread =
       "threadId" in target
         ? store().get(target.threadId)
@@ -4176,16 +4261,18 @@ registerChatControl({
             .byRuntime(target.backend, target.host, target.runtimeId)
             .sort((a, b) => b.updatedAt - a.updatedAt)[0];
     if (!thread || thread.spawnedBy?.prompt || threadRun(thread.id) || runs.size >= 4) return null;
-    return beginTurn(thread, prompt, { reserved: true }).then(({ done }) => done);
+    return beginTurn(thread, prompt, { reserved: true, deliveries: options?.deliveries }).then(
+      ({ done }) => done,
+    );
   },
   canSteer: (target) => {
     const run = nativeRun(target)?.[1];
     return steerable(run) && run.steering.size < STEER_LIMIT;
   },
-  steer: async (target, text) => {
+  steer: async (target, text, options) => {
     const run = nativeRun(target)?.[1];
     if (!steerable(run) || run.steering.size >= STEER_LIMIT) return false;
-    await steerRun(run, text, crypto.randomUUID());
+    await steerRun(run, text, crypto.randomUUID(), options?.deliveries);
     return true;
   },
   stop: (threadId) => {

@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { instanceId, registerShutdownHook } from "@orc/api/lifecycle";
 import {
   configuredApiSecret,
@@ -398,7 +398,7 @@ export async function stopDaemon(pid: number, options: StopDaemonOptions): Promi
 }
 
 export function openDaemonLogFd(logPath: string = ORC_LOG): number {
-  mkdirSync(join(ORC_HOME, "logs"), { recursive: true });
+  mkdirSync(dirname(logPath), { recursive: true });
   return openSync(logPath, "a");
 }
 
@@ -678,9 +678,7 @@ export function logsCommand() {
               signal: AbortSignal.timeout(5000),
             });
             if (res.ok) result = (await res.json()) as ReadLogsResult;
-          } catch {
-            // Fall back to reading local log files directly when the daemon is unreachable.
-          }
+          } catch {}
         }
         result ??= readRecentLogs({
           lines,
