@@ -83,7 +83,7 @@ test("should expire and physically clean alerts without recreating old events", 
     "CREATE TABLE underlying_requests(id TEXT); INSERT INTO underlying_requests VALUES ('1');",
   );
   advance();
-  expect(store.list()).toEqual({ notifications: [], unread: 0, has_more: false });
+  expect(store.list()).toEqual({ notifications: [], snoozed: [], unread: 0, has_more: false });
   expect(db.query("SELECT count(*) AS total FROM notifications").get()).toEqual({ total: 0 });
   expect(db.query("SELECT count(*) AS total FROM underlying_requests").get()).toEqual({ total: 1 });
   expect(store.publish(input)).toBeNull();
@@ -188,7 +188,12 @@ test("should hide legacy duplicates immediately and physically drain them within
   expect(store.cleanup(2)).toBe(2);
   expect(db.query("SELECT count(*) AS count FROM notifications").get()).toEqual({ count: 1004 });
   store.update(latest.id, { read: true });
-  expect(store.list(50, 0, true)).toEqual({ notifications: [], unread: 0, has_more: false });
+  expect(store.list(50, 0, true)).toEqual({
+    notifications: [],
+    snoozed: [],
+    unread: 0,
+    has_more: false,
+  });
   expect(db.query("SELECT count(*) AS count FROM notifications").get()).toEqual({ count: 4 });
   expect(store.list().notifications.map((item) => item.id)).toEqual([latest.id]);
   expect(db.query("SELECT count(*) AS count FROM notifications").get()).toEqual({ count: 1 });

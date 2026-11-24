@@ -11,7 +11,11 @@ import type { ChatAnalytics } from "@orc/core/chat-analytics";
 import type { TerminalLaunchOptions } from "@orc/core/chat-options";
 import type { PreviewFile, PreviewRequest } from "@orc/core/desktop-preview";
 import type { GithubSyncState } from "@orc/core/github-sync";
-import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
+import type {
+  HumanRequest,
+  HumanRequestSnoozeInput,
+  HumanResponse,
+} from "@orc/core/human-requests";
 import type {
   KbComment,
   KbCommentClose,
@@ -829,6 +833,13 @@ export const api = {
       }),
     cancel: (id: string, version: number) =>
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/cancel`, { version }),
+    snooze: (id: string, input: HumanRequestSnoozeInput) =>
+      req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/snooze`, input),
+    unsnooze: (id: string, version?: number) =>
+      req<HumanRequest>(
+        "DELETE",
+        `/human-requests/${encodeURIComponent(id)}/snooze${version === undefined ? "" : `?version=${version}`}`,
+      ),
   },
   chat: {
     capabilities: (agent: string, threadId?: string) =>

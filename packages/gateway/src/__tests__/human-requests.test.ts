@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
+import { changes } from "@orc/core/changes";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { HumanRequestChannels } from "../human-requests.js";
 import type { GatewayAdapter, IncomingMessage } from "../types.js";
@@ -217,6 +218,82 @@ test("should retry failed sends, bind Slack threads, and require full review for
     expect(channels.reply({ ...message, threadId: "thread" })).toContain("Response saved");
     expect(store.get(request.id).response).toEqual({ kind: "approval", approved: false });
     expect(store.get(oversized.id).status).toBe("pending");
+  } finally {
+    db.close();
+  }
+});
+
+test("should suppress channel reminders while snoozed, allow early channel answer to clear snooze, and support channel snooze command", async () => {
+  const db = new Database(":memory:");
+  let now = 100_000;
+  try {
+    const store = new HumanRequestStore(db, () => now);
+    const sent: string[] = [];
+    const adapter: GatewayAdapter = {
+      platform: "telegram",
+      send: async (_id, text) => {
+        sent.push(text);
+        return "msg";
+      },
+    };
+    const adapters = new Map([["telegram", adapter]]);
+    const targets = [{ platform: "telegram", chat_id: "nir", project_id: null, thread_id: null }];
+    const channels = new HumanRequestChannels(store);
+
+    // Snoozed before channel notify: reminder is suppressed until snooze ends.
+    const suppressed = store.create({
+      origin: { session_id: "s1", backend: "codex", request_id: "suppressed" },
+      kind: "question",
+      prompt: "Quiet while snoozed?",
+      notify: ["telegram"],
+    });
+    store.snooze(suppressed.id, suppressed.version, now + 3_600_000);
+    await channels.notify(adapters, targets);
+    expect(sent).toHaveLength(0);
+
+    // Once due and woken, channel sends reminder once.
+    now += 3_600_000;
+    store.wakeDueSnoozes();
+    await channels.notify(adapters, targets);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("Quiet while snoozed?");
+
+    // Channel snooze command snoozes it and publishes change events; early channel reply still answers & clears snooze.
+    const published: string[][] = [];
+    const unsubscribe = changes.subscribe(({ resources }) => published.push([...resources]));
+    try {
+      expect(
+        channels.reply({
+          platform: "telegram",
+          chatId: "nir",
+          userId: "nir",
+          text: `/attention ${suppressed.id} 1 snooze 1h`,
+        }),
+      ).toContain("snoozed for 1h");
+      expect(store.get(suppressed.id).snooze_until).toBe(now + 3_600_000);
+      expect(
+        published.some((r) => r.includes("human-requests") && r.includes("notifications")),
+      ).toBe(true);
+
+      published.length = 0;
+      expect(
+        channels.reply({
+          platform: "telegram",
+          chatId: "nir",
+          userId: "nir",
+          text: `/attention ${suppressed.id} 1 answer Ship now`,
+        }),
+      ).toContain("Response saved");
+      expect(
+        published.some((r) => r.includes("human-requests") && r.includes("notifications")),
+      ).toBe(true);
+    } finally {
+      unsubscribe();
+    }
+    const answered = store.get(suppressed.id);
+    expect(answered.status).toBe("answered");
+    expect(answered.snooze_until).toBeNull();
+    expect(answered.response).toEqual({ kind: "question", answer: "Ship now" });
   } finally {
     db.close();
   }

@@ -138,7 +138,7 @@ export async function notifyPendingAttention(
   if (!targets.length) return;
   for (const entry of humanRequests.list()) {
     const request = currentHumanRequest(humanRequests, entry.id);
-    if (request.status !== "pending") continue;
+    if (request.status !== "pending" || humanRequests.isSnoozed(request)) continue;
     const project = notificationProjectLabel(
       humanRequests.db,
       request.input.project_id,

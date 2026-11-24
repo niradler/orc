@@ -12,7 +12,11 @@ import { createRouter } from "../lib/router.js";
 const app = createRouter();
 const ApiNotificationSchema = z.object(NotificationSchema.shape).openapi("OrcNotification");
 const ApiNotificationPageSchema = z
-  .object({ ...NotificationPageSchema.shape, notifications: z.array(ApiNotificationSchema) })
+  .object({
+    ...NotificationPageSchema.shape,
+    notifications: z.array(ApiNotificationSchema),
+    snoozed: z.array(ApiNotificationSchema).default([]),
+  })
   .openapi("NotificationPage");
 app.use("/notifications/*", bodyLimit({ maxSize: 2000 }));
 const json = <T extends z.ZodType>(schema: T) => ({

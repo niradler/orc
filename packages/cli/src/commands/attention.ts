@@ -1,5 +1,9 @@
 import { readFileSync } from "node:fs";
-import { HumanRequestInputSchema, HumanResponseSchema } from "@orc/core/human-requests";
+import {
+  HumanRequestInputSchema,
+  HumanResponseSchema,
+  parseSnoozeDurationSeconds,
+} from "@orc/core/human-requests";
 import { createOrcClient } from "@orc/sdk";
 import type { ApiResult } from "@orc/sdk/types";
 import { Command } from "commander";
@@ -7,6 +11,18 @@ import { Command } from "commander";
 function unwrap<T>(result: ApiResult<T>): T {
   if (result.error) throw new Error(result.error.error);
   return result.data;
+}
+
+function parseUntilTimestamp(raw: string): number {
+  const trimmed = raw.trim();
+  if (/^\d+$/.test(trimmed)) {
+    const value = Number(trimmed);
+    if (Number.isSafeInteger(value) && value > 0) return value;
+  }
+  const parsed = Date.parse(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0)
+    throw new Error(`Invalid --until timestamp "${raw}"; use ISO-8601 (e.g. 2026-11-25T09:00:00Z)`);
+  return parsed;
 }
 
 export function attentionCommand(): Command {
@@ -68,5 +84,44 @@ export function attentionCommand(): Command {
         );
       });
   }
+  command
+    .command("snooze <id>")
+    .description("Snooze a pending request without answering or cancelling it")
+    .option("--for <duration>", "Duration such as 15m, 1h, 3h, 1h30m")
+    .option("--until <iso>", "ISO-8601 timestamp or epoch ms")
+    .option("--version <number>", "Expected request version")
+    .action(async (id: string, opts: { for?: string; until?: string; version?: string }) => {
+      if (Boolean(opts.for) === Boolean(opts.until))
+        throw new Error("Supply either --for <duration> or --until <iso>");
+      const client = createOrcClient();
+      const version =
+        opts.version !== undefined
+          ? Number(opts.version)
+          : unwrap(await client.humanRequests.view(id)).version;
+      let payload: { version: number; after_seconds?: number; until?: number };
+      if (opts.for) {
+        const seconds = parseSnoozeDurationSeconds(opts.for);
+        if (!seconds)
+          throw new Error(`Invalid duration "${opts.for}"; use values like 15m, 1h, 3h`);
+        payload = { version, after_seconds: seconds };
+      } else {
+        payload = { version, until: parseUntilTimestamp(opts.until ?? "") };
+      }
+      console.log(JSON.stringify(unwrap(await client.humanRequests.snooze(id, payload)), null, 2));
+    });
+  command
+    .command("unsnooze <id>")
+    .description("Wake a snoozed pending request immediately")
+    .option("--version <number>", "Expected request version")
+    .action(async (id: string, opts: { version?: string }) => {
+      const version = opts.version !== undefined ? Number(opts.version) : undefined;
+      console.log(
+        JSON.stringify(
+          unwrap(await createOrcClient().humanRequests.unsnooze(id, version)),
+          null,
+          2,
+        ),
+      );
+    });
   return command;
 }

@@ -262,7 +262,15 @@ export function syncRequestNotifications(sqlite: Database): void {
     notifications.resolve(row.source_key);
 }
 
+export function wakeDueHumanRequestSnoozes(sqlite: Database = getSqlite(), now?: number) {
+  const store = new HumanRequestStore(sqlite, now === undefined ? Date.now : () => now);
+  const woken = store.wakeDueSnoozes(now);
+  if (woken.length) changes.publish("human-requests", "notifications");
+  return woken;
+}
+
 export function maintainNotifications(sqlite: Database = getSqlite()): void {
+  wakeDueHumanRequestSnoozes(sqlite);
   syncFinishedNotificationSessions(sqlite);
   syncRequestNotifications(sqlite);
   new NotificationStore(sqlite).cleanup();
@@ -275,17 +283,45 @@ export function maintainNotifications(sqlite: Database = getSqlite()): void {
 }
 
 export function startNotificationMaintenance(): () => void {
+  let wakeTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleWake = () => {
+    clearTimeout(wakeTimer);
+    try {
+      const next = new HumanRequestStore(getSqlite()).nextSnoozeAt();
+      if (next === null) return;
+      const delay = Math.min(60_000, Math.max(0, next - Date.now()) + 50);
+      wakeTimer = setTimeout(() => {
+        try {
+          wakeDueHumanRequestSnoozes();
+        } catch (error) {
+          logger.error("Snooze wake sweep failed", error);
+        } finally {
+          scheduleWake();
+        }
+      }, delay);
+      wakeTimer.unref();
+    } catch (error) {
+      logger.error("Snooze wake timer scheduling failed", error);
+    }
+  };
   const run = () => {
     try {
       maintainNotifications();
     } catch (error) {
       logger.error("Notification and audit cleanup failed", error);
+    } finally {
+      scheduleWake();
     }
   };
+  const unsubscribe = changes.subscribe(({ resources }) => {
+    if (resources.includes("human-requests")) scheduleWake();
+  });
   run();
   const timer = setInterval(run, 60_000);
   timer.unref();
   return () => {
+    unsubscribe();
+    clearTimeout(wakeTimer);
     clearInterval(timer);
     for (const timer of observedTimers.values()) clearTimeout(timer);
     observedTimers.clear();

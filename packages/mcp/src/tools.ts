@@ -213,6 +213,29 @@ const humanGetParams = z
 const humanAckParams = z
   .object({ id: z.string().min(1).max(128), version: z.number().int().positive() })
   .strict();
+const humanSnoozeParams = z
+  .object({
+    id: z.string().min(1).max(128),
+    version: z.number().int().positive(),
+    until: z.number().int().positive().max(8_640_000_000_000_000).optional(),
+    after_seconds: z
+      .number()
+      .int()
+      .min(1)
+      .max(365 * 86400)
+      .optional(),
+  })
+  .strict()
+  .refine(
+    (value) => (value.until !== undefined) !== (value.after_seconds !== undefined),
+    "Supply either until or after_seconds",
+  );
+const humanUnsnoozeParams = z
+  .object({
+    id: z.string().min(1).max(128),
+    version: z.number().int().positive().optional(),
+  })
+  .strict();
 const digestCompleteParams = z
   .object({
     token: z.string().uuid(),
@@ -275,6 +298,17 @@ export const toolDefinitions = [
     description:
       "After consuming the answer in your originating workflow, acknowledge its exact answered version. Cancelled, expired, unavailable, or denied requests never authorize execution. This does not execute anything.",
     inputSchema: humanAckParams,
+  },
+  {
+    name: "human_request_snooze",
+    description:
+      "Snooze a pending human request until a future timestamp (epoch ms via until) or duration (after_seconds) without answering, cancelling or changing its expiry. Only pending requests can be snoozed.",
+    inputSchema: humanSnoozeParams,
+  },
+  {
+    name: "human_request_unsnooze",
+    description: "Wake a snoozed pending human request immediately so it returns to Needs you.",
+    inputSchema: humanUnsnoozeParams,
   },
   {
     name: "skill_update",
@@ -1554,6 +1588,37 @@ async function runTool(
       request = await read();
     }
     return JSON.stringify(request);
+  }
+  if (name === "human_request_snooze" || name === "human_request_unsnooze") {
+    const input =
+      name === "human_request_snooze"
+        ? humanSnoozeParams.parse(args)
+        : humanUnsnoozeParams.parse(args);
+    const path = `/human-requests/${encodeURIComponent(input.id)}`;
+    const existing = HumanRequestSchema.parse(await orcApi("GET", `${path}/view`));
+    if (
+      options.projectScopes &&
+      !options.projectScopes.some((item) => item.id === existing.input.project_id)
+    )
+      throw new ValidationError("Human request is outside the selected MCP projects");
+    if (!callerOwns(options.agentSessionId, existing.input.origin.session_id))
+      throw new ValidationError("Human request belongs to another agent session");
+    if (name === "human_request_snooze") {
+      const snoozeInput = input as z.infer<typeof humanSnoozeParams>;
+      return JSON.stringify(
+        await orcApi("POST", `${path}/snooze`, {
+          body: {
+            version: snoozeInput.version,
+            ...(snoozeInput.until !== undefined ? { until: snoozeInput.until } : {}),
+            ...(snoozeInput.after_seconds !== undefined
+              ? { after_seconds: snoozeInput.after_seconds }
+              : {}),
+          },
+        }),
+      );
+    }
+    const query = input.version !== undefined ? `?version=${input.version}` : "";
+    return JSON.stringify(await orcApi("DELETE", `${path}/snooze${query}`));
   }
   if (name === "session_sync") {
     const grant = await orcApi<{ sync_url: string }>("POST", "/sessions/archive/sync", {

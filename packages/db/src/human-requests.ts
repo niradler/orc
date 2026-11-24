@@ -9,6 +9,7 @@ import {
   HumanRequestInputSchema,
   HumanRequestSchema,
   HumanResponseSchema,
+  MAX_SNOOZE_SECONDS,
 } from "@orc/core/human-requests";
 import { ulid } from "@orc/core/ids";
 import { AuditLog, installAudit } from "./audit.js";
@@ -62,16 +63,56 @@ export class HumanRequestStore {
       ["owner_heartbeat_at", "INTEGER"],
       ["answered_at", "INTEGER"],
       ["seen_at", "INTEGER"],
+      ["snooze_until", "INTEGER"],
       ["push_state", "TEXT"],
       ["push_error", "TEXT"],
     ])
       if (!columns.some((column) => column.name === name))
         db.exec(`ALTER TABLE human_requests ADD COLUMN ${name} ${type}`);
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS human_requests_snooze ON human_requests(status,snooze_until) WHERE snooze_until IS NOT NULL;",
+    );
     db.exec(`CREATE TABLE IF NOT EXISTS human_request_notifications (
       request_id TEXT NOT NULL, channel TEXT NOT NULL, destination TEXT NOT NULL,
       version INTEGER NOT NULL, can_reply INTEGER NOT NULL, sent INTEGER NOT NULL DEFAULT 0,
       leased_until INTEGER NOT NULL, PRIMARY KEY(request_id,channel,destination)
     )`);
+  }
+
+  private publishRequestNotification(
+    id: string,
+    input: HumanRequestInput,
+    createdAt: number,
+  ): void {
+    publishNotification(
+      this.db,
+      {
+        type: "human.request",
+        source_key: `human:${id}`,
+        source_id: id,
+        title:
+          input.title ??
+          `${input.kind === "approval" ? "Approval" : input.kind === "command" ? "Command" : "Question"} · ${input.origin.backend}`,
+        body: input.origin.session_title ?? "An agent needs your response.",
+        level: "needs-you",
+        project_id: input.project_id,
+        cwd: humanRequestFolder(this.db, input),
+        path: `/activity?notifications=open&request=${encodeURIComponent(id)}`,
+        requires_action: true,
+        created_at: createdAt,
+      },
+      this.now,
+    );
+  }
+
+  currentTime(): number {
+    return this.now();
+  }
+
+  isSnoozed(request: Pick<HumanRequest, "status" | "snooze_until">, at = this.now()): boolean {
+    return (
+      request.status === "pending" && request.snooze_until !== null && request.snooze_until > at
+    );
   }
 
   private recordStatus(
@@ -148,24 +189,23 @@ export class HumanRequestStore {
       .get(id, version, channel, destination);
   }
 
-  private expire(): void {
+  private expire(at = this.now()): void {
     this.updateStatus(
-      "UPDATE human_requests SET status='unavailable',delivery_error='Command execution was interrupted or its result is unknown; inspect the host before creating another request',version=version+1 WHERE status='running' AND responded_at<?",
-      this.now() - 330000,
+      "UPDATE human_requests SET status='unavailable',snooze_until=NULL,delivery_error='Command execution was interrupted or its result is unknown; inspect the host before creating another request',version=version+1 WHERE status='running' AND responded_at<?",
+      at - 330000,
     );
-    const cutoff =
-      this.now() - (loadConfig().preferences.attention_retention_hours ?? 72) * 3600000;
+    const cutoff = at - (loadConfig().preferences.attention_retention_hours ?? 72) * 3600000;
     this.updateStatus(
-      "UPDATE human_requests SET status='expired',version=version+1 WHERE status IN ('pending','answered','unavailable') AND created_at<=?",
+      "UPDATE human_requests SET status='expired',snooze_until=NULL,version=version+1 WHERE status IN ('pending','answered','unavailable') AND created_at<=?",
       cutoff,
     );
     this.updateStatus(
-      "UPDATE human_requests SET status='expired',version=version+1 WHERE status='pending' AND expires_at<=?",
-      this.now(),
+      "UPDATE human_requests SET status='expired',snooze_until=NULL,version=version+1 WHERE status='pending' AND expires_at<=?",
+      at,
     );
     this.updateStatus(
-      "UPDATE human_requests SET status='unavailable',delivery_error='Originating runtime disconnected; response was not delivered',version=version+1 WHERE owner_id IS NOT NULL AND owner_heartbeat_at<? AND status IN ('pending','answered')",
-      this.now() - 30000,
+      "UPDATE human_requests SET status='unavailable',snooze_until=NULL,delivery_error='Originating runtime disconnected; response was not delivered',version=version+1 WHERE owner_id IS NOT NULL AND owner_heartbeat_at<? AND status IN ('pending','answered')",
+      at - 30000,
     );
   }
 
@@ -183,6 +223,7 @@ export class HumanRequestStore {
           expires_at: number;
           responded_at: number | null;
           delivered_at: number | null;
+          snooze_until: number | null;
         },
         [string]
       >("SELECT * FROM human_requests WHERE id=?")
@@ -194,22 +235,8 @@ export class HumanRequestStore {
       response: row.response ? JSON.parse(row.response) : null,
     });
     if (request.status === "pending" || request.status === "unavailable") {
-      publishNotification(this.db, {
-        type: "human.request",
-        source_key: `human:${request.id}`,
-        source_id: request.id,
-        title:
-          request.input.title ??
-          `${request.input.kind === "approval" ? "Approval" : request.input.kind === "command" ? "Command" : "Question"} · ${request.input.origin.backend}`,
-        body: request.input.origin.session_title ?? "An agent needs your response.",
-        level: "needs-you",
-        project_id: request.input.project_id,
-        cwd: humanRequestFolder(this.db, request.input),
-        path: `/activity?notifications=open&request=${encodeURIComponent(request.id)}`,
-        requires_action: true,
-        created_at: request.created_at,
-      });
-    } else new NotificationStore(this.db).resolve(`human:${request.id}`);
+      this.publishRequestNotification(request.id, request.input, request.created_at);
+    } else new NotificationStore(this.db, this.now).resolve(`human:${request.id}`);
     return request;
   }
 
@@ -398,7 +425,7 @@ export class HumanRequestStore {
         )
           throw new ValidationError("Selected choices do not match this question");
         this.updateStatus(
-          "UPDATE human_requests SET status='answered',response=?,responded_at=?,answered_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
+          "UPDATE human_requests SET status='answered',snooze_until=NULL,response=?,responded_at=?,answered_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
           JSON.stringify(response),
           this.now(),
           this.now(),
@@ -410,6 +437,139 @@ export class HumanRequestStore {
       .immediate();
   }
 
+  snooze(id: string, version: number, snoozeUntil: number): HumanRequest {
+    const now = this.now();
+    if (!Number.isSafeInteger(snoozeUntil) || snoozeUntil <= now)
+      throw new ValidationError("Snooze time must be in the future");
+    if (snoozeUntil > now + MAX_SNOOZE_SECONDS * 1000)
+      throw new ValidationError("Snooze time cannot be more than 365 days in the future");
+    return this.db
+      .transaction(() => {
+        const request = this.get(id);
+        if (request.status !== "pending")
+          throw new ConflictError(
+            `Only pending requests can be snoozed (request is ${request.status})`,
+          );
+        if (request.version !== version) throw new ConflictError("Request is stale; reload it");
+        this.db
+          .query(
+            "UPDATE human_requests SET snooze_until=? WHERE id=? AND status='pending' AND version=?",
+          )
+          .run(snoozeUntil, id, version);
+        new AuditLog(this.db, { now: this.now }).record({
+          action: "human_request.snoozed",
+          subject_ids: [id],
+          project_id: request.input.project_id,
+          session_id: request.input.origin.session_id,
+          snapshot: {
+            kind: request.input.kind,
+            status: request.status,
+            version: request.version,
+            backend: request.input.origin.backend,
+            snooze_until: snoozeUntil,
+          },
+        });
+        return this.get(id);
+      })
+      .immediate();
+  }
+
+  unsnooze(id: string, version?: number): HumanRequest {
+    return this.db
+      .transaction(() => {
+        const request = this.get(id);
+        if (request.status !== "pending")
+          throw new ConflictError(
+            `Only pending requests can be unsnoozed (request is ${request.status})`,
+          );
+        if (version !== undefined && request.version !== version)
+          throw new ConflictError("Request is stale; reload it");
+        if (request.snooze_until !== null) {
+          this.db
+            .query("UPDATE human_requests SET snooze_until=NULL WHERE id=? AND status='pending'")
+            .run(id);
+          new AuditLog(this.db, { now: this.now }).record({
+            action: "human_request.unsnoozed",
+            subject_ids: [id],
+            project_id: request.input.project_id,
+            session_id: request.input.origin.session_id,
+            snapshot: {
+              kind: request.input.kind,
+              status: request.status,
+              version: request.version,
+              backend: request.input.origin.backend,
+            },
+          });
+          if (tableExists(this.db, "notifications")) {
+            this.db
+              .query(
+                "UPDATE notifications SET read_at=NULL,dismissed_at=NULL,requires_action=1 WHERE source_key=?",
+              )
+              .run(`human:${id}`);
+          }
+        }
+        return this.get(id);
+      })
+      .immediate();
+  }
+
+  nextSnoozeAt(): number | null {
+    const row = this.db
+      .query<{ due: number | null }, []>(
+        "SELECT min(snooze_until) AS due FROM human_requests WHERE status='pending' AND snooze_until IS NOT NULL",
+      )
+      .get();
+    return row?.due ?? null;
+  }
+
+  wakeDueSnoozes(at: number = this.now()): HumanRequest[] {
+    this.expire(at);
+    const wokenIds = this.db
+      .transaction(() => {
+        const due = this.db
+          .query<{ id: string; snooze_until: number; version: number; payload: string }, [number]>(
+            "SELECT id,snooze_until,version,payload FROM human_requests WHERE status='pending' AND snooze_until IS NOT NULL AND snooze_until<=? ORDER BY snooze_until,id",
+          )
+          .all(at);
+        if (!due.length) return [];
+        this.db
+          .query(
+            "UPDATE human_requests SET snooze_until=NULL WHERE status='pending' AND snooze_until IS NOT NULL AND snooze_until<=?",
+          )
+          .run(at);
+        const audit = new AuditLog(this.db, { now: () => at });
+        const hasNotifications = tableExists(this.db, "notifications");
+        for (const row of due) {
+          const input = HumanRequestInputSchema.parse(JSON.parse(row.payload));
+          audit.record({
+            action: "human_request.snooze_ended",
+            subject_ids: [row.id],
+            project_id: input.project_id,
+            session_id: input.origin.session_id,
+            snapshot: {
+              kind: input.kind,
+              status: "pending",
+              version: row.version,
+              backend: input.origin.backend,
+              snooze_until: row.snooze_until,
+            },
+          });
+          this.db
+            .query(
+              "DELETE FROM human_request_notifications WHERE request_id=? AND channel='webpush'",
+            )
+            .run(row.id);
+          if (hasNotifications) {
+            this.db.query("DELETE FROM notifications WHERE source_key=?").run(`human:${row.id}`);
+          }
+          this.publishRequestNotification(row.id, input, at);
+        }
+        return due.map((row) => row.id);
+      })
+      .immediate();
+    return wokenIds.map((id) => this.get(id));
+  }
+
   claimCommand(id: string, version: number): HumanRequest {
     return this.db
       .transaction(() => {
@@ -419,7 +579,7 @@ export class HumanRequestStore {
         if (request.status !== "pending" || request.version !== version)
           throw new ConflictError("Command is stale or already started; reload it");
         this.updateStatus(
-          "UPDATE human_requests SET status='running',responded_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
+          "UPDATE human_requests SET status='running',snooze_until=NULL,responded_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
           this.now(),
           id,
           version,
@@ -432,7 +592,7 @@ export class HumanRequestStore {
   completeCommand(id: string, version: number, raw: unknown): HumanRequest {
     const result = CommandResultSchema.parse(raw);
     const changed = this.updateStatus(
-      "UPDATE human_requests SET status='answered',response=?,answered_at=?,version=version+1 WHERE id=? AND status='running' AND version=?",
+      "UPDATE human_requests SET status='answered',snooze_until=NULL,response=?,answered_at=?,version=version+1 WHERE id=? AND status='running' AND version=?",
       JSON.stringify(result),
       this.now(),
       id,
@@ -449,7 +609,7 @@ export class HumanRequestStore {
         if (request.status !== "answered" || request.version !== version)
           throw new ConflictError("Response is stale or already delivered");
         this.updateStatus(
-          "UPDATE human_requests SET status='delivered',delivered_at=?,version=version+1 WHERE id=? AND status='answered' AND version=?",
+          "UPDATE human_requests SET status='delivered',snooze_until=NULL,delivered_at=?,version=version+1 WHERE id=? AND status='answered' AND version=?",
           this.now(),
           id,
           version,
@@ -476,7 +636,7 @@ export class HumanRequestStore {
     // Continuation is not proof that an undelivered answer was consumed. Preserve
     // the audit record as cancelled, and never turn it into an approval/delivery.
     this.updateStatus(
-      `UPDATE human_requests SET status='cancelled',version=version+1
+      `UPDATE human_requests SET status='cancelled',snooze_until=NULL,version=version+1
          WHERE status IN (${toolCallId === undefined ? "'pending','answered','unavailable'" : "'pending','unavailable'"})
          AND json_extract(payload,'$.origin.session_id')=?
          AND json_extract(payload,'$.origin.backend')=?
@@ -509,7 +669,7 @@ export class HumanRequestStore {
         if (!["pending", "answered"].includes(request.status) || request.version !== version)
           throw new ConflictError("Request is stale or no longer deliverable");
         this.updateStatus(
-          "UPDATE human_requests SET status='unavailable',delivery_error='Originating runtime is unavailable; response was not delivered',version=version+1 WHERE id=? AND version=?",
+          "UPDATE human_requests SET status='unavailable',snooze_until=NULL,delivery_error='Originating runtime is unavailable; response was not delivered',version=version+1 WHERE id=? AND version=?",
           id,
           version,
         );
@@ -536,7 +696,7 @@ export class HumanRequestStore {
             "The agent may already have this answer; it can no longer be dismissed",
           );
         this.updateStatus(
-          "UPDATE human_requests SET status='cancelled',version=version+1 WHERE id=? AND version=?",
+          "UPDATE human_requests SET status='cancelled',snooze_until=NULL,version=version+1 WHERE id=? AND version=?",
           id,
           version,
         );

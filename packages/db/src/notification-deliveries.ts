@@ -13,7 +13,7 @@ import {
   type OrcNotification,
 } from "@orc/core/notifications";
 import { z } from "zod";
-import { NotificationStore } from "./notifications.js";
+import { hasHumanRequestSnooze, NotificationStore } from "./notifications.js";
 
 export type DeliveryClaim = NotificationDelivery & {
   destination: string;
@@ -121,18 +121,20 @@ export class NotificationDeliveryStore {
       const connection = connections.find((value) => value.id === destination.connection);
       const target = connection?.targets.find((value) => value.id === destination.target);
       if (!connection || !target?.notifications) continue;
+      const snoozeAware = hasHumanRequestSnooze(this.db);
+      const snoozeFilter = snoozeAware
+        ? " AND NOT (n.type='human.request' AND EXISTS (SELECT 1 FROM human_requests hr WHERE hr.id=n.source_id AND hr.status='pending' AND hr.snooze_until IS NOT NULL AND hr.snooze_until>?))"
+        : "";
       const events = this.db
-        .query<
-          { id: string },
-          [number, number, number, string, string, number]
-        >(`SELECT n.id FROM notifications n
-        WHERE n.created_at>=? AND n.expires_at>? AND n.created_at>? AND NOT EXISTS (
+        .query<{ id: string }, (number | string)[]>(`SELECT n.id FROM notifications n
+        WHERE n.created_at>=? AND n.expires_at>? AND n.created_at>?${snoozeFilter} AND NOT EXISTS (
           SELECT 1 FROM notification_deliveries d WHERE d.notification_id=n.id AND d.connection_id=? AND d.target_id=?)
         ORDER BY n.created_at,n.id LIMIT ?`)
         .all(
           Math.max(since, destination.since),
           this.now(),
           this.cutoff(),
+          ...(snoozeAware ? [this.now()] : []),
           connection.id,
           target.id,
           Math.min(100, budget),

@@ -408,3 +408,37 @@ test("should stop an in-flight job batch on opt-out and skip its leased events w
   await notifyPendingJobPushes(pushDeps);
   expect(attempts).toBe(1);
 });
+
+test("should suppress attention web push while snoozed and push once when woken", async () => {
+  const db = new Database(":memory:");
+  let time = 100_000;
+  try {
+    const store = new PushStore(db, () => time);
+    store.subscribe({ ...subscription, topics: ["attention"] });
+    const humanRequests = new HumanRequestStore(db, () => time);
+    let sent = 0;
+    const pushDeps: PushDeps = {
+      store,
+      fetch: (async () => {
+        sent++;
+        return new Response(null, { status: 201 });
+      }) as unknown as typeof fetch,
+    };
+    const request = humanRequests.create({
+      kind: "question",
+      prompt: "Snoozed push test",
+      origin: { backend: "codex", session_id: "s-push", request_id: "q-push" },
+    });
+    humanRequests.snooze(request.id, request.version, time + 60_000);
+    await notifyPendingAttention(humanRequests, pushDeps);
+    expect(sent).toBe(0);
+
+    time += 60_000;
+    humanRequests.wakeDueSnoozes();
+    await notifyPendingAttention(humanRequests, pushDeps);
+    await notifyPendingAttention(humanRequests, pushDeps);
+    expect(sent).toBe(1);
+  } finally {
+    db.close();
+  }
+});

@@ -17,6 +17,7 @@ const item = (id: string, type = "future.type"): OrcNotification => ({
   expires_at: 10000,
   read_at: null,
   dismissed_at: null,
+  snooze_until: null,
 });
 test("should settle new generic types once and never replay initial history", () => {
   const feed = new NotificationFeed();

@@ -8,7 +8,12 @@ import type {
 } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import type { GithubSyncState } from "@orc/core/github-sync";
-import type { HumanRequest, HumanRequestInput, HumanResponse } from "@orc/core/human-requests";
+import type {
+  HumanRequest,
+  HumanRequestInput,
+  HumanRequestSnoozeInput,
+  HumanResponse,
+} from "@orc/core/human-requests";
 import type {
   KbCallSource,
   KbComment,
@@ -372,6 +377,15 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<HumanRequest>("POST", `/human-requests/${e(id)}/acknowledge`, { version }),
       cancel: (id: string, version: number) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/cancel`, { version }),
+      snooze: (id: string, input: HumanRequestSnoozeInput) =>
+        c<HumanRequest>("POST", `/human-requests/${e(id)}/snooze`, input),
+      unsnooze: (id: string, version?: number) =>
+        c<HumanRequest>(
+          "DELETE",
+          `/human-requests/${e(id)}/snooze`,
+          undefined,
+          version === undefined ? undefined : { version },
+        ),
     },
     rules: {
       catalog: () => c<{ templates: RuleTemplate[] }>("GET", "/rules/catalog"),

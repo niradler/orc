@@ -38,6 +38,8 @@ test("should authenticate every human request operation", async () => {
     ["GET", "/missing"],
     ["GET", "/missing/view"],
     ["POST", "/missing/respond"],
+    ["POST", "/missing/snooze"],
+    ["DELETE", "/missing/snooze"],
     ["POST", "/missing/run"],
     ["POST", "/missing/acknowledge"],
     ["POST", "/missing/cancel"],
@@ -409,3 +411,122 @@ test("should stop command descendants on timeout", async () => {
   await Bun.sleep(3000);
   expect(existsSync(join(cwd, "child-survived.txt"))).toBe(false);
 }, 10000);
+
+test("should snooze and unsnooze pending requests, exclude them from unread count, and wake due snoozes once", async () => {
+  const { wakeDueHumanRequestSnoozes } = await import("../notifications.js");
+  const created = await (
+    await req(app, "POST", "/human-requests", {
+      ...input,
+      title: "Snooze API test",
+      origin: { backend: "codex", session_id: "snooze-api", request_id: "snooze-api-1" },
+    })
+  ).json<HumanRequest>();
+
+  const beforePage = await (await req(app, "GET", "/notifications?unread=true")).json<{
+    notifications: { source_id: string }[];
+    snoozed: { source_id: string }[];
+    unread: number;
+  }>();
+  expect(beforePage.notifications.some((n) => n.source_id === created.id)).toBe(true);
+  expect(beforePage.snoozed.some((n) => n.source_id === created.id)).toBe(false);
+  const unreadBefore = beforePage.unread;
+
+  // Reject missing or conflicting timing inputs and past timestamps.
+  expect(
+    (await req(app, "POST", `/human-requests/${created.id}/snooze`, { version: 1 })).status,
+  ).toBe(400);
+  expect(
+    (
+      await req(app, "POST", `/human-requests/${created.id}/snooze`, {
+        version: 1,
+        until: Date.now() + 60_000,
+        after_seconds: 60,
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await req(app, "POST", `/human-requests/${created.id}/snooze`, {
+        version: 1,
+        until: Date.now() - 1000,
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await req(app, "POST", `/human-requests/${created.id}/snooze`, {
+        version: 1,
+        until: 9_000_000_000_000_000,
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await req(app, "POST", `/human-requests/${created.id}/snooze`, {
+        version: 1,
+        until: Date.now() + 400 * 86400 * 1000,
+      })
+    ).status,
+  ).toBe(400);
+
+  // Snooze for 1 hour: leaves active notifications & drops unread count by 1.
+  const snoozedRes = await req(app, "POST", `/human-requests/${created.id}/snooze`, {
+    version: created.version,
+    after_seconds: 3600,
+  });
+  expect(snoozedRes.status).toBe(200);
+  const snoozed = await snoozedRes.json<HumanRequest>();
+  expect(snoozed.status).toBe("pending");
+  expect(snoozed.expires_at).toBe(created.expires_at);
+  expect(snoozed.snooze_until).toBeGreaterThan(Date.now() + 3_500_000);
+
+  const snoozedPage = await (await req(app, "GET", "/notifications?unread=true")).json<{
+    notifications: { source_id: string }[];
+    snoozed: { source_id: string; snooze_until: number | null }[];
+    unread: number;
+  }>();
+  expect(snoozedPage.notifications.some((n) => n.source_id === created.id)).toBe(false);
+  expect(snoozedPage.snoozed.find((n) => n.source_id === created.id)?.snooze_until).toBe(
+    snoozed.snooze_until,
+  );
+  expect(snoozedPage.unread).toBe(unreadBefore - 1);
+
+  // Wake now via DELETE restores it to active unread list.
+  const wokenRes = await req(
+    app,
+    "DELETE",
+    `/human-requests/${created.id}/snooze?version=${snoozed.version}`,
+  );
+  expect(wokenRes.status).toBe(200);
+  expect((await wokenRes.json<HumanRequest>()).snooze_until).toBeNull();
+  const afterWake = await (await req(app, "GET", "/notifications?unread=true")).json<{
+    notifications: { source_id: string }[];
+    snoozed: { source_id: string }[];
+    unread: number;
+  }>();
+  expect(afterWake.notifications.some((n) => n.source_id === created.id)).toBe(true);
+  expect(afterWake.snoozed.some((n) => n.source_id === created.id)).toBe(false);
+  expect(afterWake.unread).toBe(unreadBefore);
+
+  // Re-snooze and trigger wake sweep at due time: wakes once.
+  const dueUntil = Date.now() + 30_000;
+  await req(app, "POST", `/human-requests/${created.id}/snooze`, {
+    version: created.version,
+    until: dueUntil,
+  });
+  expect(wakeDueHumanRequestSnoozes(getSqlite(), dueUntil + 1).map((r) => r.id)).toContain(
+    created.id,
+  );
+  expect(wakeDueHumanRequestSnoozes(getSqlite(), dueUntil + 2)).toEqual([]);
+
+  // Answered request rejects snooze with 409.
+  await req(app, "POST", `/human-requests/${created.id}/respond`, {
+    version: created.version,
+    response: { kind: "question", answer: "Blue" },
+  });
+  const rejectNonPending = await req(app, "POST", `/human-requests/${created.id}/snooze`, {
+    version: created.version + 1,
+    after_seconds: 600,
+  });
+  expect(rejectNonPending.status).toBe(409);
+});
