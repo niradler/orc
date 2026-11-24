@@ -253,15 +253,23 @@ app.openapi(
       },
     },
   }),
-  (c) =>
-    c.json(
+  (c) => {
+    const id = c.req.valid("param").id;
+    const ids = new Set([id]);
+    try {
+      const sender = store().resolveSender(id, "session");
+      if (sender.session_id) ids.add(sender.session_id);
+      if (sender.native_id) ids.add(sender.native_id);
+    } catch {}
+    return c.json(
       {
         sessions: new ChatStore(getSqlite())
-          .children([c.req.valid("param").id])
+          .children([...ids])
           .map((child) => chatStatus(child.id)),
       },
       200,
-    ),
+    );
+  },
 );
 
 app.openapi(

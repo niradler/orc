@@ -7744,6 +7744,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -7985,6 +7987,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -8153,6 +8157,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -8327,6 +8333,8 @@ export interface paths {
                                 delivered_at: number | null;
                                 /** @default null */
                                 seen_at: number | null;
+                                /** @default null */
+                                snooze_until: number | null;
                                 /**
                                  * @default null
                                  * @enum {string|null}
@@ -8507,6 +8515,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -8706,6 +8716,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -8719,6 +8731,346 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/human-requests/{id}/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Snooze a pending request until a future timestamp without changing its status or expiry */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        version: number;
+                        until?: number;
+                        after_seconds?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
+                                    execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval" | "command" | "secret";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host?: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        description?: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
+                                title?: string;
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack" | "slack-user")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        /** Wake a snoozed pending request immediately */
+        delete: {
+            parameters: {
+                query?: {
+                    version?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
+                                    execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval" | "command" | "secret";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host?: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        description?: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
+                                title?: string;
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack" | "slack-user")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
+                        };
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -8886,6 +9238,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -9062,6 +9416,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -9238,6 +9594,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -14971,6 +15329,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -26194,6 +26554,8 @@ export interface components {
         };
         NotificationPage: {
             notifications: components["schemas"]["OrcNotification"][];
+            /** @default [] */
+            snoozed: components["schemas"]["OrcNotification"][];
             unread: number;
             has_more: boolean;
         };
@@ -26212,6 +26574,8 @@ export interface components {
             expires_at: number;
             read_at: number | null;
             dismissed_at: number | null;
+            /** @default null */
+            snooze_until: number | null;
         };
         SetupStatus: {
             agents: components["schemas"]["SetupAgent"][];

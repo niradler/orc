@@ -11,6 +11,7 @@ import type { GithubSyncState } from "@orc/core/github-sync";
 import type {
   HumanRequest,
   HumanRequestInput,
+  HumanRequestSnoozeInput,
   HumanRespondPayload,
   SecretClaimResult,
 } from "@orc/core/human-requests";
@@ -385,6 +386,15 @@ export function createOrcClient(options?: OrcClientOptions) {
         c<HumanRequest>("POST", `/human-requests/${e(id)}/acknowledge`, { version }),
       cancel: (id: string, version: number) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/cancel`, { version }),
+      snooze: (id: string, input: HumanRequestSnoozeInput) =>
+        c<HumanRequest>("POST", `/human-requests/${e(id)}/snooze`, input),
+      unsnooze: (id: string, version?: number) =>
+        c<HumanRequest>(
+          "DELETE",
+          `/human-requests/${e(id)}/snooze`,
+          undefined,
+          version === undefined ? undefined : { version },
+        ),
     },
     projectSecrets: {
       list: (projectId: string) =>

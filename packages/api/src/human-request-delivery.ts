@@ -238,6 +238,7 @@ export async function runTurn(
     interactive: false,
     model: target.model ?? undefined,
     orcMcp: true,
+    orcPreviewSessionId: target.threadId ?? target.sourceId,
     orcMcpMode: loadConfig().mcp.default_mode,
     acpxAgent: target.agent,
     acpxNativeSessionId: target.backend === "acpx" ? target.runtimeId : undefined,

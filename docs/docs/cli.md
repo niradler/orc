@@ -112,6 +112,8 @@ See [Human requests](./human-requests.md).
 | `orc attention respond <id> <file>` | Answer or approval JSON; `--version <n>` |
 | `orc attention acknowledge <id>` | `--version <n>` |
 | `orc attention cancel <id>` | `--version <n>` |
+| `orc attention snooze <id>` | `--for <duration>` (e.g. `15m`, `1h`, `3h`) or `--until <iso>`; optional `--version <n>` |
+| `orc attention unsnooze <id>` | Wake immediately; optional `--version <n>` |
 
 ## Memory
 

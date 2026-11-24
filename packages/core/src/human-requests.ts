@@ -222,13 +222,26 @@ export const HumanResponseSchema = z.discriminatedUnion("kind", [
   ApprovalResponseSchema,
   SecretResponseSchema,
 ]);
-
 export const HumanRespondPayloadSchema = z.discriminatedUnion("kind", [
   QuestionResponseSchema,
   ApprovalResponseSchema,
   SecretRespondPayloadSchema,
 ]);
 
+export const MAX_SNOOZE_SECONDS = 365 * 86400;
+const MAX_EPOCH_MS = 8_640_000_000_000_000;
+
+export const HumanRequestSnoozeSchema = z
+  .object({
+    version: z.number().int().positive(),
+    until: z.number().int().positive().max(MAX_EPOCH_MS).optional(),
+    after_seconds: z.number().int().min(1).max(MAX_SNOOZE_SECONDS).optional(),
+  })
+  .strict()
+  .refine(
+    (value) => (value.until !== undefined) !== (value.after_seconds !== undefined),
+    "Supply either until or after_seconds",
+  );
 export const HumanRequestSchema = z.object({
   id: identity,
   input: HumanRequestInputSchema,
@@ -249,6 +262,7 @@ export const HumanRequestSchema = z.object({
   responded_at: z.number().nullable(),
   delivered_at: z.number().nullable(),
   seen_at: z.number().nullable().default(null),
+  snooze_until: z.number().nullable().default(null),
   push_state: z.enum(["pushing", "pushed", "failed", "interrupted"]).nullable().default(null),
   push_error: z.string().nullable().default(null),
 });
@@ -270,5 +284,27 @@ export type SecretRespondPayload = z.infer<typeof SecretRespondPayloadSchema>;
 export type HumanRespondPayload = z.infer<typeof HumanRespondPayloadSchema>;
 export type HumanRequestInput = z.infer<typeof HumanRequestInputSchema>;
 export type HumanResponse = z.infer<typeof HumanResponseSchema>;
+export type HumanRequestSnoozeInput = z.infer<typeof HumanRequestSnoozeSchema>;
 export type HumanRequest = z.infer<typeof HumanRequestSchema>;
 export type SecretClaimResult = z.infer<typeof SecretClaimResultSchema>;
+
+const DURATION_UNITS: Record<string, number> = {
+  s: 1,
+  m: 60,
+  h: 3600,
+  d: 86400,
+};
+
+export function parseSnoozeDurationSeconds(raw: string): number | null {
+  const value = raw.trim().toLowerCase();
+  if (!value || !/^(?:\d+[smhd])+$/.test(value)) return null;
+  let total = 0;
+  for (const match of value.matchAll(/(\d+)([smhd])/g)) {
+    const amount = Number(match[1]);
+    const unit = DURATION_UNITS[match[2] ?? ""];
+    if (!Number.isSafeInteger(amount) || !unit) return null;
+    total += amount * unit;
+  }
+  if (total < 1 || total > MAX_SNOOZE_SECONDS) return null;
+  return total;
+}

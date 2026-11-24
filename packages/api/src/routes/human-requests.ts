@@ -6,6 +6,7 @@ import {
   CommandRunSchema,
   HumanRequestInputSchema,
   HumanRequestSchema,
+  HumanRequestSnoozeSchema,
   HumanRespondPayloadSchema,
   SecretClaimResultSchema,
 } from "@orc/core/human-requests";
@@ -165,11 +166,57 @@ app.openapi(
     const { id } = c.req.valid("param");
     current(id);
     const updated = store().respond(id, input.version, input.response, auditActor(c));
-    changes.publish("human-requests");
+    changes.publish("human-requests", "notifications");
     if (input.response.kind === "secret" && input.response.save_to_project) {
       changes.publish("project-secrets");
     }
     c.header("Cache-Control", "no-store");
+    return c.json(updated, 200);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/human-requests/{id}/snooze",
+    tags: ["Human requests"],
+    summary:
+      "Snooze a pending request until a future timestamp without changing its status or expiry",
+    request: {
+      params,
+      body: { content: { "application/json": { schema: HumanRequestSnoozeSchema } } },
+    },
+    responses: response,
+  }),
+  (c) => {
+    const input = c.req.valid("json");
+    const id = c.req.valid("param").id;
+    current(id);
+    const until =
+      input.until !== undefined ? input.until : Date.now() + (input.after_seconds ?? 0) * 1000;
+    const updated = store().snooze(id, input.version, until);
+    changes.publish("human-requests", "notifications");
+    return c.json(updated, 200);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "delete",
+    path: "/human-requests/{id}/snooze",
+    tags: ["Human requests"],
+    summary: "Wake a snoozed pending request immediately",
+    request: {
+      params,
+      query: z.object({ version: z.coerce.number().int().positive().optional() }),
+    },
+    responses: response,
+  }),
+  (c) => {
+    const id = c.req.valid("param").id;
+    current(id);
+    const updated = store().unsnooze(id, c.req.valid("query").version);
+    changes.publish("human-requests", "notifications");
     return c.json(updated, 200);
   },
 );
@@ -187,10 +234,10 @@ app.openapi(
     const id = c.req.valid("param").id;
     const prepared = await prepareCommand(current(id), input);
     const claimed = store().claimCommand(id, input.version);
-    changes.publish("human-requests");
+    changes.publish("human-requests", "notifications");
     const result = await prepared.execute();
     const completed = store().completeCommand(id, claimed.version, result);
-    changes.publish("human-requests");
+    changes.publish("human-requests", "notifications");
     return c.json(completed, 200);
   },
 );
@@ -207,7 +254,11 @@ for (const operation of ["acknowledge", "cancel"] as const) {
       },
       responses: response,
     }),
-    (c) => c.json(store()[operation](c.req.valid("param").id, c.req.valid("json").version), 200),
+    (c) => {
+      const updated = store()[operation](c.req.valid("param").id, c.req.valid("json").version);
+      changes.publish("human-requests", "notifications");
+      return c.json(updated, 200);
+    },
   );
 }
 

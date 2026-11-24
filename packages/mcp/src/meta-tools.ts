@@ -22,6 +22,17 @@ export function parseMcpMode(value: string | null | undefined): McpMode {
 
 export type ServedTool = (typeof toolDefinitions)[number] | (typeof specToolDefinitions)[number];
 
+export type ToolErrorCode =
+  | "NOT_FOUND"
+  | "INVALID_ARGS"
+  | "TIMEOUT"
+  | "FORBIDDEN"
+  | "CONFLICT"
+  | "UNAUTHORIZED"
+  | "UNAVAILABLE"
+  | "LIMIT_EXCEEDED"
+  | "TOOL_ERROR";
+
 export type ToolResult = {
   content: (
     | { type: "text"; text: string }
@@ -30,6 +41,8 @@ export type ToolResult = {
   isError?: boolean;
   structuredContent?: Record<string, unknown>;
 };
+
+export type CallToolOutcome = ToolResult & { errorCode?: ToolErrorCode };
 
 const searchInput = z.object({
   connection: z
@@ -138,12 +151,35 @@ function firstLine(description: string): string {
   return (sentence ? sentence[0] : line).trim();
 }
 
-function closeNames(served: readonly ServedTool[], name: string): string[] {
-  const needle = name.toLowerCase();
-  return served
-    .map((t) => t.name)
-    .filter((n) => n.toLowerCase().includes(needle) || needle.includes(n.toLowerCase()))
-    .slice(0, 5);
+export function closeNames(served: readonly ServedTool[], name: string): string[] {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return [];
+  const seen = new Set<string>();
+  const matches: string[] = [];
+  const add = (candidate: string) => {
+    if (seen.has(candidate) || matches.length >= 5) return;
+    seen.add(candidate);
+    matches.push(candidate);
+  };
+  for (const tool of served) {
+    const lower = tool.name.toLowerCase();
+    if (lower.includes(needle) || needle.includes(lower)) add(tool.name);
+  }
+  if (matches.length < 5) {
+    const needleTokens = new Set(terms(needle));
+    if (needleTokens.size > 0) {
+      const scored = served
+        .filter((tool) => !seen.has(tool.name))
+        .map((tool) => {
+          const overlap = terms(tool.name).filter((token) => needleTokens.has(token)).length;
+          return { name: tool.name, overlap };
+        })
+        .filter((entry) => entry.overlap > 0)
+        .sort((a, b) => b.overlap - a.overlap || a.name.localeCompare(b.name));
+      for (const entry of scored) add(entry.name);
+    }
+  }
+  return matches;
 }
 
 const STOPWORDS = new Set(
@@ -336,7 +372,13 @@ export async function runMetaTool(
       if (names) {
         const tools = names.map((name) => {
           const tool = served.find((entry) => entry.name === name);
-          return tool ? describe(tool) : { name, error: "Unknown tool" };
+          if (tool) return describe(tool);
+          const close = closeNames(served, name);
+          return {
+            name,
+            error: "Unknown tool",
+            ...(close.length > 0 ? { close_names: close } : {}),
+          };
         });
         return { ...text(JSON.stringify(tools)), structuredContent: { tools } };
       }

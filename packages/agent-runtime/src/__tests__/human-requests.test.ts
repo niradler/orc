@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
+import { resetRedactedSecrets } from "@orc/core/secret-redactor";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
@@ -74,6 +75,7 @@ afterAll(() => {
     else process.env[key] = value;
   }
   resetConfig();
+  resetRedactedSecrets();
   rmSync(cwd, { recursive: true, force: true });
 });
 

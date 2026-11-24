@@ -6,13 +6,14 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { useChat } from "@/hooks/useChat";
+import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { useProjects } from "@/hooks/useProjects";
 import { type SessionHomeNav, useSessionHome } from "@/hooks/useSessionHome";
 import { useSessionSeen } from "@/hooks/useSessionSeen";
 import { useSessionSearch } from "@/hooks/useSessions";
 import { useSsh } from "@/hooks/useSsh";
 import { useStableOrder } from "@/hooks/useStableOrder";
-import type { AgentState } from "@/lib/agent-state";
+import { type AgentState, moreUrgent } from "@/lib/agent-state";
 import {
   type ChatHistoryEntry,
   chatHistoryList,
@@ -34,6 +35,7 @@ import {
 } from "@/lib/session-filter";
 import { sessionHomeSearch } from "@/lib/session-home";
 import { markSeen } from "@/lib/session-seen";
+import { pendingRequestsForSession } from "@/lib/snooze";
 import { terminalPath } from "@/lib/terminal-links";
 import { useTerminals } from "@/lib/terminals";
 
@@ -346,10 +348,43 @@ export function useSessionHistory({
     if (home?.viewId) return entry.seenKeys.includes(`native:${home.viewId}`);
     return entry.id === selectedChatId;
   };
+  const humanRequests = useHumanRequests();
+  const hasPendingRequest = (entry: ChatHistoryEntry) => {
+    if (!humanRequests.data?.length) return false;
+    if (entry.kind === "local" && entry.tab.thread)
+      return (
+        pendingRequestsForSession(humanRequests.data, {
+          threadId: entry.tab.thread.id,
+          sourceId: entry.tab.thread.sourceId,
+          runtimeId: entry.tab.thread.runtimeId,
+          backend: entry.tab.thread.backend,
+          host: entry.tab.thread.host,
+        }).length > 0
+      );
+    if (entry.kind === "saved")
+      return (
+        pendingRequestsForSession(humanRequests.data, {
+          threadId: entry.thread.id,
+          sourceId: entry.thread.sourceId,
+          backend: entry.thread.agent || entry.provider,
+        }).length > 0
+      );
+    if (entry.kind === "native")
+      return (
+        pendingRequestsForSession(humanRequests.data, {
+          sourceId: entry.session.id,
+          runtimeId: entry.session.session_id,
+          backend: entry.session.agent,
+          host: entry.session.host,
+        }).length > 0
+      );
+    return false;
+  };
   const states = new Map(
-    scopedEntries
-      .flatMap(withDescendants)
-      .map((entry) => [entry.id, historyEntryState(entry, seen, isSelected(entry))]),
+    scopedEntries.flatMap(withDescendants).map((entry) => {
+      const base = historyEntryState(entry, seen, isSelected(entry));
+      return [entry.id, hasPendingRequest(entry) ? moreUrgent(base, "needs-you") : base] as const;
+    }),
   );
   const listed = orderedEntries.filter(
     (entry) =>

@@ -1,5 +1,4 @@
 import type { JobEnvironment } from "./job-settings.js";
-import { getRegisteredSecrets } from "./secret-redactor.js";
 import { decryptSecret, encryptSecret } from "./secrets.js";
 
 export function storeJobEnvironment(
@@ -39,7 +38,7 @@ export function resolveJobEnvironment(
     .filter((entry) => entry.secret)
     .map((entry) => env[entry.name] ?? "")
     .filter(Boolean);
-  const secrets = [...new Set([...localSecrets, ...extraSecrets, ...getRegisteredSecrets()])]
+  const secrets = [...new Set([...localSecrets, ...extraSecrets])]
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
   const redact = (text: string): string => redactSecrets(text, secrets);

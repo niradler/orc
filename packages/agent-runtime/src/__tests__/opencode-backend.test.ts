@@ -180,6 +180,63 @@ test("opencode spawns with the session-scoped rule configuration", async () => {
   }
 });
 
+test("opencode propagates bound ORC session identity via MCP URL, X-ORC-Session header, and ORC_SESSION_ID", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-mcp-session-"));
+  const previousSecret = process.env.ORC_API_SECRET;
+  process.env.ORC_API_SECRET = "opencode-test-secret";
+  resetConfig();
+  try {
+    const argvFile = join(cwd, "argv.json");
+    const envSessionFile = join(cwd, "session-env.txt");
+    const source = join(cwd, "opencode.ts");
+    writeFileSync(
+      source,
+      `#!/usr/bin/env bun\nimport { writeFileSync as wf } from 'node:fs';\nwf(${JSON.stringify(envSessionFile)}, process.env.ORC_SESSION_ID ?? '');\n${peerSource(argvFile)}`,
+      { mode: 0o755 },
+    );
+    const script = process.platform === "win32" ? join(cwd, "opencode.exe") : source;
+    if (process.platform === "win32")
+      expect(
+        Bun.spawnSync([process.execPath, "build", source, "--compile", "--outfile", script], {
+          timeout: 30_000,
+        }).exitCode,
+      ).toBe(0);
+    const session = await createBackend("opencode").startSession({
+      cwd,
+      orcMcp: true,
+      orcPreviewSessionId: "chat-thread-521",
+      providerExecutable: script,
+      acpAgent: "opencode",
+    });
+    try {
+      const requests = readFileSync(`${argvFile}.wire`, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      const newSession = requests.find((request) => request.method === "session/new");
+      const orcMcp = newSession?.params?.mcpServers?.find(
+        (server: { name: string }) => server.name === "orc",
+      );
+      expect(orcMcp).toBeDefined();
+      const url = new URL(orcMcp.url);
+      expect(url.searchParams.get("session")).toBe("chat-thread-521");
+      expect(url.searchParams.get("preview_session")).toBe("chat-thread-521");
+      expect(orcMcp.headers).toContainEqual({
+        name: "X-ORC-Session",
+        value: "chat-thread-521",
+      });
+      expect(readFileSync(envSessionFile, "utf8")).toBe("chat-thread-521");
+    } finally {
+      await session.close();
+    }
+  } finally {
+    if (previousSecret === undefined) delete process.env.ORC_API_SECRET;
+    else process.env.ORC_API_SECRET = previousSecret;
+    resetConfig();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
+
 test("opencode backend runs the builtin ACP command with a provider executable override", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-backend-"));
   try {
