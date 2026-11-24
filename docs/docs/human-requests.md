@@ -206,6 +206,24 @@ only the required tools in the workspace's `.cursor/cli.json`, following
 Replace `orc` with that server's name in `.cursor/mcp.json`. This permits calling
 the request service; it does not approve the requested action.
 
+## Secret requests and project secrets
+
+Use `kind: "secret"` on `human_request` when an agent needs one or more credentials without pasting them into chat:
+
+- Supply 1–10 `fields` (`key`, `label`, optional `description`, `required`, `multiline`, `link`, `reference_name`) and optional `save_to_project`. `choices` are rejected.
+- Each field renders masked with a per-field show/hide eye toggle, a paste button (never blocking native paste), password-manager autocomplete hints, multiline support, and an optional wrapping/copyable sign-in link.
+- Raw secret values are **never** persisted in `human_requests.payload`, `human_requests.response`, audit snapshots, notifications, or push payloads.
+- When **Save to project secrets** is unchecked, values live in an encrypted, short-lived in-memory delivery vault (machine key in `~/.orc/secret.key`, aggressive 5-minute TTL) and are cleared on first claim, cancellation, or expiry. If the daemon restarts before delivery, the request becomes `unavailable` and values cannot be recovered.
+- `human_request_get` (backed by `POST /api/human-requests/{id}/claim`) returns values once with `secret: true` and marks them consumed immediately; subsequent reads return `consumed` without values.
+- When **Save to project secrets** is checked, values are stored encrypted at rest in `project_secrets` and the agent receives only `project/<name>` references, never raw values.
+- Channel sessions (Telegram/Slack) **never** accept secrets in chat text. When an ORC web URL is configured under notification forwarding, ORC sends a link to the web card (`/notifications?request=<id>`); if no web surface is configured, the request fails visibly with `"Open ORC to answer this secret request"` instead of hanging.
+- Secret requests are rate-limited per session (10 per 10-minute window) and pending requests expire within 30 minutes.
+- Manage saved secrets per project in **Settings → Secrets** (or the **Secrets** tab of a project): create, rotate, delete, copy `project/<name>` reference, view `last_used_at`, and run **Check** (stored decryption check, optional HTTP check, or optional command check without revealing the value).
+- Reference saved secrets as `project/<name>` in job environment variables, workspace environment variables, or opt-in `secret_refs` on terminal and chat launches. Rotating or deleting a secret applies to the next launch.
+- Saved project secrets and delivered secrets are registered with ORC's output redactor for command outputs, job logs, and channel redaction.
+
+> **Best-effort redaction warning:** An agent that prints a secret value into its own transcript can still leak it. Redaction covers known exact values (and URL/base64/JSON-escaped forms), not transformed or partial forms (such as substrings, reversed text, or hashes). Prefer **Save to project secrets** whenever a secret only needs to be injected into ORC-launched jobs, terminals, or checks.
+
 ## Telegram and Slack
 
 Enable either notification checkbox on the Ask user action. A channel

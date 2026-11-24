@@ -28,7 +28,9 @@
     "./agent-memory": "./src/agent-memory.ts",
     "./memory-transfer": "./src/memory-transfer.ts",
     "./task-audit": "./src/task-audit.ts",
-    "./workspaces": "./src/workspaces.ts"
+    "./workspaces": "./src/workspaces.ts",
+    "./project-secrets": "./src/project-secrets.ts",
+    "./secret-vault": "./src/secret-vault.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

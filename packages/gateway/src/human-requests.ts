@@ -1,5 +1,6 @@
 import type { HumanRequest } from "@orc/core/human-requests";
 import { currentHumanRequest, type HumanRequestStore } from "@orc/db/human-requests";
+import { NotificationDeliveryStore } from "@orc/db/notification-deliveries";
 import { redactSecrets } from "./redact.js";
 import type { GatewayAdapter, IncomingMessage, SupportsInlineButtons } from "./types.js";
 
@@ -65,7 +66,23 @@ function approvalInput(action: NonNullable<HumanRequest["input"]["action"]>): un
 
 /** Uses the existing gateway's authorized targets and event dispatch. No agent listener. */
 export class HumanRequestChannels {
-  constructor(private readonly store: HumanRequestStore) {}
+  constructor(
+    private readonly store: HumanRequestStore,
+    private readonly webBaseUrl?: string,
+  ) {}
+
+  private configuredWebBaseUrl(): string {
+    const explicit = this.webBaseUrl?.trim();
+    if (explicit) return explicit.replace(/\/+$/, "");
+    try {
+      return new NotificationDeliveryStore(this.store.db)
+        .policy()
+        .base_url.trim()
+        .replace(/\/+$/, "");
+    } catch {
+      return "";
+    }
+  }
 
   async notify(adapters: ReadonlyMap<string, GatewayAdapter>, targets: Target[]): Promise<void> {
     for (const entry of this.store.list()) {
@@ -89,6 +106,45 @@ export class HumanRequestChannels {
           continue;
         const adapter = adapters.get(target.platform);
         if (!adapter) continue;
+        const key = destination(target.chat_id, target.thread_id);
+
+        if (request.input.kind === "secret") {
+          if (!this.store.reserveNotification(request, target.platform, key, false)) continue;
+          const webBase = this.configuredWebBaseUrl();
+          const fieldLabels = (request.input.fields ?? []).map((field) => field.label).join(", ");
+          const text = webBase
+            ? [
+                `Notifications · Secret request`,
+                request.input.title ?? "Credentials requested",
+                fieldLabels ? `Fields: ${fieldLabels}` : "",
+                `Open ORC to enter securely: ${webBase}/notifications?request=${encodeURIComponent(request.id)}`,
+                "Do not reply with secrets in chat.",
+              ]
+                .filter(Boolean)
+                .join("\n")
+            : "Open ORC to answer this secret request";
+          try {
+            await adapter.send(target.chat_id, text, {
+              threadId: target.thread_id ?? undefined,
+              projectId: request.input.project_id,
+            });
+            this.store.notificationSent(request.id, target.platform, key);
+            if (!webBase && request.input.origin.channel) {
+              try {
+                const latest = currentHumanRequest(this.store, request.id);
+                if (latest.status === "pending") {
+                  this.store.unavailable(
+                    latest.id,
+                    latest.version,
+                    "Open ORC to answer this secret request",
+                  );
+                }
+              } catch {}
+            }
+          } catch {}
+          continue;
+        }
+
         const action = request.input.action;
         const sensitive = privateInput(request.input);
         const detail = sensitive
@@ -105,7 +161,6 @@ export class HumanRequestChannels {
               .filter(Boolean)
               .join("\n\n");
         const canReply = !sensitive && detail.length <= 2400 && !request.input.multi_select;
-        const key = destination(target.chat_id, target.thread_id);
         if (!this.store.reserveNotification(request, target.platform, key, canReply)) continue;
         const command = `/attention ${request.id} ${request.version}`;
         const instructions = !canReply
@@ -208,6 +263,9 @@ export class HumanRequestChannels {
         return "This recipient no longer has access to the request project. Review it in ORC.";
       if (request.input.origin.channel && request.input.origin.channel.sender_id !== message.userId)
         return "Only the originating sender may answer this request.";
+      if (request.input.kind === "secret") {
+        return "Secrets cannot be sent in chat. Open ORC to answer this secret request.";
+      }
       if (request.input.kind === "question") {
         if (operation !== "answer" || !answer?.trim()) return "This question needs an answer.";
         this.store.respond(id, version, { kind: "question", answer });

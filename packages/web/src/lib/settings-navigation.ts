@@ -5,6 +5,7 @@ export const SETTINGS_GROUP_IDS = [
   "agents",
   "connections",
   "knowledge",
+  "secrets",
   "notifications",
   "usage",
   "security",
@@ -66,6 +67,12 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     domain: "workspace",
   },
   {
+    id: "secrets",
+    label: "Secrets",
+    description: "Encrypted project secrets and references",
+    domain: "workspace",
+  },
+  {
     id: "notifications",
     label: "Notifications",
     description: "Alerts, approvals and cleanup periods",
@@ -120,6 +127,7 @@ const SETTINGS_TARGETS: Record<string, SettingsTarget> = {
   channels: { group: "connections", connectionTab: "channels" },
   integrations: { group: "connections", connectionTab: "integrations" },
   knowledge: { group: "knowledge" },
+  secrets: { group: "secrets" },
   notifications: { group: "notifications" },
   attention: { group: "notifications" },
   usage: { group: "usage" },

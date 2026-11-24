@@ -20,6 +20,7 @@ import {
   CommandSpecSchema,
   HumanRequestInputSchema,
   HumanRequestSchema,
+  SecretClaimResultSchema,
 } from "@orc/core/human-requests";
 import { shortId, ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
@@ -42,6 +43,7 @@ import {
   type ScratchpadKind,
   type ScratchpadListItem,
 } from "@orc/core/scratchpad";
+import { registerRedactedSecrets } from "@orc/core/secret-redactor";
 import { ArchiveSearchSchema, SessionSyncInputSchema } from "@orc/core/session-archive";
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
 import {
@@ -147,6 +149,7 @@ const auditParams = scopeParams.extend({
       "kb",
       "notification",
       "human_request",
+      "project_secret",
       "job_run",
       "task",
       "job",
@@ -261,13 +264,13 @@ export const toolDefinitions = [
   {
     name: "human_request",
     description:
-      "Ask the user for help in Notifications: a question, approval or reviewed command with multiple secure inputs. Use title for a short action name and prompt to explain why it is needed. For kind:command supply the exact host, cwd, native-shell script and command.arguments with name, label, optional description and required. All input fields are masked; values travel only to the reviewed command and are redacted from its output, never returned raw to the agent. Reference values as quoted $ORC_INPUT_NAME in bash/zsh or $env:ORC_INPUT_NAME in PowerShell. Creation never executes anything or grants OS privileges; the user reviews and explicitly runs it. Retain the id and poll human_request_get while pending/running, consume only in the requesting workflow, then acknowledge the returned version. Cancelled/expired/unavailable never authorize retries.",
+      "Ask the user for help in Notifications: a question, approval, reviewed command, or multi-field secret request. Use title for a short action name and prompt to explain why it is needed. For kind:secret supply 1-10 fields (key, label, optional description, required, multiline, link, reference_name) and optional save_to_project; never ask for credentials in chat. For kind:command supply the exact host, cwd, native-shell script and command.arguments with name, label, optional description and required. Creation never executes anything or grants OS privileges. Retain the id and poll human_request_get while pending/running, consume only in the requesting workflow, then acknowledge the returned version. Cancelled/expired/unavailable never authorize retries.",
     inputSchema: humanCreateParams,
   },
   {
     name: "human_request_get",
     description:
-      "Read the state and answer of a human request created by this workflow. Pending means wait; cancelled/expired means do not execute an unapproved action.",
+      "Read the state and answer of a human request created by this workflow. For kind:secret, the first answered read claims the one-time values (or saved project/<name> references) marked secret:true and clears them immediately; subsequent reads return consumed without values. Pending means wait; cancelled/expired/unavailable means do not proceed.",
     inputSchema: humanGetParams,
   },
   {
@@ -275,6 +278,12 @@ export const toolDefinitions = [
     description:
       "After consuming the answer in your originating workflow, acknowledge its exact answered version. Cancelled, expired, unavailable, or denied requests never authorize execution. This does not execute anything.",
     inputSchema: humanAckParams,
+  },
+  {
+    name: "project_secret_list",
+    description:
+      "List named project secret references (project/<name>) and metadata for a project. Returns names, descriptions, and last-used timestamps only — never secret values.",
+    inputSchema: scopedProjectParams,
   },
   {
     name: "skill_update",
@@ -1527,7 +1536,55 @@ export async function executeTool(
       await Bun.sleep(Math.min(500, deadline - Date.now()));
       request = await read();
     }
+    if (request.input.kind === "secret") {
+      if (request.status === "answered" && request.response?.kind === "secret") {
+        if (request.response.consumed) {
+          return JSON.stringify({
+            ...request,
+            secret: true,
+            secret_delivery: { status: "consumed" },
+          });
+        }
+        const claimed = SecretClaimResultSchema.parse(await orcApi("POST", `${path}/claim`));
+        if (claimed.values) registerRedactedSecrets(Object.values(claimed.values));
+        return JSON.stringify({
+          ...claimed.request,
+          secret: true,
+          secret_delivery: claimed.stored
+            ? {
+                status: "delivered",
+                stored: true,
+                references: claimed.references ?? {},
+              }
+            : {
+                status: "delivered",
+                stored: false,
+                values: claimed.values ?? {},
+              },
+        });
+      }
+      if (request.status === "delivered") {
+        return JSON.stringify({
+          ...request,
+          secret: true,
+          secret_delivery: { status: "consumed" },
+        });
+      }
+    }
     return JSON.stringify(request);
+  }
+  if (name === "project_secret_list") {
+    const input = scopedProjectParams.parse(args);
+    const scope =
+      input.project_id !== undefined
+        ? input.project_id
+        : input.project
+          ? resolveProjectId(input.project)?.id
+          : (options.projectScopes?.[0]?.id ?? resolveProjectId()?.id ?? null);
+    if (!scope) throw new ValidationError("Select a project to list its secrets");
+    if (options.projectScopes && !options.projectScopes.some((item) => item.id === scope))
+      throw new ValidationError("Project is outside the selected MCP projects");
+    return JSON.stringify(await orcApi("GET", `/projects/${encodeURIComponent(scope)}/secrets`));
   }
   if (name === "session_sync") {
     const grant = await orcApi<{ sync_url: string }>("POST", "/sessions/archive/sync", {

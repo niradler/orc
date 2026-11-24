@@ -32,6 +32,7 @@ import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { primitivesRouter } from "./routes/primitives.js";
+import { projectSecretsRouter } from "./routes/project-secrets.js";
 import { projectsRouter } from "./routes/projects.js";
 import { pushRouter } from "./routes/push.js";
 import { remoteHostsRouter } from "./routes/remote-hosts.js";
@@ -114,7 +115,7 @@ export function createApp() {
     if (orcErr) {
       return c.json(
         { ...orcErr.details, error: orcErr.message, code: orcErr.code },
-        orcErr.statusCode as 400 | 401 | 403 | 404 | 409 | 500 | 503,
+        orcErr.statusCode as 400 | 401 | 403 | 404 | 409 | 429 | 500 | 503,
       );
     }
     // Hono's own request errors (e.g. malformed JSON body) carry their status.
@@ -153,6 +154,7 @@ export function createApp() {
   app.route("/api", integrationsRouter);
   app.route("/", mcpRouter);
   app.route("/api", projectsRouter);
+  app.route("/api", projectSecretsRouter);
   app.route("/api", skillsRouter);
   app.route("/api", rulesRouter);
   app.route("/api", searchRouter);

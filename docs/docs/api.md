@@ -466,10 +466,14 @@ hidden rows unless asked with `include_hidden=true`.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` `POST` | `/human-requests` | List / create |
-| `GET` | `/human-requests/{id}` | Agent read; marks an answered response seen |
+| `GET` `POST` | `/human-requests` | List / create (`question`, `approval`, `command`, `secret`) |
+| `GET` | `/human-requests/{id}` | Agent read; marks non-secret answered responses seen (never returns raw secret values) |
 | `GET` | `/human-requests/{id}/view` | Human review without delivery/read side effects |
+| `POST` | `/human-requests/{id}/claim` | One-time secret delivery claim (`secret: true`); clears ephemeral values immediately |
 | `POST` | `/human-requests/{id}/respond`, `/acknowledge`, `/cancel` | Answer and close |
+| `GET` `POST` | `/projects/{id}/secrets` | List project secret metadata (never values) / create or rotate |
+| `PUT` `DELETE` | `/projects/{id}/secrets/{name}` | Rotate or update metadata / delete a project secret |
+| `POST` | `/projects/{id}/secrets/{name}/check` | Validate a project secret reference without revealing its value |
 | `GET` | `/rules` | Rule history; `?cwd=` scopes to current policies covering a directory (hook clients), `?workspace=` exact match; `history_truncated` marks a full 200-row page |
 | `GET` | `/rules/catalog` | Rule templates |
 | `POST` | `/rules/check`, `/rules/activate`, `/rules/revert` | Validate / activate / revert |
@@ -523,7 +527,7 @@ internal `path`, `requires_action`, and millisecond timestamps `created_at`,
 Expiry and dismissal do not mutate the source request. SDK methods are
 `client.notifications.list`, `.update` and `.markAllRead`.
 
-`GET /audit` accepts `entity_type` (`notification`, `human_request`, `job_run`,
+`GET /audit` accepts `entity_type` (`notification`, `human_request`, `project_secret`, `job_run`,
 `task`, `settings`, `job`, `rule`, `terminal`, `auth`, `memory`, `skill`, `kb`), `session_id`, `since` (Unix seconds),
 `limit` (1–100, default50), and `project_id` or `scope=global|all`.
 `scope=all` includes project and global entries. `snapshot=preview` substitutes

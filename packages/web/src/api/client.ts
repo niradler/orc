@@ -11,7 +11,7 @@ import type { ChatAnalytics } from "@orc/core/chat-analytics";
 import type { TerminalLaunchOptions } from "@orc/core/chat-options";
 import type { PreviewFile, PreviewRequest } from "@orc/core/desktop-preview";
 import type { GithubSyncState } from "@orc/core/github-sync";
-import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
+import type { HumanRequest, HumanRespondPayload } from "@orc/core/human-requests";
 import type {
   KbComment,
   KbCommentClose,
@@ -53,6 +53,13 @@ import type {
   OrcNotification,
 } from "@orc/core/notifications";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
+import type {
+  ProjectSecretCheck,
+  ProjectSecretCheckResult,
+  ProjectSecretMetadata,
+  ProjectSecretRotate,
+  ProjectSecretUpsert,
+} from "@orc/core/project-secrets";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
@@ -822,13 +829,43 @@ export const api = {
         values,
       }),
     list: () => req<HumanRequest[]>("GET", "/human-requests"),
-    respond: (id: string, version: number, response: HumanResponse) =>
+    respond: (id: string, version: number, response: HumanRespondPayload) =>
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/respond`, {
         version,
         response,
       }),
     cancel: (id: string, version: number) =>
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/cancel`, { version }),
+  },
+  projectSecrets: {
+    list: (projectId: string) =>
+      req<{ secrets: ProjectSecretMetadata[] }>(
+        "GET",
+        `/projects/${encodeURIComponent(projectId)}/secrets`,
+      ),
+    upsert: (projectId: string, input: ProjectSecretUpsert) =>
+      req<ProjectSecretMetadata>(
+        "POST",
+        `/projects/${encodeURIComponent(projectId)}/secrets`,
+        input,
+      ),
+    rotate: (projectId: string, name: string, input: ProjectSecretRotate) =>
+      req<ProjectSecretMetadata>(
+        "PUT",
+        `/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}`,
+        input,
+      ),
+    delete: (projectId: string, name: string) =>
+      req<void>(
+        "DELETE",
+        `/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}`,
+      ),
+    check: (projectId: string, name: string, check?: ProjectSecretCheck) =>
+      req<ProjectSecretCheckResult>(
+        "POST",
+        `/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}/check`,
+        check ? { check } : {},
+      ),
   },
   chat: {
     capabilities: (agent: string, threadId?: string) =>

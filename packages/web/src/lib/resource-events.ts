@@ -110,6 +110,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   ],
   "desktop-preview": [],
   "session-activity": ["sessions", "session", "chat-threads", "palette-live-sessions"],
+  "project-secrets": ["project-secrets"],
 };
 
 const changeListeners = new Set<(resources: ChangeResource[]) => void>();

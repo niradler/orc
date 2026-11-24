@@ -1,20 +1,43 @@
 import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { loadConfig } from "@orc/core/config";
-import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
+import {
+  ConflictError,
+  NotFoundError,
+  TooManyRequestsError,
+  ValidationError,
+} from "@orc/core/errors";
 import {
   CommandResultSchema,
   type HumanRequest,
   type HumanRequestInput,
   HumanRequestInputSchema,
   HumanRequestSchema,
-  HumanResponseSchema,
+  HumanRespondPayloadSchema,
+  type SecretClaimResult,
+  type SecretResponse,
 } from "@orc/core/human-requests";
 import { ulid } from "@orc/core/ids";
-import { AuditLog, installAudit } from "./audit.js";
+import { defaultProjectSecretName, formatProjectSecretRef } from "@orc/core/project-secrets";
+import { registerRedactedSecrets } from "@orc/core/secret-redactor";
+import { type AuditActor, AuditLog, installAudit } from "./audit.js";
 import { publishNotification } from "./notification-producers.js";
 import { NotificationStore, tableExists } from "./notifications.js";
+import { ProjectSecretStore } from "./project-secrets.js";
 import { RuleStore } from "./rules.js";
+import { defaultSecretVault, type SecretDeliveryVault } from "./secret-vault.js";
+
+export const SECRET_REQUEST_MAX_TTL_SECONDS = 1800;
+export const SECRET_PAYLOAD_TTL_MS = 5 * 60 * 1000;
+export const SECRET_RATE_LIMIT_MAX = 10;
+export const SECRET_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+
+export type HumanRequestStoreOptions = {
+  vault?: SecretDeliveryVault;
+  secretPayloadTtlMs?: number;
+  secretRateLimitMax?: number;
+  secretRateLimitWindowMs?: number;
+};
 
 /**
  * The folder a request came from, for a label when no project owns it. Only
@@ -44,10 +67,20 @@ export function humanRequestFolder(db: Database, input: HumanRequestInput): stri
 }
 
 export class HumanRequestStore {
+  private readonly vault: SecretDeliveryVault;
+  private readonly secretPayloadTtlMs: number;
+  private readonly secretRateLimitMax: number;
+  private readonly secretRateLimitWindowMs: number;
+
   constructor(
     readonly db: Database,
     private readonly now: () => number = Date.now,
+    options: HumanRequestStoreOptions = {},
   ) {
+    this.vault = options.vault ?? defaultSecretVault;
+    this.secretPayloadTtlMs = options.secretPayloadTtlMs ?? SECRET_PAYLOAD_TTL_MS;
+    this.secretRateLimitMax = options.secretRateLimitMax ?? SECRET_RATE_LIMIT_MAX;
+    this.secretRateLimitWindowMs = options.secretRateLimitWindowMs ?? SECRET_RATE_LIMIT_WINDOW_MS;
     installAudit(db);
     db.exec(`CREATE TABLE IF NOT EXISTS human_requests (
       id TEXT PRIMARY KEY, origin_key TEXT UNIQUE NOT NULL, input_hash TEXT NOT NULL,
@@ -102,7 +135,12 @@ export class HumanRequestStore {
             (string | number | null)[]
           >(`${sql} RETURNING id,status,version,payload`)
           .all(...params);
-        for (const row of rows) this.recordStatus(row);
+        for (const row of rows) {
+          if (["cancelled", "expired", "unavailable", "delivered"].includes(row.status)) {
+            this.vault.delete(row.id);
+          }
+          this.recordStatus(row);
+        }
         return { changes: rows.length };
       })
       .immediate();
@@ -149,24 +187,64 @@ export class HumanRequestStore {
   }
 
   private expire(): void {
+    const now = this.now();
+    this.vault.prune(now);
     this.updateStatus(
       "UPDATE human_requests SET status='unavailable',delivery_error='Command execution was interrupted or its result is unknown; inspect the host before creating another request',version=version+1 WHERE status='running' AND responded_at<?",
-      this.now() - 330000,
+      now - 330000,
     );
-    const cutoff =
-      this.now() - (loadConfig().preferences.attention_retention_hours ?? 72) * 3600000;
+    const cutoff = now - (loadConfig().preferences.attention_retention_hours ?? 72) * 3600000;
+    const expiredRetention = this.db
+      .query<{ id: string }, [number]>(
+        "SELECT id FROM human_requests WHERE status IN ('pending','answered','unavailable') AND created_at<=?",
+      )
+      .all(cutoff);
     this.updateStatus(
       "UPDATE human_requests SET status='expired',version=version+1 WHERE status IN ('pending','answered','unavailable') AND created_at<=?",
       cutoff,
     );
+    for (const row of expiredRetention) this.vault.delete(row.id);
+
+    const expiredPending = this.db
+      .query<{ id: string }, [number]>(
+        "SELECT id FROM human_requests WHERE status='pending' AND expires_at<=?",
+      )
+      .all(now);
     this.updateStatus(
       "UPDATE human_requests SET status='expired',version=version+1 WHERE status='pending' AND expires_at<=?",
-      this.now(),
+      now,
     );
+    for (const row of expiredPending) this.vault.delete(row.id);
+
+    const lostOwners = this.db
+      .query<{ id: string }, [number]>(
+        "SELECT id FROM human_requests WHERE owner_id IS NOT NULL AND owner_heartbeat_at<? AND status IN ('pending','answered')",
+      )
+      .all(now - 30000);
     this.updateStatus(
       "UPDATE human_requests SET status='unavailable',delivery_error='Originating runtime disconnected; response was not delivered',version=version+1 WHERE owner_id IS NOT NULL AND owner_heartbeat_at<? AND status IN ('pending','answered')",
-      this.now() - 30000,
+      now - 30000,
     );
+    for (const row of lostOwners) this.vault.delete(row.id);
+
+    // Ephemeral secret payloads live only in memory; expiry or restart makes them unrecoverable.
+    const unclaimedSecrets = this.db
+      .query<{ id: string }, []>(
+        `SELECT id FROM human_requests
+         WHERE status='answered'
+           AND json_extract(payload,'$.kind')='secret'
+           AND IFNULL(json_extract(response,'$.stored'),0)=0
+           AND IFNULL(json_extract(response,'$.consumed'),0)=0`,
+      )
+      .all();
+    for (const row of unclaimedSecrets) {
+      if (!this.vault.has(row.id, now)) {
+        this.updateStatus(
+          "UPDATE human_requests SET status='unavailable',delivery_error='Secret payload expired or daemon restarted before delivery; values are no longer recoverable',version=version+1 WHERE id=? AND status='answered'",
+          row.id,
+        );
+      }
+    }
   }
 
   get(id: string): HumanRequest {
@@ -200,7 +278,7 @@ export class HumanRequestStore {
         source_id: request.id,
         title:
           request.input.title ??
-          `${request.input.kind === "approval" ? "Approval" : request.input.kind === "command" ? "Command" : "Question"} · ${request.input.origin.backend}`,
+          `${request.input.kind === "approval" ? "Approval" : request.input.kind === "command" ? "Command" : request.input.kind === "secret" ? "Secret" : "Question"} · ${request.input.origin.backend}`,
         body: request.input.origin.session_title ?? "An agent needs your response.",
         level: "needs-you",
         project_id: request.input.project_id,
@@ -235,6 +313,30 @@ export class HumanRequestStore {
         }
         const id = ulid();
         const now = this.now();
+        if (input.kind === "secret") {
+          const recent =
+            this.db
+              .query<{ count: number }, [string, number]>(
+                `SELECT count(*) AS count FROM human_requests
+                 WHERE json_extract(payload,'$.kind')='secret'
+                   AND json_extract(payload,'$.origin.session_id')=?
+                   AND created_at>=?`,
+              )
+              .get(input.origin.session_id, now - this.secretRateLimitWindowMs)?.count ?? 0;
+          if (recent >= this.secretRateLimitMax) {
+            throw new TooManyRequestsError(
+              "Too many secret requests for this session; wait before requesting another secret",
+              {
+                limit: this.secretRateLimitMax,
+                window_ms: this.secretRateLimitWindowMs,
+              },
+            );
+          }
+        }
+        const ttlSeconds =
+          input.kind === "secret"
+            ? Math.min(input.expires_in_seconds, SECRET_REQUEST_MAX_TTL_SECONDS)
+            : input.expires_in_seconds;
         this.db
           .query(
             "INSERT INTO human_requests(id,origin_key,input_hash,payload,status,version,created_at,expires_at,owner_id,owner_heartbeat_at) VALUES (?,?,?,?,'pending',1,?,?,?,?)",
@@ -245,7 +347,7 @@ export class HumanRequestStore {
             hash,
             payload,
             now,
-            now + input.expires_in_seconds * 1000,
+            now + ttlSeconds * 1000,
             ownerId ?? null,
             ownerId ? now : null,
           );
@@ -284,10 +386,11 @@ export class HumanRequestStore {
     );
   }
 
-  // Runtime-owned and native tool-call requests have their own delivery paths.
+  // Runtime-owned, native tool-call, and unstored secret requests have their own delivery paths.
   private static readonly PUSHABLE = `status='answered' AND owner_id IS NULL AND seen_at IS NULL
     AND push_state IS NULL AND answered_at IS NOT NULL
-    AND json_extract(payload,'$.origin.tool_call_id') IS NULL`;
+    AND json_extract(payload,'$.origin.tool_call_id') IS NULL
+    AND NOT (json_extract(payload,'$.kind')='secret' AND IFNULL(json_extract(response,'$.stored'),0)=0)`;
 
   // Newest first so stuck answers never crowd out new ones.
   pushCandidates(graceMs: number): HumanRequest[] {
@@ -378,34 +481,195 @@ export class HumanRequestStore {
       .map((row) => this.get(row.id));
   }
 
-  respond(id: string, version: number, raw: unknown): HumanRequest {
-    const response = HumanResponseSchema.parse(raw);
-    if (response.kind === "command") throw new ValidationError("Use the Run action for commands");
+  respond(id: string, version: number, raw: unknown, actor: AuditActor = {}): HumanRequest {
+    const response = HumanRespondPayloadSchema.parse(raw);
+    let storedInVault = false;
+    try {
+      return this.db
+        .transaction(() => {
+          const request = this.get(id);
+          if (request.status !== "pending" || request.version !== version)
+            throw new ConflictError("Request is stale or already answered; reload it");
+          if (request.input.kind !== response.kind)
+            throw new ValidationError("Response kind does not match request");
+          if (
+            response.kind === "question" &&
+            response.selected_choices &&
+            (!request.input.multi_select ||
+              new Set(response.selected_choices).size !== response.selected_choices.length ||
+              response.selected_choices.some((choice) => !request.input.choices.includes(choice)) ||
+              response.answer !== response.selected_choices.join(", "))
+          )
+            throw new ValidationError("Selected choices do not match this question");
+
+          let storedResponse: unknown = response;
+          if (response.kind === "secret") {
+            const fields = request.input.fields ?? [];
+            const fieldMap = new Map(fields.map((field) => [field.key, field]));
+            for (const key of Object.keys(response.values)) {
+              if (!fieldMap.has(key)) {
+                throw new ValidationError(`Unknown secret field "${key}"`);
+              }
+            }
+            if (response.reference_names) {
+              for (const key of Object.keys(response.reference_names)) {
+                if (!fieldMap.has(key)) {
+                  throw new ValidationError(`Unknown secret reference field "${key}"`);
+                }
+              }
+            }
+            const cleanValues: Record<string, string> = {};
+            for (const field of fields) {
+              const rawValue = response.values[field.key] ?? "";
+              if (field.required && rawValue.length === 0) {
+                throw new ValidationError(`Missing required secret field "${field.label}"`);
+              }
+              if (rawValue.length > 0) cleanValues[field.key] = rawValue;
+            }
+            const deliveredFields = Object.keys(cleanValues);
+            if (!deliveredFields.length) {
+              throw new ValidationError("Enter at least one secret value");
+            }
+            registerRedactedSecrets(Object.values(cleanValues));
+
+            const now = this.now();
+            if (response.save_to_project) {
+              if (!request.input.project_id) {
+                throw new ValidationError("Saving to project secrets requires a project");
+              }
+              const projectSecrets = new ProjectSecretStore(this.db, this.now);
+              const references: Record<string, string> = {};
+              const usedNames = new Set<string>();
+              for (const key of deliveredFields) {
+                const field = fieldMap.get(key);
+                const secretName =
+                  response.reference_names?.[key] ??
+                  field?.reference_name ??
+                  defaultProjectSecretName(key);
+                if (usedNames.has(secretName)) {
+                  throw new ValidationError(
+                    `Duplicate project secret name "${secretName}" in secret response`,
+                  );
+                }
+                usedNames.add(secretName);
+                projectSecrets.upsert(
+                  request.input.project_id,
+                  {
+                    name: secretName,
+                    value: cleanValues[key] ?? "",
+                    description: field?.description ?? field?.label ?? null,
+                  },
+                  { actor: actor.actor, session_id: request.input.origin.session_id },
+                );
+                references[key] = formatProjectSecretRef(secretName);
+              }
+              const secretMeta: SecretResponse = {
+                kind: "secret",
+                stored: true,
+                references,
+                delivered_fields: deliveredFields,
+                consumed: false,
+              };
+              storedResponse = secretMeta;
+            } else {
+              this.vault.store(id, cleanValues, now + this.secretPayloadTtlMs);
+              storedInVault = true;
+              const secretMeta: SecretResponse = {
+                kind: "secret",
+                stored: false,
+                delivered_fields: deliveredFields,
+                consumed: false,
+              };
+              storedResponse = secretMeta;
+            }
+          }
+
+          this.updateStatus(
+            "UPDATE human_requests SET status='answered',response=?,responded_at=?,answered_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
+            JSON.stringify(storedResponse),
+            this.now(),
+            this.now(),
+            id,
+            version,
+          );
+          return this.get(id);
+        })
+        .immediate();
+    } catch (error) {
+      if (storedInVault) this.vault.delete(id);
+      throw error;
+    }
+  }
+
+  claimSecret(id: string): SecretClaimResult {
+    this.expire();
     return this.db
       .transaction(() => {
         const request = this.get(id);
-        if (request.status !== "pending" || request.version !== version)
-          throw new ConflictError("Request is stale or already answered; reload it");
-        if (request.input.kind !== response.kind)
-          throw new ValidationError("Response kind does not match request");
+        if (request.input.kind !== "secret") {
+          throw new ValidationError("This is not a secret request");
+        }
         if (
-          response.kind === "question" &&
-          response.selected_choices &&
-          (!request.input.multi_select ||
-            new Set(response.selected_choices).size !== response.selected_choices.length ||
-            response.selected_choices.some((choice) => !request.input.choices.includes(choice)) ||
-            response.answer !== response.selected_choices.join(", "))
-        )
-          throw new ValidationError("Selected choices do not match this question");
-        this.updateStatus(
-          "UPDATE human_requests SET status='answered',response=?,responded_at=?,answered_at=?,version=version+1 WHERE id=? AND status='pending' AND version=?",
-          JSON.stringify(response),
-          this.now(),
-          this.now(),
-          id,
-          version,
-        );
-        return this.get(id);
+          request.status === "delivered" ||
+          (request.response?.kind === "secret" && request.response.consumed)
+        ) {
+          throw new ConflictError("Secret response was already consumed", "CONFLICT", {
+            consumed: true,
+          });
+        }
+        if (request.status !== "answered" || request.response?.kind !== "secret") {
+          throw new ConflictError(
+            `Secret request is ${request.status} and cannot be claimed`,
+            "CONFLICT",
+            { consumed: false, status: request.status },
+          );
+        }
+        const now = this.now();
+        const meta = request.response;
+        const nextMeta: SecretResponse = { ...meta, consumed: true };
+
+        if (meta.stored) {
+          this.db
+            .query(
+              "UPDATE human_requests SET response=?,seen_at=COALESCE(seen_at,?) WHERE id=? AND status='answered'",
+            )
+            .run(JSON.stringify(nextMeta), now, id);
+          const updated = this.get(id);
+          return {
+            request: updated,
+            secret: true as const,
+            consumed: false,
+            stored: true,
+            ...(meta.references ? { references: meta.references } : {}),
+          };
+        }
+
+        const values = this.vault.claim(id, now);
+        if (!values) {
+          this.updateStatus(
+            "UPDATE human_requests SET status='unavailable',delivery_error='Secret payload expired or daemon restarted before delivery; values are no longer recoverable',version=version+1 WHERE id=? AND status='answered'",
+            id,
+          );
+          throw new ConflictError("Secret payload expired or is no longer available", "CONFLICT", {
+            consumed: false,
+            status: "unavailable",
+          });
+        }
+
+        registerRedactedSecrets(Object.values(values));
+        this.db
+          .query(
+            "UPDATE human_requests SET response=?,seen_at=COALESCE(seen_at,?) WHERE id=? AND status='answered'",
+          )
+          .run(JSON.stringify(nextMeta), now, id);
+        const updated = this.get(id);
+        return {
+          request: updated,
+          secret: true as const,
+          consumed: false,
+          stored: false,
+          values,
+        };
       })
       .immediate();
   }
@@ -448,6 +712,7 @@ export class HumanRequestStore {
         const request = this.get(id);
         if (request.status !== "answered" || request.version !== version)
           throw new ConflictError("Response is stale or already delivered");
+        this.vault.delete(id);
         this.updateStatus(
           "UPDATE human_requests SET status='delivered',delivered_at=?,version=version+1 WHERE id=? AND status='answered' AND version=?",
           this.now(),
@@ -502,14 +767,20 @@ export class HumanRequestStore {
     }
   }
 
-  unavailable(id: string, version: number): HumanRequest {
+  unavailable(
+    id: string,
+    version: number,
+    deliveryError = "Originating runtime is unavailable; response was not delivered",
+  ): HumanRequest {
     return this.db
       .transaction(() => {
         const request = this.get(id);
         if (!["pending", "answered"].includes(request.status) || request.version !== version)
           throw new ConflictError("Request is stale or no longer deliverable");
+        this.vault.delete(id);
         this.updateStatus(
-          "UPDATE human_requests SET status='unavailable',delivery_error='Originating runtime is unavailable; response was not delivered',version=version+1 WHERE id=? AND version=?",
+          "UPDATE human_requests SET status='unavailable',delivery_error=?,version=version+1 WHERE id=? AND version=?",
+          deliveryError,
           id,
           version,
         );
@@ -535,6 +806,7 @@ export class HumanRequestStore {
           throw new ConflictError(
             "The agent may already have this answer; it can no longer be dismissed",
           );
+        this.vault.delete(id);
         this.updateStatus(
           "UPDATE human_requests SET status='cancelled',version=version+1 WHERE id=? AND version=?",
           id,

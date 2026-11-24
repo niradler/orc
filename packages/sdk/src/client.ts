@@ -8,7 +8,12 @@ import type {
 } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import type { GithubSyncState } from "@orc/core/github-sync";
-import type { HumanRequest, HumanRequestInput, HumanResponse } from "@orc/core/human-requests";
+import type {
+  HumanRequest,
+  HumanRequestInput,
+  HumanRespondPayload,
+  SecretClaimResult,
+} from "@orc/core/human-requests";
 import type {
   KbCallSource,
   KbComment,
@@ -53,6 +58,13 @@ import type {
   OrcNotification,
 } from "@orc/core/notifications";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
+import type {
+  ProjectSecretCheck,
+  ProjectSecretCheckResult,
+  ProjectSecretMetadata,
+  ProjectSecretRotate,
+  ProjectSecretUpsert,
+} from "@orc/core/project-secrets";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleTemplate } from "@orc/core/rule-catalog";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
@@ -366,12 +378,29 @@ export function createOrcClient(options?: OrcClientOptions) {
       list: () => c<HumanRequest[]>("GET", "/human-requests"),
       create: (input: HumanRequestInput) => c<HumanRequest>("POST", "/human-requests", input),
       get: (id: string) => c<HumanRequest>("GET", `/human-requests/${e(id)}`),
-      respond: (id: string, version: number, response: HumanResponse) =>
+      claim: (id: string) => c<SecretClaimResult>("POST", `/human-requests/${e(id)}/claim`),
+      respond: (id: string, version: number, response: HumanRespondPayload) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/respond`, { version, response }),
       acknowledge: (id: string, version: number) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/acknowledge`, { version }),
       cancel: (id: string, version: number) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/cancel`, { version }),
+    },
+    projectSecrets: {
+      list: (projectId: string) =>
+        c<{ secrets: ProjectSecretMetadata[] }>("GET", `/projects/${e(projectId)}/secrets`),
+      upsert: (projectId: string, input: ProjectSecretUpsert) =>
+        c<ProjectSecretMetadata>("POST", `/projects/${e(projectId)}/secrets`, input),
+      rotate: (projectId: string, name: string, input: ProjectSecretRotate) =>
+        c<ProjectSecretMetadata>("PUT", `/projects/${e(projectId)}/secrets/${e(name)}`, input),
+      delete: (projectId: string, name: string) =>
+        c<void>("DELETE", `/projects/${e(projectId)}/secrets/${e(name)}`),
+      check: (projectId: string, name: string, check?: ProjectSecretCheck) =>
+        c<ProjectSecretCheckResult>(
+          "POST",
+          `/projects/${e(projectId)}/secrets/${e(name)}/check`,
+          check ? { check } : {},
+        ),
     },
     rules: {
       catalog: () => c<{ templates: RuleTemplate[] }>("GET", "/rules/catalog"),

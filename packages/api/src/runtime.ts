@@ -4,6 +4,7 @@ import { RESTART_EXIT_CODE } from "@orc/core/process-supervisor";
 import { initializeAgentPreferences } from "@orc/core/provider-service";
 import { closeDb, getSqlite } from "@orc/db/client";
 import { importConfigMcpPrompts } from "@orc/db/mcp-prompts";
+import { ProjectSecretStore } from "@orc/db/project-secrets";
 import { startChannelRuntime } from "@orc/gateway/channel-runtime";
 import {
   closeKnowledgeService,
@@ -42,6 +43,11 @@ try {
   importConfigMcpPrompts(getSqlite());
 } catch (err) {
   logger.error("Could not move MCP prompts from config.json into the database", err);
+}
+try {
+  new ProjectSecretStore(getSqlite()).loadAllForRedaction();
+} catch (err) {
+  logger.error("Could not register saved project secrets with redactor", err);
 }
 // Browser e2e only: a deterministic goal worker so the loop test needs no paid agent.
 if (process.env.ORC_E2E_GOAL_FIXTURE === "1") await import("./e2e-goal-fixture.js");

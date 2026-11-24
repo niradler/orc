@@ -204,6 +204,17 @@ export function deliveryMessage(requests: HumanRequest[]): string {
       if (response.stdout) lines.push("stdout:", fence(response.stdout));
       if (response.stderr) lines.push("stderr:", fence(response.stderr));
       if (response.truncated) lines.push("Output was truncated.");
+    } else if (response?.kind === "secret") {
+      if (response.stored && response.references) {
+        const refs = Object.entries(response.references)
+          .map(([key, ref]) => `${key}=${ref}`)
+          .join(", ");
+        lines.push(`Saved as project secret references (values hidden): ${refs}`);
+      } else {
+        lines.push(
+          `Secret fields provided (${response.delivered_fields.join(", ") || "hidden"}); values are hidden.`,
+        );
+      }
     }
     return lines.join("\n");
   });

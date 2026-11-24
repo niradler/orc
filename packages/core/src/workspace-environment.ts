@@ -56,6 +56,7 @@ export function storeWorkspaceEnvironment(
 
 export function resolveWorkspaceEnvironment(stored: unknown): {
   env: Record<string, string>;
+  secrets: string[];
   redact: (text: string) => string;
   createRedactor: () => JobOutputRedactor;
 } {

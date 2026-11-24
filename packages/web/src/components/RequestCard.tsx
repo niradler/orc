@@ -1,4 +1,4 @@
-import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
+import type { HumanRequest, HumanRespondPayload } from "@orc/core/human-requests";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCheck,
@@ -16,9 +16,11 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { type CommandRequestDraft, CommandRequestForm } from "@/components/CommandRequestForm";
 import { HelpPopover } from "@/components/HelpPopover";
+import { type SecretRequestDraft, SecretRequestForm } from "@/components/SecretRequestForm";
 import { StateBadge } from "@/components/StateBadge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { initialSecretReferenceNames } from "@/lib/secret-ui";
 
 type RequestState = { label: string; tone: string; Icon: LucideIcon; spin?: boolean };
 
@@ -69,6 +71,7 @@ export type RequestDraft = {
   selected: string[];
   editingAnswer: boolean;
   command?: CommandRequestDraft;
+  secret?: SecretRequestDraft;
 };
 
 export function RequestCard({
@@ -102,7 +105,7 @@ export function RequestCard({
   const { pathname } = useLocation();
   const [params] = useSearchParams();
   const respond = useMutation({
-    mutationFn: (response: HumanResponse) =>
+    mutationFn: (response: HumanRespondPayload) =>
       api.humanRequests.respond(request.id, request.version, response),
     onSettled: () => client.invalidateQueries({ queryKey: ["human-requests"] }),
   });
@@ -255,9 +258,11 @@ export function RequestCard({
               <span className={pending ? "text-warning" : undefined}>
                 {request.input.kind === "command"
                   ? "Command"
-                  : request.input.kind === "question"
-                    ? "Question"
-                    : "Approval"}{" "}
+                  : request.input.kind === "secret"
+                    ? "Secret"
+                    : request.input.kind === "question"
+                      ? "Question"
+                      : "Approval"}{" "}
                 · {request.input.origin.backend}
               </span>
               {(request.input.rule_binding || request.input.rule_bindings?.length) && (
@@ -319,6 +324,27 @@ export function RequestCard({
                       script: request.input.command?.script ?? "",
                       editing: false,
                       values: {},
+                    }),
+                    ...update,
+                  },
+                })
+              }
+            />
+          )}
+          {request.input.kind === "secret" && (
+            <SecretRequestForm
+              request={request}
+              actions={secondaryActions}
+              draft={(draft ?? localDraft).secret}
+              onDraftChange={(update) =>
+                updateDraft({
+                  secret: {
+                    ...((draft ?? localDraft).secret ?? {
+                      values: {},
+                      saveToProject: Boolean(
+                        request.input.save_to_project && request.input.project_id,
+                      ),
+                      referenceNames: initialSecretReferenceNames(request.input.fields ?? []),
                     }),
                     ...update,
                   },
@@ -497,18 +523,20 @@ export function RequestCard({
               {secondaryActions}
             </div>
           )}
-          {request.response && request.response.kind !== "command" && (
-            <p
-              data-testid="attention-response"
-              className="text-sm whitespace-pre-wrap wrap-anywhere"
-            >
-              {request.response.kind === "question"
-                ? request.response.answer
-                : request.response.approved
-                  ? "Approved"
-                  : "Denied"}
-            </p>
-          )}
+          {request.response &&
+            request.response.kind !== "command" &&
+            request.response.kind !== "secret" && (
+              <p
+                data-testid="attention-response"
+                className="text-sm whitespace-pre-wrap wrap-anywhere"
+              >
+                {request.response.kind === "question"
+                  ? request.response.answer
+                  : request.response.approved
+                    ? "Approved"
+                    : "Denied"}
+              </p>
+            )}
           {!pending && <div className="flex flex-wrap items-center gap-1">{secondaryActions}</div>}
         </div>
       </div>

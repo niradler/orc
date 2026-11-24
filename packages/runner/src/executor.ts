@@ -7,13 +7,15 @@ import {
   resolveExecHost,
 } from "@orc/core/exec-host";
 import { ulid } from "@orc/core/ids";
-import { resolveJobEnvironment } from "@orc/core/job-environment";
+import { createJobOutputRedactor, resolveJobEnvironment } from "@orc/core/job-environment";
 import { jobShellArgv } from "@orc/core/job-settings";
 import { createLogger } from "@orc/core/logger";
+import { getRegisteredSecrets, redactRegisteredSecrets } from "@orc/core/secret-redactor";
 import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
 import { kbDigestKbId } from "@orc/db/kb-digest";
 import { publishJobNotification } from "@orc/db/notification-producers";
+import { resolveProjectSecretEnv } from "@orc/db/project-secrets";
 import { job_run_logs, job_runs, jobs, sessions } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { runJobAction } from "./job-actions.js";
@@ -134,12 +136,22 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     }
 
     const environment = resolveJobEnvironment(job.environment);
-    redact = environment.redact;
-    const jobEnv = {
+    const rawJobEnv: Record<string, string> = {
       ...(job.env_vars ?? {}),
       ...(opts.input?.env ?? {}),
       ...(opts.envOverrides ?? {}),
       ...environment.env,
+    };
+    const resolvedSecrets = resolveProjectSecretEnv(getSqlite(db), job.project_id, rawJobEnv);
+    const allJobSecrets = [...new Set([...environment.secrets, ...resolvedSecrets.secrets])];
+    const makeRedactor = (extra: readonly string[] = []) =>
+      createJobOutputRedactor([...allJobSecrets, ...extra, ...getRegisteredSecrets()]);
+    redact = (text: string) => {
+      const r = makeRedactor();
+      return redactRegisteredSecrets(r.write(text) + r.finish(), allJobSecrets);
+    };
+    const jobEnv = {
+      ...resolvedSecrets.env,
       ORC_JOB_RUN_ID: runId,
     };
 
@@ -151,7 +163,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
         opts.input?.stdin,
         jobEnv,
         redact,
-        environment.createRedactor(),
+        makeRedactor(),
       );
       await db
         .insert(job_run_logs)
@@ -188,7 +200,12 @@ export async function executeJob(opts: RunOptions): Promise<string> {
     const projectWorkspace =
       host && commandDirectory
         ? await workspaceEnvFor(host, commandDirectory, job.project_id)
-        : { env: {} };
+        : { env: {}, secrets: [] as string[] };
+    const streamSecrets = [...new Set([...allJobSecrets, ...projectWorkspace.secrets])];
+    redact = (text: string) => {
+      const r = makeRedactor(projectWorkspace.secrets);
+      return redactRegisteredSecrets(r.write(text) + r.finish(), streamSecrets);
+    };
     const env: Record<string, string | undefined> = {
       ...process.env,
       ...projectWorkspace.env,
@@ -289,7 +306,7 @@ export async function executeJob(opts: RunOptions): Promise<string> {
       const dec = new TextDecoder();
       let buf = "";
       let receivedBytes = 0;
-      const redactor = environment.createRedactor();
+      const redactor = makeRedactor(projectWorkspace.secrets);
       const encoder = new TextEncoder();
       const safeDecoder = new TextDecoder();
       const accept = (text: string): void => {

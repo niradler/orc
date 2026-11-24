@@ -23,6 +23,7 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
 import { NotificationStore } from "@orc/db/notifications";
+import { deleteProjectSecrets } from "@orc/db/project-secrets";
 import {
   bridge_chats,
   comments,
@@ -527,6 +528,7 @@ app.openapi(deleteRoute, async (c) => {
     tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id)).run();
     detachLegacyKnowledgeCollections(sqlite, id);
     deleteProjectWorkspaceEnvironments(sqlite, id);
+    deleteProjectSecrets(sqlite, id);
     tx.delete(comments)
       .where(and(eq(comments.resource_type, "project"), eq(comments.resource_id, id)))
       .run();
