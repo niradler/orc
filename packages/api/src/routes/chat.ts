@@ -4173,7 +4173,7 @@ export type SignalLiveProcessDeps = {
 export function signalLiveSessionProcess(
   row: {
     status: string;
-    chat_id: string;
+    chat_id: string | null;
     pid: number | null;
     execution_host: string | null;
     backend: string;
