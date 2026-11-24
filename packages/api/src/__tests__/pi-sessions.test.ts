@@ -6,10 +6,12 @@ import { nativeChatAgent } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { writeRegistration } from "@orc/core/live-session";
+import { getSqlite } from "@orc/db/client";
+import { runSync } from "../session-watcher.js";
 import { withLifecycle } from "../sessions/lifecycle.js";
 import { parsePiSession, piAdapter, piSessionRoots } from "../sessions/pi.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
-import { setupTestApp, teardownTestApp } from "./helpers.js";
+import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 const nativeId = "33583f12-72b3-4edf-a18d-8616b7d10723";
 const timestamp = "2026-11-11T08:00:00.000Z";
@@ -203,6 +205,55 @@ test("a Pi transcript with no message is not an openable session and drops its e
     ]);
     expect(await piAdapter(root).list(new Map())).toEqual([]);
   } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a Pi launched without a prompt leaves no ORC session in the list", async () => {
+  const app = setupTestApp();
+  const root = mkdtempSync(join(tmpdir(), "orc-pi-list-"));
+  const registry = join(root, "live");
+  const sessionHeader = { ...header, cwd: root };
+  try {
+    const file = join(root, `2026-11-11_${nativeId}.jsonl`);
+    writeFileSync(file, "");
+    // The row an earlier porc left when it registered a Pi that never prompted.
+    getSqlite()
+      .prepare(
+        "INSERT INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, title, status, transcript_path, created_at, last_activity_at) VALUES ('empty-pi-row', '__live-sessions__', 'pi', 'direct', ?, 'Pi session', 'stopped', ?, unixepoch(), unixepoch())",
+      )
+      .run(nativeId, file);
+    writeRegistration(
+      {
+        backend: "pi",
+        externalId: nativeId,
+        pid: process.pid,
+        title: "Pi session",
+        transcriptPath: file,
+        status: "stopped",
+        createdAt: Date.parse(timestamp),
+        updatedAt: Date.parse(timestamp),
+      },
+      registry,
+    );
+    const adapter = withLifecycle(piAdapter(root), registry);
+    await runSync([adapter], { force: true });
+    expect(
+      (await (await req(app, "GET", "/sessions/live?agent=pi&active=false")).json()).sessions,
+    ).toEqual([]);
+    writeFileSync(
+      file,
+      `${log([
+        sessionHeader,
+        entry("u", null, { type: "message", message: { role: "user", content: "Hello Pi" } }),
+      ])}\n`,
+    );
+    await runSync([adapter], { force: true });
+    expect(
+      (await (await req(app, "GET", "/sessions/live?agent=pi&active=false")).json()).sessions,
+    ).toMatchObject([{ session_id: nativeId, summary: "Hello Pi" }]);
+  } finally {
+    teardownTestApp();
     rmSync(root, { recursive: true, force: true });
   }
 });
