@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import {
   HumanRequestInputSchema,
-  HumanResponseSchema,
+  HumanRespondPayloadSchema,
   parseSnoozeDurationSeconds,
 } from "@orc/core/human-requests";
 import { createOrcClient } from "@orc/sdk";
@@ -30,9 +30,24 @@ export function attentionCommand(): Command {
   command.command("list").action(async () => {
     console.log(JSON.stringify(unwrap(await createOrcClient().humanRequests.list()), null, 2));
   });
-  command.command("get <id>").action(async (id: string) => {
-    console.log(JSON.stringify(unwrap(await createOrcClient().humanRequests.get(id)), null, 2));
-  });
+  command
+    .command("get <id>")
+    .option("--claim", "Claim one-time secret values if this is an answered secret request")
+    .action(async (id: string, opts: { claim?: boolean }) => {
+      const client = createOrcClient();
+      const request = unwrap(await client.humanRequests.get(id));
+      if (
+        opts.claim &&
+        request.input.kind === "secret" &&
+        request.status === "answered" &&
+        request.response?.kind === "secret" &&
+        !request.response.consumed
+      ) {
+        console.log(JSON.stringify(unwrap(await client.humanRequests.claim(id)), null, 2));
+        return;
+      }
+      console.log(JSON.stringify(request, null, 2));
+    });
   command
     .command("request <file>")
     .description("Create an idempotent request from JSON; use - for stdin")
@@ -59,7 +74,7 @@ export function attentionCommand(): Command {
     .description("Submit a question answer or approval JSON; use - for stdin")
     .requiredOption("--version <number>", "Version displayed when reviewing the request")
     .action(async (id: string, file: string, opts: { version: string }) => {
-      const response = HumanResponseSchema.parse(
+      const response = HumanRespondPayloadSchema.parse(
         JSON.parse(readFileSync(file === "-" ? 0 : file, "utf8")),
       );
       console.log(

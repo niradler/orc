@@ -46,3 +46,10 @@ export class ForbiddenError extends OrcError {
     this.name = "ForbiddenError";
   }
 }
+
+export class TooManyRequestsError extends OrcError {
+  constructor(message: string = "Too many requests", details?: Record<string, unknown>) {
+    super(message, "RATE_LIMITED", 429, details);
+    this.name = "TooManyRequestsError";
+  }
+}

@@ -7,11 +7,13 @@ import {
   HumanRequestInputSchema,
   HumanRequestSchema,
   HumanRequestSnoozeSchema,
-  HumanResponseSchema,
+  HumanRespondPayloadSchema,
+  SecretClaimResultSchema,
 } from "@orc/core/human-requests";
 import { getSqlite } from "@orc/db/client";
 import { currentHumanRequest, HumanRequestStore } from "@orc/db/human-requests";
 import { bodyLimit } from "hono/body-limit";
+import { auditActor } from "../lib/audit-actor.js";
 import { prepareCommand } from "../lib/command-request.js";
 import { createRouter } from "../lib/router.js";
 import { selectedTerminalHost } from "../terminals/host.js";
@@ -96,9 +98,37 @@ app.openapi(
     const { id } = c.req.valid("param");
     const request = current(id);
     if (request.status !== "answered") return c.json(request, 200);
+    if (request.input.kind === "secret") return c.json(request, 200);
     if (store().seen(id)) changes.publish("human-requests");
     if (owner) store().responseFetched(id, owner);
     return c.json(current(id), 200);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/human-requests/{id}/claim",
+    tags: ["Human requests"],
+    summary: "Claim one-time secret response values or saved references",
+    request: { params },
+    responses: {
+      200: {
+        description: "One-time secret delivery payload",
+        content: { "application/json": { schema: SecretClaimResultSchema } },
+      },
+    },
+  }),
+  (c) => {
+    const owner = c.req.header("X-ORC-Human-Owner");
+    const { id } = c.req.valid("param");
+    if (owner) store().heartbeat(id, z.string().uuid().parse(owner));
+    current(id);
+    const claimed = store().claimSecret(id);
+    if (owner) store().responseFetched(id, owner);
+    changes.publish("human-requests");
+    c.header("Cache-Control", "no-store");
+    return c.json(claimed, 200);
   },
 );
 
@@ -124,7 +154,7 @@ app.openapi(
       body: {
         content: {
           "application/json": {
-            schema: z.object({ version, response: HumanResponseSchema }).strict(),
+            schema: z.object({ version, response: HumanRespondPayloadSchema }).strict(),
           },
         },
       },
@@ -133,10 +163,14 @@ app.openapi(
   }),
   (c) => {
     const input = c.req.valid("json");
-    const id = c.req.valid("param").id;
+    const { id } = c.req.valid("param");
     current(id);
-    const updated = store().respond(id, input.version, input.response);
+    const updated = store().respond(id, input.version, input.response, auditActor(c));
     changes.publish("human-requests", "notifications");
+    if (input.response.kind === "secret" && input.response.save_to_project) {
+      changes.publish("project-secrets");
+    }
+    c.header("Cache-Control", "no-store");
     return c.json(updated, 200);
   },
 );

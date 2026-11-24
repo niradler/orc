@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
+import { resetRedactedSecrets } from "@orc/core/secret-redactor";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
@@ -74,6 +75,7 @@ afterAll(() => {
     else process.env[key] = value;
   }
   resetConfig();
+  resetRedactedSecrets();
   rmSync(cwd, { recursive: true, force: true });
 });
 
@@ -540,7 +542,7 @@ test("a channel secret question fails visibly instead of deadlocking", async () 
   }
   const error = events.find((event) => event.type === "error");
   expect(typeof error?.data === "string" ? error.data : "").toContain(
-    "Secret input cannot be collected through a channel",
+    "Open ORC to answer this secret request",
   );
   expect(events.some((event) => event.type === "question_request")).toBe(false);
   expect(received).toEqual([]);
@@ -578,7 +580,7 @@ test("a rule-bound channel secret question fails with an error and cancels the n
   }
   const error = events.find((event) => event.type === "error");
   expect(typeof error?.data === "string" ? error.data : "").toContain(
-    "Secret input cannot be collected through a channel",
+    "Open ORC to answer this secret request",
   );
   expect(events.some((event) => event.type === "question_request")).toBe(false);
   expect(
@@ -596,6 +598,71 @@ test("a rule-bound channel secret question fails with an error and cancels the n
       .filter((entry) => entry.input.origin.session_id === session.id),
   ).toEqual([]);
 }, 2000);
+
+test("a channel secret question with a configured web URL creates a durable secret request and delivers the web answer once", async () => {
+  const { session, received } = native(
+    {
+      type: "question_request",
+      data: {
+        requestId: "channel-secret-web",
+        questions: [
+          {
+            id: "OPENAI_API_KEY",
+            header: "OpenAI API key",
+            question: "Enter API key",
+            isSecret: true,
+          },
+        ],
+      },
+    },
+    "claude-cli",
+    {
+      humanRequestContext: {
+        projectId: "project-a",
+        notify: ["telegram"],
+        webBaseUrl: "https://orc.example",
+        channel: { connection: "tg", target: "direct", chat_id: "chat1", sender_id: "nir" },
+      },
+    },
+  );
+  const store = new HumanRequestStore(getSqlite());
+  const events: AgentEvent[] = [];
+  const consuming = (async () => {
+    for await (const event of session.events()) {
+      events.push(event);
+      if (event.type === "result" || event.type === "error") break;
+    }
+  })();
+
+  let secretReq = store
+    .list()
+    .find((entry) => entry.input.origin.session_id === session.id && entry.input.kind === "secret");
+  const deadline = Date.now() + 1500;
+  while (!secretReq && Date.now() < deadline) {
+    await Bun.sleep(20);
+    secretReq = store
+      .list()
+      .find(
+        (entry) => entry.input.origin.session_id === session.id && entry.input.kind === "secret",
+      );
+  }
+  expect(secretReq).toBeDefined();
+  if (!secretReq) return;
+
+  store.respond(secretReq.id, secretReq.version, {
+    kind: "secret",
+    values: { OPENAI_API_KEY: "sk-channel-web-delivered-1234" },
+    save_to_project: false,
+  });
+
+  await consuming;
+  expect(received).toEqual([
+    { id: "channel-secret-web", value: { OPENAI_API_KEY: ["sk-channel-web-delivered-1234"] } },
+  ]);
+  const final = store.get(secretReq.id);
+  expect(final.status).toBe("delivered");
+  expect(JSON.stringify(final)).not.toContain("sk-channel-web-delivered-1234");
+}, 3000);
 
 test("a chat question that cannot enter the inbox still falls back to the original chat", async () => {
   const { session, received } = native(

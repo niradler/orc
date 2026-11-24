@@ -1,4 +1,52 @@
 import { z } from "zod";
+import { ProjectSecretNameSchema, ProjectSecretRefSchema } from "./project-secrets.js";
+
+export const SecretFieldSchema = z
+  .object({
+    key: z.string().regex(/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/),
+    label: z.string().trim().min(1).max(200),
+    description: z.string().trim().min(1).max(1000).optional(),
+    required: z.boolean().default(true),
+    multiline: z.boolean().default(false),
+    link: z
+      .string()
+      .trim()
+      .max(2048)
+      .refine((value) => {
+        try {
+          const url = new URL(value);
+          return (
+            (url.protocol === "https:" || url.protocol === "http:") &&
+            !url.username &&
+            !url.password
+          );
+        } catch {
+          return false;
+        }
+      }, "Link must be an http(s) URL without embedded credentials")
+      .optional(),
+    reference_name: ProjectSecretNameSchema.optional(),
+  })
+  .strict();
+
+export const SecretResponseSchema = z
+  .object({
+    kind: z.literal("secret"),
+    stored: z.boolean(),
+    references: z.record(z.string(), ProjectSecretRefSchema).optional(),
+    delivered_fields: z.array(z.string()).default([]),
+    consumed: z.boolean().default(false),
+  })
+  .strict();
+
+export const SecretRespondPayloadSchema = z
+  .object({
+    kind: z.literal("secret"),
+    values: z.record(z.string().min(1).max(64), z.string().max(16000)),
+    save_to_project: z.boolean().default(false),
+    reference_names: z.record(z.string().min(1).max(64), ProjectSecretNameSchema).optional(),
+  })
+  .strict();
 
 export const CommandSpecSchema = z
   .object({
@@ -80,8 +128,10 @@ export const HumanRequestInputSchema = z
     project_id: identity.nullable().default(null),
     rule_binding: HumanRuleBindingSchema.optional(),
     rule_bindings: z.array(HumanRuleBindingSchema).min(1).max(100).optional(),
-    kind: z.enum(["question", "approval", "command"]),
+    kind: z.enum(["question", "approval", "command", "secret"]),
     command: CommandSpecSchema.optional(),
+    fields: z.array(SecretFieldSchema).min(1).max(10).optional(),
+    save_to_project: z.boolean().optional(),
     title: z.string().trim().min(1).max(200).optional(),
     prompt: z.string().trim().min(1).max(16000),
     choices: z.array(z.string().trim().min(1).max(1000)).max(20).default([]),
@@ -114,6 +164,28 @@ export const HumanRequestInputSchema = z
       });
     if (input.kind === "command" && (input.action || input.choices.length || input.notify.length))
       context.addIssue({ code: "custom", message: "Command requests use the web Run action only" });
+    if ((input.kind === "secret") !== !!input.fields)
+      context.addIssue({
+        code: "custom",
+        message: "Secret requests require between 1 and 10 fields",
+      });
+    if (input.kind !== "secret" && input.save_to_project !== undefined)
+      context.addIssue({
+        code: "custom",
+        message: "save_to_project is only valid for secret requests",
+      });
+    if (input.kind === "secret") {
+      if (input.choices.length || input.multi_select || input.action || input.command)
+        context.addIssue({
+          code: "custom",
+          message: "Secret requests cannot specify choices, multi_select, action, or command",
+        });
+      if (
+        input.fields &&
+        new Set(input.fields.map((field) => field.key)).size !== input.fields.length
+      )
+        context.addIssue({ code: "custom", message: "Secret field keys must be unique" });
+    }
     if (input.rule_binding && input.rule_bindings)
       context.addIssue({ code: "custom", message: "Use one rule binding format" });
     if (input.kind === "approval" && !input.action)
@@ -132,17 +204,30 @@ export const HumanRequestInputSchema = z
       });
   });
 
+const QuestionResponseSchema = z
+  .object({
+    kind: z.literal("question"),
+    answer: z.string().trim().min(1).max(16000),
+    selected_choices: z.array(z.string().min(1).max(1000)).min(1).max(20).optional(),
+  })
+  .strict();
+
+const ApprovalResponseSchema = z
+  .object({ kind: z.literal("approval"), approved: z.boolean() })
+  .strict();
+
 export const HumanResponseSchema = z.discriminatedUnion("kind", [
   CommandResultSchema,
-  z
-    .object({
-      kind: z.literal("question"),
-      answer: z.string().trim().min(1).max(16000),
-      selected_choices: z.array(z.string().min(1).max(1000)).min(1).max(20).optional(),
-    })
-    .strict(),
-  z.object({ kind: z.literal("approval"), approved: z.boolean() }).strict(),
+  QuestionResponseSchema,
+  ApprovalResponseSchema,
+  SecretResponseSchema,
 ]);
+export const HumanRespondPayloadSchema = z.discriminatedUnion("kind", [
+  QuestionResponseSchema,
+  ApprovalResponseSchema,
+  SecretRespondPayloadSchema,
+]);
+
 export const MAX_SNOOZE_SECONDS = 365 * 86400;
 const MAX_EPOCH_MS = 8_640_000_000_000_000;
 
@@ -181,10 +266,27 @@ export const HumanRequestSchema = z.object({
   push_state: z.enum(["pushing", "pushed", "failed", "interrupted"]).nullable().default(null),
   push_error: z.string().nullable().default(null),
 });
+
+export const SecretClaimResultSchema = z
+  .object({
+    request: HumanRequestSchema,
+    secret: z.literal(true),
+    consumed: z.boolean(),
+    stored: z.boolean(),
+    values: z.record(z.string(), z.string()).optional(),
+    references: z.record(z.string(), ProjectSecretRefSchema).optional(),
+  })
+  .strict();
+
+export type SecretField = z.infer<typeof SecretFieldSchema>;
+export type SecretResponse = z.infer<typeof SecretResponseSchema>;
+export type SecretRespondPayload = z.infer<typeof SecretRespondPayloadSchema>;
+export type HumanRespondPayload = z.infer<typeof HumanRespondPayloadSchema>;
 export type HumanRequestInput = z.infer<typeof HumanRequestInputSchema>;
 export type HumanResponse = z.infer<typeof HumanResponseSchema>;
 export type HumanRequestSnoozeInput = z.infer<typeof HumanRequestSnoozeSchema>;
 export type HumanRequest = z.infer<typeof HumanRequestSchema>;
+export type SecretClaimResult = z.infer<typeof SecretClaimResultSchema>;
 
 const DURATION_UNITS: Record<string, number> = {
   s: 1,

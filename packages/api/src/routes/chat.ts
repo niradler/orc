@@ -80,6 +80,7 @@ import {
 import { createLogger } from "@orc/core/logger";
 import { notificationTitle } from "@orc/core/notifications";
 import { AgentSetupSchema } from "@orc/core/package-launch";
+import { SecretRefsMapSchema } from "@orc/core/project-secrets";
 import {
   agentDefaultHome,
   providerChatDefaults,
@@ -113,6 +114,7 @@ import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { notificationProjectLabel } from "@orc/db/notification-producers";
+import { resolveExplicitSecretRefs } from "@orc/db/project-secrets";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions, session_handoffs } from "@orc/db/schema";
 import { SessionMessageStore } from "@orc/db/session-messages";
@@ -2384,6 +2386,7 @@ const requestSchema = z
     agentOptions: ChatAgentOptionsMapSchema.optional(),
     // Where the user is chatting from. Sent to the agent only; the stored message stays the user's text.
     context: ChatTurnContextSchema.optional(),
+    secret_refs: SecretRefsMapSchema.optional(),
   })
   .strict()
   .refine(
@@ -2531,6 +2534,7 @@ async function openChat(
     ? requireThread(body.threadId)
     : await newThread(body.agent, body.model, undefined, body.workspace, body.providerId);
   if (!body.threadId && body.projectId) thread.projectId = body.projectId;
+  if (body.secret_refs !== undefined) thread.secretRefs = body.secret_refs;
   // Settle a confirmed push into a live turn before anything below reads the
   // transcript: the stopped turn's own save lands first, and this request starts
   // from the reloaded thread instead of a snapshot taken before the wait.
@@ -3070,10 +3074,17 @@ async function beginTurn(
           : null;
         if (projectWorkspace?.warning)
           await emit({ type: "system_status", text: projectWorkspace.warning });
+        const injectedSecrets = resolveExplicitSecretRefs(
+          getSqlite(),
+          thread.projectId ?? projectWorkspace?.projectId,
+          thread.secretRefs,
+        );
+        const launchEnv = {
+          ...(projectWorkspace?.env ?? {}),
+          ...injectedSecrets.env,
+        };
         const opts: SessionOpts = {
-          ...(projectWorkspace && Object.keys(projectWorkspace.env).length
-            ? { env: projectWorkspace.env }
-            : {}),
+          ...(Object.keys(launchEnv).length ? { env: launchEnv } : {}),
           providerId: thread.config.providerId,
           toolAllowlist: thread.toolAllowlist,
           chatAgentOptions: thread.config.agentOptions[thread.config.agent],

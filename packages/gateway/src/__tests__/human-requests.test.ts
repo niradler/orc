@@ -223,6 +223,114 @@ test("should retry failed sends, bind Slack threads, and require full review for
   }
 });
 
+test("secret requests send only a web link in channels and never accept secrets in channel text", async () => {
+  const db = new Database(":memory:");
+  try {
+    const store = new HumanRequestStore(db);
+    const secretReq = store.create({
+      origin: {
+        session_id: "s-sec",
+        backend: "codex",
+        request_id: "sec-chan-1",
+        channel: {
+          connection: "tg1",
+          target: "t1",
+          chat_id: "chat-1",
+          sender_id: "nir",
+        },
+      },
+      kind: "secret",
+      title: "API credentials",
+      prompt: "Provide OPENAI_API_KEY",
+      fields: [{ key: "OPENAI_API_KEY", label: "OpenAI API key", required: true }],
+      notify: ["telegram"],
+    });
+    const sent: string[] = [];
+    const adapter: GatewayAdapter = {
+      platform: "telegram",
+      send: async (_id, text) => {
+        sent.push(text);
+        return "sent";
+      },
+    };
+    const channels = new HumanRequestChannels(store, "https://orc.example");
+    await channels.notify(new Map([["tg1:t1", adapter]]), [
+      {
+        platform: "tg1:t1",
+        provider: "telegram",
+        chat_id: "chat-1",
+        project_id: null,
+        thread_id: null,
+      },
+    ]);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain(`https://orc.example/notifications?request=${secretReq.id}`);
+    expect(sent[0]).toContain("Do not reply with secrets in chat");
+    expect(store.get(secretReq.id).status).toBe("pending");
+
+    const attempt = channels.reply({
+      platform: "telegram",
+      connectionId: "tg1:t1",
+      chatId: "chat-1",
+      userId: "nir",
+      text: `/attention ${secretReq.id} 1 answer sk-never-in-chat`,
+    });
+    expect(attempt).toContain("not offered");
+    expect(store.get(secretReq.id).status).toBe("pending");
+  } finally {
+    db.close();
+  }
+});
+
+test("secret requests without a configured web URL fail visibly instead of hanging", async () => {
+  const db = new Database(":memory:");
+  try {
+    const store = new HumanRequestStore(db);
+    const secretReq = store.create({
+      origin: {
+        session_id: "s-sec-noweb",
+        backend: "codex",
+        request_id: "sec-chan-noweb",
+        channel: {
+          connection: "tg1",
+          target: "t1",
+          chat_id: "chat-2",
+          sender_id: "nir",
+        },
+      },
+      kind: "secret",
+      title: "API credentials",
+      prompt: "Provide OPENAI_API_KEY",
+      fields: [{ key: "OPENAI_API_KEY", label: "OpenAI API key", required: true }],
+      notify: ["telegram"],
+    });
+    const sent: string[] = [];
+    const adapter: GatewayAdapter = {
+      platform: "telegram",
+      send: async (_id, text) => {
+        sent.push(text);
+        return "sent";
+      },
+    };
+    const channels = new HumanRequestChannels(store);
+    await channels.notify(new Map([["tg1:t1", adapter]]), [
+      {
+        platform: "tg1:t1",
+        provider: "telegram",
+        chat_id: "chat-2",
+        project_id: null,
+        thread_id: null,
+      },
+    ]);
+    expect(sent).toEqual(["Open ORC to answer this secret request"]);
+    const updated = store.get(secretReq.id);
+    expect(updated.status).toBe("unavailable");
+    expect(updated.delivery_error).toBe("Open ORC to answer this secret request");
+  } finally {
+    db.close();
+  }
+});
+
 test("should suppress channel reminders while snoozed, allow early channel answer to clear snooze, and support channel snooze command", async () => {
   const db = new Database(":memory:");
   let now = 100_000;

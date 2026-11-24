@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ChatAgentOptionsMapSchema, ChatPermissionModeSchema } from "./chat-options.js";
 import { chatUiCatalogText } from "./chat-ui.js";
+import { SecretRefsMapSchema } from "./project-secrets.js";
 import { SessionFileSchema } from "./session-file-types.js";
 import { SessionDeliverySchema } from "./session-messages.js";
 import { AgentCapabilitiesSchema } from "./types.js";
@@ -734,6 +735,7 @@ export const ChatThreadSchema = z.object({
   historyBefore: z.number().int().nonnegative().nullable().optional(),
   importedMessages: z.number().int().nonnegative().optional(),
   projectId: z.string().optional(),
+  secretRefs: SecretRefsMapSchema.optional(),
   transcriptMark: z.string().max(100).optional(),
   // The source conversation and answer this chat was forked from. `mode` records
   // whether the new chat continues a native provider session or replays a

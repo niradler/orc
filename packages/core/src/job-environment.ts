@@ -19,8 +19,12 @@ export function publicJobEnvironment(stored: JobEnvironment | null): JobEnvironm
   return (stored ?? []).map((entry) => ({ ...entry, value: entry.secret ? null : entry.value }));
 }
 
-export function resolveJobEnvironment(stored: JobEnvironment | null): {
+export function resolveJobEnvironment(
+  stored: JobEnvironment | null,
+  extraSecrets: readonly string[] = [],
+): {
   env: Record<string, string>;
+  secrets: string[];
   redact: (text: string) => string;
   createRedactor: () => JobOutputRedactor;
 } {
@@ -30,13 +34,15 @@ export function resolveJobEnvironment(stored: JobEnvironment | null): {
       entry.secret ? decryptSecret(entry.value ?? "") : (entry.value ?? ""),
     ]),
   );
-  const secrets = (stored ?? [])
+  const localSecrets = (stored ?? [])
     .filter((entry) => entry.secret)
     .map((entry) => env[entry.name] ?? "")
+    .filter(Boolean);
+  const secrets = [...new Set([...localSecrets, ...extraSecrets])]
     .filter(Boolean)
     .sort((a, b) => b.length - a.length);
   const redact = (text: string): string => redactSecrets(text, secrets);
-  return { env, redact, createRedactor: () => createJobOutputRedactor(secrets) };
+  return { env, secrets, redact, createRedactor: () => createJobOutputRedactor(secrets) };
 }
 
 export type JobOutputRedactor = { write: (text: string) => string; finish: () => string };

@@ -435,14 +435,15 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 
 See [Human requests](./human-requests.md) and [Command requests](./command-requests.md).
 
-| Tool                        | Description                                                |
-| --------------------------- | ---------------------------------------------------------- |
-| `human_request`             | Ask the user a question, an approval or a reviewed command |
-| `human_request_get`         | Read a request's state and answer                          |
-| `human_request_acknowledge` | Acknowledge an answer after consuming it                   |
-| `human_request_snooze`      | Snooze a pending request until a future time or duration   |
-| `human_request_unsnooze`    | Wake a snoozed pending request immediately                 |
-| `command_request`           | Ask the user to run a command                              |
+| Tool                        | Description                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| `human_request`             | Ask the user a question, approval, reviewed command, or multi-field secret request |
+| `human_request_get`         | Read a request's state/answer; claims one-time secret delivery (`secret: true`)    |
+| `human_request_acknowledge` | Acknowledge an answer after consuming it                                           |
+| `human_request_snooze`      | Snooze a pending request until a future time or duration                           |
+| `human_request_unsnooze`    | Wake a snoozed pending request immediately                                         |
+| `command_request`           | Ask the user to run a command                                                      |
+| `project_secret_list`       | List project secret references (`project/<name>`) and metadata only (never values) |
 
 ### Channels
 

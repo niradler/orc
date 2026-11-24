@@ -31,6 +31,7 @@ export const CHANGE_RESOURCES = [
   "channels",
   "desktop-preview",
   "session-activity",
+  "project-secrets",
 ] as const;
 
 export type ChangeResource = (typeof CHANGE_RESOURCES)[number];

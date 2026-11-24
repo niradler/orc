@@ -1352,7 +1352,7 @@ test("a secret question in a channel turn fails visibly without hanging or persi
   const dir = getLogDir();
   if (!dir) throw new Error("Diagnostic log file was not created");
   const log = readFileSync(join(dir, "orc.log"), "utf8");
-  expect(log).toContain("Secret input cannot enter the inbox");
+  expect(log).toContain("Open ORC to answer this secret request");
   expect(log).not.toContain("SECRET_API_TOKEN_PROMPT");
   await service.receive({
     ...message,

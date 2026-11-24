@@ -15,6 +15,7 @@ import { IntegrationsSettings } from "@/components/IntegrationsSettings";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
 import { McpSettingsForm } from "@/components/McpSettingsForm";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { ProjectSecretsSettings } from "@/components/ProjectSecretsSettings";
 import { RetentionSettings } from "@/components/RetentionSettings";
 import { SecuritySettings } from "@/components/SecuritySettings";
 import { ServerSettings } from "@/components/ServerSettings";
@@ -423,6 +424,12 @@ export default function Settings() {
             {mounted("knowledge") && (
               <div hidden={activeGroup !== "knowledge"}>
                 <KnowledgeSettings />
+              </div>
+            )}
+
+            {mounted("secrets") && (
+              <div hidden={activeGroup !== "secrets"}>
+                <ProjectSecretsSettings active={panelVisible && activeGroup === "secrets"} />
               </div>
             )}
 

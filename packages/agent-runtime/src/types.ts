@@ -19,6 +19,7 @@ export type SessionOpts = {
     | {
         projectId: string;
         notify: ("telegram" | "slack" | "slack-user")[];
+        webBaseUrl?: string | undefined;
         channel?: {
           connection: string;
           target: string;
