@@ -25,12 +25,16 @@ function fakePi() {
   };
 }
 
-function fakeCtx(cwd: string, trusted = false) {
+function fakeCtx(cwd: string, trusted = false, entries: { type: string }[] = []) {
   return {
     cwd,
     hasUI: false,
     signal: undefined,
-    sessionManager: { getSessionId: () => "pi-extension-test", getSessionFile: () => undefined },
+    sessionManager: {
+      getSessionId: () => "pi-extension-test",
+      getSessionFile: () => undefined,
+      getEntries: () => entries,
+    },
     isProjectTrusted: () => trusted,
     ui: {
       setStatus: () => undefined,
@@ -257,11 +261,47 @@ test("the session registers its pid and turn status in the ORC live registry (is
       record.status,
     ]);
   await handlers.session_start?.({ reason: "startup" }, ctx);
-  expect(status()).toEqual([["pi", "pi-extension-test", process.pid, directory, "idle"]]);
+  expect(status()).toEqual([]);
   await handlers.agent_start?.({}, ctx);
   expect(status()).toEqual([["pi", "pi-extension-test", process.pid, directory, "running"]]);
   await handlers.agent_end?.({ messages: [] }, ctx);
   expect(status()).toEqual([["pi", "pi-extension-test", process.pid, directory, "idle"]]);
   await handlers.session_shutdown?.({ reason: "quit" }, ctx);
   expect(status()).toEqual([["pi", "pi-extension-test", process.pid, directory, "stopped"]]);
+});
+
+test("a Pi launched without a prompt leaves no ORC session behind", async () => {
+  const liveDir = join(directory, "live-empty");
+  mkdirSync(liveDir, { recursive: true });
+  // A registration left by an earlier process for a session that never held a message.
+  writeFileSync(
+    join(liveDir, "pi-pi-extension-test.json"),
+    JSON.stringify({
+      backend: "pi",
+      externalId: "pi-extension-test",
+      pid: 1,
+      title: "Pi session",
+      status: "stopped",
+      createdAt: 1,
+      updatedAt: 1,
+    }),
+  );
+  const { handlers, api } = fakePi();
+  porc(api as never, liveDir);
+  const ctx = fakeCtx(directory);
+  await handlers.session_start?.({ reason: "startup" }, ctx);
+  expect(readRegistrations(liveDir)).toEqual([]);
+  await handlers.session_shutdown?.({ reason: "quit" }, ctx);
+  expect(readRegistrations(liveDir)).toEqual([]);
+});
+
+test("a resumed Pi session registers its history immediately", async () => {
+  const liveDir = join(directory, "live-resume");
+  const { handlers, api } = fakePi();
+  porc(api as never, liveDir);
+  const ctx = fakeCtx(directory, false, [{ type: "message" }]);
+  await handlers.session_start?.({ reason: "resume" }, ctx);
+  expect(
+    readRegistrations(liveDir).map((record) => [record.backend, record.externalId, record.status]),
+  ).toEqual([["pi", "pi-extension-test", "idle"]]);
 });

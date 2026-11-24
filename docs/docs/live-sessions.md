@@ -54,7 +54,9 @@ its own notifications and usage.
 
 The list shows only sessions that can be opened. An ended Claude, Codex, Gemini or
 Pi session leaves it when its transcript file is gone, including a session that
-ended before any prompt was sent, and returns when the file comes back. A task's
+ended before any prompt was sent, and returns when the file comes back. A Pi session
+file that exists but holds no message — the file Pi creates when it launches — is
+not listed either, so a Pi started without a prompt leaves no empty row. A task's
 session list keeps its linked sessions either way. A Codex
 rollout compressed in place (`.jsonl.zst`) stays listed and opens as before. Codex's
 own review and approval runs are not listed. Titles skip slash-command and IDE

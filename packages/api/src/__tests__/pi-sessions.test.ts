@@ -157,11 +157,67 @@ test("should discover configured Pi roots without reading secret environment val
   }
 });
 
+test("a Pi transcript with no message is not an openable session and drops its empty row", async () => {
+  const root = mkdtempSync(join(tmpdir(), "orc-pi-empty-"));
+  const namedId = "8f2f0f9f-9d1a-4e26-9a0c-1a6f9c5e2b77";
+  const namedHeader = { ...header, id: namedId };
+  try {
+    // Pi creates the file at launch and writes its header with the first turn.
+    const launchFile = join(root, `2026-11-11_${nativeId}.jsonl`);
+    writeFileSync(launchFile, "");
+    const headerOnly = join(root, `2026-11-11_${namedId}.jsonl`);
+    writeFileSync(headerOnly, `${log([namedHeader])}\n`);
+    const known = new Map(
+      [
+        {
+          id: nativeId,
+          path: launchFile,
+          title: "Pi session",
+        },
+        {
+          id: namedId,
+          path: headerOnly,
+          title: "New session",
+        },
+      ].map(({ id, path, title }) => [
+        id,
+        {
+          lastActivityMs: Date.parse(timestamp),
+          tokensUsed: null,
+          session: {
+            backend: "pi",
+            externalId: id,
+            title,
+            summary: null,
+            status: "stopped" as const,
+            createdAt: new Date(timestamp),
+            lastActivityAt: new Date(timestamp),
+            transcriptPath: path,
+          },
+        },
+      ]),
+    );
+    expect(await piAdapter(root).list(known)).toMatchObject([
+      { externalId: nativeId, transcriptPath: null },
+      { externalId: namedId, transcriptPath: null },
+    ]);
+    expect(await piAdapter(root).list(new Map())).toEqual([]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a live Pi registration marks its transcript session running with the writer pid", async () => {
   const root = mkdtempSync(join(tmpdir(), "orc-pi-live-"));
   const registry = join(root, "live");
   try {
-    writeFileSync(join(root, `2026-11-11_${nativeId}.jsonl`), `${log([header])}\n`);
+    writeFileSync(
+      join(root, `2026-11-11_${nativeId}.jsonl`),
+      `${log([
+        header,
+        entry("u", null, { type: "message", message: { role: "user", content: "Hello Pi" } }),
+      ])}\n`,
+    );
     const live = {
       backend: "pi",
       externalId: nativeId,
