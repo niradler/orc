@@ -218,6 +218,7 @@ Send `tool_execute` an object with `code` and an optional `timeout_ms`. The code
 | `await tools.search(query, { limit, offset, connection })` | `{ tools, total, connections }` with names, short descriptions and read/write effects. External Spec matches carry `connection` and `external: true`; an empty query pages eligible tools and lists external connections. |
 | `await tools.describe(name, { connection })` | Description, input JSON Schema, read/write effect, and output guidance where available. External tools are labeled `external: true` with their `connection`. |
 | `await tools.call(name, args, { connection })` | A JSON value or plain text from ORC, or from an external Spec connection when `connection` is set. MCP tool errors reject the promise. |
+| `await tools.elicit(message, requestedSchema)` | Asks the connected client a form question and returns `{ action, content }` (`action` is `accept`, `decline` or `cancel`). Requires a live connection and a client that declared the `elicitation` capability; otherwise it rejects. See [Elicitation](#elicitation). |
 
 ```js
 const [tasks, jobs] = await Promise.all([
@@ -269,6 +270,12 @@ The server can return a durable **task handle** instead of blocking, so a client
 - **Tasks extension (`io.modelcontextprotocol/tasks`):** the client opts in via `_meta["io.modelcontextprotocol/clientCapabilities"].extensions["io.modelcontextprotocol/tasks"]`. The server then decides per call (server-directed) and returns `resultType: "task"` for long-running tools (`session_start`, `session_wait`, `job_run`, `tool_execute`); other tools still return synchronously. `tasks/get` carries the final `result` (or `error`) inline, `tasks/update` delivers mid-flight input, and `tasks/cancel` acknowledges with `resultType: "complete"`.
 
 Statuses are `working`, `input_required`, `completed`, `failed`, `cancelled`. Cancellation is cooperative. Tasks are bound to the connection's [project scope](#query-parameters); a scoped connection cannot read another scope's tasks. Unknown or expired task IDs fail with `-32602`. A restart marks in-flight tasks `failed` with a clear status message rather than leaving them hanging.
+
+## Elicitation
+
+The server can ask the user for input mid-call using standard MCP [elicitation](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation) (form mode). Inside `tool_execute`, a script calls `await tools.elicit(message, requestedSchema)`; ORC sends `elicitation/create` to the connected client, waits for the answer, and resumes the script with `{ action, content }`. The script should handle `decline` and `cancel` explicitly. Responses are validated against the requested schema, and form mode never collects secrets.
+
+Elicitation needs a **live connection** (local stdio, or a client that keeps the request open) and a client that declared the `elicitation` capability. It is not available inside a background [task](#tasks-long-running-tool-calls) or on a stateless per-request HTTP call; there `tools.elicit` rejects with a clear message instead of hanging. ORC's own `porc` client ([`OrcMcpClient`](./pi.md)) can answer elicitations when given an `onElicitation` handler.
 
 ## Calling tools over REST
 

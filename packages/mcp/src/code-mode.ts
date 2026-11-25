@@ -91,6 +91,8 @@ export const codeToolListing = {
     "Independent reads can use Promise.all; calls with writes are serialized. " +
     "Call results are JSON or plain text (for example, task_list returns lines); failures reject. Return only the fields or summary you need. " +
     "Executions are fresh and can commit writes before failing. Avoid automatic retries of writes. " +
+    "On a live connection, await tools.elicit(message, requestedSchema) asks the user a form question and " +
+    "returns { action, content } where action is accept, decline or cancel; handle decline/cancel explicitly. " +
     "Only the JSON return value and bounded console logs are returned.",
   inputSchema: z.toJSONSchema(inputSchema, { target: "draft-7", io: "input" }),
   outputSchema: z.toJSONSchema(outputSchema, { target: "draft-7" }),
@@ -125,7 +127,22 @@ const requestSchema = z.discriminatedUnion("operation", [
     name: nameSchema,
     args: z.record(z.string(), z.json()),
   }),
+  z.object({
+    operation: z.literal("elicit"),
+    connection: connectionSchema,
+    name: z.string().min(1).max(2000),
+    args: z.record(z.string(), z.json()),
+  }),
 ]);
+
+/** Ask the connected MCP client for user input mid-execution (form elicitation). */
+export type ElicitFn = (params: {
+  message: string;
+  requestedSchema: Record<string, unknown>;
+}) => Promise<{
+  action: "accept" | "decline" | "cancel";
+  content?: Record<string, string | number | boolean | string[]> | undefined;
+}>;
 
 export function toolEffect(name: ToolName): "read" | "write" | undefined {
   if (readable.has(name)) return "read";
@@ -202,6 +219,7 @@ export async function runCodeMode(
   input: unknown,
   signal: AbortSignal,
   callTool: (name: string, args: unknown) => Promise<ToolResult>,
+  elicit?: ElicitFn | undefined,
 ): Promise<ToolResult> {
   const parsed = inputSchema.safeParse(input);
   if (!parsed.success || Buffer.byteLength(parsed.data.code) > CODE_LIMITS.sourceBytes) {
@@ -219,6 +237,28 @@ export async function runCodeMode(
         if (payload.length > CODE_LIMITS.requestChars || !hasBoundedJsonShape(payload))
           throw new Error("Tool request exceeded its size or complexity limit");
         const request = requestSchema.parse(JSON.parse(payload));
+        if (request.operation === "elicit") {
+          return {
+            serial: true,
+            async dispatch() {
+              if (!elicit)
+                return encodeReply({
+                  error: "Elicitation needs a live MCP connection; it is unavailable on this call.",
+                });
+              try {
+                const result = await elicit({
+                  message: request.name,
+                  requestedSchema: request.args,
+                });
+                return encodeReply({ value: result });
+              } catch (err) {
+                return encodeReply({
+                  error: err instanceof Error ? err.message : "Elicitation failed",
+                });
+              }
+            },
+          };
+        }
         const connection = request.connection;
         if (connection) {
           if (!tools.some((tool) => tool.name === "spec_invoke")) {

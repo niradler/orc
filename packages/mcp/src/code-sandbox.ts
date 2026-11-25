@@ -45,6 +45,7 @@ const bootstrap = `
         search: (query = "", options = {}) => request("search", query, options, options.connection),
         describe: (name, options = {}) => request("describe", name, undefined, options.connection),
         call: (name, args = {}, options = {}) => request("call", name, args, options.connection),
+        elicit: (message, requestedSchema = {}) => request("elicit", message, requestedSchema),
       }),
       console: freeze({ log: print, info: print, warn: print, error: print, debug: print }),
       errorMessage: error => slice(typeof error === "string" ? error : Text(error?.message ?? ""), 0, 512),

@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { PorcConfig } from "./config.js";
 import { buildMcpUrl } from "./mcp.js";
 
@@ -14,6 +15,15 @@ export type OrcToolInfo = {
   name: string;
   description: string;
 };
+
+/** Answer a server elicitation; omit content for decline/cancel. */
+export type OrcElicitationHandler = (params: {
+  message: string;
+  requestedSchema: Record<string, unknown>;
+}) => Promise<{
+  action: "accept" | "decline" | "cancel";
+  content?: Record<string, string | number | boolean | string[]> | undefined;
+}>;
 
 const META_TOOLS = new Set(["tool_search", "tool_describe", "tool_invoke"]);
 
@@ -65,6 +75,7 @@ export class OrcMcpClient {
     >,
     private readonly sessionId: string | undefined,
     private readonly cwd: string,
+    private readonly onElicitation?: OrcElicitationHandler | undefined,
   ) {}
 
   private async open(): Promise<Client> {
@@ -87,7 +98,23 @@ export class OrcMcpClient {
             },
             stderr: "ignore",
           });
-    const client = new Client({ name: "porc", version: "0.1.0" }, { capabilities: {} });
+    const client = new Client(
+      { name: "porc", version: "0.1.0" },
+      { capabilities: this.onElicitation ? { elicitation: { form: {} } } : {} },
+    );
+    if (this.onElicitation) {
+      const handler = this.onElicitation;
+      client.setRequestHandler(ElicitRequestSchema, async (request) => {
+        const params = request.params as {
+          message: string;
+          requestedSchema?: Record<string, unknown>;
+        };
+        return handler({
+          message: params.message,
+          requestedSchema: params.requestedSchema ?? {},
+        });
+      });
+    }
     await timeout(client.connect(transport), this.config.timeoutMs, "ORC MCP connect");
     return client;
   }
