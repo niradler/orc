@@ -33,6 +33,37 @@ use it as the caller identity. ORC adds both `?session=<id>` and
 automatically to every chat, flow and job session it starts. Stdio MCP reads
 `ORC_SESSION_ID` (or `CLAUDE_CODE_SESSION_ID`) from the agent's environment.
 
+An authenticated HTTP connection without a session binding acts as a
+**coordinator**. ORC creates (or reuses) one lightweight root chat session per
+client name and binds the connection to it, so external orchestrators can use
+`session_start`, `session_list`, `session_status`, `session_read`,
+`session_send`, `session_wait` and `session_stop` without a pre-existing session
+id. Name the client with `?client=<name>` or the `X-ORC-Actor-Name` header;
+unnamed clients share the `mcp` coordinator. The name is self-declared
+attribution, not isolation: any connection holding the API secret may claim any
+name and then acts as that client's coordinator — its session, children, and
+spawn budget. Bearer authentication against the shared API secret is the
+security boundary. `session_start` and `session_list` return
+`coordinator_session_id`, and `session_start` also returns the effective
+Settings `defaults` (`agent`, `model`, `provider_id`); the coordinator's chat
+settings are refreshed from the live defaults on every request, so children
+inherit those same values even when the defaults change after the coordinator
+was created. Manual edits to a coordinator thread's own chat settings do not
+persist across MCP requests — bind with `?session=` for a fixed configuration.
+Coordinator children default `notify` to false — follow them with
+`session_wait`/`session_status`.
+The coordinator appears in Chat and Sessions like any root conversation, and
+the same ownership guardrails apply: it can steer or stop only its own
+descendants. The coordinator identity does not enable `speak` or desktop
+preview tools; those follow the explicit session/preview binding. With no API
+secret configured, unbound connections keep the explicit-identity requirement.
+Coordinator creation is recorded in `audit_list` (entity `session`) with the
+client name. A connection scoped to a single project roots its coordinator in
+that project's folder, so `workspace: same` children start there.
+Coordinators are not garbage-collected: each distinct client name permanently
+leaves one root session and one audit entry, and unnamed connections share the
+single `mcp` coordinator — including its ten-spawns-per-hour budget.
+
 ## Desktop preview tools
 
 These tools require a connected Electron desktop viewing the requested ORC chat
@@ -148,6 +179,7 @@ With no secret configured, requests are accepted unauthenticated. To avoid handi
 | `project`  | `/mcp?project=my-app`      | Scope the connection to one project            |
 | `projects` | `/mcp?projects=my-app,api` | Scope to several projects (max 50)             |
 | `session`  | `/mcp?session=<id>`        | Bind caller session identity (also accepted via `X-ORC-Session` header) |
+| `client`   | `/mcp?client=grok-bot`     | Name the coordinator for an unbound authenticated connection |
 
 Project names are case-insensitive; unknown names are rejected. Use `project` or `projects`, not both. On a scoped connection, tool calls default to the selected project(s); a call naming a project outside the selection fails.
 
@@ -380,7 +412,7 @@ See [Reusable agent packages](./agent-packages.md).
 
 | Tool                   | Description                                                          |
 | ---------------------- | -------------------------------------------------------------------- |
-| `agent_list`           | Discover shared APM `.agent.md` profiles                             |
+| `agent_list`           | Discover shared APM `.agent.md` role profiles (not execution harnesses; see `session_start`'s `agent` for harness ids) |
 | `agent_read`           | Read a profile: original YAML/Markdown, role, model, tools, handoffs |
 | `agent_create`         | Create a shared, validated `.agent.md` definition                    |
 | `agent_update`         | Replace an agent definition                                          |
@@ -418,8 +450,14 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 | `session_list`     | List the sessions this session started                                                                                                  |
 | `session_stop`     | Stop a started session's turn and, by default, the sessions it started                                                                  |
 | `session_search`   | Search archived and indexed session passages                                                                                            |
-| `session_read`     | Read a cited archived-session passage or a page of turns                                                                                |
+| `session_read`     | Read a cited archived-session passage or a page of turns; unarchived sessions (such as `session_start` children) fall back to their live chat transcript |
 | `session_sync`     | Request a one-hour upload capability for local session sync                                                                             |
+
+On a coordinator connection, `session_start` and `session_list` also return
+`coordinator_session_id`, and `session_start` adds the effective Settings
+`defaults` (`agent`, `model`, `provider_id`). Its `agent` parameter names an
+execution harness — the schema enumerates the built-in ids and accepts custom
+Settings agent ids.
 
 ### Scratchpads
 

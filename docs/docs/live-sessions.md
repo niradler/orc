@@ -202,9 +202,11 @@ envelope.
 
 The same queue is available to agents through the `session_send` MCP tool
 (ORC-managed sessions bind the connection automatically with `?session=<session id>`
-and `X-ORC-Session`, and stdio MCP reads `ORC_SESSION_ID`; an explicitly unbound
-MCP client can still `queue` via the human-relay fallback, while `steer` and
-`interrupt` require a bound ancestor session) and to chat channels with `/send <session id> <message>`.
+and `X-ORC-Session`, and stdio MCP reads `ORC_SESSION_ID`; an authenticated
+unbound HTTP connection sends as its coordinator session, and other explicitly
+unbound MCP clients can still `queue` via the human-relay fallback, while
+`steer` and `interrupt` require a bound ancestor session) and to chat channels
+with `/send <session id> <message>`.
 Agent-origin sends default to `mode: "queue"`; `steer` and `interrupt` are
 explicit choices. The delivery receipt reports `queued`, `steered`, `resumed`,
 `failed`, or `unsupported` so callers do not need to poll.
@@ -264,6 +266,18 @@ Guardrails:
   for that pair.
 - A chain of started sessions stops at three levels, and a session can start
   at most ten sessions an hour.
+
+External coordinators: an authenticated MCP HTTP client without `?session=`
+gets a lightweight coordinator session (one per `?client=<name>`, reused across
+requests) and can drive the same tools — `session_start` returns
+`coordinator_session_id` plus the Settings `defaults` (children keep inheriting
+the live defaults even after they change), children default `notify` to false,
+and `session_wait`/`session_status`/`session_read` follow them. The client name
+is attribution, not a security boundary: any holder of the shared API secret
+may claim any name, and coordinators are never garbage-collected — each name
+leaves a permanent root session, and unnamed clients share the default `mcp`
+coordinator and its hourly spawn limit. See [MCP →
+Transports](./mcp.md#transports).
 
 Chat and the session detail show the lineage: **Started by** links the parent,
 and **Started N sessions** lists the children, including the worker sessions

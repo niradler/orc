@@ -4,12 +4,19 @@ import { ValidationError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { getSqlite } from "@orc/db/client";
 import { ScratchpadStore } from "@orc/db/scratchpads";
-import { createMcpServer, type McpMode, parseMcpMode, parseMcpProjects } from "@orc/mcp";
+import {
+  createMcpServer,
+  type McpMode,
+  parseMcpMode,
+  parseMcpProjects,
+  resolveMcpProjects,
+} from "@orc/mcp";
 import { Hono } from "hono";
 import { z } from "zod";
 import { clientOrigin } from "../lib/client-origin.js";
 import { bearerAuth } from "../middleware/auth.js";
 import { scratchpadContentUrls } from "../scratchpad-content.js";
+import { ensureCoordinatorSession } from "../sessions/coordinator.js";
 import { skillDownloads } from "../skill-downloads.js";
 import { reassignSessions } from "./projects.js";
 
@@ -50,13 +57,25 @@ app.all("/mcp", async (c) => {
   const querySession = sessionSchema.parse(c.req.query("session"));
   const headerSession = sessionSchema.parse(c.req.header("X-ORC-Session") || undefined);
   const agentSessionId = querySession ?? preview.sessionId ?? headerSession;
+  // An authenticated connection without a session binding acts as a coordinator:
+  // a lightweight root session it can start and manage children from. Anonymous
+  // installs keep the explicit-identity requirement.
+  const coordinatorSessionId =
+    !agentSessionId && configuredApiSecret(loadConfig().api.secret)
+      ? ensureCoordinatorSession({
+          client: c.req.query("client") ?? c.req.header("x-orc-actor-name"),
+          projects: projects ? resolveMcpProjects(projects) : undefined,
+        }).id
+      : undefined;
+  const callingSessionId = agentSessionId ?? coordinatorSessionId;
   const server = createMcpServer({
     publicApiBaseUrl: origin,
     projectsChanged: reassignSessions,
     mode,
     requestSignal: c.req.raw.signal,
     allowCodeExecution: !!configuredApiSecret(loadConfig().api.secret),
-    ...(agentSessionId ? { agentSessionId } : {}),
+    ...(callingSessionId ? { agentSessionId: callingSessionId } : {}),
+    ...(coordinatorSessionId ? { coordinatorSessionId } : {}),
     ...(preview.sessionId
       ? { previewScope: { sessionId: preview.sessionId, clientId: preview.clientId } }
       : {}),

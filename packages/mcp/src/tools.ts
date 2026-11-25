@@ -7,8 +7,15 @@ import {
   updateAgent,
 } from "@orc/core/agent-service";
 import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
+import { AGENT_ID_PATTERN, CODING_AGENTS } from "@orc/core/coding-agents";
 import { clearSetupDismissal, loadConfig, resolveApiBase } from "@orc/core/config";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  OrcError,
+  ValidationError,
+} from "@orc/core/errors";
 import { isGitRemoteUrl } from "@orc/core/git-remote";
 import {
   GithubSyncConfigSchema,
@@ -33,6 +40,7 @@ import {
   readPackageFile,
   updatePackage,
 } from "@orc/core/package-service";
+import { providerChatDefaults } from "@orc/core/provider-service";
 import {
   SCRATCHPAD_KINDS,
   SCRATCHPAD_TAGS_MAX,
@@ -108,6 +116,26 @@ const projectParam = z
   .describe(
     "Project name (e.g. 'orc'). Overrides connection defaults within its selected projects; otherwise uses activeProject from config.",
   );
+/** Execution backends, not agent_list's role profiles: built-in harness ids plus custom Settings agents. */
+const harnessParam = z
+  .union([
+    z.enum(CODING_AGENTS.map((agent) => agent.id) as [string, ...string[]]),
+    z.string().regex(AGENT_ID_PATTERN),
+  ])
+  .optional()
+  .describe(
+    `Coding harness to run (${CODING_AGENTS.map((agent) => agent.id).join(", ")}, or a custom agent id from Settings). Omit for the Settings default, reported as defaults in the result.`,
+  );
+const sessionSpawnToolSchema = SessionSpawnSchema.omit({ project_id: true, notify: true }).extend({
+  project: projectParam,
+  agent: harnessParam,
+  notify: z
+    .boolean()
+    .optional()
+    .describe(
+      "Push the child's final reply, failure, stop or human question into this session (default true; coordinator connections default to false and use session_wait/session_status instead).",
+    ),
+});
 const memoryNameParam = z.string().min(1).max(64).describe("Memory name, e.g. 'api-port'");
 const memoryPriorityParam = z
   .number()
@@ -375,8 +403,8 @@ export const toolDefinitions = [
   {
     name: "session_start",
     description:
-      "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree on a new branch cut from your committed HEAD, or from another project's checkout; uncommitted edits are not carried), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC queues the child's final reply, failure, stop or human question for your next safe point (delivered when your current turn ends, or starts a turn when idle) without interrupting your running turn. Use session_wait to block instead, session_send to message it (with explicit mode steer or interrupt if needed), session_stop to stop it.",
-    inputSchema: SessionSpawnSchema.omit({ project_id: true }).extend({ project: projectParam }),
+      "Start another agent session headlessly with a prompt and get its session_id at once. It runs in the background and appears in ORC Chat and Sessions. workspace: same (default, your folder and uncommitted edits), worktree (a new git worktree on a new branch cut from your committed HEAD, or from another project's checkout; uncommitted edits are not carried), project (the project's main checkout). Pass project to work in another project within your MCP scope. With notify (default true) ORC queues the child's final reply, failure, stop or human question for your next safe point (delivered when your current turn ends, or starts a turn when idle) without interrupting your running turn. Use session_wait to block instead, session_send to message it (with explicit mode steer or interrupt if needed), session_stop to stop it. An authenticated MCP connection without ?session= acts as a coordinator: the result adds coordinator_session_id and the effective Settings defaults (agent/model); its children default notify to false. agent names a harness (claude, codex, opencode, ...), not an agent_list role profile.",
+    inputSchema: sessionSpawnToolSchema,
   },
   {
     name: "session_status",
@@ -412,7 +440,8 @@ export const toolDefinitions = [
   },
   {
     name: "session_list",
-    description: "List the sessions this session started, with status and last reply.",
+    description:
+      "List the sessions this session started, with status and last reply. A coordinator connection also returns its coordinator_session_id.",
     inputSchema: z.object({}).strict(),
   },
   {
@@ -447,7 +476,7 @@ export const toolDefinitions = [
   {
     name: "session_read",
     description:
-      "Read a cited archived-session passage, or a bounded page of conversation turns. Pin the revision from session_search for stable evidence after more messages arrive.",
+      "Read a cited archived-session passage, or a bounded page of conversation turns. Pin the revision from session_search for stable evidence after more messages arrive. Sessions that are not archived (for example children started with session_start) fall back to their live chat transcript.",
     inputSchema: z
       .object({
         id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
@@ -1012,7 +1041,7 @@ export const toolDefinitions = [
   {
     name: "agent_list",
     description:
-      "Discover shared APM .agent.md profiles usable across coding backends. Includes malformed definitions with validation errors.",
+      "Discover shared APM .agent.md role profiles usable across coding backends. Profiles are role definitions, not execution harnesses; session_start's agent parameter lists the harness ids. Includes malformed definitions with validation errors.",
     inputSchema: z.object({}),
   },
   {
@@ -1291,6 +1320,12 @@ export type ToolOptions = {
    * HTTP MCP receives it from the `session` query parameter on the MCP URL.
    */
   agentSessionId?: string | null;
+  /**
+   * Set when the calling identity is an auto-created MCP coordinator session rather than an
+   * explicitly bound conversation. Session tools report it so external clients can reference
+   * it; speak stays limited to explicit bindings.
+   */
+  coordinatorSessionId?: string | null;
 };
 
 /** The agent session that launched this process, when the agent exposes it. */
@@ -1719,26 +1754,55 @@ async function runTool(
       .parse(args);
     if (input.ordinal !== undefined && input.revision === undefined)
       throw new ValidationError("Passage reads require the cited revision");
-    if (options.projectScopes) {
-      const { session } = await orcApi<{ session: { project_id: string | null } }>(
-        "GET",
-        `/sessions/archive/${input.id}`,
-      );
-      if (!options.projectScopes.some((p) => p.id === session.project_id))
-        throw new ValidationError("Session is outside the selected MCP projects");
-    }
     const params = new URLSearchParams({
       ...(input.revision ? { revision: String(input.revision) } : {}),
       ...(input.ordinal !== undefined
         ? { ordinal: String(input.ordinal) }
         : { offset: String(input.offset), limit: String(input.limit) }),
     });
-    return JSON.stringify(
-      await orcApi(
-        "GET",
-        `/sessions/archive/${input.id}/${input.ordinal !== undefined ? "passage" : "transcript"}?${params}`,
-      ),
-    );
+    try {
+      if (options.projectScopes) {
+        const { session } = await orcApi<{ session: { project_id: string | null } }>(
+          "GET",
+          `/sessions/archive/${input.id}`,
+        );
+        if (!options.projectScopes.some((p) => p.id === session.project_id))
+          throw new ValidationError("Session is outside the selected MCP projects");
+      }
+      return JSON.stringify(
+        await orcApi(
+          "GET",
+          `/sessions/archive/${input.id}/${input.ordinal !== undefined ? "passage" : "transcript"}?${params}`,
+        ),
+      );
+    } catch (err) {
+      // Spawned children are live chats, not archives; read their transcript instead.
+      if (!(err instanceof OrcError) || err.statusCode !== 404 || input.ordinal !== undefined)
+        throw err;
+      const current = SessionStatusSchema.parse(
+        await orcApi("GET", `/sessions/live/${encodeURIComponent(input.id)}/status`),
+      );
+      if (options.projectScopes && !options.projectScopes.some((p) => p.id === current.project_id))
+        throw new ValidationError("Session is outside the selected MCP projects");
+      const chat = await orcApi<{
+        messages: { role: string; content: string; timestamp: number }[];
+      }>("GET", `/chat/threads/${encodeURIComponent(input.id)}`);
+      const turns = chat.messages
+        .slice(input.offset, input.offset + input.limit)
+        .map((message, index) => ({
+          index: input.offset + index,
+          role: message.role,
+          time: new Date(message.timestamp).toISOString(),
+          content: message.content,
+        }));
+      return JSON.stringify({
+        session_id: input.id,
+        source: "live-chat",
+        total: chat.messages.length,
+        offset: input.offset,
+        turns,
+      });
+    }
   }
   if (isKbTool(name)) {
     const input = args as Record<string, unknown>;
@@ -1751,7 +1815,7 @@ async function runTool(
     );
   }
   if (name === "speak") {
-    if (!options.agentSessionId)
+    if (!options.agentSessionId || options.coordinatorSessionId)
       throw new ValidationError(
         "speak needs the calling conversation; reconnect MCP with ?session=<session id>",
       );
@@ -1801,27 +1865,43 @@ async function runTool(
       throw name === "session_stop" ? new ForbiddenError(message) : new ValidationError(message);
     }
     const headers = { "X-ORC-Session": options.agentSessionId };
+    const coordinator = options.coordinatorSessionId ?? null;
     if (name === "session_start") {
-      const { project, ...input } = SessionSpawnSchema.omit({ project_id: true })
-        .extend({ project: projectParam })
-        .parse(args);
+      const { project, ...input } = sessionSpawnToolSchema.parse(args);
+      const status = SessionStatusSchema.parse(
+        await orcApi("POST", "/sessions/live/spawn", {
+          body: {
+            ...input,
+            notify: input.notify ?? !coordinator,
+            ...(project ? { project_id: padProject(project, options) } : {}),
+          },
+          headers,
+        }),
+      );
+      if (!coordinator) return JSON.stringify(status);
+      // External coordinators have no live turn to receive notifications and must not
+      // guess the installation's defaults; report both the identity and the defaults.
+      const defaults = providerChatDefaults();
+      return JSON.stringify({
+        ...status,
+        coordinator_session_id: coordinator,
+        defaults: {
+          agent: defaults.agent,
+          model: defaults.model,
+          provider_id: defaults.providerId ?? null,
+        },
+      });
+    }
+    if (name === "session_list") {
+      const result = await orcApi<{ sessions: unknown[] }>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(options.agentSessionId)}/children`,
+        { headers },
+      );
       return JSON.stringify(
-        SessionStatusSchema.parse(
-          await orcApi("POST", "/sessions/live/spawn", {
-            body: { ...input, ...(project ? { project_id: padProject(project, options) } : {}) },
-            headers,
-          }),
-        ),
+        coordinator ? { ...result, coordinator_session_id: coordinator } : result,
       );
     }
-    if (name === "session_list")
-      return JSON.stringify(
-        await orcApi(
-          "GET",
-          `/sessions/live/${encodeURIComponent(options.agentSessionId)}/children`,
-          { headers },
-        ),
-      );
     const scoped = async (id: string) => {
       const current = SessionStatusSchema.parse(
         await orcApi("GET", `/sessions/live/${encodeURIComponent(id)}/status`, { headers }),
