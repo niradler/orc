@@ -1,4 +1,9 @@
-import { type AgentSession, openAgentSession } from "@orc/agent-runtime";
+import {
+  type AgentSession,
+  backendSupportsToolAllowlist,
+  openAgentSession,
+  toolAllowlistBackends,
+} from "@orc/agent-runtime";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { getSqlite } from "@orc/db/client";
@@ -174,6 +179,14 @@ export async function runKbDigest(kbId: string, opts: KbDigestRunOptions): Promi
 
 /** Opens the digest's backend, sends the prompt and waits for the turn to end. */
 export async function runKbDigestAgent(run: KbDigestAgentRun): Promise<KbDigestAgentResult> {
+  // A digest stored before its backend was checked can still name one that cannot enforce the
+  // whitelist; fail with how to fix it rather than the generic unrestricted-session refusal.
+  if (!backendSupportsToolAllowlist(run.backend)) {
+    const capable = toolAllowlistBackends();
+    throw new Error(
+      `Digest backend "${run.backend}" cannot enforce this digest's tool whitelist; change the digest backend${capable.length ? ` to ${capable.join(" or ")}` : ""} in the knowledge base's digest settings.`,
+    );
+  }
   const sqlite = getSqlite();
   let session: AgentSession | undefined;
   let expired = false;

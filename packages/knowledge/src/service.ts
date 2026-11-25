@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { readFileSync, statSync } from "node:fs";
 import { basename, extname, sep } from "node:path";
+import { backendSupportsToolAllowlist, toolAllowlistBackends } from "@orc/agent-runtime";
 import { changes } from "@orc/core/changes";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
@@ -1079,6 +1080,19 @@ export class KnowledgeService {
   }
 
   /**
+   * A digest always runs with a tool whitelist, so reject a backend that cannot enforce one
+   * instead of scheduling a job that fails on every run.
+   */
+  private assertDigestBackend(backend: string): void {
+    if (backendSupportsToolAllowlist(backend)) return;
+    const capable = toolAllowlistBackends();
+    throw new ValidationError(
+      `Backend "${backend}" cannot enforce a digest's tool whitelist.` +
+        (capable.length ? ` Choose ${capable.join(" or ")}.` : ""),
+    );
+  }
+
+  /**
    * Creates or changes a KB's digest and its job. The digest agent writes through MCP, so the KB's
    * `editable_by` must include mcp.
    */
@@ -1095,6 +1109,10 @@ export class KnowledgeService {
     const schedule: KbDigestSchedule = input.schedule ??
       existing?.schedule ?? { type: "cron", cron: KB_DIGEST_DEFAULT_CRON };
     const enabled = input.enabled ?? existing?.enabled ?? true;
+    const backend = input.backend ?? existing?.backend ?? this.defaultBackend();
+    // The digest reads untrusted session text and comments, so it always runs with an explicit
+    // tool whitelist; a backend that cannot enforce one would run it unrestricted.
+    if (enabled) this.assertDigestBackend(backend);
     const timeout = input.timeout_secs ?? existing?.timeout_secs ?? DIGEST_TIMEOUT_SECS;
     const cron = schedule.type === "cron" ? schedule.cron : null;
     const now = Date.now();
@@ -1108,12 +1126,7 @@ export class KnowledgeService {
         );
         this.db.run(
           "UPDATE kb_digests SET instructions = ?, backend = ?, updated_at = ? WHERE kb_id = ?",
-          [
-            input.instructions ?? existing.instructions,
-            input.backend ?? existing.backend,
-            now,
-            kbId,
-          ],
+          [input.instructions ?? existing.instructions, backend, now, kbId],
         );
       } else {
         this.db.run(
@@ -1136,14 +1149,7 @@ export class KnowledgeService {
         this.db.run(
           `INSERT INTO kb_digests (kb_id, instructions, backend, job_id, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?)`,
-          [
-            kbId,
-            input.instructions ?? KB_DIGEST_TEMPLATE,
-            input.backend ?? this.defaultBackend(),
-            jobId,
-            now,
-            now,
-          ],
+          [kbId, input.instructions ?? KB_DIGEST_TEMPLATE, backend, jobId, now, now],
         );
       }
       this.audit(
@@ -1180,6 +1186,7 @@ export class KnowledgeService {
     if (!row) throw new NotFoundError("Digest", kbId);
     if (!this.jobHooks)
       throw new ValidationError("Digest runs start in the ORC daemon; call the ORC API");
+    this.assertDigestBackend(row.backend);
     const runId = await this.jobHooks.run(row.job_id, ctx.source);
     this.audit(ctx, "kb.digest.started", [kbId, runId], kb.project_id);
     return { run_id: runId };
@@ -1246,7 +1253,9 @@ export class KnowledgeService {
       kb.id,
       Date.now(),
     ]);
-    this.setDigest(ctx, kb.id, {});
+    // A starter digest only exists when the default backend can enforce its whitelist; otherwise
+    // leave the KB digest-free so "Set up" lets the user pick a capable backend.
+    if (backendSupportsToolAllowlist(this.defaultBackend())) this.setDigest(ctx, kb.id, {});
     return kb.id;
   }
 

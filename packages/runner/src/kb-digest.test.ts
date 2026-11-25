@@ -157,6 +157,18 @@ describe("KB digest runner", () => {
     expect(digest()?.last_status).toBe("skipped");
   });
 
+  test("a backend that cannot enforce the whitelist fails with how to fix it", async () => {
+    getSqlite().query("UPDATE kb_digests SET backend = 'opencode' WHERE kb_id = ?").run(kbId);
+    try {
+      await expect(
+        runKbDigest(kbId, { runId: newRun(), triggerBy: "manual", timeoutMs: 60_000 }),
+      ).rejects.toThrow(/cannot enforce this digest's tool whitelist/);
+      expect(digest()?.last_note).toContain("change the digest backend to");
+    } finally {
+      getSqlite().query("UPDATE kb_digests SET backend = 'codex' WHERE kb_id = ?").run(kbId);
+    }
+  });
+
   test("the executor runs a digest job as a digest, not a shell command", async () => {
     const runId = await executeJob({ jobId, triggerBy: "cron" });
     const run = getDb().select().from(job_runs).where(eq(job_runs.id, runId)).get();

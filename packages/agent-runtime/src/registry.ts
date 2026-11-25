@@ -128,3 +128,23 @@ export function hasBackend(name: AgentBackendName): boolean {
 export function listRegisteredBackends(): AgentBackendName[] {
   return [...registry.keys()];
 }
+
+/**
+ * Whether a registered backend can restrict a session to an explicit tool whitelist.
+ *
+ * Callers that must restrict tools (a KB digest, an agent package profile) use this to
+ * reject an incapable backend up front instead of scheduling work that can never run.
+ */
+export function backendSupportsToolAllowlist(name: string): boolean {
+  const factory = registry.get(name as AgentBackendName);
+  if (!factory) return false;
+  try {
+    return factory().profileCapabilities?.toolAllowlist === true;
+  } catch {
+    return false;
+  }
+}
+
+export function toolAllowlistBackends(): string[] {
+  return listRegisteredBackends().filter((name) => backendSupportsToolAllowlist(name));
+}

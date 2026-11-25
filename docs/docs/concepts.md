@@ -99,7 +99,7 @@ Memories import from and export to Claude Code and Codex native memory folders w
 
 A knowledge base holds reference documents for agents to search and cite. It belongs to a project or is global. Documents come from uploads (PDF, Office, HTML, CSV, Markdown, text), Markdown written in the dashboard, or registered folders that are copied in and rescanned.
 
-Search combines title matches, SQLite full-text search and, when embeddings are configured, vectors. Results cite passages as `kb:<doc>@<rev>#<n>`. Each knowledge base sets which call sources may edit it (`ui`, `cli`, `api`, `mcp`). A digest is a scheduled agent that maintains a knowledge base from comments, memories and session summaries.
+Search combines title matches, SQLite full-text search and, when embeddings are configured, vectors. Results cite passages as `kb:<doc>@<rev>#<n>`. Each knowledge base sets which call sources may edit it (`ui`, `cli`, `api`, `mcp`). A digest is a scheduled agent that maintains a knowledge base from comments, memories and session summaries. It runs with a tool whitelist, so its backend must be able to enforce one (`claude` or `claude-cli`).
 
 ## Scratchpads
 

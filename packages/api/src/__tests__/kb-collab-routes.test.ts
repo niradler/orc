@@ -124,13 +124,13 @@ describe("/api/kb collaboration", () => {
     expect((await (await call("GET", `/bases/${kbId}/digest`)).json()).digest).toBeNull();
 
     const set = await call("PUT", `/bases/${kbId}/digest`, {
-      backend: "codex",
+      backend: "claude",
       schedule: { type: "cron", cron: "0 4 * * *" },
     });
     expect(set.status).toBe(200);
     const digest = await set.json();
     expect(digest).toMatchObject({
-      backend: "codex",
+      backend: "claude",
       schedule: { cron: "0 4 * * *" },
       open_comments: 2,
     });

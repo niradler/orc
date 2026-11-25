@@ -30,7 +30,7 @@ beforeEach(async () => {
     config: () => config,
     root,
     embedder: null,
-    defaultBackend: () => "codex",
+    defaultBackend: () => "claude",
   });
   svc.start();
 });
@@ -149,7 +149,7 @@ describe("digests", () => {
     const digest = svc.setDigest(human, kb.id, {});
     expect(digest).toMatchObject({
       instructions: KB_DIGEST_TEMPLATE,
-      backend: "codex",
+      backend: "claude",
       schedule: { type: "cron", cron: "0 3 * * *" },
       enabled: true,
       open_comments: 0,
@@ -181,6 +181,21 @@ describe("digests", () => {
       "kb.digest.set",
       "kb.digest.deleted",
     ]);
+  });
+
+  test("an enabled digest needs a backend that can enforce its tool whitelist", () => {
+    const kb = svc.createKb(human, { name: "Whitelisted", project_id: null });
+    expect(() => svc.setDigest(human, kb.id, { backend: "opencode" })).toThrow(
+      /cannot enforce a digest's tool whitelist/,
+    );
+    // Pausing never needs a capable backend, so a digest can be stored disabled.
+    expect(svc.setDigest(human, kb.id, { backend: "opencode", enabled: false })).toMatchObject({
+      backend: "opencode",
+      enabled: false,
+    });
+    expect(() => svc.setDigest(human, kb.id, { enabled: true })).toThrow(
+      /cannot enforce a digest's tool whitelist/,
+    );
   });
 
   test("a digest needs mcp in editable_by; runs need the daemon hooks", async () => {
@@ -273,7 +288,7 @@ describe("starter Learnings KBs", () => {
     expect(kbs.map((k) => k.project_id)).toEqual(["p1"]);
     const p1 = kbs[0];
     expect(svc.getDigest(p1?.id as string)).toMatchObject({
-      backend: "codex",
+      backend: "claude",
       instructions: KB_DIGEST_TEMPLATE,
       schedule: { type: "cron", cron: "0 3 * * *" },
       enabled: true,
