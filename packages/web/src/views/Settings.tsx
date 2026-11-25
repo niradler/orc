@@ -15,6 +15,7 @@ import { IntegrationsSettings } from "@/components/IntegrationsSettings";
 import { KnowledgeSettings } from "@/components/kb/KnowledgeSettings";
 import { McpSettingsForm } from "@/components/McpSettingsForm";
 import { NotificationSettings } from "@/components/NotificationSettings";
+import { ProjectSecretsSettings } from "@/components/ProjectSecretsSettings";
 import { RetentionSettings } from "@/components/RetentionSettings";
 import { SecuritySettings } from "@/components/SecuritySettings";
 import { ServerSettings } from "@/components/ServerSettings";
@@ -426,6 +427,12 @@ export default function Settings() {
               </div>
             )}
 
+            {mounted("secrets") && (
+              <div hidden={activeGroup !== "secrets"}>
+                <ProjectSecretsSettings active={panelVisible && activeGroup === "secrets"} />
+              </div>
+            )}
+
             {mounted("notifications") && (
               <div hidden={activeGroup !== "notifications"}>
                 <NotificationSettings />
@@ -460,11 +467,9 @@ export default function Settings() {
                   <div className="flex items-center gap-1">
                     <h2 className="text-base font-medium">Data locations</h2>
                     <HelpPopover label="data locations" testId="settings-data-locations-help">
-                      Workspace preferences and SSH selection are saved in the server's{" "}
-                      <code>~/.orc/config.json</code>. Saved ORC servers and their tokens are kept
-                      in this browser; sign-in uses an HttpOnly cookie, never the API secret. The
-                      desktop app keeps its selected server, token and headers in the app's data
-                      folder.
+                      Workspace preferences and SSH selection live in the server's{" "}
+                      <code>~/.orc/config.json</code>. Saved servers and tokens stay in this browser
+                      or the desktop app's data folder.
                     </HelpPopover>
                   </div>
                 </section>

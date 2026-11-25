@@ -11,7 +11,11 @@ import type { ChatAnalytics } from "@orc/core/chat-analytics";
 import type { TerminalLaunchOptions } from "@orc/core/chat-options";
 import type { PreviewFile, PreviewRequest } from "@orc/core/desktop-preview";
 import type { GithubSyncState } from "@orc/core/github-sync";
-import type { HumanRequest, HumanResponse } from "@orc/core/human-requests";
+import type {
+  HumanRequest,
+  HumanRequestSnoozeInput,
+  HumanRespondPayload,
+} from "@orc/core/human-requests";
 import type {
   KbComment,
   KbCommentClose,
@@ -53,6 +57,13 @@ import type {
   OrcNotification,
 } from "@orc/core/notifications";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
+import type {
+  ProjectSecretCheck,
+  ProjectSecretCheckResult,
+  ProjectSecretMetadata,
+  ProjectSecretRotate,
+  ProjectSecretUpsert,
+} from "@orc/core/project-secrets";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleEventCapability } from "@orc/core/rule-events";
 import type { Scratchpad, ScratchpadKind, ScratchpadListItem } from "@orc/core/scratchpad";
@@ -191,6 +202,9 @@ export type {
   SessionMessageResult,
   SessionSearchResult,
   SessionSyncResult,
+  SetupAgent,
+  SetupProjectSuggestion,
+  SetupStatus,
   SkillFileInput,
   SkillFull,
   SkillMeta,
@@ -261,6 +275,7 @@ import type {
   SessionMessageResult,
   SessionSearchResult,
   SessionSyncResult,
+  SetupStatus,
   SkillFileInput,
   SkillFull,
   SkillMeta,
@@ -818,13 +833,50 @@ export const api = {
         values,
       }),
     list: () => req<HumanRequest[]>("GET", "/human-requests"),
-    respond: (id: string, version: number, response: HumanResponse) =>
+    respond: (id: string, version: number, response: HumanRespondPayload) =>
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/respond`, {
         version,
         response,
       }),
     cancel: (id: string, version: number) =>
       req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/cancel`, { version }),
+    snooze: (id: string, input: HumanRequestSnoozeInput) =>
+      req<HumanRequest>("POST", `/human-requests/${encodeURIComponent(id)}/snooze`, input),
+    unsnooze: (id: string, version?: number) =>
+      req<HumanRequest>(
+        "DELETE",
+        `/human-requests/${encodeURIComponent(id)}/snooze${version === undefined ? "" : `?version=${version}`}`,
+      ),
+  },
+  projectSecrets: {
+    list: (projectId: string) =>
+      req<{ secrets: ProjectSecretMetadata[] }>(
+        "GET",
+        `/projects/${encodeURIComponent(projectId)}/secrets`,
+      ),
+    upsert: (projectId: string, input: ProjectSecretUpsert) =>
+      req<ProjectSecretMetadata>(
+        "POST",
+        `/projects/${encodeURIComponent(projectId)}/secrets`,
+        input,
+      ),
+    rotate: (projectId: string, name: string, input: ProjectSecretRotate) =>
+      req<ProjectSecretMetadata>(
+        "PUT",
+        `/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}`,
+        input,
+      ),
+    delete: (projectId: string, name: string) =>
+      req<void>(
+        "DELETE",
+        `/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}`,
+      ),
+    check: (projectId: string, name: string, check?: ProjectSecretCheck) =>
+      req<ProjectSecretCheckResult>(
+        "POST",
+        `/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}/check`,
+        check ? { check } : {},
+      ),
   },
   chat: {
     capabilities: (agent: string, threadId?: string) =>
@@ -1040,6 +1092,36 @@ export const api = {
       }),
     revert: (id: string, reason: string) =>
       req<RuleRevision>("POST", "/rules/revert", { id, reason }),
+    metrics: (workspace?: string, days = 30) =>
+      req<{
+        days: number;
+        totals: {
+          events: number;
+          abstains: number;
+          outcomes: number;
+          denials: number;
+          abstain_rate: number;
+        };
+        per_workspace: {
+          workspace: string;
+          events: number;
+          abstains: number;
+          outcomes: number;
+          last_seen: number;
+        }[];
+        per_rule: {
+          workspace: string;
+          revision_id: string;
+          rule_id: string;
+          outcome: string;
+          count: number;
+          last_seen: number;
+        }[];
+        per_day: { day: number; events: number; abstains: number }[];
+      }>("GET", "/rules/metrics", undefined, {
+        ...(workspace ? { workspace } : {}),
+        days,
+      }),
   },
   health: {
     check: (signal?: AbortSignal) =>
@@ -1153,6 +1235,10 @@ export const api = {
 
   backends: {
     list: () => req<{ backends: AgentBackendInfo[]; default_backend: string }>("GET", "/backends"),
+  },
+
+  setup: {
+    status: () => req<SetupStatus>("GET", "/setup"),
   },
 
   flows: {
@@ -1485,6 +1571,8 @@ export const api = {
       req<SessionMessage>("POST", `/session-messages/${encodeURIComponent(messageId)}/move`, {
         direction,
       }),
+    deliverMessage: (messageId: string) =>
+      req<SessionMessage>("POST", `/session-messages/${encodeURIComponent(messageId)}/deliver`),
   },
 
   skills: {

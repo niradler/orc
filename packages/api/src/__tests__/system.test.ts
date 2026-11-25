@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { HealthResponse, RestartResponse, SystemAbout } from "@orc/sdk/types";
-import { registerRestartHandler } from "../lifecycle.js";
+import { registerRestartHandler, registerShutdownHandler } from "../lifecycle.js";
 import type { createApp } from "../server.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
@@ -10,6 +10,7 @@ beforeAll(() => {
 });
 afterAll(() => {
   registerRestartHandler(undefined);
+  registerShutdownHandler(undefined);
   teardownTestApp();
 });
 
@@ -32,6 +33,28 @@ test("should protect restart, validate input, reject unavailable/duplicate resta
   expect(result).toEqual({ instance_id: health.instance_id, restarting: true });
   expect(calls).toBe(0);
   expect((await req(app, "POST", "/system/restart", {})).status).toBe(409);
+  await Bun.sleep(300);
+  expect(calls).toBe(1);
+});
+
+test("should answer shutdown only where a handler is registered, once", async () => {
+  expect((await app.request("/api/system/shutdown", { method: "POST" })).status).toBe(401);
+  // A bare API app has no drain handler: it must say so instead of exiting.
+  expect((await req(app, "POST", "/system/shutdown", {})).status).toBe(503);
+  const health = await (await req(app, "GET", "/health")).json<HealthResponse>();
+  let calls = 0;
+  registerShutdownHandler(async () => {
+    calls++;
+  });
+  const response = await req(app, "POST", "/system/shutdown", {});
+  expect(response.status).toBe(202);
+  expect(await response.json()).toEqual({
+    instance_id: health.instance_id,
+    shutting_down: true,
+  });
+  // Acknowledged before the drain runs, and a second request cannot queue another.
+  expect(calls).toBe(0);
+  expect((await req(app, "POST", "/system/shutdown", {})).status).toBe(409);
   await Bun.sleep(300);
   expect(calls).toBe(1);
 });

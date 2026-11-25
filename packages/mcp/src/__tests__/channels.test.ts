@@ -11,10 +11,9 @@ import { createTestDb, getSqlite } from "@orc/db/client";
 import { executeTool } from "../tools.js";
 
 const saved = Object.fromEntries(
-  ["HOME", "USERPROFILE", "ORC_API_BASE", "ORC_DB_PATH", "ORC_ACTIVE_PROJECT"].map((k) => [
-    k,
-    process.env[k],
-  ]),
+  ["HOME", "USERPROFILE", "ORC_HOME", "ORC_API_BASE", "ORC_DB_PATH", "ORC_ACTIVE_PROJECT"].map(
+    (k) => [k, process.env[k]],
+  ),
 );
 const home = mkdtempSync(join(tmpdir(), "orc-channel-mcp-"));
 let service: ChannelService;
@@ -23,6 +22,7 @@ const sent: Record<string, unknown>[] = [];
 beforeAll(async () => {
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.ORC_HOME = join(home, ".orc");
   process.env.ORC_DB_PATH = ":memory:";
   delete process.env.ORC_ACTIVE_PROJECT;
   resetConfig();

@@ -3,6 +3,9 @@ export class OrcError extends Error {
     message: string,
     public readonly code: string,
     public readonly statusCode: number = 500,
+    /** Extra JSON fields merged into the API error body (e.g. the SESSION_BUSY
+     *  `active` run), so a client can act on the conflict instead of guessing. */
+    public readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "OrcError";
@@ -24,8 +27,8 @@ export class ValidationError extends OrcError {
 }
 
 export class ConflictError extends OrcError {
-  constructor(message: string, code = "CONFLICT") {
-    super(message, code, 409);
+  constructor(message: string, code = "CONFLICT", details?: Record<string, unknown>) {
+    super(message, code, 409, details);
     this.name = "ConflictError";
   }
 }
@@ -41,5 +44,12 @@ export class ForbiddenError extends OrcError {
   constructor(message: string, code: string = "FORBIDDEN") {
     super(message, code, 403);
     this.name = "ForbiddenError";
+  }
+}
+
+export class TooManyRequestsError extends OrcError {
+  constructor(message: string = "Too many requests", details?: Record<string, unknown>) {
+    super(message, "RATE_LIMITED", 429, details);
+    this.name = "TooManyRequestsError";
   }
 }

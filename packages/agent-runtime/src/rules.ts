@@ -1,5 +1,7 @@
-import { loadConfig } from "@orc/core/config";
+import { configuredApiSecret, loadConfig, resolveApiBase } from "@orc/core/config";
 import type { RuleDecision, RuleEvent } from "@orc/core/rules";
+import { sessionExecHost } from "./execution-host.js";
+import { openCodeSessionEnv, resolveOpenCodePluginDir } from "./opencode-config.js";
 import type { SessionOpts } from "./types.js";
 
 export type SessionRuleGuard = {
@@ -24,15 +26,12 @@ export type RuleGap = {
 };
 
 function gapMessage(agent: string): string {
-  const hint =
-    agent === "opencode"
-      ? "Install the @orc/opencode plugin in this workspace to enforce the same policies inside OpenCode."
-      : "Use Claude when a session must be enforced.";
-  return `${agent} has no ACP-level pre-tool hook in ORC, so active workspace rules cannot be enforced in this session. ORC still shows the agent's tool activity, but it cannot block or rewrite it. ${hint}`;
+  return `${agent} has no ACP-level pre-tool hook in ORC, so active workspace rules cannot be enforced in this session. ORC still shows the agent's tool activity, but it cannot block or rewrite it. Use Claude when a session must be enforced.`;
 }
 
 export async function sessionRules(backend: string, opts: SessionOpts): Promise<SessionOpts> {
-  if (!loadConfig().rules.enabled) return opts;
+  const config = loadConfig();
+  if (!config.rules.enabled) return opts;
   const [{ getSqlite }, { RuleStore }] = await Promise.all([
     import("@orc/db/client"),
     import("@orc/db/rules"),
@@ -62,6 +61,14 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
     try {
       policies = matching();
     } catch (error) {
+      const message = error instanceof Error ? error.message : "storage unavailable";
+      // OpenCode has a verified interception path, so a storage failure must not
+      // silently drop its plugin and permission baseline. Other backends keep
+      // the advisory gap; Claude rethrows below.
+      if (agent === "opencode")
+        throw new Error(
+          `ORC rules are enabled in this workspace, but the OpenCode session could not read them (${message}). Restore the ORC rule database, or disable rules to run without enforcement.`,
+        );
       return {
         ...opts,
         ruleGap: {
@@ -69,11 +76,11 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
           agent,
           policies: [],
           reason: "evaluation_unavailable",
-          message: `ORC could not read the workspace rules (${error instanceof Error ? error.message : "storage unavailable"}), so this session runs without rule enforcement.`,
+          message: `ORC could not read the workspace rules (${message}), so this session runs without rule enforcement.`,
         },
       };
     }
-    if (!policies.length) return opts;
+    if (!policies.length && agent !== "opencode") return opts;
     if (
       backend === "codex-cli" &&
       policies.every((policy) =>
@@ -87,6 +94,21 @@ export async function sessionRules(backend: string, opts: SessionOpts): Promise<
       )
     )
       return { ...opts, interactive: true };
+    if (agent === "opencode") {
+      const pluginDir = policies.length ? resolveOpenCodePluginDir() : undefined;
+      return {
+        ...opts,
+        env: openCodeSessionEnv({
+          policies: policies.map((policy) => policy.id),
+          pluginDir,
+          remote: sessionExecHost(opts).kind !== "local",
+          dbPath: store.db.filename,
+          apiBase: resolveApiBase(config),
+          apiSecret: configuredApiSecret(config.api.secret),
+          existingEnv: opts.env,
+        }),
+      };
+    }
     return {
       ...opts,
       ruleGap: {

@@ -356,7 +356,9 @@ folder under the working directory; both take the same `threadId`, `host` and `c
 
 Chat streams include `turn` events with `startedAt` (Unix milliseconds), followed
 at completion by `finishedAt`, `durationMs` and `outcome` (`completed`, `stopped`,
-or `failed`). The same optional `turn` object is persisted on assistant messages.
+`interrupted` or `failed`). `interrupted` marks a turn a daemon restart cut short:
+the provider session identity survives, so the next message resumes it. The same
+optional `turn` object is persisted on assistant messages.
 `durationMs` prefers the backend's reported duration and otherwise uses server
 elapsed time. Replay includes the original start; legacy messages may omit `turn`.
 Before a tool call, a `narration` event moves accumulated prose out of the current
@@ -376,9 +378,14 @@ A turn opens with a `thread` event carrying the conversation metadata and only
 that turn's user message; the full transcript is read from `GET /chat/threads/{id}`.
 `GET /chat/threads/{id}/analytics` counts messages, turns, tool calls and failures
 from the stored chat transcript for every coding agent. When the agent's native
-session records token usage, it adds context growth, cache reuse and compaction
-markers. Agents without readable usage return `context.supported: false` with a
-reason instead of failing the request.
+session records token usage, it joins per-request usage to each turn (`model`,
+`usage`, `costUsd` and `usageSource`), summarizes session totals with an explicit
+`unattributed` bucket, `byModel` breakdown, `cacheHitRate`, `cacheSavingsUsd` and
+`totalCostUsd`, and adds context growth, cache reuse and compaction markers.
+Pricing uses built-in defaults plus `preferences.model_pricing` overrides saved
+through `PATCH /settings`; unpriced models return `costUsd: null`. Agents without
+readable usage return `context.supported: false` with a reason instead of failing
+the request.
 `POST /chat/stream` accepts an optional `clientMessageId` (UUID) and stores it as
 the user message id, rejecting a repeat with `409`. If a first send's response is
 lost, poll `GET /chat/threads/by-message/{clientMessageId}` — `404` until the
@@ -389,6 +396,16 @@ A first send may include `workspace` with `host`, `cwd`, `worktree` and `base`.
 When `worktree` is true, the server creates an isolated `orc/<id>` worktree from
 `base` (a local or remote-tracking branch already present in the checkout);
 omitting `base` uses the checkout's current `HEAD`.
+
+A send into a conversation whose turn is still running returns `409` with code
+`SESSION_BUSY` and `details.canTakeOver` / `details.reason`. Resending the same
+request with `confirmBusy: true` stops the turn this daemon owns, waits for its
+transcript and terminal lease to be saved, and continues the same native session.
+A turn owned by another live ORC daemon on this machine is refused either way;
+a lease records its host and pid, and only a process on this host can be proven
+live. While a daemon is shutting down, new turns are refused with `503` and code
+`DAEMON_DRAINING`; the conversation stays resumable and the send can be retried
+after the restart.
 
 First sends reserve `clientMessageId` before agent and workspace preparation.
 Repeating that ID without a thread returns `409` with code `CHAT_MESSAGE_EXISTS`,
@@ -445,14 +462,29 @@ stored on the session row, so a re-sync that rewrites the agent title or notices
 new activity keeps both. `GET /sessions/live` and `/sessions/live/search` omit
 hidden rows unless asked with `include_hidden=true`.
 
+All `/sessions/live/{id}` endpoints (`GET`, `PATCH`, `/status`, `/transcript`,
+`/stop`, `/cache`, `/analytics`, `/children`) resolve any valid session
+identifier: chat thread UUID, live gateway record ID, or native runtime ID
+(such as `ses_...`). `GET /sessions/live/{id}/status` returns live mid-turn
+activity (`last_activity_at`, `last_activity`, `activity_count`, advancing
+`updated_at`), explicit `start_error` on spawn or turn failure, and cross-id
+links (`native_session_id`, `live_session_id`). `GET /sessions/live/{id}/transcript`
+falls back to the stored chat thread messages when no native transcript file is
+present on disk, and `POST /sessions/live/{id}/stop` also stops discovery-only
+live records that have no backing chat thread.
+
 ### Human requests, rules and scratchpads
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` `POST` | `/human-requests` | List / create |
-| `GET` | `/human-requests/{id}` | Agent read; marks an answered response seen |
+| `GET` `POST` | `/human-requests` | List / create (`question`, `approval`, `command`, `secret`) |
+| `GET` | `/human-requests/{id}` | Agent read; marks non-secret answered responses seen (never returns raw secret values) |
 | `GET` | `/human-requests/{id}/view` | Human review without delivery/read side effects |
+| `POST` | `/human-requests/{id}/claim` | One-time secret delivery claim (`secret: true`); clears ephemeral values immediately |
 | `POST` | `/human-requests/{id}/respond`, `/acknowledge`, `/cancel` | Answer and close |
+| `GET` `POST` | `/projects/{id}/secrets` | List project secret metadata (never values) / create or rotate |
+| `PUT` `DELETE` | `/projects/{id}/secrets/{name}` | Rotate or update metadata / delete a project secret |
+| `POST` | `/projects/{id}/secrets/{name}/check` | Validate a project secret reference without revealing its value |
 | `GET` | `/rules` | Rule history; `?cwd=` scopes to current policies covering a directory (hook clients), `?workspace=` exact match; `history_truncated` marks a full 200-row page |
 | `GET` | `/rules/catalog` | Rule templates |
 | `POST` | `/rules/check`, `/rules/activate`, `/rules/revert` | Validate / activate / revert |
@@ -469,10 +501,13 @@ hidden rows unless asked with `include_hidden=true`.
 | `GET` `PATCH` | `/settings` | Workspace preferences |
 | `GET` `PATCH` | `/settings/mcp` | MCP defaults and prompts |
 | `GET` | `/backends` | Agent backends and whether each can run |
+| `GET` | `/setup` | First-run status: detected agents (installed / signed in / version / fix command), projects suggested from their session history, and the default agent |
 | `GET` | `/events` | Resource-change event stream |
 | `GET` `PUT` | `/ssh` | SSH execution host |
 | `GET` | `/system/about` | Server version, platform, runtime, data folder, start time |
+| `GET` | `/system/logs` | Recent structured daemon and worker logs (`lines`, `level`, `ns`, `q`, `source=orc\|daemon\|all`) |
 | `POST` | `/system/restart` | Restart ORC |
+| `POST` | `/system/shutdown` | Stop ORC gracefully: refuse new chat turns, drain the active ones, persist their session identity, then exit |
 | `POST` | `/mcp/tool` | Run any MCP tool: `{ "name", "args" }` |
 | `GET` | `/audit` | Central lifecycle and knowledge audit log |
 | `GET` `POST` | `/integrations/connections` | spec-cli connections |
@@ -504,7 +539,7 @@ internal `path`, `requires_action`, and millisecond timestamps `created_at`,
 Expiry and dismissal do not mutate the source request. SDK methods are
 `client.notifications.list`, `.update` and `.markAllRead`.
 
-`GET /audit` accepts `entity_type` (`notification`, `human_request`, `job_run`,
+`GET /audit` accepts `entity_type` (`notification`, `human_request`, `project_secret`, `job_run`,
 `task`, `settings`, `job`, `rule`, `terminal`, `auth`, `memory`, `skill`, `kb`), `session_id`, `since` (Unix seconds),
 `limit` (1–100, default50), and `project_id` or `scope=global|all`.
 `scope=all` includes project and global entries. `snapshot=preview` substitutes

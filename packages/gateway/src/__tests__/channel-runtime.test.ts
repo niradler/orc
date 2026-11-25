@@ -21,6 +21,7 @@ import { startChannelRuntime } from "../channel-runtime.js";
 const original = {
   HOME: process.env.HOME,
   USERPROFILE: process.env.USERPROFILE,
+  ORC_HOME: process.env.ORC_HOME,
   ORC_DB_PATH: process.env.ORC_DB_PATH,
   ORC_LOG_DIR: process.env.ORC_LOG_DIR,
   ORC_LOG_FILE: process.env.ORC_LOG_FILE,
@@ -35,6 +36,7 @@ const edited: Array<{ id: string; body: Record<string, unknown> }> = [];
 let requirePermission = false;
 let approved = false;
 let requireQuestion = false;
+let requireSecretQuestion = false;
 let fixtureOutput = "**Reply received**";
 let fixtureError = false;
 let downloadedFiles = 0;
@@ -51,6 +53,7 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
   let alive = true;
   const ask = requirePermission;
   const question = requireQuestion;
+  const secretQuestion = requireSecretQuestion;
   const fail = fixtureError;
   return {
     id: `fixture-${calls.length}`,
@@ -105,6 +108,23 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
         };
         await decision;
       }
+      if (secretQuestion) {
+        yield {
+          type: "question_request",
+          data: {
+            requestId: "secret-q1",
+            questions: [
+              {
+                id: "token",
+                header: "Secret",
+                question: "Enter SECRET_API_TOKEN_PROMPT?",
+                isSecret: true,
+              },
+            ],
+          },
+        };
+        await decision;
+      }
       yield { type: "text", data: fixtureOutput };
       yield { type: "result", data: { runtimeSessionId: "native-fixture" } };
     },
@@ -118,6 +138,7 @@ function fixture(opts: SessionOpts, resume: boolean): AgentSession {
 beforeAll(async () => {
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.ORC_HOME = join(home, ".orc");
   process.env.ORC_DB_PATH = ":memory:";
   process.env.ORC_LOG_DIR = home;
   process.env.ORC_LOG_FILE = "1";
@@ -1272,4 +1293,79 @@ test("strangers cannot trigger a job whose agent may change files", async () => 
   });
   expect(String(sent.at(-1)?.text)).toBe("auto-agent only runs for named senders.");
   expect(runs()).toBe(before);
+});
+
+test("a secret question in a channel turn fails visibly without hanging or persisting in the inbox", async () => {
+  await service.save({
+    id: "secret-channel",
+    name: "Secret channel",
+    provider: "telegram",
+    enabled: true,
+    credentials: { token: "fixture" },
+    targets: [
+      {
+        id: "me",
+        name: "Nir",
+        chat_id: "chat",
+        user_ids: ["nir"],
+        project_ids: ["p1"],
+        inbound: true,
+        attention: true,
+      },
+    ],
+    routes: [
+      {
+        id: "private",
+        name: "Private",
+        condition: { always: true },
+        action: { type: "agent", agent: "channels-fixture", project_id: "p1" },
+      },
+    ],
+  });
+  requirePermission = false;
+  requireQuestion = false;
+  requireSecretQuestion = true;
+  const offset = sent.length;
+  const requestsBefore = new HumanRequestStore(getSqlite()).list().length;
+  try {
+    await service.receive({
+      ...message,
+      connection: "secret-channel",
+      message_id: "secret-question-turn",
+      thread: "secret-question",
+    });
+  } finally {
+    requireSecretQuestion = false;
+  }
+  const record = getSqlite()
+    .query<{ id: string; last_error: string; status: string }, []>(
+      "SELECT id,last_error,status FROM gateway_sessions WHERE chat_id LIKE '%secret-question%' ORDER BY created_at DESC LIMIT 1",
+    )
+    .get();
+  expect(record?.status).toBe("error");
+  expect(record?.last_error).toContain("generate/agent_reported_error");
+  expect(new HumanRequestStore(getSqlite()).list().length).toBe(requestsBefore);
+  expect(JSON.stringify(sent.slice(offset))).not.toContain("SECRET_API_TOKEN_PROMPT");
+  expect(
+    sent.slice(offset).some((entry) => String(entry.text).includes("could not complete this turn")),
+  ).toBe(true);
+  const dir = getLogDir();
+  if (!dir) throw new Error("Diagnostic log file was not created");
+  const log = readFileSync(join(dir, "orc.log"), "utf8");
+  expect(log).toContain("Open ORC to answer this secret request");
+  expect(log).not.toContain("SECRET_API_TOKEN_PROMPT");
+  await service.receive({
+    ...message,
+    connection: "secret-channel",
+    message_id: "secret-question-recovered",
+    thread: "secret-question",
+    text: "continue normally",
+  });
+  expect(
+    getSqlite()
+      .query<{ status: string; last_error: string | null }, [string]>(
+        "SELECT status,last_error FROM gateway_sessions WHERE id=?",
+      )
+      .get(record?.id ?? ""),
+  ).toMatchObject({ status: "idle", last_error: null });
 });

@@ -471,6 +471,7 @@ export const session_messages = sqliteTable(
     sender_label: text("sender_label").notNull(),
     sender_key: text("sender_key").notNull(),
     body: text("body").notNull(),
+    delivery: text("delivery"),
     position: integer("position").notNull(),
     hop: integer("hop").notNull().default(0),
     state: text("state", {
@@ -647,8 +648,31 @@ export const webhook_deliveries = sqliteTable(
   ],
 );
 
+export const project_secrets = sqliteTable(
+  "project_secrets",
+  {
+    id: text("id").primaryKey(),
+    project_id: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    encrypted_value: text("encrypted_value").notNull(),
+    description: text("description"),
+    check_config: text("check_config"),
+    created_at: integer("created_at").notNull(),
+    updated_at: integer("updated_at").notNull(),
+    last_used_at: integer("last_used_at"),
+  },
+  (t) => [
+    uniqueIndex("project_secrets_project_name_idx").on(t.project_id, t.name),
+    index("project_secrets_project_idx").on(t.project_id),
+  ],
+);
+
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
+export type ProjectSecret = typeof project_secrets.$inferSelect;
+export type NewProjectSecret = typeof project_secrets.$inferInsert;
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type Comment = typeof comments.$inferSelect;

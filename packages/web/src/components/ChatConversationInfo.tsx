@@ -119,9 +119,9 @@ export function ChatConversationInfo({
                   Identifiers
                 </h3>
                 <HelpPopover label="Session identifiers" testId="chat-session-ids-help">
-                  ORC chat ID names this conversation in ORC. The agent session ID is the coding
-                  agent's native session, used to resume it outside ORC. The resume session ID is
-                  the discovered ORC session this chat continues, when it was resumed.
+                  ORC chat ID names this conversation. The agent session ID is the coding agent's
+                  native session, used to resume outside ORC; the resume ID is the ORC session it
+                  continues.
                 </HelpPopover>
               </div>
               <dl className="space-y-2" data-testid="chat-session-ids">
@@ -186,8 +186,8 @@ export function ChatConversationInfo({
                     </label>
                     <HelpPopover label="Agent browser control" testId="chat-browser-help">
                       {preview.browserControl.globallyEnabled
-                        ? "On by default. Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
-                        : "Disabled globally in Settings → General → Browser. Enable global access there to allow browser control for this chat."}
+                        ? "Agents in this chat can read, screenshot and interact with its browser, including signed-in pages. Changes apply immediately."
+                        : "Disabled globally in Settings → General → Browser. Enable global access there first."}
                     </HelpPopover>
                   </div>
                   <input

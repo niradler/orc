@@ -247,9 +247,8 @@ export function ChannelNotificationSettings({ active }: { active: boolean }) {
             label="Notification forwarding"
             testId="channel-notification-forwarding-help"
           >
-            Enable forwarding here and opt in each recipient below. Only new events after activation
-            are forwarded; history and events during a pause are not replayed. In-app notifications
-            stay enabled. An in-flight send may finish after pausing.
+            Enable forwarding, then opt in each recipient. Only new events are forwarded; history
+            and paused events are not replayed. In-app notifications stay on.
           </HelpPopover>
         </span>
       </summary>

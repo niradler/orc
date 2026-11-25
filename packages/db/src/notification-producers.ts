@@ -25,10 +25,11 @@ type NotificationEvent = Omit<NotificationInput, "created_at" | "expires_at" | "
 export function publishNotification(
   db: Database,
   event: NotificationEvent,
+  now: () => number = Date.now,
 ): OrcNotification | null {
   const { cwd, ...input } = event;
-  const createdAt = input.created_at ?? Date.now();
-  return new NotificationStore(db).publish({
+  const createdAt = input.created_at ?? now();
+  return new NotificationStore(db, now).publish({
     ...input,
     project_label: notificationProjectLabel(db, input.project_id, cwd),
     title: input.title.trim().slice(0, 200) || "Notification",

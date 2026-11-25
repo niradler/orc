@@ -79,13 +79,17 @@ export class OrcMcpClient {
   ) {}
 
   private async open(): Promise<Client> {
+    const headers: Record<string, string> = {};
+    if (this.config.secret) headers.Authorization = `Bearer ${this.config.secret}`;
+    if (this.sessionId) headers["X-ORC-Session"] = this.sessionId;
     const transport =
       this.config.transport === "http"
-        ? new StreamableHTTPClientTransport(new URL(buildMcpUrl(this.config.apiBase)), {
-            ...(this.config.secret
-              ? { requestInit: { headers: { Authorization: `Bearer ${this.config.secret}` } } }
-              : {}),
-          })
+        ? new StreamableHTTPClientTransport(
+            new URL(buildMcpUrl(this.config.apiBase, undefined, this.sessionId)),
+            {
+              ...(Object.keys(headers).length ? { requestInit: { headers } } : {}),
+            },
+          )
         : new StdioClientTransport({
             command: this.config.command,
             args: ["mcp", "--mode", "meta"],

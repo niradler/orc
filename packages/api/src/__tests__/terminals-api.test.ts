@@ -421,7 +421,7 @@ describe("POST /terminals", () => {
       null,
       "Protect isolated terminal fixture",
     );
-    loadConfig({ rules: { enabled: true } });
+    loadConfig({ rules: { enabled: true, retention_days: 30, max_decision_rows: 200_000 } });
     try {
       const before = ptys.length;
       for (const body of [
@@ -455,7 +455,7 @@ describe("POST /terminals", () => {
       await req(app, "DELETE", `/terminals/${(await shell.json()).id}`);
     } finally {
       store.revert(revision.id, "End isolated terminal fixture");
-      loadConfig({ rules: { enabled: false } });
+      loadConfig({ rules: { enabled: false, retention_days: 30, max_decision_rows: 200_000 } });
       await req(app, "DELETE", `/terminals/${terminal.id}`);
     }
   });
@@ -1014,7 +1014,7 @@ describe("worktree terminals and /git/worktrees", () => {
       null,
       "Isolated derived workspace regression",
     );
-    loadConfig({ rules: { enabled: true } });
+    loadConfig({ rules: { enabled: true, retention_days: 30, max_decision_rows: 200_000 } });
     try {
       expect(store.active(repo)).toHaveLength(0);
       const before = ptys.length;
@@ -1032,7 +1032,7 @@ describe("worktree terminals and /git/worktrees", () => {
       expect(await git(["worktree", "list", "--porcelain"], repo)).toBe(directories);
     } finally {
       store.revert(revision.id, "End isolated derived workspace fixture");
-      loadConfig({ rules: { enabled: false } });
+      loadConfig({ rules: { enabled: false, retention_days: 30, max_decision_rows: 200_000 } });
     }
   });
 

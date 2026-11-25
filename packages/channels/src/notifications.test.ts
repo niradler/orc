@@ -11,6 +11,7 @@ import {
   notificationMatches,
 } from "@orc/core/notifications";
 import { ChannelStore } from "@orc/db/channels";
+import { HumanRequestStore } from "@orc/db/human-requests";
 import { NotificationDeliveryStore } from "@orc/db/notification-deliveries";
 import { publishJobNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
@@ -461,4 +462,54 @@ test("should clean expired delivery rows while paused and stop before starting a
   f.advance(1000001);
   await f.tick();
   expect(f.store.list()).toEqual([]);
+});
+
+test("should suppress forwarded channel notifications while snoozed and forward once when woken", async () => {
+  const db = new Database(":memory:");
+  databases.push(db);
+  let now = 100_000;
+  const connection = ChannelConnectionSchema.parse({
+    id: "snooze-fwd",
+    name: "Snooze Fwd",
+    provider: "telegram",
+    enabled: true,
+    targets: [{ id: "me", name: "Me", chat_id: "123", notifications: { enabled: true } }],
+  });
+  const payloads: Record<string, unknown>[] = [];
+  const transport: ChannelTransport = {
+    identity: async () => ({ id: "bot", name: "Fixture" }),
+    start: async () => {},
+    stop: async () => {},
+    edit: async () => {},
+    send: async (payload) => {
+      payloads.push(payload);
+      return "accepted";
+    },
+  };
+  const channels = new ChannelStore(db);
+  channels.saveConnection(connection);
+  const service = new ChannelService(channels, () => transport);
+  const deliveryStore = new NotificationDeliveryStore(db, () => now);
+  deliveryStore.syncDestinations([connection]);
+  deliveryStore.savePolicy({ enabled: true, base_url: "https://orc.example" });
+  const requests = new HumanRequestStore(db, () => now);
+
+  now += 1000;
+  const created = requests.create({
+    origin: { session_id: "s-fwd", backend: "codex", request_id: "q-fwd" },
+    kind: "question",
+    prompt: "PRIVATE prompt",
+    notify: ["telegram"],
+  });
+  requests.snooze(created.id, created.version, now + 60_000);
+
+  await forwardChannelNotifications(service, deliveryStore);
+  expect(payloads).toHaveLength(0);
+
+  now += 60_000;
+  requests.wakeDueSnoozes(now);
+  await forwardChannelNotifications(service, deliveryStore);
+  await forwardChannelNotifications(service, deliveryStore);
+  expect(payloads).toHaveLength(1);
+  expect(JSON.stringify(payloads)).not.toContain("PRIVATE prompt");
 });

@@ -8,7 +8,13 @@ import { cn } from "@/lib/utils";
 
 const count = new Intl.NumberFormat();
 
-export function ChatTurnDivider({ divider }: { divider: ChatDivider }) {
+export function ChatTurnDivider({
+  divider,
+  onOpenModelSplit,
+}: {
+  divider: ChatDivider;
+  onOpenModelSplit?: (model: string) => void;
+}) {
   return (
     <div
       data-testid={`chat-turn-divider-${divider.type === "model" ? "model" : "compaction"}`}
@@ -17,12 +23,27 @@ export function ChatTurnDivider({ divider }: { divider: ChatDivider }) {
       <span aria-hidden="true" className="h-px min-w-4 flex-1 bg-outline-variant" />
       <span className="flex min-w-0 items-center gap-1.5">
         {divider.type === "model" ? (
-          <>
-            <ArrowRightLeft aria-hidden="true" size={12} className="shrink-0" />
-            <span data-testid="chat-turn-divider-label" className="truncate">
-              Model changed to <span className="font-mono text-[11px]">{divider.model}</span>
-            </span>
-          </>
+          onOpenModelSplit ? (
+            <button
+              type="button"
+              data-testid="chat-turn-divider-model-link"
+              onClick={() => onOpenModelSplit(divider.model)}
+              className="inline-flex min-h-8 min-w-0 items-center gap-1.5 rounded px-1.5 text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:outline-2 focus-visible:outline-focus max-sm:min-h-11"
+            >
+              <ArrowRightLeft aria-hidden="true" size={12} className="shrink-0" />
+              <span data-testid="chat-turn-divider-label" className="truncate">
+                Model changed to <span className="font-mono text-[11px]">{divider.model}</span>
+              </span>
+              <span className="shrink-0 underline underline-offset-2">View split</span>
+            </button>
+          ) : (
+            <>
+              <ArrowRightLeft aria-hidden="true" size={12} className="shrink-0" />
+              <span data-testid="chat-turn-divider-label" className="truncate">
+                Model changed to <span className="font-mono text-[11px]">{divider.model}</span>
+              </span>
+            </>
+          )
         ) : (
           <>
             <ChevronsDownUp aria-hidden="true" size={12} className="shrink-0" />
@@ -67,9 +88,22 @@ export const ChatTurnMeta = memo(function ChatTurnMeta({
   const timing = ChatTurnSchema.safeParse(turn);
   const { outcome, finishedAt } = timing.success ? timing.data : {};
   const durationMs = timing.success ? foldTurn([], timing.data).durationMs : null;
-  const reason = outcome === "stopped" ? "Stopped" : outcome === "failed" ? "Failed" : null;
+  const reason =
+    outcome === "stopped"
+      ? "Stopped"
+      : outcome === "interrupted"
+        ? "Interrupted"
+        : outcome === "failed"
+          ? "Failed"
+          : null;
   const verb =
-    reason === "Stopped" ? "Stopped after" : reason === "Failed" ? "Failed after" : "Worked for";
+    reason === "Stopped"
+      ? "Stopped after"
+      : reason === "Interrupted"
+        ? "Interrupted after"
+        : reason === "Failed"
+          ? "Failed after"
+          : "Worked for";
   const ended = finishedAt
     ? new Date(finishedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : null;

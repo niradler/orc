@@ -35,6 +35,11 @@ export function RulesPanel() {
   const projects = useProjects();
   const [tab, setTab] = useViewParam<string>("tab", "applied", ["applied", "settings"]);
   const [workspace, setWorkspaceState] = useViewParam<string>("workspace", "");
+  const metrics = useQuery({
+    queryKey: ["rules", "metrics", workspace],
+    queryFn: () => api.rules.metrics(workspace || undefined),
+    retry: false,
+  });
   const [projectId, setProjectId] = useState("");
   const [reason, setReason] = useState("");
   const [message, setMessage] = useState("");
@@ -283,6 +288,18 @@ export function RulesPanel() {
               </span>
             )}
           </div>
+          {metrics.data && metrics.data.totals.events > 0 && (
+            <div
+              data-testid="rules-metrics"
+              className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground"
+            >
+              <span>
+                {metrics.data.totals.events} evaluations / {metrics.data.days}d
+              </span>
+              <span>{Math.round(metrics.data.totals.abstain_rate * 100)}% abstain</span>
+              <span>{metrics.data.totals.denials} denials</span>
+            </div>
+          )}
           <section
             aria-label="Applied rules table"
             // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users must be able to scroll the wide rules table.
@@ -487,9 +504,9 @@ export function RulesPanel() {
               >
                 <summary className="cursor-pointer font-medium">Agent connections</summary>
                 <p className="text-xs text-muted-foreground">
-                  Claude SDK sessions connect when rule enforcement is enabled. Native agents need
-                  installed, trusted hooks and a supported host. Pi enforces rules through the
-                  @orc/pi package; OpenCode through the @orc/opencode plugin.
+                  Claude SDK sessions connect when rule enforcement is on. Native agents need
+                  installed, trusted hooks and a supported host. Pi uses @orc/pi; OpenCode uses the
+                  OpenCode plugin.
                 </p>
                 {hookAgents.map((agent) => (
                   <p key={agent} className="text-xs break-all">

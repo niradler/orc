@@ -206,3 +206,65 @@ test("marks rows abandoned by a previous process as interrupted and never retrie
     db.close();
   }
 });
+
+test("migrates a legacy session_messages table missing the delivery column", () => {
+  const db = new Database(":memory:");
+  try {
+    db.exec(`CREATE TABLE gateway_sessions (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      backend TEXT NOT NULL,
+      runtime_session_id TEXT,
+      status TEXT NOT NULL DEFAULT 'idle',
+      title TEXT,
+      last_activity_at INTEGER
+    )`);
+    db.query(
+      "INSERT INTO gateway_sessions (id, backend, runtime_session_id, status) VALUES ('s1', 'claude', 'native-s1', 'running')",
+    ).run();
+    db.exec(`CREATE TABLE session_messages (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      target_session_id TEXT NOT NULL,
+      target_native_id TEXT,
+      target_backend TEXT NOT NULL,
+      sender_kind TEXT NOT NULL,
+      sender_session_id TEXT,
+      sender_native_id TEXT,
+      sender_backend TEXT,
+      sender_label TEXT NOT NULL,
+      sender_key TEXT NOT NULL,
+      body TEXT NOT NULL,
+      position INTEGER NOT NULL,
+      hop INTEGER NOT NULL DEFAULT 0,
+      state TEXT NOT NULL DEFAULT 'queued',
+      delivered_via TEXT,
+      delivery_error TEXT,
+      request_id TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      delivered_at INTEGER
+    )`);
+    const store = new SessionMessageStore(db, () => 2_000_000);
+    const created = store.create(
+      { session_id: "s1", body: "done" },
+      { kind: "system", session_id: "child-1", label: "child session Worker" },
+      {
+        kind: "child_outcome",
+        session_id: "child-1",
+        title: "Worker",
+        outcome: "finished",
+        summary: "All green",
+      },
+    );
+    expect(store.get(created.id).delivery).toMatchObject({
+      kind: "child_outcome",
+      session_id: "child-1",
+      title: "Worker",
+      outcome: "finished",
+      summary: "All green",
+    });
+  } finally {
+    db.close();
+  }
+});

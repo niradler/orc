@@ -53,11 +53,14 @@ export function buildOrcMcpServer(
     query.set("preview_session", previewSession);
     query.set("session", previewSession);
   }
+  const headers: Record<string, string> = {};
+  if (secret) headers.Authorization = `Bearer ${secret}`;
+  if (previewSession) headers["X-ORC-Session"] = previewSession;
   return {
     type: "http",
     ...(alwaysLoad ? { alwaysLoad: true } : {}),
     url: query.size ? `${base}?${query}` : base,
-    ...(secret ? { headers: { Authorization: `Bearer ${secret}` } } : {}),
+    ...(Object.keys(headers).length ? { headers } : {}),
   };
 }
 

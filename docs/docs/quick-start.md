@@ -85,6 +85,16 @@ Open [http://localhost:7700](http://localhost:7700). The desktop app shows the s
 
 If an API secret is configured, the dashboard asks for it once and keeps a signed session cookie (30 days by default).
 
+### First-run setup
+
+On a fresh ORC home with no projects, the Activity page opens with a **Set up ORC** screen:
+
+- **Coding agents** lists Claude Code, Codex, OpenCode, Pi and Cursor with their detected state — installed, signed in (and as whom), version — plus the exact install or sign-in command when something is missing. A ready agent can be made the default for new sessions.
+- **Suggested projects** lists the folders those agents were last used in, from their own local session history. Select the ones you want and **Create projects** adds each with its folder as scope, so ORC assigns future sessions in that folder to it.
+- A link points to Settings → Connections → Channels for reaching ORC from your phone ([Telegram and Slack setup](./configuration.md#channels-telegram-slack)).
+
+The screen is dismissible; the dismissal is remembered server-side until a project exists. Detection runs on the ORC host and reads only binaries, versions and login state — never credentials.
+
 Tour of every page: [Desktop app and web dashboard](./desktop-and-web.md).
 
 ## 7. Connect an agent

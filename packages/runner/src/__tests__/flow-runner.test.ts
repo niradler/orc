@@ -1322,3 +1322,219 @@ describe("task eligibility", () => {
     await getDb().update(tasks).set({ claimed_by: null }).where(eq(tasks.id, taskId));
   });
 });
+
+describe("flow node liveness reconciliation", () => {
+  test("reaps zombie running nodes with dead pids and frees max_workers slots without reaping live nodes", async () => {
+    const { reconcileFlowNodeLiveness, getActiveWorkerCount } = await import("../flow-runner.js");
+    const zombieTaskId = await makeTask();
+    await startFlowForTask(zombieTaskId);
+    const zombieBuild = activeNodeRun(zombieTaskId);
+
+    const liveTaskId = await makeTask();
+    await startFlowForTask(liveTaskId);
+    const liveBuild = activeNodeRun(liveTaskId);
+
+    const now = Math.floor(Date.now() / 1000);
+    const zombieSessionId = ulid();
+    const liveSessionId = ulid();
+    const deadPid = 999_991;
+    const aliveSiblingPid = 999_992;
+
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, pid, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?, ?, ?)`,
+      )
+      .run(zombieSessionId, zombieTaskId, deadPid, now, now, now);
+    getSqlite()
+      .query(
+        "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = ? WHERE id = ?",
+      )
+      .run(zombieSessionId, now, zombieBuild.id);
+
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, pid, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?, ?, ?)`,
+      )
+      .run(liveSessionId, liveTaskId, aliveSiblingPid, now, now, now);
+    getSqlite()
+      .query(
+        "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = ? WHERE id = ?",
+      )
+      .run(liveSessionId, now, liveBuild.id);
+
+    const before = getActiveWorkerCount();
+    expect(before).toBeGreaterThanOrEqual(2);
+
+    const reconciled = await reconcileFlowNodeLiveness({
+      nowSecs: now,
+      isPidAlive: (pid) => pid === aliveSiblingPid,
+    });
+    expect(reconciled).toBe(1);
+    expect(getActiveWorkerCount()).toBe(before - 1);
+
+    const zombieSession = getSqlite()
+      .query("SELECT status, last_error FROM gateway_sessions WHERE id = ?")
+      .get(zombieSessionId) as { status: string; last_error: string | null };
+    expect(zombieSession.status).toBe("error");
+    expect(zombieSession.last_error).toContain(String(deadPid));
+
+    const zombieRetry = activeNodeRun(zombieTaskId);
+    expect(zombieRetry).toMatchObject({ node_id: "build", status: "pending", retry: 1 });
+
+    const liveSession = getSqlite()
+      .query("SELECT status FROM gateway_sessions WHERE id = ?")
+      .get(liveSessionId) as { status: string };
+    expect(liveSession.status).toBe("running");
+    expect(activeNodeRun(liveTaskId).status).toBe("running");
+
+    const liveRun = getActiveFlowRunForTask(liveTaskId);
+    if (liveRun) await cancelFlowRun(liveRun.id, "test cleanup");
+  });
+
+  test("reaps a running flow node whose backing gateway session already stopped", async () => {
+    const { reconcileFlowNodeLiveness } = await import("../flow-runner.js");
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const build = activeNodeRun(taskId);
+
+    const now = Math.floor(Date.now() / 1000);
+    const sessionId = ulid();
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, last_error, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'opencode', 'agent:opencode', 'stopped', 'worker', ?, 'process exited', ?, ?)`,
+      )
+      .run(sessionId, taskId, now, now);
+    getSqlite()
+      .query(
+        "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = ? WHERE id = ?",
+      )
+      .run(sessionId, now, build.id);
+
+    expect(await reconcileFlowNodeLiveness({ nowSecs: now })).toBe(1);
+    const retry = activeNodeRun(taskId);
+    expect(retry).toMatchObject({ node_id: "build", status: "pending", retry: 1 });
+  });
+
+  test("never reaps job, kb-digest, remote execution_host, or awaiting_human sessions", async () => {
+    const { reconcileFlowNodeLiveness } = await import("../flow-runner.js");
+    const sqlite = getSqlite();
+    const now = Math.floor(Date.now() / 1000);
+    const aged = now - 600;
+
+    const jobSessionId = ulid();
+    const kbSessionId = ulid();
+    const remoteSessionId = ulid();
+    const humanSessionId = ulid();
+
+    const humanTaskId = await makeTask();
+    await startFlowForTask(humanTaskId);
+    const humanNode = activeNodeRun(humanTaskId);
+
+    const remoteTaskId = await makeTask();
+    await startFlowForTask(remoteTaskId);
+    const remoteNode = activeNodeRun(remoteTaskId);
+
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, pid, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'job', 'running', 'worker', ?, ?, ?, ?)`,
+      )
+      .run(jobSessionId, process.pid, aged, aged, aged);
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, pid, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'kb-digest', 'running', 'worker', ?, ?, ?, ?)`,
+      )
+      .run(kbSessionId, process.pid, aged, aged, aged);
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, execution_host, mode, status, role, task_id, pid, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'devbox-ssh', 'agent:claude', 'running', 'worker', ?, 888123, ?, ?, ?)`,
+      )
+      .run(remoteSessionId, remoteTaskId, aged, aged, aged);
+    sqlite
+      .query(
+        "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = ? WHERE id = ?",
+      )
+      .run(remoteSessionId, aged, remoteNode.id);
+
+    sqlite
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, pid, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?, ?, ?)`,
+      )
+      .run(humanSessionId, humanTaskId, process.pid, aged, aged, aged);
+    sqlite
+      .query(
+        "UPDATE flow_node_runs SET status = 'awaiting_human', gateway_session_id = ?, started_at = ? WHERE id = ?",
+      )
+      .run(humanSessionId, aged, humanNode.id);
+
+    const probedPids: number[] = [];
+    try {
+      const reconciled = await reconcileFlowNodeLiveness({
+        nowSecs: now,
+        isPidAlive: (pid) => {
+          probedPids.push(pid);
+          return false;
+        },
+      });
+      expect(reconciled).toBe(0);
+      expect(probedPids).not.toContain(888123);
+
+      for (const id of [jobSessionId, kbSessionId, remoteSessionId, humanSessionId]) {
+        const row = sqlite.query("SELECT status FROM gateway_sessions WHERE id = ?").get(id) as {
+          status: string;
+        };
+        expect(row.status).toBe("running");
+      }
+      const humanNodeAfter = sqlite
+        .query("SELECT status FROM flow_node_runs WHERE id = ?")
+        .get(humanNode.id) as { status: string };
+      expect(humanNodeAfter.status).toBe("awaiting_human");
+    } finally {
+      for (const taskId of [humanTaskId, remoteTaskId]) {
+        const run = getActiveFlowRunForTask(taskId);
+        if (run) await cancelFlowRun(run.id, "test cleanup");
+      }
+      sqlite
+        .query("DELETE FROM gateway_sessions WHERE id IN (?, ?, ?, ?)")
+        .run(jobSessionId, kbSessionId, remoteSessionId, humanSessionId);
+    }
+  });
+
+  test("concurrent reconcileFlowNodeLiveness calls create at most one retry row for a zombie node", async () => {
+    const { reconcileFlowNodeLiveness } = await import("../flow-runner.js");
+    const taskId = await makeTask();
+    await startFlowForTask(taskId);
+    const build = activeNodeRun(taskId);
+    const now = Math.floor(Date.now() / 1000);
+    const sessionId = ulid();
+    const deadPid = 999_995;
+
+    getSqlite()
+      .query(
+        `INSERT INTO gateway_sessions (id, chat_id, backend, mode, status, role, task_id, pid, last_activity_at, created_at, updated_at)
+         VALUES (?, '__task-loop__', 'claude', 'agent:claude', 'running', 'worker', ?, ?, ?, ?, ?)`,
+      )
+      .run(sessionId, taskId, deadPid, now, now, now);
+    getSqlite()
+      .query(
+        "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = ? WHERE id = ?",
+      )
+      .run(sessionId, now, build.id);
+
+    await Promise.all([
+      reconcileFlowNodeLiveness({ nowSecs: now, isPidAlive: () => false }),
+      reconcileFlowNodeLiveness({ nowSecs: now, isPidAlive: () => false }),
+    ]);
+
+    const retries = nodeRuns(taskId).filter((r) => r.node_id === "build" && r.retry > 0);
+    expect(retries).toHaveLength(1);
+    expect(retries[0]?.retry).toBe(1);
+    expect(retries[0]?.status).toBe("pending");
+  });
+});

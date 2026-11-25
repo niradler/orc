@@ -107,7 +107,7 @@ describe("Elicitation inside tool_execute", () => {
       client,
       `const r = await tools.elicit("Pick", ${JSON.stringify(SCHEMA)});
        const projects = await tools.call("project_list", {});
-       return { picked: r.content.color, hasProjects: typeof projects === "string" };`,
+       return { picked: r.content.color, hasProjects: projects.ok === true };`,
     );
     const value = result.structuredContent?.result as { picked: string; hasProjects: boolean };
     expect(value.picked).toBe("blue");

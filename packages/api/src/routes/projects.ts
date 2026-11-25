@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import { createRoute, z } from "@hono/zod-openapi";
+import { clearSetupDismissal } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { GitRemoteUrlSchema } from "@orc/core/git-remote";
 import {
@@ -22,6 +23,7 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
 import { NotificationStore } from "@orc/db/notifications";
+import { deleteProjectSecrets } from "@orc/db/project-secrets";
 import {
   bridge_chats,
   comments,
@@ -426,6 +428,7 @@ app.openapi(createRoute_, async (c) => {
     where: eq(projects.id, id),
   });
   if (!project) throw new Error("Expected project to exist after write");
+  clearSetupDismissal();
   reassignSessions();
   return c.json(toDto(project), 201);
 });
@@ -525,6 +528,7 @@ app.openapi(deleteRoute, async (c) => {
     tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id)).run();
     detachLegacyKnowledgeCollections(sqlite, id);
     deleteProjectWorkspaceEnvironments(sqlite, id);
+    deleteProjectSecrets(sqlite, id);
     tx.delete(comments)
       .where(and(eq(comments.resource_type, "project"), eq(comments.resource_id, id)))
       .run();

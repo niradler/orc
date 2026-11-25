@@ -21,6 +21,8 @@ const bootstrap = `
     const parse = JSON.parse;
     const slice = Function.call.bind(String.prototype.slice);
     const freeze = Object.freeze;
+    const hasOwn = Object.prototype.hasOwnProperty;
+    const isArray = Array.isArray;
     const Text = String;
     const Type = Error;
     const request = async (operation, name, args, connection) => {
@@ -29,6 +31,99 @@ const bootstrap = `
       const reply = parse(await rpc(payload));
       if (reply.error !== undefined) throw new Type(reply.error);
       return reply.value;
+    };
+    const callError = (code, message) => ({ ok: false, error: { code, message: slice(Text(message), 0, 512) } });
+    const callTool = async (name, args = {}, options = {}) => {
+      if (typeof name !== "string" || !name.trim()) {
+        return callError("INVALID_ARGS", "Tool name must be a non-empty string");
+      }
+      const input = args === undefined ? {} : args;
+      if (input === null || typeof input !== "object" || isArray(input)) {
+        return callError("INVALID_ARGS", "Tool arguments must be an object");
+      }
+      const opts = options == null ? {} : options;
+      if (typeof opts !== "object" || isArray(opts)) {
+        return callError("INVALID_ARGS", "Tool options must be an object");
+      }
+      if (opts.timeout_ms !== undefined && (typeof opts.timeout_ms !== "number" || !Number.isFinite(opts.timeout_ms) || opts.timeout_ms <= 0)) {
+        return callError("INVALID_ARGS", "timeout_ms must be a positive number");
+      }
+      let payload;
+      try {
+        payload = stringify({
+          operation: "call",
+          name,
+          args: input,
+          ...(opts.connection !== undefined ? { connection: opts.connection } : {}),
+          ...(opts.timeout_ms !== undefined ? { timeout_ms: opts.timeout_ms } : {}),
+        });
+      } catch {
+        return callError("INVALID_ARGS", "Tool arguments must be JSON-serializable");
+      }
+      if (payload.length > ${CODE_LIMITS.requestChars}) {
+        return callError("LIMIT_EXCEEDED", "Tool arguments are too large");
+      }
+      const reply = parse(await rpc(payload));
+      if (reply.ok === false) {
+        return callError(reply.error?.code ?? "TOOL_ERROR", reply.error?.message ?? "Tool failed");
+      }
+      if (reply.ok === true) {
+        if (reply.parseJson) {
+          return { ok: true, data: parse(reply.text), text: reply.text };
+        }
+        if ("data" in reply) {
+          return { ok: true, data: reply.data, text: reply.text ?? "" };
+        }
+        return { ok: true, data: reply.text, text: reply.text };
+      }
+      if (reply.error !== undefined) {
+        return callError("TOOL_ERROR", reply.error);
+      }
+      const value = reply.value;
+      const text = typeof value === "string" ? value : (stringify(value) ?? "");
+      return { ok: true, data: value, text };
+    };
+    const settleEntry = async (entry, defaults) => {
+      if (entry && typeof entry === "object" && typeof entry.then === "function") {
+        try {
+          const resolved = await entry;
+          if (resolved && typeof resolved === "object" && typeof resolved.ok === "boolean") {
+            return resolved;
+          }
+          const text = typeof resolved === "string" ? resolved : (stringify(resolved) ?? "");
+          return { ok: true, data: resolved, text };
+        } catch (err) {
+          return callError("TOOL_ERROR", typeof err === "string" ? err : Text(err?.message ?? "Tool failed"));
+        }
+      }
+      if (isArray(entry)) {
+        const merged = { ...defaults, ...(entry[2] ?? {}) };
+        return callTool(entry[0], entry[1] ?? {}, merged);
+      }
+      if (entry && typeof entry === "object") {
+        const merged = {
+          ...defaults,
+          ...(entry.options ?? {}),
+          ...(entry.connection !== undefined ? { connection: entry.connection } : {}),
+          ...(entry.timeout_ms !== undefined ? { timeout_ms: entry.timeout_ms } : {}),
+        };
+        return callTool(entry.name, entry.args ?? {}, merged);
+      }
+      return callError("INVALID_ARGS", "Each tools.allSettled entry must be a call descriptor or promise");
+    };
+    const pickOne = (obj, keys) => {
+      if (obj === null || typeof obj !== "object" || isArray(obj)) return obj;
+      const out = {};
+      for (const key of keys) {
+        if (typeof key !== "string" || key === "__proto__" || key === "constructor" || key === "prototype") continue;
+        if (hasOwn.call(obj, key)) out[key] = obj[key];
+      }
+      return out;
+    };
+    const pick = (value, keys) => {
+      if (!isArray(keys)) throw new Type("tools.pick expects an array of keys");
+      if (isArray(value)) return value.map((item) => pickOne(item, keys));
+      return pickOne(value, keys);
     };
     const print = (...values) => {
       let line = "";
@@ -42,9 +137,21 @@ const bootstrap = `
     };
     return {
       tools: freeze({
-        search: (query = "", options = {}) => request("search", query, options, options.connection),
-        describe: (name, options = {}) => request("describe", name, undefined, options.connection),
-        call: (name, args = {}, options = {}) => request("call", name, args, options.connection),
+        search: (query = "", options = {}) => {
+          const opts = options == null ? {} : options;
+          return request("search", query == null ? "" : Text(query), opts, opts.connection);
+        },
+        describe: (name, options = {}) => {
+          const opts = options == null ? {} : options;
+          return request("describe", name, undefined, opts.connection);
+        },
+        call: callTool,
+        allSettled: (calls, options = {}) => {
+          if (!isArray(calls)) throw new Type("tools.allSettled expects an array");
+          const defaults = options == null ? {} : options;
+          return Promise.all(calls.map((entry) => settleEntry(entry, defaults)));
+        },
+        pick,
         elicit: (message, requestedSchema = {}) => request("elicit", message, requestedSchema),
       }),
       console: freeze({ log: print, info: print, warn: print, error: print, debug: print }),

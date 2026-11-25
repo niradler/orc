@@ -37,6 +37,7 @@ app.openapi(
             "kb",
             "notification",
             "human_request",
+            "project_secret",
             "job_run",
             "settings",
             "task",
