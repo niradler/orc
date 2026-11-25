@@ -171,8 +171,15 @@ export function piAdapter(
         records.push(record);
       }
       const listed = new Set(records.map((record) => record.externalId));
+      // Two roots can hold a file for one session id, and only one of them is empty.
+      // Nulling the stored path then would overwrite the readable copy, which keeps its
+      // row, so an empty copy only hides a session that was not listed at all.
       for (const { session } of known.values())
-        if (session?.transcriptPath && empty.has(session.transcriptPath))
+        if (
+          session?.transcriptPath &&
+          !listed.has(session.externalId) &&
+          empty.has(session.transcriptPath)
+        )
           records.push({ ...session, transcriptPath: null });
       for (const record of await droppedTranscripts(
         known,
