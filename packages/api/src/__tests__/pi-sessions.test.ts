@@ -6,10 +6,12 @@ import { nativeChatAgent } from "@orc/core/chat";
 import { loadConfig } from "@orc/core/config";
 import { hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
 import { writeRegistration } from "@orc/core/live-session";
+import { getSqlite } from "@orc/db/client";
+import { runSync } from "../session-watcher.js";
 import { withLifecycle } from "../sessions/lifecycle.js";
 import { parsePiSession, piAdapter, piSessionRoots } from "../sessions/pi.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
-import { setupTestApp, teardownTestApp } from "./helpers.js";
+import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 const nativeId = "33583f12-72b3-4edf-a18d-8616b7d10723";
 const timestamp = "2026-11-11T08:00:00.000Z";
@@ -157,11 +159,189 @@ test("should discover configured Pi roots without reading secret environment val
   }
 });
 
+test("a Pi transcript with no message is not an openable session and drops its empty row", async () => {
+  const root = mkdtempSync(join(tmpdir(), "orc-pi-empty-"));
+  const namedId = "8f2f0f9f-9d1a-4e26-9a0c-1a6f9c5e2b77";
+  const namedHeader = { ...header, id: namedId };
+  try {
+    // Pi creates the file at launch and writes its header with the first turn.
+    const launchFile = join(root, `2026-11-11_${nativeId}.jsonl`);
+    writeFileSync(launchFile, "");
+    const headerOnly = join(root, `2026-11-11_${namedId}.jsonl`);
+    writeFileSync(headerOnly, `${log([namedHeader])}\n`);
+    const known = new Map(
+      [
+        {
+          id: nativeId,
+          path: launchFile,
+          title: "Pi session",
+        },
+        {
+          id: namedId,
+          path: headerOnly,
+          title: "New session",
+        },
+      ].map(({ id, path, title }) => [
+        id,
+        {
+          lastActivityMs: Date.parse(timestamp),
+          tokensUsed: null,
+          session: {
+            backend: "pi",
+            externalId: id,
+            title,
+            summary: null,
+            status: "stopped" as const,
+            createdAt: new Date(timestamp),
+            lastActivityAt: new Date(timestamp),
+            transcriptPath: path,
+          },
+        },
+      ]),
+    );
+    expect(await piAdapter(root).list(known)).toMatchObject([
+      { externalId: nativeId, transcriptPath: null },
+      { externalId: namedId, transcriptPath: null },
+    ]);
+    expect(await piAdapter(root).list(new Map())).toEqual([]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("an empty copy in a second Pi root does not hide the session listed from the first", async () => {
+  setupTestApp();
+  const base = mkdtempSync(join(tmpdir(), "orc-pi-roots-"));
+  const home = join(base, "home");
+  const defaultRoot = join(home, ".pi", "agent", "sessions");
+  const configuredRoot = join(base, "custom", "sessions");
+  mkdirSync(defaultRoot, { recursive: true });
+  mkdirSync(configuredRoot, { recursive: true });
+  try {
+    loadConfig().providers = {
+      default_id: "pi",
+      instances: [
+        {
+          id: "pi",
+          name: "Pi",
+          agent: "pi",
+          enabled: true,
+          executable: "",
+          model: "",
+          environment: [
+            { name: "PI_CODING_AGENT_DIR", value: join(base, "custom"), secret: false },
+          ],
+        },
+      ],
+    };
+    const runtime = { ...hostRuntime(LOCAL_HOST), home: async () => home };
+    const known = (transcriptPath: string) =>
+      new Map([
+        [
+          nativeId,
+          {
+            lastActivityMs: Date.parse(timestamp),
+            tokensUsed: null,
+            session: {
+              backend: "pi",
+              externalId: nativeId,
+              title: "Pi session",
+              summary: null,
+              status: "stopped" as const,
+              createdAt: new Date(timestamp),
+              lastActivityAt: new Date(timestamp),
+              transcriptPath,
+            },
+          },
+        ],
+      ]);
+    // Whichever root holds the conversation, the empty launch file in the other one must
+    // not replace the readable path: the stored row points at one of them, and the sync
+    // keeps the last record it sees for that session id.
+    for (const contentRoot of [defaultRoot, configuredRoot]) {
+      const otherRoot = contentRoot === defaultRoot ? configuredRoot : defaultRoot;
+      const good = join(contentRoot, `2026-11-11_${nativeId}.jsonl`);
+      const stale = join(otherRoot, `2026-11-11_${nativeId}.jsonl`);
+      writeFileSync(
+        good,
+        `${log([
+          header,
+          entry("u", null, { type: "message", message: { role: "user", content: "Hello Pi" } }),
+        ])}\n`,
+      );
+      writeFileSync(stale, "");
+      const sessions = await piAdapter(undefined, runtime).list(known(stale));
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]).toMatchObject({ externalId: nativeId, transcriptPath: good });
+      rmSync(good);
+      rmSync(stale);
+    }
+  } finally {
+    teardownTestApp();
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test("a Pi launched without a prompt leaves no ORC session in the list", async () => {
+  const app = setupTestApp();
+  const root = mkdtempSync(join(tmpdir(), "orc-pi-list-"));
+  const registry = join(root, "live");
+  const sessionHeader = { ...header, cwd: root };
+  try {
+    const file = join(root, `2026-11-11_${nativeId}.jsonl`);
+    writeFileSync(file, "");
+    // The row an earlier porc left when it registered a Pi that never prompted.
+    getSqlite()
+      .prepare(
+        "INSERT INTO gateway_sessions (id, chat_id, backend, mode, runtime_session_id, title, status, transcript_path, created_at, last_activity_at) VALUES ('empty-pi-row', '__live-sessions__', 'pi', 'direct', ?, 'Pi session', 'stopped', ?, unixepoch(), unixepoch())",
+      )
+      .run(nativeId, file);
+    writeRegistration(
+      {
+        backend: "pi",
+        externalId: nativeId,
+        pid: process.pid,
+        title: "Pi session",
+        transcriptPath: file,
+        status: "stopped",
+        createdAt: Date.parse(timestamp),
+        updatedAt: Date.parse(timestamp),
+      },
+      registry,
+    );
+    const adapter = withLifecycle(piAdapter(root), registry);
+    await runSync([adapter], { force: true });
+    expect(
+      (await (await req(app, "GET", "/sessions/live?agent=pi&active=false")).json()).sessions,
+    ).toEqual([]);
+    writeFileSync(
+      file,
+      `${log([
+        sessionHeader,
+        entry("u", null, { type: "message", message: { role: "user", content: "Hello Pi" } }),
+      ])}\n`,
+    );
+    await runSync([adapter], { force: true });
+    expect(
+      (await (await req(app, "GET", "/sessions/live?agent=pi&active=false")).json()).sessions,
+    ).toMatchObject([{ session_id: nativeId, summary: "Hello Pi" }]);
+  } finally {
+    teardownTestApp();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("a live Pi registration marks its transcript session running with the writer pid", async () => {
   const root = mkdtempSync(join(tmpdir(), "orc-pi-live-"));
   const registry = join(root, "live");
   try {
-    writeFileSync(join(root, `2026-11-11_${nativeId}.jsonl`), `${log([header])}\n`);
+    writeFileSync(
+      join(root, `2026-11-11_${nativeId}.jsonl`),
+      `${log([
+        header,
+        entry("u", null, { type: "message", message: { role: "user", content: "Hello Pi" } }),
+      ])}\n`,
+    );
     const live = {
       backend: "pi",
       externalId: nativeId,

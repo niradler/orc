@@ -17,7 +17,11 @@ import {
   type PorcOverrides,
   porcPaths,
 } from "../src/config.js";
-import { type PiLiveSession, writePiLiveSession } from "../src/live-session.js";
+import {
+  type PiLiveSession,
+  removePiLiveSession,
+  writePiLiveSession,
+} from "../src/live-session.js";
 import { redact } from "../src/mcp.js";
 import { OrcMcpClient } from "../src/mcp-client.js";
 import {
@@ -1131,6 +1135,22 @@ export default function porc(
 ): void {
   const state: PluginState = {};
   let live: PiLiveSession | undefined;
+  let liveRegistered = false;
+
+  // Pi creates its session file before the first prompt, and an empty session has no
+  // history to read, message or resume. Registering it would leave a "Pi session" row
+  // in ORC for every launch, so the registry entry starts with the first turn (or
+  // immediately when the session already holds messages, such as a resume).
+  const registerLive = (ctx: ExtensionContext, status: "running" | "idle" | "stopped"): void => {
+    live ??= {
+      id: ctx.sessionManager.getSessionId(),
+      cwd: ctx.cwd,
+      transcriptPath: ctx.sessionManager.getSessionFile(),
+      createdAt: Date.now(),
+    };
+    liveRegistered = true;
+    writePiLiveSession(liveDir, live, status);
+  };
 
   pi.registerFlag("porc-api-base", {
     description: "ORC API base URL for this session",
@@ -1176,7 +1196,9 @@ export default function porc(
       transcriptPath: ctx.sessionManager.getSessionFile(),
       createdAt: Date.now(),
     };
-    writePiLiveSession(liveDir, live, "idle");
+    if (ctx.sessionManager.getEntries().some((entry) => entry.type === "message"))
+      registerLive(ctx, "idle");
+    else removePiLiveSession(liveDir, live.id);
     await initialize(pi, state, ctx, {
       announce: event.reason === "startup",
       interactive: event.reason === "startup" || event.reason === "new",
@@ -1206,12 +1228,12 @@ export default function porc(
     if (decision?.context) pushRuleContext(session, decision.context);
   });
 
-  pi.on("agent_start", () => {
-    if (live) writePiLiveSession(liveDir, live, "running");
+  pi.on("agent_start", (_event, ctx) => {
+    registerLive(ctx, "running");
   });
 
   pi.on("agent_end", async (_event, ctx) => {
-    if (live) writePiLiveSession(liveDir, live, "idle");
+    if (liveRegistered) registerLive(ctx, "idle");
     const session = state.session;
     if (!session) return;
     const decision = await checkRules(session, "agent_end", {}, ctx);
@@ -1266,7 +1288,8 @@ export default function porc(
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
-    if (live) writePiLiveSession(liveDir, live, "stopped");
+    if (liveRegistered) registerLive(ctx, "stopped");
+    else if (live) removePiLiveSession(liveDir, live.id);
     await checkRules(state.session, "session_shutdown", {}, ctx).catch(() => undefined);
     ctx.ui.setStatus("porc", undefined);
     ctx.ui.setWidget("porc", undefined);
