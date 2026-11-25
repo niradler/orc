@@ -24,13 +24,15 @@ An argument declared with `allow_secret_ref: true` lets the user pick a saved pr
 secret instead of typing a value. When the request belongs to a project with saved
 secrets, each opted-in argument offers a **Use a saved secret** picker; choosing one
 supplies the `project/<name>` reference. ORC resolves it to the stored value at Run
-time, injects it as `ORC_INPUT_<name>`, updates the secret's `last_used_at`, and
+time, injects it as `ORC_INPUT_<name>`, records the use in the secret's `last_used_at`
+only after the Run wins its claim (a Run that loses the race records nothing), and
 redacts it from output exactly like a typed value. The reference is shown in the field
 (it is not secret); the stored value is never displayed or returned to the agent, and
 a visible note states how many saved secrets the run will inject.
 
-Only opted-in arguments resolve references. Every other argument stays literal, so a
-path-like value such as `project/foo` is never silently replaced by a credential. A
+Only opted-in arguments resolve references and mask the typed value. Every other
+argument shows a plain field and stays literal, so a path-like value such as
+`project/foo` is never silently replaced by a credential. A
 request must belong to a real project to use saved references; a projectless request
 fails the Run with a clear error if a reference is supplied, and the form warns inline
 when a typed value looks like a reference it cannot resolve. Manage saved secrets in

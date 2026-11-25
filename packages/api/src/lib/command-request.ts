@@ -4,7 +4,7 @@ import { expandHostPath, hostBinary, hostExec, hostIsDirectory } from "@orc/core
 import { CommandRunSchema, type HumanRequest } from "@orc/core/human-requests";
 import { getRegisteredSecrets } from "@orc/core/secret-redactor";
 import { getSqlite } from "@orc/db/client";
-import { resolveProjectSecretEnv } from "@orc/db/project-secrets";
+import { ProjectSecretStore, resolveProjectSecretEnv } from "@orc/db/project-secrets";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps } from "../terminals/service.js";
 import { commandShell } from "./command-shell.js";
@@ -83,9 +83,17 @@ export async function prepareCommand(request: HumanRequest, raw: unknown) {
     if (refNames.has(name)) refValues[name] = value;
     else literalValues[name] = value;
   }
-  const resolved = resolveProjectSecretEnv(getSqlite(), request.input.project_id, refValues);
+  // Resolution does not bump last_used_at: the route calls markUsed() only after
+  // the claim CAS wins, so a Run that loses the race records no use.
+  const projectId = request.input.project_id;
+  const resolved = resolveProjectSecretEnv(getSqlite(), projectId, refValues, { touch: false });
   const values = { ...literalValues, ...resolved.env };
   return {
+    markUsed: () => {
+      if (!projectId) return;
+      const secrets = new ProjectSecretStore(getSqlite());
+      for (const name of resolved.resolvedNames) secrets.markUsed(projectId, name);
+    },
     execute: async () => {
       try {
         const result = await hostExec(host, [bun, "--eval", EXECUTE], {

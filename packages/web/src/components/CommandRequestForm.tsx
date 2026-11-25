@@ -71,11 +71,15 @@ export function CommandRequestForm({
   });
   if (!spec) return null;
   const pending = request.status === "pending" && !run.isPending;
-  const injectedSecrets = spec.arguments.filter(
-    (arg) =>
-      arg.allow_secret_ref &&
-      commandArgumentPickerValue(values[arg.name] ?? "") !== COMMAND_ARGUMENT_MANUAL,
-  ).length;
+  // Without a project nothing resolves (the Run fails closed), so the note must
+  // not claim secrets will be injected.
+  const injectedSecrets = projectId
+    ? spec.arguments.filter(
+        (arg) =>
+          arg.allow_secret_ref &&
+          commandArgumentPickerValue(values[arg.name] ?? "") !== COMMAND_ARGUMENT_MANUAL,
+      ).length
+    : 0;
   return (
     <div className="space-y-2">
       <dl className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -204,7 +208,7 @@ export function CommandRequestForm({
                   ) : (
                     <Input
                       id={inputId}
-                      type="password"
+                      type={arg.allow_secret_ref ? "password" : "text"}
                       autoComplete="off"
                       data-testid={`attention-argument-${arg.name}`}
                       value={value}
@@ -264,8 +268,10 @@ export function CommandRequestForm({
             </Button>
             {pending && actions}
             <HelpPopover label="Secure input handling" testId="attention-input-help">
-              Typed values and picked saved secrets are used only for this run and redacted from its
-              output. The agent receives the result without the raw inputs.
+              Only arguments the agent opted in offer saved project secrets and mask the typed
+              value; every other argument stays plain and keeps exactly what you type. Submitted
+              values are used only for this run and redacted from its output. The agent receives the
+              result without the raw inputs.
             </HelpPopover>
           </div>
         )}

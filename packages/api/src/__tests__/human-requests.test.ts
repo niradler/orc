@@ -8,6 +8,7 @@ import type { HumanRequest } from "@orc/core/human-requests";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
+import { prepareCommand } from "../lib/command-request.js";
 import { removeTempTree, req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
@@ -662,4 +663,53 @@ test("should keep non-opted-in command arguments literal and reject an unknown p
     command: { host: null, cwd, script: "true" },
   });
   expect(badProject.status).toBe(400);
+});
+
+test("should record a secret use only after the run claim succeeds", async () => {
+  const cwd = tempDir("orc-command-claim-");
+  const project = await (await req(app, "POST", "/projects", { name: "claim-bump-proj" })).json<{
+    id: string;
+  }>();
+  expect(
+    (
+      await req(app, "POST", `/projects/${project.id}/secrets`, {
+        name: "bump-token",
+        value: "sk-claim-bump-7788",
+      })
+    ).status,
+  ).toBe(201);
+  const entry = await (
+    await req(app, "POST", "/human-requests", {
+      kind: "command",
+      project_id: project.id,
+      prompt: "Deferred use recording",
+      origin: { backend: "test", session_id: "claim-bump", request_id: "claim-bump-1" },
+      command: {
+        host: null,
+        cwd,
+        script: "true",
+        arguments: [{ name: "TOKEN", label: "Token", allow_secret_ref: true }],
+      },
+    })
+  ).json<HumanRequest>();
+  const lastUsed = () =>
+    getSqlite()
+      .query<{ last_used_at: number | null }, [string]>(
+        "SELECT last_used_at FROM project_secrets WHERE project_id = ? AND name = 'bump-token'",
+      )
+      .get(project.id)?.last_used_at ?? null;
+  const store = new HumanRequestStore(getSqlite());
+  const prepared = await prepareCommand(store.get(entry.id), {
+    version: entry.version,
+    script: "true",
+    values: { TOKEN: "project/bump-token" },
+  });
+  // Resolution alone must not record the use, and a losing claim stays silent.
+  expect(lastUsed()).toBeNull();
+  expect(() => store.claimCommand(entry.id, entry.version + 5)).toThrow();
+  expect(lastUsed()).toBeNull();
+  const claimed = store.claimCommand(entry.id, entry.version);
+  expect(claimed.status).toBe("running");
+  prepared.markUsed();
+  expect(lastUsed()).not.toBeNull();
 });

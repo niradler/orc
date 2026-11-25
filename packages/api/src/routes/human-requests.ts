@@ -244,6 +244,9 @@ app.openapi(
     const id = c.req.valid("param").id;
     const prepared = await prepareCommand(current(id), input);
     const claimed = store().claimCommand(id, input.version);
+    // Record secret uses only after the claim CAS won: a Run that loses the
+    // race never executed and must not bump last_used_at.
+    prepared.markUsed();
     changes.publish("human-requests", "notifications");
     const result = await prepared.execute();
     const completed = store().completeCommand(id, claimed.version, result);

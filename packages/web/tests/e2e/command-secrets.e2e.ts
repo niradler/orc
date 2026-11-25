@@ -42,10 +42,12 @@ test("@sanity should run a command with a picked saved project secret without ec
       description: "Deploy credential reused by reviewed commands",
     });
 
+    // TOKEN opted in; TARGET did not, so a reference-shaped value typed there
+    // must reach the script literally (TLEN=13 proves no silent substitution).
     const script =
       process.platform === "win32"
-        ? '[Console]::Out.Write("LEN=" + ($env:ORC_INPUT_TOKEN).Length + " RAW=" + $env:ORC_INPUT_TOKEN)'
-        : 'printf "LEN=%s RAW=%s" "$(printf %s "$ORC_INPUT_TOKEN" | wc -c | tr -d " ")" "$ORC_INPUT_TOKEN"';
+        ? '[Console]::Out.Write("LEN=" + ($env:ORC_INPUT_TOKEN).Length + " RAW=" + $env:ORC_INPUT_TOKEN + " TLEN=" + ($env:ORC_INPUT_TARGET).Length)'
+        : 'printf "LEN=%s RAW=%s TLEN=%s" "$(printf %s "$ORC_INPUT_TOKEN" | wc -c | tr -d " ")" "$ORC_INPUT_TOKEN" "$(printf %s "$ORC_INPUT_TARGET" | wc -c | tr -d " ")"';
     const entry = await apiPost<HumanRequest>(request, "/human-requests", {
       kind: "command",
       project_id: project.id,
@@ -63,6 +65,7 @@ test("@sanity should run a command with a picked saved project secret without ec
         script,
         arguments: [
           { name: "TOKEN", label: "Deploy token", required: true, allow_secret_ref: true },
+          { name: "TARGET", label: "Target name", required: true },
         ],
       },
     });
@@ -75,10 +78,13 @@ test("@sanity should run a command with a picked saved project secret without ec
     await expect(card).toBeVisible();
     await reviewAttentionRequest(card);
 
-    // The saved-secret picker appears because the project has a saved secret.
+    // Opt-in UI: the picker and masking appear for TOKEN only; TARGET stays a
+    // plain, literal field.
     const picker = card.getByTestId("attention-argument-secret-TOKEN");
     await expect(picker).toBeVisible();
     await expect(card.getByTestId("attention-argument-TOKEN")).toHaveAttribute("type", "password");
+    await expect(card.getByTestId("attention-argument-secret-TARGET")).toHaveCount(0);
+    await expect(card.getByTestId("attention-argument-TARGET")).toHaveAttribute("type", "text");
 
     // Pick the saved secret: the masked input is replaced by the non-secret reference.
     await picker.click();
@@ -91,6 +97,7 @@ test("@sanity should run a command with a picked saved project secret without ec
       "injects 1 saved secret",
     );
     await expect(card).not.toContainText(secretValue);
+    await card.getByTestId("attention-argument-TARGET").fill("project/ghost");
 
     expect(
       await page.evaluate(
@@ -136,10 +143,56 @@ test("@sanity should run a command with a picked saved project secret without ec
     await expect(result).toBeVisible();
     await expect(result).toContainText(`LEN=${secretValue.length}`);
     await expect(result).toContainText("RAW=[REDACTED]");
+    await expect(result).toContainText("TLEN=13");
     await expect(result).not.toContainText(secretValue);
     await expect(card).not.toContainText(secretValue);
     await snap(page, "command-secret-result-desktop");
   } finally {
     await apiDelete(request, `/projects/${project.id}`).catch(() => {});
   }
+});
+
+test("@sanity should warn inline when a projectless request carries a typed secret reference", async ({
+  page,
+  request,
+}) => {
+  const entry = await apiPost<HumanRequest>(request, "/human-requests", {
+    kind: "command",
+    title: "No-project credential check",
+    prompt: "This request has no project, so saved secrets are unavailable.",
+    origin: {
+      backend: "codex",
+      session_id: tid("command-noproject-ui"),
+      session_title: "Project-less command",
+      request_id: tid("req-command-noproject"),
+    },
+    command: {
+      host: null,
+      cwd: tmpdir(),
+      script: "true",
+      arguments: [{ name: "TOKEN", label: "Deploy token", allow_secret_ref: true }],
+    },
+  });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await gotoView(page, "notifications");
+  await page.goto(`/notifications?request=${encodeURIComponent(entry.id)}`);
+  const card = page.getByTestId(`attention-request-${entry.id}`);
+  await expect(card).toBeVisible();
+  await reviewAttentionRequest(card);
+
+  // No picker without a project; the field stays masked because it is opted in.
+  await expect(card.getByTestId("attention-argument-secret-TOKEN")).toHaveCount(0);
+  await expect(card.getByTestId("attention-argument-TOKEN")).toHaveAttribute("type", "password");
+  await expect(card.getByTestId("attention-argument-noproject-TOKEN")).toHaveCount(0);
+
+  // Typing a reference-shaped value triggers the inline project requirement warning.
+  await card.getByTestId("attention-argument-TOKEN").fill("project/ghost");
+  await expect(card.getByTestId("attention-argument-noproject-TOKEN")).toBeVisible();
+  await expect(card.getByTestId("attention-argument-noproject-TOKEN")).toContainText(
+    "no project to resolve",
+  );
+  // Nothing injects without a project, so the injection note must not appear.
+  await expect(card.getByTestId("attention-secret-injection-note")).toHaveCount(0);
+  await snap(page, "command-secret-noproject-desktop");
 });
