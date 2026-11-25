@@ -20,15 +20,21 @@ Use the execution host's shell syntax for environment variables, for example
 `my-cli login --password "$env:ORC_INPUT_PASSWORD"` in PowerShell.
 Do not include secrets in the tool call, script, prompt or argument labels.
 
-When the request belongs to a project with saved secrets, each argument also offers
-a **Use a saved secret** picker. Choosing one supplies the `project/<name>` reference
-instead of a typed value; ORC resolves it to the stored value at Run time, injects it
-as `ORC_INPUT_<name>`, updates the secret's `last_used_at`, and redacts it from output
-exactly like a typed value. The reference is shown in the field (it is not secret);
-the stored value is never displayed or returned to the agent. A request without a
-project cannot use saved references and fails the Run with a clear error if one is
-supplied. Manage saved secrets in **Settings → Secrets**; see
-[Human requests](./human-requests.md).
+An argument declared with `allow_secret_ref: true` lets the user pick a saved project
+secret instead of typing a value. When the request belongs to a project with saved
+secrets, each opted-in argument offers a **Use a saved secret** picker; choosing one
+supplies the `project/<name>` reference. ORC resolves it to the stored value at Run
+time, injects it as `ORC_INPUT_<name>`, updates the secret's `last_used_at`, and
+redacts it from output exactly like a typed value. The reference is shown in the field
+(it is not secret); the stored value is never displayed or returned to the agent, and
+a visible note states how many saved secrets the run will inject.
+
+Only opted-in arguments resolve references. Every other argument stays literal, so a
+path-like value such as `project/foo` is never silently replaced by a credential. A
+request must belong to a real project to use saved references; a projectless request
+fails the Run with a clear error if a reference is supplied, and the form warns inline
+when a typed value looks like a reference it cannot resolve. Manage saved secrets in
+**Settings → Secrets**; see [Human requests](./human-requests.md).
 
 The request does not execute anything. Notifications show compact rows; opening a
 request reveals its purpose, host/folder, exact command and input descriptions.

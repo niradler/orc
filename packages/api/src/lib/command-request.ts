@@ -69,10 +69,22 @@ export async function prepareCommand(request: HumanRequest, raw: unknown) {
   const bun = await hostBinary(host, "bun");
   if (!bun) throw new ValidationError("Command execution requires Bun on the selected host");
   const shell = commandShell(await launchDeps(config, host));
-  // An argument may carry a project/<name> reference instead of a typed value;
-  // resolve it here so a missing project or secret fails the Run with a clear
-  // error, and the real value only ever travels on stdin to the redacted exec.
-  const resolved = resolveProjectSecretEnv(getSqlite(), request.input.project_id, run.values);
+  // Only arguments the agent opted in with allow_secret_ref resolve a project/<name>
+  // reference; every other value stays literal so a path like project/foo can never
+  // silently inject a credential. Resolution happens here so a missing project or
+  // secret fails the Run with a clear error, and the real value only ever travels on
+  // stdin to the redacted exec.
+  const refNames = new Set(
+    spec.arguments.filter((arg) => arg.allow_secret_ref).map((arg) => arg.name),
+  );
+  const refValues: Record<string, string> = {};
+  const literalValues: Record<string, string> = {};
+  for (const [name, value] of Object.entries(run.values)) {
+    if (refNames.has(name)) refValues[name] = value;
+    else literalValues[name] = value;
+  }
+  const resolved = resolveProjectSecretEnv(getSqlite(), request.input.project_id, refValues);
+  const values = { ...literalValues, ...resolved.env };
   return {
     execute: async () => {
       try {
@@ -81,7 +93,7 @@ export async function prepareCommand(request: HumanRequest, raw: unknown) {
             script: run.script,
             cwd,
             shell,
-            values: resolved.env,
+            values,
             extraSecrets: [...getRegisteredSecrets(), ...resolved.secrets],
             timeout: spec.timeout_seconds,
           }),

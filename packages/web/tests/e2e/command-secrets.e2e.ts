@@ -61,7 +61,9 @@ test("@sanity should run a command with a picked saved project secret without ec
         host: null,
         cwd: tmpdir(),
         script,
-        arguments: [{ name: "TOKEN", label: "Deploy token", required: true }],
+        arguments: [
+          { name: "TOKEN", label: "Deploy token", required: true, allow_secret_ref: true },
+        ],
       },
     });
 
@@ -85,6 +87,9 @@ test("@sanity should run a command with a picked saved project secret without ec
       "project/deploy-token",
     );
     await expect(card.getByTestId("attention-argument-TOKEN")).toHaveCount(0);
+    await expect(card.getByTestId("attention-secret-injection-note")).toContainText(
+      "injects 1 saved secret",
+    );
     await expect(card).not.toContainText(secretValue);
 
     expect(

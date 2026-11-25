@@ -71,6 +71,11 @@ export function CommandRequestForm({
   });
   if (!spec) return null;
   const pending = request.status === "pending" && !run.isPending;
+  const injectedSecrets = spec.arguments.filter(
+    (arg) =>
+      arg.allow_secret_ref &&
+      commandArgumentPickerValue(values[arg.name] ?? "") !== COMMAND_ARGUMENT_MANUAL,
+  ).length;
   return (
     <div className="space-y-2">
       <dl className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -144,7 +149,9 @@ export function CommandRequestForm({
           {pending &&
             spec.arguments.map((arg) => {
               const value = values[arg.name] ?? "";
+              const canPick = Boolean(arg.allow_secret_ref) && savedSecrets.length > 0;
               const isSavedRef = commandArgumentPickerValue(value) !== COMMAND_ARGUMENT_MANUAL;
+              const refWithoutProject = Boolean(arg.allow_secret_ref) && !projectId && isSavedRef;
               const inputId = `argument-${request.id}-${arg.name}`;
               return (
                 <div className="block min-w-0 space-y-1 text-xs" key={arg.name}>
@@ -160,7 +167,7 @@ export function CommandRequestForm({
                       {`ORC_INPUT_${arg.name}`}
                     </code>
                   </span>
-                  {savedSecrets.length > 0 && (
+                  {canPick && (
                     <Select
                       value={commandArgumentPickerValue(value)}
                       onValueChange={(next) =>
@@ -187,7 +194,7 @@ export function CommandRequestForm({
                       </SelectContent>
                     </Select>
                   )}
-                  {isSavedRef ? (
+                  {canPick && isSavedRef ? (
                     <p
                       data-testid={`attention-argument-ref-${arg.name}`}
                       className="wrap-anywhere rounded-sm bg-surface px-2 py-1.5 font-mono text-xs text-muted-foreground"
@@ -211,6 +218,15 @@ export function CommandRequestForm({
                       }
                     />
                   )}
+                  {refWithoutProject && (
+                    <span
+                      data-testid={`attention-argument-noproject-${arg.name}`}
+                      className="block text-warning"
+                    >
+                      This looks like a secret reference, but the request has no project to resolve
+                      it.
+                    </span>
+                  )}
                   {arg.description && (
                     <span
                       id={`argument-help-${request.id}-${arg.name}`}
@@ -223,6 +239,15 @@ export function CommandRequestForm({
               );
             })}
         </div>
+        {pending && injectedSecrets > 0 && (
+          <p
+            data-testid="attention-secret-injection-note"
+            className="text-xs text-muted-foreground"
+          >
+            This run injects {injectedSecrets} saved secret{injectedSecrets > 1 ? "s" : ""} into the
+            command as environment variable{injectedSecrets > 1 ? "s" : ""}.
+          </p>
+        )}
         {(pending || run.isPending || request.status === "running") && (
           <div className="flex flex-wrap items-center gap-1">
             <Button

@@ -556,7 +556,7 @@ test("should resolve a saved project secret for a command argument, inject and r
         host: null,
         cwd,
         script: "true",
-        arguments: [{ name: "TOKEN", label: "Deploy token" }],
+        arguments: [{ name: "TOKEN", label: "Deploy token", allow_secret_ref: true }],
       },
     })
   ).json<HumanRequest>();
@@ -591,7 +591,12 @@ test("should resolve a saved project secret for a command argument, inject and r
       kind: "command",
       prompt: "No project",
       origin: { backend: "test", session_id: "command-ref", request_id: "command-ref-2" },
-      command: { host: null, cwd, script: "true", arguments: [{ name: "TOKEN", label: "Token" }] },
+      command: {
+        host: null,
+        cwd,
+        script: "true",
+        arguments: [{ name: "TOKEN", label: "Token", allow_secret_ref: true }],
+      },
     })
   ).json<HumanRequest>();
   const failRes = await req(app, "POST", `/human-requests/${noProject.id}/run`, {
@@ -600,4 +605,61 @@ test("should resolve a saved project secret for a command argument, inject and r
     values: { TOKEN: "project/deploy-token" },
   });
   expect(failRes.status).toBe(400);
+});
+
+test("should keep non-opted-in command arguments literal and reject an unknown project_id", async () => {
+  const cwd = tempDir("orc-command-literal-");
+  const project = await (
+    await req(app, "POST", "/projects", { name: "command-literal-proj" })
+  ).json<{ id: string }>();
+  const secretValue = "sk-literal-collision-secret-7272";
+  await req(app, "POST", `/projects/${project.id}/secrets`, {
+    name: "config",
+    value: secretValue,
+  });
+
+  // PATH is not opted in, so the literal project/config must pass through untouched
+  // even though a secret named config exists.
+  const entry = await (
+    await req(app, "POST", "/human-requests", {
+      kind: "command",
+      project_id: project.id,
+      prompt: "Literal path argument",
+      origin: { backend: "test", session_id: "command-literal", request_id: "command-literal-1" },
+      command: {
+        host: null,
+        cwd,
+        script: "true",
+        arguments: [{ name: "PATH_ARG", label: "Path" }],
+      },
+    })
+  ).json<HumanRequest>();
+  // The literal value is itself redacted from output (all inputs are), so prove it
+  // passed through by its length: project/config (14), not the stored secret.
+  const script =
+    process.platform === "win32"
+      ? '[Console]::Out.Write("LEN=" + ($env:ORC_INPUT_PATH_ARG).Length)'
+      : 'printf "LEN=%s" "$(printf %s "$ORC_INPUT_PATH_ARG" | wc -c | tr -d " ")"';
+  const runRes = await req(app, "POST", `/human-requests/${entry.id}/run`, {
+    version: entry.version,
+    script,
+    values: { PATH_ARG: "project/config" },
+  });
+  expect(runRes.status).toBe(200);
+  const completed = await runRes.json<HumanRequest>();
+  if (completed.response?.kind === "command") {
+    expect(completed.response.stdout).toContain(`LEN=${"project/config".length}`);
+    expect(completed.response.stdout).not.toContain(`LEN=${secretValue.length}`);
+    expect(completed.response.stdout).not.toContain(secretValue);
+  }
+
+  // A non-existent project_id is rejected at creation now that it selects a secret namespace.
+  const badProject = await req(app, "POST", "/human-requests", {
+    kind: "command",
+    project_id: "does-not-exist",
+    prompt: "Unknown project",
+    origin: { backend: "test", session_id: "command-literal", request_id: "command-literal-2" },
+    command: { host: null, cwd, script: "true" },
+  });
+  expect(badProject.status).toBe(400);
 });
