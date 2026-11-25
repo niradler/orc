@@ -23,17 +23,26 @@ import {
 } from "../workspace-settings.js";
 
 let home: string;
-const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+const saved = {
+  HOME: process.env.HOME,
+  USERPROFILE: process.env.USERPROFILE,
+  ORC_HOME: process.env.ORC_HOME,
+};
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "orc-workspace-"));
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.ORC_HOME = join(home, ".orc");
 });
 
 afterEach(() => {
-  process.env.HOME = saved.HOME;
-  process.env.USERPROFILE = saved.USERPROFILE;
+  if (saved.HOME === undefined) delete process.env.HOME;
+  else process.env.HOME = saved.HOME;
+  if (saved.USERPROFILE === undefined) delete process.env.USERPROFILE;
+  else process.env.USERPROFILE = saved.USERPROFILE;
+  if (saved.ORC_HOME === undefined) delete process.env.ORC_HOME;
+  else process.env.ORC_HOME = saved.ORC_HOME;
   rmSync(home, { recursive: true, force: true });
 });
 

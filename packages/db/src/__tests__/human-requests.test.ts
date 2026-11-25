@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, resetConfig } from "@orc/core/config";
 import { HumanRequestStore } from "../human-requests.js";
+import { NotificationStore } from "../notifications.js";
 
 const tempDirs: string[] = [];
 afterEach(() => {
@@ -543,4 +544,212 @@ test("should show fresh pending requests before a full inbox of unavailable requ
   } finally {
     db.close();
   }
+});
+
+test("should migrate a legacy human_requests table without snooze_until and support snooze/wake", () => {
+  const db = new Database(":memory:");
+  let now = 100_000;
+  try {
+    db.exec(`CREATE TABLE human_requests (
+      id TEXT PRIMARY KEY, origin_key TEXT UNIQUE NOT NULL, input_hash TEXT NOT NULL,
+      payload TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL,
+      response TEXT, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+      responded_at INTEGER, delivered_at INTEGER
+    );`);
+    const payload = JSON.stringify({
+      origin: { session_id: "legacy-s", backend: "codex", request_id: "legacy-q" },
+      project_id: null,
+      kind: "question",
+      prompt: "Legacy question?",
+      choices: [],
+      choice_descriptions: {},
+      multi_select: false,
+      notify: [],
+      expires_in_seconds: 86400,
+    });
+    db.query(
+      "INSERT INTO human_requests(id,origin_key,input_hash,payload,status,version,created_at,expires_at) VALUES (?,?,?,?,'pending',1,?,?)",
+    ).run(
+      "legacy-1",
+      JSON.stringify({ session_id: "legacy-s" }),
+      "hash",
+      payload,
+      now,
+      now + 60_000,
+    );
+
+    const store = new HumanRequestStore(db, () => now);
+    const cols = db.query<{ name: string }, []>("PRAGMA table_info(human_requests)").all();
+    expect(cols.some((c) => c.name === "snooze_until")).toBe(true);
+    const indexes = db
+      .query<{ name: string }, []>(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='human_requests'",
+      )
+      .all();
+    expect(indexes.some((i) => i.name === "human_requests_snooze")).toBe(true);
+
+    const legacy = store.get("legacy-1");
+    expect(legacy.snooze_until).toBeNull();
+    const snoozed = store.snooze("legacy-1", 1, now + 10_000);
+    expect(snoozed.snooze_until).toBe(now + 10_000);
+    expect(snoozed.status).toBe("pending");
+    expect(snoozed.expires_at).toBe(now + 60_000);
+
+    now += 10_000;
+    const woken = store.wakeDueSnoozes();
+    expect(woken.map((r) => r.id)).toEqual(["legacy-1"]);
+    expect(woken[0]?.snooze_until).toBeNull();
+  } finally {
+    db.close();
+  }
+});
+
+test("should snooze pending requests without changing status or expires_at and reject non-pending", () => {
+  const { db, store, now } = fixture();
+  try {
+    const pending = store.create(question);
+    const originalExpiry = pending.expires_at;
+    expect(() => store.snooze(pending.id, pending.version, now())).toThrow("future");
+    expect(() => store.snooze(pending.id, pending.version, now() + 366 * 86400 * 1000)).toThrow(
+      "365 days",
+    );
+    expect(() => store.snooze(pending.id, pending.version + 1, now() + 5000)).toThrow("stale");
+
+    const snoozed = store.snooze(pending.id, pending.version, now() + 60_000);
+    expect(snoozed.status).toBe("pending");
+    expect(snoozed.version).toBe(pending.version);
+    expect(snoozed.expires_at).toBe(originalExpiry);
+    expect(snoozed.snooze_until).toBe(now() + 60_000);
+    expect(store.isSnoozed(snoozed)).toBe(true);
+    expect(store.nextSnoozeAt()).toBe(now() + 60_000);
+
+    const woken = store.unsnooze(pending.id, pending.version);
+    expect(woken.snooze_until).toBeNull();
+    expect(woken.status).toBe("pending");
+    expect(store.isSnoozed(woken)).toBe(false);
+
+    const answered = store.respond(pending.id, pending.version, {
+      kind: "question",
+      answer: "Blue",
+    });
+    expect(() => store.snooze(answered.id, answered.version, now() + 60_000)).toThrow(
+      "Only pending requests can be snoozed (request is answered)",
+    );
+
+    const cancelled = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "cancel-snooze" },
+    });
+    const cancelledRow = store.cancel(cancelled.id, cancelled.version);
+    expect(() => store.snooze(cancelledRow.id, cancelledRow.version, now() + 60_000)).toThrow(
+      "request is cancelled",
+    );
+
+    const unavail = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "unavail-snooze" },
+    });
+    const unavailRow = store.unavailable(unavail.id, unavail.version);
+    expect(() => store.snooze(unavailRow.id, unavailRow.version, now() + 60_000)).toThrow(
+      "request is unavailable",
+    );
+  } finally {
+    db.close();
+  }
+});
+
+test("should clear snooze_until on answer, cancel, unavailable, and expire without waking", () => {
+  const { db, store, now, advance } = fixture();
+  try {
+    const toAnswer = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "snooze-answer" },
+    });
+    store.snooze(toAnswer.id, 1, now() + 60_000);
+    const answered = store.respond(toAnswer.id, 1, { kind: "question", answer: "Blue" });
+    expect(answered.snooze_until).toBeNull();
+
+    const toCancel = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "snooze-cancel" },
+    });
+    store.snooze(toCancel.id, 1, now() + 60_000);
+    const cancelled = store.cancel(toCancel.id, 1);
+    expect(cancelled.snooze_until).toBeNull();
+
+    const toUnavailable = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "snooze-unavail" },
+    });
+    store.snooze(toUnavailable.id, 1, now() + 60_000);
+    const unavailable = store.unavailable(toUnavailable.id, 1);
+    expect(unavailable.snooze_until).toBeNull();
+
+    const toExpire = store.create({
+      ...question,
+      origin: { ...question.origin, request_id: "snooze-expire" },
+      expires_in_seconds: 5,
+    });
+    store.snooze(toExpire.id, 1, now() + 60_000);
+    advance(10_000);
+    // Even before expire() runs, NotificationStore.list() excludes already-expired requests from snoozed.
+    const beforeSweep = new NotificationStore(db, now).list();
+    expect(beforeSweep.snoozed.some((n) => n.source_id === toExpire.id)).toBe(false);
+    expect(store.get(toExpire.id).status).toBe("expired");
+    expect(store.get(toExpire.id).snooze_until).toBeNull();
+    advance(60_000);
+    expect(store.wakeDueSnoozes()).toEqual([]);
+  } finally {
+    db.close();
+  }
+});
+
+test("should wake due snoozes exactly once across database restarts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "orc-human-snooze-restart-"));
+  tempDirs.push(dir);
+  const path = join(dir, "requests.db");
+  let clock = 1_000_000;
+  let db = new Database(path);
+  let store = new HumanRequestStore(db, () => clock);
+  const req = store.create(question);
+  const initialNote = db
+    .query<{ id: string; created_at: number }, [string]>(
+      "SELECT id,created_at FROM notifications WHERE source_key=?",
+    )
+    .get(`human:${req.id}`);
+  expect(initialNote).toBeDefined();
+  store.snooze(req.id, req.version, clock + 10_000);
+  db.close();
+
+  // Restart during snooze: stays snoozed and does not wake early.
+  clock += 5_000;
+  db = new Database(path);
+  store = new HumanRequestStore(db, () => clock);
+  expect(store.get(req.id).snooze_until).toBe(1_010_000);
+  expect(store.wakeDueSnoozes()).toEqual([]);
+  db.close();
+
+  // Restart after due time: wakes exactly once with a fresh unread notification.
+  clock += 10_000;
+  db = new Database(path);
+  store = new HumanRequestStore(db, () => clock);
+  const woken = store.wakeDueSnoozes();
+  expect(woken.map((r) => r.id)).toEqual([req.id]);
+  expect(woken[0]?.snooze_until).toBeNull();
+  const wakeNote = db
+    .query<{ id: string; created_at: number; read_at: number | null }, [string]>(
+      "SELECT id,created_at,read_at FROM notifications WHERE source_key=?",
+    )
+    .get(`human:${req.id}`);
+  expect(wakeNote?.id).not.toBe(initialNote?.id);
+  expect(wakeNote?.created_at).toBe(clock);
+  expect(wakeNote?.read_at).toBeNull();
+  expect(store.wakeDueSnoozes()).toEqual([]);
+  db.close();
+
+  // Another restart after waking does not wake again.
+  db = new Database(path);
+  store = new HumanRequestStore(db, () => clock);
+  expect(store.wakeDueSnoozes()).toEqual([]);
+  db.close();
 });

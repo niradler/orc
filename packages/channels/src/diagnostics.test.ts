@@ -49,6 +49,7 @@ test("polling failure and recovery persist safe JSON log entries without repeati
       ...process.env,
       HOME: home,
       USERPROFILE: home,
+      ORC_HOME: join(home, ".orc"),
       ORC_LOG_DIR: home,
       ORC_LOG_FILE: "1",
       ORC_LOG_LEVEL: "info",

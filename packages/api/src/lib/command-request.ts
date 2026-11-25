@@ -2,6 +2,7 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { expandHostPath, hostBinary, hostExec, hostIsDirectory } from "@orc/core/exec-host";
 import { CommandRunSchema, type HumanRequest } from "@orc/core/human-requests";
+import { getRegisteredSecrets } from "@orc/core/secret-redactor";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps } from "../terminals/service.js";
 import { commandShell } from "./command-shell.js";
@@ -9,10 +10,10 @@ import { commandShell } from "./command-shell.js";
 // The payload, including secrets, travels on stdin. Nothing sensitive enters argv or files.
 const EXECUTE = `import {spawn,spawnSync} from "node:child_process";
 const data = await Bun.stdin.json();
-const secrets = Object.values(data.values).filter(Boolean).flatMap(value => [
+const secrets = [...new Set([...Object.values(data.values).filter(Boolean).flatMap(value => [
   value, encodeURIComponent(value), Buffer.from(value).toString("base64"),
   JSON.stringify(value).slice(1, -1),
-]).sort((a,b) => b.length-a.length);
+]), ...(data.extraSecrets ?? []).filter(Boolean)])].sort((a,b) => b.length-a.length);
 const redact = text => { for (const secret of secrets) text = text.split(secret).join("[REDACTED]"); return text; };
 let truncated = false;
 const read = async stream => {
@@ -75,6 +76,7 @@ export async function prepareCommand(request: HumanRequest, raw: unknown) {
             cwd,
             shell,
             values: run.values,
+            extraSecrets: getRegisteredSecrets(),
             timeout: spec.timeout_seconds,
           }),
           timeoutMs: (spec.timeout_seconds + 10) * 1000,

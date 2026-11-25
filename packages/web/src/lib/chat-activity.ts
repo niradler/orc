@@ -233,9 +233,12 @@ function foldHead(fold: TurnFold, live: boolean, outcome?: ChatTurn["outcome"]):
   let head = "Worked";
   if (live) head = "Working";
   else if (outcome === "stopped") head = "Stopped";
+  else if (outcome === "interrupted") head = "Interrupted";
   else if (outcome === "failed") head = "Failed";
   if (!live && fold.durationMs !== null)
-    head += `${outcome === "stopped" || outcome === "failed" ? " after" : " for"} ${formatDuration(fold.durationMs)}`;
+    head += `${
+      outcome === "stopped" || outcome === "failed" || outcome === "interrupted" ? " after" : " for"
+    } ${formatDuration(fold.durationMs)}`;
   return head;
 }
 

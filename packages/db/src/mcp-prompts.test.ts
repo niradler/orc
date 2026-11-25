@@ -7,10 +7,14 @@ import { globalConfigPath, resetConfig } from "@orc/core/config";
 import { DEFAULT_MCP_PROMPTS } from "@orc/core/mcp-prompts";
 import { importConfigMcpPrompts, installMcpPrompts, McpPromptStore } from "./mcp-prompts";
 
-const original = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+const original = {
+  HOME: process.env.HOME,
+  USERPROFILE: process.env.USERPROFILE,
+  ORC_HOME: process.env.ORC_HOME,
+};
 const home = mkdtempSync(join(tmpdir(), "orc-prompts-"));
 
-function restore(key: "HOME" | "USERPROFILE") {
+function restore(key: "HOME" | "USERPROFILE" | "ORC_HOME") {
   if (original[key] === undefined) delete process.env[key];
   else process.env[key] = original[key];
 }
@@ -18,6 +22,7 @@ function restore(key: "HOME" | "USERPROFILE") {
 beforeAll(() => {
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.ORC_HOME = join(home, ".orc");
   mkdirSync(join(home, ".orc"));
   resetConfig();
 });
@@ -25,6 +30,7 @@ beforeAll(() => {
 afterAll(() => {
   restore("HOME");
   restore("USERPROFILE");
+  restore("ORC_HOME");
   resetConfig();
   rmSync(home, { recursive: true, force: true });
 });

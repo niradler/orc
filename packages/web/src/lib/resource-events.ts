@@ -82,7 +82,13 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   agents: ["agents", "agent", "agent-packages", "setup-components"],
   flows: ["flows", "flow"],
   rules: ["rules"],
-  "human-requests": ["human-requests", "chat-waiting", "chat-threads", "chat-resume-sessions"],
+  "human-requests": [
+    "human-requests",
+    "notifications",
+    "chat-waiting",
+    "chat-threads",
+    "chat-resume-sessions",
+  ],
   settings: ["settings", "speech-status"],
   ssh: ["ssh", "backends", "terminals", "worktrees", "sessions", "session", "git", "github"],
   terminals: ["terminals", "worktrees"],
@@ -110,6 +116,7 @@ const QUERY_ROOTS: Record<ChangeResource, string[]> = {
   ],
   "desktop-preview": [],
   "session-activity": ["sessions", "session", "chat-threads", "palette-live-sessions"],
+  "project-secrets": ["project-secrets"],
 };
 
 const changeListeners = new Set<(resources: ChangeResource[]) => void>();

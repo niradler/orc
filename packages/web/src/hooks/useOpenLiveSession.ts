@@ -5,7 +5,7 @@ import { useChat } from "@/hooks/useChat";
 import { useSessionHome } from "@/hooks/useSessionHome";
 
 export function useOpenLiveSession() {
-  const { openThread, tabs, selectTab } = useChat();
+  const { surface, openThread, tabs, selectTab } = useChat();
   const { go } = useSessionHome();
   return useCallback(
     async (id: string) => {
@@ -17,17 +17,23 @@ export function useOpenLiveSession() {
       );
       if (open?.thread) {
         selectTab(open.key);
-        go({ viewId: null, terminalId: null, liveId: null }, { chatThread: open.thread.id });
+        if (surface === "page") {
+          go({ viewId: null, terminalId: null, liveId: null }, { chatThread: open.thread.id });
+        }
         return;
       }
       if (!nativeChatAgent(session.agent)) {
-        go({ viewId: id, terminalId: null, liveId: null });
+        if (surface === "page") {
+          go({ viewId: id, terminalId: null, liveId: null });
+        }
         return;
       }
       const thread = await api.chat.resume(id);
       openThread(thread);
-      go({ viewId: null, terminalId: null, liveId: null }, { chatThread: thread.id });
+      if (surface === "page") {
+        go({ viewId: null, terminalId: null, liveId: null }, { chatThread: thread.id });
+      }
     },
-    [go, openThread, selectTab, tabs],
+    [go, openThread, selectTab, surface, tabs],
   );
 }

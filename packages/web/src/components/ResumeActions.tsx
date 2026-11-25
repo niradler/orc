@@ -42,7 +42,7 @@ const ITEM = `${ACTION} min-h-11 w-full justify-start border-0`;
 export function ResumeActions({ session }: { session: LiveSession }) {
   const { openLiveSession, info, terminals } = useTerminals();
   const navigate = useNavigate();
-  const chat = useChat();
+  const chat = useChat("side");
   const update = useUpdateLiveSession();
   const [params] = useSearchParams();
   const [pending, setPending] = useState(false);
@@ -123,10 +123,12 @@ export function ResumeActions({ session }: { session: LiveSession }) {
     setChatPending(true);
     setError(null);
     try {
-      chat.openThread(await api.chat.resume(session.id));
+      const thread = await api.chat.resume(session.id);
+      chat.openThread(thread);
       const next = new URLSearchParams(params);
       next.delete("session");
       next.set("chat", "open");
+      next.set("chatThread", thread.id);
       navigate({ search: next.toString() });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Could not resume in chat");

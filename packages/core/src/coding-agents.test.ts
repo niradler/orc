@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   agentForSessionBackend,
+  canonicalAgentId,
   chatRuntimeFor,
   DEFAULT_ENABLED_AGENTS,
   enabledAgents,
@@ -27,4 +28,13 @@ test("should map imported session backends to their agent", () => {
   expect(agentForSessionBackend("cursor-agent")?.id).toBe("cursor");
   expect(agentForSessionBackend("opencode")?.id).toBe("opencode");
   expect(agentForSessionBackend("cursor")).toBeUndefined();
+});
+
+test("should canonicalize backend and adapter aliases to their coding agent id", () => {
+  expect(canonicalAgentId("codex-cli")).toBe("codex");
+  expect(canonicalAgentId("claude-cli")).toBe("claude");
+  expect(canonicalAgentId("claude-code")).toBe("claude");
+  expect(canonicalAgentId("cursor-agent")).toBe("cursor");
+  expect(canonicalAgentId("opencode")).toBe("opencode");
+  expect(canonicalAgentId("custom-acp")).toBe("custom-acp");
 });

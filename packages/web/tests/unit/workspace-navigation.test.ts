@@ -36,6 +36,20 @@ test("nested deep links select the specific page and keep primary groups stable"
   expect(workspaceDestination("/tasks", "example", "?chat=open&chatThread=thread-1")).toBe(
     "/tasks?project=example&chat=open&chatThread=thread-1",
   );
+  expect(
+    workspaceDestination("/chat", "example", "?chat=open&chatThread=side-1", "/activity"),
+  ).toBe("/chat?project=example&chat=open&sideChatThread=side-1");
+  expect(
+    workspaceDestination(
+      "/tasks",
+      "example",
+      "?chat=open&chatThread=page-1&sideChatThread=side-1",
+      "/chat",
+    ),
+  ).toBe("/tasks?project=example&chat=open&chatThread=side-1");
+  expect(workspaceDestination("/tasks", "example", "?chat=open&chatThread=page-1", "/chat")).toBe(
+    "/tasks?project=example&chat=open",
+  );
   expect(workspaceDestination("/tasks", "example", "?chatThread=thread-1")).toBe(
     "/tasks?project=example",
   );

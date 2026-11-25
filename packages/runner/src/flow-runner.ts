@@ -2,7 +2,9 @@ import { posix, win32 } from "node:path";
 import type { AgentSession } from "@orc/agent-runtime";
 import { openAgentSession } from "@orc/agent-runtime";
 import { readAgent } from "@orc/core/agent-service";
+import { changes } from "@orc/core/changes";
 import { loadConfig } from "@orc/core/config";
+import { isProcessAlive } from "@orc/core/daemon-runtime";
 import {
   type ExecHost,
   type ExecResult,
@@ -47,6 +49,7 @@ const logger = createLogger("runner:flow");
 // ---------------------------------------------------------------------------
 
 const liveSessions = new Map<string, AgentSession>();
+const startingSessions = new Map<string, number>();
 
 // Node runs cancelled while their session was still being opened. `liveSessions`
 // only gets a handle once `openAgentSession` resolves, so a cancel arriving in
@@ -1598,47 +1601,49 @@ async function startNodeSession(nodeRun: NodeRunRow, claims: string[]): Promise<
   }
 
   const now = new Date();
-  await getDb()
-    .insert(gateway_sessions)
-    .values({
-      id: sessionId,
-      chat_id: "__task-loop__",
-      backend: backendName,
-      execution_host: executionHost,
-      mode: `agent:${backendName}`,
-      cwd,
-      title: `${loaded.def.name}/${nodeRun.node_id}: ${task.title}`,
-      status: "running",
-      auto_approve: loadConfig().agent_loop.worker_auto_approve,
-      task_id: task.id,
-      role: node.role ?? "worker",
-      pid: process.pid,
-      project_id: task.project_id,
-      ...(model ? { model } : {}),
-      review_rounds: 0,
-      created_at: now,
-      updated_at: now,
-    });
+  startingSessions.set(sessionId, Date.now());
+  try {
+    await getDb()
+      .insert(gateway_sessions)
+      .values({
+        id: sessionId,
+        chat_id: "__task-loop__",
+        backend: backendName,
+        execution_host: executionHost,
+        mode: `agent:${backendName}`,
+        cwd,
+        title: `${loaded.def.name}/${nodeRun.node_id}: ${task.title}`,
+        status: "running",
+        auto_approve: loadConfig().agent_loop.worker_auto_approve,
+        task_id: task.id,
+        role: node.role ?? "worker",
+        pid: process.pid,
+        project_id: task.project_id,
+        ...(model ? { model } : {}),
+        review_rounds: 0,
+        created_at: now,
+        updated_at: now,
+      });
 
-  // Conditional claim: if another drain already took this node, drop the session
-  // row we just made and leave it alone.
-  const claimed = sqlite
-    .query(
-      "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = unixepoch() WHERE id = ? AND status = 'pending'",
-    )
-    .run(sessionId, nodeRun.id);
-  if (claimed.changes === 0) {
-    logger.debug(`Node run ${nodeRun.id} was already claimed; skipping`);
-    sqlite.query("DELETE FROM gateway_sessions WHERE id = ?").run(sessionId);
-    return false;
+    const claimed = sqlite
+      .query(
+        "UPDATE flow_node_runs SET status = 'running', gateway_session_id = ?, started_at = unixepoch() WHERE id = ? AND status = 'pending'",
+      )
+      .run(sessionId, nodeRun.id);
+    if (claimed.changes === 0) {
+      startingSessions.delete(sessionId);
+      logger.debug(`Node run ${nodeRun.id} was already claimed; skipping`);
+      sqlite.query("DELETE FROM gateway_sessions WHERE id = ?").run(sessionId);
+      return false;
+    }
+
+    const runningStatus: TaskStatus =
+      node.task_status ?? (node.role === "reviewer" ? "review" : "doing");
+    await setTaskStatus(task.id, runningStatus, undefined, nodeRun.flow_run_id);
+  } catch (err) {
+    startingSessions.delete(sessionId);
+    throw err;
   }
-
-  // Now that an agent is really running, the node's declared status is honest.
-  // A node that declares none still must not leave the task looking `queued`
-  // while its session works, so fall back to the role's natural status.
-  const runningStatus: TaskStatus =
-    node.task_status ?? (node.role === "reviewer" ? "review" : "doing");
-  await setTaskStatus(task.id, runningStatus, undefined, nodeRun.flow_run_id);
 
   driveNodeSession({
     sessionId,
@@ -1724,6 +1729,7 @@ async function driveNodeSession(opts: {
     }
 
     liveSessions.set(opts.sessionId, session);
+    startingSessions.delete(opts.sessionId);
     await session.send(opts.prompt);
 
     const autoApprove = loadConfig().agent_loop.worker_auto_approve;
@@ -1778,6 +1784,7 @@ async function driveNodeSession(opts: {
   } finally {
     clearInterval(timeoutSweep);
     lastSessionTouch.delete(opts.sessionId);
+    startingSessions.delete(opts.sessionId);
     liveSessions.delete(opts.sessionId);
     if (session?.alive()) await session.close().catch(() => {});
   }
@@ -1971,60 +1978,60 @@ async function runCommandNode(nodeRun: NodeRunRow): Promise<boolean> {
  */
 async function retryNodeRun(nodeRunId: string, reason: string): Promise<boolean> {
   const sqlite = getSqlite();
-  const row = sqlite
-    .query("SELECT * FROM flow_node_runs WHERE id = ?")
-    .get(nodeRunId) as NodeRunRow | null;
-  if (!row) return false;
-
-  const loaded = loadRun(row.flow_run_id);
-  if (loaded?.state.status !== "running") return false;
-  if (!loaded.state.active.some((a) => a.nodeId === row.node_id && a.attempt === row.attempt)) {
-    return false;
-  }
-
-  // Retries are counted per graph visit, and numbered in their own coordinate —
-  // `attempt` belongs to the engine, which will hand out the next value itself
-  // when the graph next enters this node.
-  const retries = sqlite
-    .query(
-      "SELECT COALESCE(MAX(retry), 0) AS last FROM flow_node_runs WHERE flow_run_id = ? AND node_id = ? AND attempt = ?",
-    )
-    .get(row.flow_run_id, row.node_id, row.attempt) as { last: number };
-  const retriesUsed = retries.last;
   const maxRetries = loadConfig().agent_loop.max_node_retries;
-  if (retriesUsed >= maxRetries) return false;
 
-  sqlite
-    .query(
-      "UPDATE flow_node_runs SET status = 'failed', error = COALESCE(?, error), ended_at = unixepoch() WHERE id = ?",
-    )
-    .run(reason, nodeRunId);
+  const outcome = sqlite.transaction(() => {
+    const row = sqlite
+      .query("SELECT * FROM flow_node_runs WHERE id = ?")
+      .get(nodeRunId) as NodeRunRow | null;
+    if (row?.status !== "running") return null;
 
-  const nextRetry = retriesUsed + 1;
-  // Resume the native session when one exists: an infrastructure death (idle,
-  // lifetime, crash, daemon restart) loses the turn, not the conversation. The
-  // resumeSince prompt carries the ledger and new comments since that session.
-  const resumable = previousNodeSession(row.flow_run_id, row.node_id) !== null;
-  sqlite
-    .query(
-      `INSERT INTO flow_node_runs
-         (id, flow_run_id, task_id, node_id, node_kind, attempt, retry, status, skill_name, resume_session, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, unixepoch())`,
-    )
-    .run(
-      ulid(),
-      row.flow_run_id,
-      row.task_id,
-      row.node_id,
-      loaded.def.nodes[row.node_id]?.kind ?? "agent",
-      row.attempt,
-      nextRetry,
-      row.skill_name,
-      resumable ? 1 : 0,
-    );
+    const loaded = loadRun(row.flow_run_id);
+    if (loaded?.state.status !== "running") return null;
+    if (!loaded.state.active.some((a) => a.nodeId === row.node_id && a.attempt === row.attempt)) {
+      return null;
+    }
 
-  // No engine state changes: same visit, same `attempt`, so the eventual report
-  // still matches the active entry and the loop budget is untouched.
+    const retries = sqlite
+      .query(
+        "SELECT COALESCE(MAX(retry), 0) AS last FROM flow_node_runs WHERE flow_run_id = ? AND node_id = ? AND attempt = ?",
+      )
+      .get(row.flow_run_id, row.node_id, row.attempt) as { last: number };
+    const retriesUsed = retries.last;
+    if (retriesUsed >= maxRetries) return null;
+
+    const claimed = sqlite
+      .query(
+        "UPDATE flow_node_runs SET status = 'failed', error = COALESCE(?, error), ended_at = unixepoch() WHERE id = ? AND status = 'running'",
+      )
+      .run(reason, nodeRunId);
+    if (claimed.changes !== 1) return null;
+
+    const nextRetry = retriesUsed + 1;
+    const resumable = previousNodeSession(row.flow_run_id, row.node_id) !== null;
+    sqlite
+      .query(
+        `INSERT INTO flow_node_runs
+           (id, flow_run_id, task_id, node_id, node_kind, attempt, retry, status, skill_name, resume_session, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, unixepoch())`,
+      )
+      .run(
+        ulid(),
+        row.flow_run_id,
+        row.task_id,
+        row.node_id,
+        loaded.def.nodes[row.node_id]?.kind ?? "agent",
+        row.attempt,
+        nextRetry,
+        row.skill_name,
+        resumable ? 1 : 0,
+      );
+    return { row, nextRetry };
+  })();
+
+  if (!outcome) return false;
+  const { row, nextRetry } = outcome;
+
   await addTaskComment(
     row.task_id,
     `Node **${row.node_id}** was reclaimed (${reason}); retrying it (${nextRetry}/${maxRetries}).`,
@@ -2095,6 +2102,9 @@ export function drainPendingNodes(): Promise<string[]> {
 }
 
 async function drainPendingNodesUnlocked(): Promise<string[]> {
+  await reconcileFlowNodeLiveness().catch((err) =>
+    logger.error(`Flow node liveness reconciliation failed: ${String(err)}`),
+  );
   const config = loadConfig();
   const maxWorkers = config.agent_loop.max_workers;
   const spawned: string[] = [];
@@ -2437,6 +2447,196 @@ export async function cleanupStaleFlowSessions(): Promise<number> {
   return reapable.length;
 }
 
+const LIVENESS_GRACE_SECS = 30;
+
+export type ReconcileLivenessOptions = {
+  graceSecs?: number | undefined;
+  nowSecs?: number | undefined;
+  isPidAlive?: ((pid: number) => boolean) | undefined;
+};
+
+async function settleZombieNode(nodeRunId: string, taskId: string, reason: string): Promise<void> {
+  const retried = await withTaskLock(taskId, () => retryNodeRun(nodeRunId, reason));
+  if (!retried) await finishNodeRun(nodeRunId, reason);
+}
+
+function releaseClaimedTaskWithoutNode(taskId: string): void {
+  const sqlite = getSqlite();
+  withTaskAudit(sqlite, [taskId], () => {
+    sqlite
+      .query(
+        "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
+      )
+      .run(taskId);
+  });
+}
+
+let activeLivenessReconcile: Promise<number> | null = null;
+
+export function reconcileFlowNodeLiveness(opts: ReconcileLivenessOptions = {}): Promise<number> {
+  if (activeLivenessReconcile) return activeLivenessReconcile;
+  const run = reconcileFlowNodeLivenessUnlocked(opts).finally(() => {
+    if (activeLivenessReconcile === run) activeLivenessReconcile = null;
+  });
+  activeLivenessReconcile = run;
+  return run;
+}
+
+async function reconcileFlowNodeLivenessUnlocked(
+  opts: ReconcileLivenessOptions = {},
+): Promise<number> {
+  const sqlite = getSqlite();
+  const graceSecs = Math.max(0, opts.graceSecs ?? LIVENESS_GRACE_SECS);
+  const now = opts.nowSecs ?? nowSecs();
+  const isPidAlive = opts.isPidAlive ?? isProcessAlive;
+  let reconciled = 0;
+
+  const runningSessions = sqlite
+    .query(
+      `SELECT id, task_id, role, pid, execution_host, last_activity_at, updated_at, created_at
+       FROM gateway_sessions
+       WHERE role IN ('worker', 'reviewer')
+         AND status = 'running'
+         AND (mode LIKE 'agent:%' OR EXISTS (
+           SELECT 1 FROM flow_node_runs fnr WHERE fnr.gateway_session_id = gateway_sessions.id
+         ))`,
+    )
+    .all() as {
+    id: string;
+    task_id: string | null;
+    role: string;
+    pid: number | null;
+    execution_host: string | null;
+    last_activity_at: number | null;
+    updated_at: number | null;
+    created_at: number;
+  }[];
+
+  for (const session of runningSessions) {
+    if (liveSessions.has(session.id) || startingSessions.has(session.id)) continue;
+
+    const nodeRun = sqlite
+      .query(
+        "SELECT id, task_id, status FROM flow_node_runs WHERE gateway_session_id = ? ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(session.id) as { id: string; task_id: string; status: string } | null;
+
+    if (nodeRun?.status === "awaiting_human") continue;
+
+    if (nodeRun && !["running", "pending"].includes(nodeRun.status)) {
+      const updated = sqlite
+        .query(
+          "UPDATE gateway_sessions SET status = 'stopped', updated_at = unixepoch() WHERE id = ? AND status = 'running'",
+        )
+        .run(session.id);
+      if (updated.changes > 0) {
+        reconciled++;
+        logger.warn("Reconciled orphaned worker session for already-finished node", {
+          sessionId: session.id,
+          nodeRunId: nodeRun.id,
+          nodeStatus: nodeRun.status,
+        });
+      }
+      continue;
+    }
+
+    const isRemote = !!session.execution_host && session.execution_host !== "local";
+    if (isRemote) continue;
+
+    let reason: string | null = null;
+    const latestTouch = Math.max(
+      session.last_activity_at ?? 0,
+      session.updated_at ?? 0,
+      session.created_at,
+    );
+    const ageSecs = Math.max(0, now - latestTouch);
+
+    if (session.pid !== null && session.pid !== process.pid) {
+      if (!isPidAlive(session.pid)) reason = `worker process ${session.pid} is no longer alive`;
+    } else if (ageSecs >= graceSecs) {
+      reason = "worker session is no longer active";
+    }
+
+    if (!reason) continue;
+
+    const updated = sqlite
+      .query(
+        "UPDATE gateway_sessions SET status = 'error', last_error = ?, updated_at = unixepoch() WHERE id = ? AND status = 'running'",
+      )
+      .run(reason, session.id);
+    if (updated.changes === 0) continue;
+
+    if (nodeRun?.status === "running") {
+      await settleZombieNode(nodeRun.id, nodeRun.task_id, reason);
+    } else if (!nodeRun && session.task_id) {
+      releaseClaimedTaskWithoutNode(session.task_id);
+    }
+    reconciled++;
+    logger.warn("Reconciled dead worker session", {
+      sessionId: session.id,
+      taskId: session.task_id,
+      nodeRunId: nodeRun?.id ?? null,
+      pid: session.pid,
+      reason,
+    });
+  }
+
+  const runningNodes = sqlite
+    .query(
+      `SELECT fnr.id, fnr.task_id, fnr.node_id, fnr.gateway_session_id, fnr.started_at, fnr.created_at,
+              gs.id AS gs_id, gs.status AS gs_status, gs.last_error AS gs_error
+       FROM flow_node_runs fnr
+       JOIN flow_runs fr ON fr.id = fnr.flow_run_id
+       LEFT JOIN gateway_sessions gs ON gs.id = fnr.gateway_session_id
+       WHERE fnr.status = 'running' AND fnr.node_kind = 'agent' AND fr.status = 'running'`,
+    )
+    .all() as {
+    id: string;
+    task_id: string;
+    node_id: string;
+    gateway_session_id: string | null;
+    started_at: number | null;
+    created_at: number;
+    gs_id: string | null;
+    gs_status: string | null;
+    gs_error: string | null;
+  }[];
+
+  for (const node of runningNodes) {
+    if (
+      node.gateway_session_id &&
+      (liveSessions.has(node.gateway_session_id) || startingSessions.has(node.gateway_session_id))
+    )
+      continue;
+
+    let reason: string | null = null;
+    if (!node.gateway_session_id) {
+      if (now - (node.started_at ?? node.created_at) >= graceSecs)
+        reason = "running node has no backing worker session";
+    } else if (!node.gs_id) {
+      reason = "backing worker session is missing";
+    } else if (node.gs_status !== "running") {
+      reason = node.gs_error
+        ? `worker session ended: ${node.gs_error}`
+        : `worker session is ${node.gs_status}`;
+    }
+    if (!reason) continue;
+
+    await settleZombieNode(node.id, node.task_id, reason);
+    reconciled++;
+    logger.warn("Reconciled zombie flow node", {
+      nodeRunId: node.id,
+      nodeId: node.node_id,
+      taskId: node.task_id,
+      sessionId: node.gateway_session_id,
+      reason,
+    });
+  }
+
+  if (reconciled > 0) changes.publish("sessions", "tasks", "flows");
+  return reconciled;
+}
+
 /**
  * A daemon restart leaves worker rows `running` with no live handle: they would
  * hold worker slots until the idle sweep reaps them, then retry from scratch.
@@ -2456,7 +2656,7 @@ export async function recoverOrphanedFlowSessions(): Promise<number> {
 
   let recovered = 0;
   for (const session of orphans) {
-    if (liveSessions.has(session.id)) continue;
+    if (liveSessions.has(session.id) || startingSessions.has(session.id)) continue;
     const reason = "daemon restarted";
     sqlite
       .query(
@@ -2470,20 +2670,48 @@ export async function recoverOrphanedFlowSessions(): Promise<number> {
       )
       .get(session.id) as { id: string; task_id: string } | null;
     if (nodeRun) {
-      const retried = await withTaskLock(nodeRun.task_id, () => retryNodeRun(nodeRun.id, reason));
-      if (!retried) await finishNodeRun(nodeRun.id, reason);
+      await settleZombieNode(nodeRun.id, nodeRun.task_id, reason);
     } else if (session.task_id) {
-      withTaskAudit(sqlite, [session.task_id], () => {
-        sqlite
-          .query(
-            "UPDATE tasks SET claimed_by = NULL, status = CASE WHEN status IN ('doing','queued') THEN 'todo' ELSE status END, updated_at = unixepoch() WHERE id = ?",
-          )
-          .run(session.task_id);
-      });
+      releaseClaimedTaskWithoutNode(session.task_id);
     }
     recovered++;
     logger.warn(`Recovered orphaned ${session.role} session ${session.id} (${reason})`);
   }
+
+  const orphanedNodes = sqlite
+    .query(
+      `SELECT fnr.id, fnr.task_id, fnr.node_id, fnr.gateway_session_id
+       FROM flow_node_runs fnr
+       JOIN flow_runs fr ON fr.id = fnr.flow_run_id
+       LEFT JOIN gateway_sessions gs ON gs.id = fnr.gateway_session_id
+       WHERE fnr.status = 'running' AND fnr.node_kind = 'agent' AND fr.status = 'running'
+         AND (fnr.gateway_session_id IS NULL OR gs.id IS NULL OR gs.status != 'running')`,
+    )
+    .all() as {
+    id: string;
+    task_id: string;
+    node_id: string;
+    gateway_session_id: string | null;
+  }[];
+
+  for (const node of orphanedNodes) {
+    if (
+      node.gateway_session_id &&
+      (liveSessions.has(node.gateway_session_id) || startingSessions.has(node.gateway_session_id))
+    )
+      continue;
+    const reason = "daemon restarted";
+    await settleZombieNode(node.id, node.task_id, reason);
+    recovered++;
+    logger.warn("Recovered orphaned running flow node", {
+      nodeRunId: node.id,
+      nodeId: node.node_id,
+      taskId: node.task_id,
+      sessionId: node.gateway_session_id,
+    });
+  }
+
+  if (recovered > 0) changes.publish("sessions", "tasks", "flows");
   return recovered;
 }
 

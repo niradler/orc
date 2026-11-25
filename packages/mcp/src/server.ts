@@ -7,6 +7,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { loadConfig } from "@orc/core/config";
+import { OrcError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { MCP_PROMPT_REQUEST_ARG, renderMcpPrompt } from "@orc/core/mcp-prompts";
 import { getSqlite } from "@orc/db/client";
@@ -18,18 +19,20 @@ import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./pr
 export { type McpProject, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
 import {
+  type CallToolOutcome,
   isMetaToolName,
   type McpMode,
   metaToolListing,
   runMetaTool,
   type ServedTool,
+  type ToolErrorCode,
   type ToolResult,
 } from "./meta-tools.js";
 import { availablePreviewTools, previewToolContent } from "./preview-tools.js";
 import { executeSpecTool, isSpecTool, specToolDefinitions } from "./spec-tools.js";
 import {
   agentSessionFromEnv,
-  executeTool,
+  executeToolDetailed,
   type ToolName,
   type ToolOptions,
   toolDefinitions,
@@ -52,6 +55,37 @@ function listing(tools: readonly ListedTool[]) {
 
 export function toolListing() {
   return listing(toolDefinitions);
+}
+
+function errorCodeFor(err: unknown): ToolErrorCode {
+  if (err instanceof OrcError) {
+    if (err.code === "NOT_FOUND" || err.statusCode === 404) return "NOT_FOUND";
+    if (err.code === "VALIDATION_ERROR" || err.statusCode === 400) return "INVALID_ARGS";
+    if (err.code === "FORBIDDEN" || err.statusCode === 403) return "FORBIDDEN";
+    if (err.code === "CONFLICT" || err.statusCode === 409) return "CONFLICT";
+    if (err.code === "UNAUTHORIZED" || err.statusCode === 401) return "UNAUTHORIZED";
+    if (err.statusCode === 408 || err.statusCode === 504) return "TIMEOUT";
+    if (err.statusCode === 503) return "UNAVAILABLE";
+    return "TOOL_ERROR";
+  }
+  if (err instanceof z.ZodError) return "INVALID_ARGS";
+  if (err instanceof Error) {
+    if (err.name === "TimeoutError" || err.name === "AbortError") return "TIMEOUT";
+    if (
+      /scoped to projects|must be selected in this MCP connection|outside the selected MCP/i.test(
+        err.message,
+      )
+    )
+      return "FORBIDDEN";
+    if (/timed out/i.test(err.message)) return "TIMEOUT";
+    if (/not found/i.test(err.message)) return "NOT_FOUND";
+  }
+  return "TOOL_ERROR";
+}
+
+function stripOutcomeMeta(outcome: CallToolOutcome): ToolResult {
+  const { errorCode: _errorCode, ...result } = outcome;
+  return result;
 }
 
 export interface McpServerOptions extends ToolOptions {
@@ -123,7 +157,11 @@ export function createMcpServer({
     );
   }
 
-  async function callTool(name: string, args: unknown, scripted = false): Promise<ToolResult> {
+  async function callToolInternal(
+    name: string,
+    args: unknown,
+    scripted = false,
+  ): Promise<CallToolOutcome> {
     logger.debug(
       `Tool call: ${name}`,
       scripted ||
@@ -147,16 +185,18 @@ export function createMcpServer({
           : exposedTools
       ).find((t) => t.name === name);
       if (!toolDef) {
+        const isPreview = name.startsWith("preview_");
         return {
           content: [
             {
               type: "text" as const,
-              text: name.startsWith("preview_")
+              text: isPreview
                 ? `Preview capability unavailable for this session/desktop. Connect the intended desktop, select the session and check Browser permissions; refresh discovery. (${name})`
                 : `Unknown tool: ${name}`,
             },
           ],
           isError: true,
+          errorCode: isPreview ? "UNAVAILABLE" : "NOT_FOUND",
         };
       }
 
@@ -212,29 +252,39 @@ export function createMcpServer({
             },
           ],
           isError: true,
+          errorCode: "INVALID_ARGS",
         };
       }
 
       if (isSpecTool(name)) return await executeSpecTool(name, parsed.data);
 
-      const result = await executeTool(name as ToolName, parsed.data, {
+      const detailed = await executeToolDetailed(name as ToolName, parsed.data, {
         ...options,
         ...(callProjects ? { projectScopes: callProjects } : {}),
       });
       const status = name.startsWith("preview_")
-        ? z.object({ status: z.string() }).safeParse(JSON.parse(result))
+        ? z.object({ status: z.string() }).safeParse(JSON.parse(detailed.text))
         : null;
       return {
-        content: previewToolContent(name, result),
+        content: previewToolContent(name, detailed.text),
+        ...(detailed.data !== undefined ? { structuredContent: detailed.data } : {}),
         ...(status?.success && !["opened", "completed"].includes(status.data.status)
-          ? { isError: true }
+          ? { isError: true, errorCode: "TOOL_ERROR" as const }
           : {}),
       };
     } catch (err) {
       logger.error(`Tool error: ${name}`, scripted ? undefined : err);
       const msg = err instanceof Error ? err.message : "Unknown error";
-      return { content: [{ type: "text" as const, text: msg }], isError: true };
+      return {
+        content: [{ type: "text" as const, text: msg }],
+        isError: true,
+        errorCode: errorCodeFor(err),
+      };
     }
+  }
+
+  async function callTool(name: string, args: unknown, scripted = false): Promise<ToolResult> {
+    return stripOutcomeMeta(await callToolInternal(name, args, scripted));
   }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -258,7 +308,7 @@ export function createMcpServer({
           await servedTools(),
           args,
           requestSignal ? AbortSignal.any([signal, requestSignal]) : signal,
-          (tool, input) => callTool(tool, input, true),
+          (tool, input) => callToolInternal(tool, input, true),
         );
       }
       return {

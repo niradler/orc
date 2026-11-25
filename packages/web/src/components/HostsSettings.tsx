@@ -70,9 +70,9 @@ export function HostsSettings({ expandExecution = false }: { expandExecution?: b
         </h2>
         <HelpPopover label="hosts" testId="hosts-help">
           Where the connected server runs agents, terminals and jobs: its own machine, a host from
-          its <code className="text-primary">~/.ssh/config</code>, or a remote ORC server that runs
-          the session on its own machine or SSH hosts. Remote ORC hosts and their tokens are saved
-          in the server's <code className="text-primary">~/.orc/config.json</code>.
+          its <code className="text-primary">~/.ssh/config</code>, or a remote ORC server. Remote
+          hosts and tokens are saved in the server's{" "}
+          <code className="text-primary">~/.orc/config.json</code>.
         </HelpPopover>
       </div>
       <ul className="divide-y divide-border border-y border-border">
@@ -264,10 +264,9 @@ function RemoteHostRows() {
               <div className="flex items-center gap-1">
                 <Label>Headers</Label>
                 <HelpPopover label="remote host headers" testId="remote-host-headers-help">
-                  Extra request headers for a reverse proxy, for example Cloudflare Access. Values
-                  are stored on this server and never shown again: leave a saved header's value
-                  blank to keep it, or delete its row to remove it. Authorization comes from the
-                  access token.
+                  Extra headers for a reverse proxy. Saved on this server and never shown again:
+                  blank keeps a saved value, deleting the row removes it. Authorization comes from
+                  the access token.
                 </HelpPopover>
               </div>
               <HeaderFields
@@ -1100,11 +1099,9 @@ function BrowserHosts() {
                 <div className="flex items-center gap-1">
                   <Label>Headers</Label>
                   <HelpPopover label="server headers" testId="api-host-headers-help">
-                    Extra request headers for a reverse proxy, for example Cloudflare Access. They
-                    are sent only to this server's address and stored in this browser. Values for
-                    names like token, key or secret are masked in this form. Headers this dashboard
-                    sets itself (such as Authorization, Content-Type, Accept or Cookie) are
-                    rejected: use the token field for a bearer token.
+                    Extra headers for a reverse proxy such as Cloudflare Access. They are sent only
+                    to this address and stored in this browser. Authorization, Cookie and
+                    Content-Type are set by the dashboard; use the token field for a bearer token.
                   </HelpPopover>
                 </div>
                 <HeaderFields

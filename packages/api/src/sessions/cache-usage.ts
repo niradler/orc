@@ -18,6 +18,11 @@ const ClaudeUsage = z.object({
       ephemeral_1h_input_tokens: Count.optional(),
     })
     .optional(),
+  output_tokens_details: z
+    .object({
+      thinking_tokens: Count.optional(),
+    })
+    .optional(),
 });
 const CodexUsage = z
   .object({
@@ -25,12 +30,31 @@ const CodexUsage = z
     cached_input_tokens: Count,
     cache_write_input_tokens: Count.optional(),
     output_tokens: Count.optional(),
+    reasoning_output_tokens: Count.optional(),
     total_tokens: Count.optional(),
   })
   .refine(
     (value) =>
       value.cached_input_tokens + (value.cache_write_input_tokens ?? 0) <= value.input_tokens,
   );
+
+export type SessionRequestUsage = {
+  recorded_at: string | null;
+  ts: number | null;
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  reasoning_tokens: number;
+  total_tokens: number;
+  estimated: boolean;
+};
+
+export type SessionUsageDetail = {
+  cache: SessionCacheUsage;
+  requests: SessionRequestUsage[];
+};
 
 function object(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -66,26 +90,42 @@ function codexTokens(value: z.infer<typeof CodexUsage>): CacheTokenUsage {
   };
 }
 
+export async function loadSessionUsageDetail(
+  runtime: Pick<HostRuntime, "isFile" | "readFile"> & Partial<Pick<HostRuntime, "sqliteQuery">>,
+  backend: string,
+  path: string,
+  externalId: string | null = null,
+): Promise<SessionUsageDetail> {
+  try {
+    if (!(await runtime.isFile(path))) return emptySessionUsageDetail();
+    if (backend === "opencode") {
+      if (!externalId || !runtime.sqliteQuery) return emptySessionUsageDetail();
+      return await readOpenCodeUsageDetail(
+        runtime as Pick<HostRuntime, "sqliteQuery">,
+        path,
+        externalId,
+      );
+    }
+    return readSessionUsageDetail(backend, await readTranscriptFile(runtime, path));
+  } catch {
+    throw new OrcError("Session cache usage could not be read", "CACHE_UNAVAILABLE", 503);
+  }
+}
+
 export async function loadSessionCacheUsage(
   runtime: Pick<HostRuntime, "isFile" | "readFile"> & Partial<Pick<HostRuntime, "sqliteQuery">>,
   backend: string,
   path: string,
   externalId: string | null = null,
 ): Promise<SessionCacheUsage> {
-  try {
-    if (!(await runtime.isFile(path))) return emptySessionCacheUsage();
-    if (backend === "opencode") {
-      if (!externalId || !runtime.sqliteQuery) return emptySessionCacheUsage();
-      return await readOpenCodeCacheUsage(
-        runtime as Pick<HostRuntime, "sqliteQuery">,
-        path,
-        externalId,
-      );
-    }
-    return readSessionCacheUsage(backend, await readTranscriptFile(runtime, path));
-  } catch {
-    throw new OrcError("Session cache usage could not be read", "CACHE_UNAVAILABLE", 503);
-  }
+  return (await loadSessionUsageDetail(runtime, backend, path, externalId)).cache;
+}
+
+export function emptySessionUsageDetail(): SessionUsageDetail {
+  return {
+    cache: emptySessionCacheUsage(),
+    requests: [],
+  };
 }
 
 export function emptySessionCacheUsage(): SessionCacheUsage {
@@ -155,15 +195,16 @@ function recordCachePoint(
 }
 
 /** Pi records per-assistant usage on the active branch and context edits for compaction. */
-function readPiCacheUsage(bytes: Uint8Array): SessionCacheUsage {
+function readPiUsageDetail(bytes: Uint8Array): SessionUsageDetail {
   const result = emptySessionCacheUsage();
+  const requests: SessionRequestUsage[] = [];
   let parsed: ReturnType<typeof parsePiSession>;
   try {
     parsed = parsePiSession(new TextDecoder().decode(bytes));
   } catch {
-    return result;
+    return { cache: result, requests };
   }
-  if (!parsed) return result;
+  if (!parsed) return { cache: result, requests };
   const compactions: NonNullable<SessionCacheUsage["compactions"]> = [];
   for (const entry of parsed.branch) {
     if (entry.type !== "context_edit") continue;
@@ -180,18 +221,40 @@ function readPiCacheUsage(bytes: Uint8Array): SessionCacheUsage {
   for (const entry of parsed.messages) {
     const usage = entry.message?.usage;
     if (entry.message?.role !== "assistant" || !usage) continue;
-    const cached = usage.cacheRead ?? 0;
-    const writes = usage.cacheWrite ?? 0;
+    const cached = Math.round(usage.cacheRead ?? 0);
+    const writes = Math.round(usage.cacheWrite ?? 0);
+    const input = Math.round(usage.input ?? 0);
+    const output = Math.round(usage.output ?? 0);
+    const reasoning = Math.round(usage.reasoning ?? 0);
+    const recordedAt = timestamp(entry.timestamp);
     recordCachePoint(result, timeline, {
-      recorded_at: timestamp(entry.timestamp),
-      input_tokens: (usage.input ?? 0) + cached + writes,
+      recorded_at: recordedAt,
+      input_tokens: input + cached + writes,
       cached_input_tokens: cached,
       cache_write_tokens: writes,
       output_tokens: usage.output ?? null,
     });
+    const total = input + output + cached + writes + reasoning;
+    if (total > 0) {
+      requests.push({
+        recorded_at: recordedAt,
+        ts: recordedAt ? Date.parse(recordedAt) : null,
+        model:
+          typeof entry.message.model === "string" && entry.message.model.trim()
+            ? entry.message.model.trim()
+            : null,
+        input_tokens: input,
+        output_tokens: output,
+        cache_read_tokens: cached,
+        cache_write_tokens: writes,
+        reasoning_tokens: reasoning,
+        total_tokens: total,
+        estimated: false,
+      });
+    }
   }
   if (timeline.length) result.timeline = downsample(timeline);
-  return result;
+  return { cache: result, requests };
 }
 
 type OpenCodeUsageRow = { id: string; data: string; time_created: number };
@@ -211,13 +274,14 @@ async function openCodeRows<T extends object>(
 }
 
 /** OpenCode keeps per-request usage in its local database rather than the transcript file. */
-async function readOpenCodeCacheUsage(
+async function readOpenCodeUsageDetail(
   runtime: Pick<HostRuntime, "sqliteQuery">,
   path: string,
   sessionId: string,
-): Promise<SessionCacheUsage> {
+): Promise<SessionUsageDetail> {
   const result = emptySessionCacheUsage();
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return result;
+  const requests: SessionRequestUsage[] = [];
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return { cache: result, requests };
   const current = await openCodeRows<OpenCodeUsageRow & { type: string }>(
     runtime,
     path,
@@ -243,12 +307,13 @@ async function readOpenCodeCacheUsage(
     ).filter((row) => row.role === "assistant");
     compactions = [];
   }
-  if (!rows.length) return result;
+  if (!rows.length) return { cache: result, requests };
   const usage = parseOpenCodeUsage(rows);
   const timeline: NonNullable<SessionCacheUsage["timeline"]> = [];
   for (const event of usage.events) {
+    const recordedAt = event.ts > 0 ? new Date(event.ts).toISOString() : null;
     recordCachePoint(result, timeline, {
-      recorded_at: event.ts > 0 ? new Date(event.ts).toISOString() : null,
+      recorded_at: recordedAt,
       input_tokens: event.inputTokens + event.cacheReadTokens + event.cacheWriteTokens,
       cached_input_tokens: event.cacheReadTokens,
       cache_write_tokens: event.cacheWriteTokens,
@@ -260,6 +325,26 @@ async function readOpenCodeCacheUsage(
         event.cacheReadTokens +
         event.cacheWriteTokens,
     });
+    const total =
+      event.inputTokens +
+      event.outputTokens +
+      event.cacheReadTokens +
+      event.cacheWriteTokens +
+      event.reasoningTokens;
+    if (total > 0) {
+      requests.push({
+        recorded_at: recordedAt,
+        ts: event.ts > 0 ? event.ts : null,
+        model: event.model,
+        input_tokens: event.inputTokens,
+        output_tokens: event.outputTokens,
+        cache_read_tokens: event.cacheReadTokens,
+        cache_write_tokens: event.cacheWriteTokens,
+        reasoning_tokens: event.reasoningTokens,
+        total_tokens: total,
+        estimated: event.estimated,
+      });
+    }
   }
   result.compactions = compactions.map((entry) => ({
     recorded_at:
@@ -269,7 +354,7 @@ async function readOpenCodeCacheUsage(
     trigger: entry.trigger,
   }));
   if (timeline.length) result.timeline = downsample(timeline);
-  return result;
+  return { cache: result, requests };
 }
 
 const TIMELINE_POINTS = 200;
@@ -284,13 +369,19 @@ function downsample<T extends { context_tokens: number }>(points: T[]): T[] {
   );
 }
 
-export function readSessionCacheUsage(backend: string, bytes: Uint8Array): SessionCacheUsage {
-  if (backend === "pi") return readPiCacheUsage(bytes);
+function modelText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+export function readSessionUsageDetail(backend: string, bytes: Uint8Array): SessionUsageDetail {
+  if (backend === "pi") return readPiUsageDetail(bytes);
   const result = emptySessionCacheUsage();
-  if (backend !== "claude" && backend !== "codex") return result;
+  const requests: SessionRequestUsage[] = [];
+  if (backend !== "claude" && backend !== "codex") return { cache: result, requests };
   const compactions: NonNullable<SessionCacheUsage["compactions"]> = [];
   const timeline: NonNullable<SessionCacheUsage["timeline"]> = [];
   let codexTotal: number | null = null;
+  let codexModel: string | null = null;
   result.compactions = compactions;
   const codexCompactedAt: number[] = [];
   const seen = new Set<string>();
@@ -371,7 +462,32 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
         cached_input_tokens: tokens.cached_input_tokens,
         output_tokens: value.output_tokens ?? null,
       });
+      const rawOutput = value.output_tokens ?? 0;
+      const reasoning = Math.min(rawOutput, value.output_tokens_details?.thinking_tokens ?? 0);
+      const output = Math.max(0, rawOutput - reasoning);
+      const total =
+        value.input_tokens + output + value.cache_read_input_tokens + writes + reasoning;
+      if (total > 0) {
+        requests.push({
+          recorded_at: recordedAt,
+          ts: recordedAt ? Date.parse(recordedAt) : null,
+          model: modelText(message.model),
+          input_tokens: value.input_tokens,
+          output_tokens: output,
+          cache_read_tokens: value.cache_read_input_tokens,
+          cache_write_tokens: writes,
+          reasoning_tokens: reasoning,
+          total_tokens: total,
+          estimated: false,
+        });
+      }
     } else {
+      const payload = object(row.payload);
+      if (row.type === "session_meta" || row.type === "turn_context") {
+        const settings = object(payload.settings);
+        codexModel = modelText(payload.model) ?? modelText(settings.model) ?? codexModel;
+        continue;
+      }
       if (row.type === "compacted") {
         compactions.push({
           recorded_at: recordedAt,
@@ -382,7 +498,6 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
         codexCompactedAt.push(timeline.length);
         continue;
       }
-      const payload = object(row.payload);
       if (row.type !== "event_msg" || payload.type !== "token_count") continue;
       const info = object(payload.info);
       const latest = CodexUsage.safeParse(info.last_token_usage);
@@ -391,7 +506,7 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
       const total = totals.success ? totals.data.input_tokens : null;
       const context = latest.data.total_tokens ?? latest.data.input_tokens;
       const window = Count.positive().safeParse(info.model_context_window);
-      if (total === null || total !== codexTotal)
+      if (total === null || total !== codexTotal) {
         timeline.push({
           request: timeline.length + 1,
           recorded_at: recordedAt,
@@ -399,6 +514,30 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
           cached_input_tokens: latest.data.cached_input_tokens,
           output_tokens: latest.data.output_tokens ?? null,
         });
+        const cached = latest.data.cached_input_tokens;
+        const writes = latest.data.cache_write_input_tokens ?? 0;
+        const freshInput = Math.max(0, latest.data.input_tokens - cached - writes);
+        const rawOutput = latest.data.output_tokens ?? 0;
+        const rawReasoning = latest.data.reasoning_output_tokens ?? 0;
+        const includesReasoning = info.last_usage_includes_reasoning !== false;
+        const output = includesReasoning ? Math.max(0, rawOutput - rawReasoning) : rawOutput;
+        const reasoning = includesReasoning ? Math.min(rawOutput, rawReasoning) : rawReasoning;
+        const reqTotal = freshInput + output + cached + writes + reasoning;
+        if (reqTotal > 0) {
+          requests.push({
+            recorded_at: recordedAt,
+            ts: recordedAt ? Date.parse(recordedAt) : null,
+            model: codexModel,
+            input_tokens: freshInput,
+            output_tokens: output,
+            cache_read_tokens: cached,
+            cache_write_tokens: writes,
+            reasoning_tokens: reasoning,
+            total_tokens: reqTotal,
+            estimated: false,
+          });
+        }
+      }
       codexTotal = total;
       if (
         !result.latest ||
@@ -423,5 +562,9 @@ export function readSessionCacheUsage(backend: string, bytes: Uint8Array): Sessi
     if (compaction) compaction.post_tokens = timeline[at]?.context_tokens ?? null;
   });
   if (timeline.length) result.timeline = downsample(timeline);
-  return result;
+  return { cache: result, requests };
+}
+
+export function readSessionCacheUsage(backend: string, bytes: Uint8Array): SessionCacheUsage {
+  return readSessionUsageDetail(backend, bytes).cache;
 }

@@ -130,10 +130,11 @@ test("should expose the latest unfinished tool as the current one", () => {
   expect(fold.current?.id).toBe("c");
 });
 
-test("should prefer native duration and distinguish stopped and failed turns", () => {
+test("should prefer native duration and distinguish stopped, interrupted and failed turns", () => {
   const fold = foldTurn([], { startedAt: 0, finishedAt: 90_000, durationMs: 42_000 });
   expect(fold.durationMs).toBe(42_000);
   expect(foldLabel(fold, false, "stopped")).toBe("Stopped after 42s");
+  expect(foldLabel(fold, false, "interrupted")).toBe("Interrupted after 42s");
   expect(foldLabel(fold, false, "failed")).toBe("Failed after 42s");
   expect(foldTurn([], { startedAt: 0, finishedAt: 2_000 }).durationMs).toBe(2_000);
 });

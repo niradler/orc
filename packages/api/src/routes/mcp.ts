@@ -53,12 +53,10 @@ app.all("/mcp", async (c) => {
     .parse({ sessionId: c.req.query("preview_session"), clientId: c.req.query("preview_client") });
   if (preview.clientId && !preview.sessionId)
     throw new ValidationError("preview_client requires preview_session");
-  const agentSessionId = z
-    .string()
-    .min(1)
-    .max(200)
-    .optional()
-    .parse(c.req.query("session") ?? c.req.header("X-ORC-Session"));
+  const sessionSchema = z.string().trim().min(1).max(200).optional();
+  const querySession = sessionSchema.parse(c.req.query("session"));
+  const headerSession = sessionSchema.parse(c.req.header("X-ORC-Session") || undefined);
+  const agentSessionId = querySession ?? preview.sessionId ?? headerSession;
   // An authenticated connection without a session binding acts as a coordinator:
   // a lightweight root session it can start and manage children from. Anonymous
   // installs keep the explicit-identity requirement.

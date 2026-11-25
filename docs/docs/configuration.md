@@ -93,6 +93,13 @@ clears an executable override; **Discard changes** restores saved values. Failed
 saves retain the draft. Concurrent edits are rejected rather than overwriting
 another device's settings; **Discard draft and reload** loads the saved version.
 
+**Delete provider** removes the selected provider from the draft after a
+confirmation; **Save changes** applies the removal and drops its environment
+overrides and saved secrets. The last provider cannot be deleted. Deleting the
+default moves the default to the first remaining enabled provider. Existing
+conversations keep the deleted provider ID; new sessions must choose another
+provider.
+
 ### Pi
 
 Install [Pi](https://pi.dev/) 1.5.2 or newer on the execution host, with Node.js
@@ -299,8 +306,12 @@ lifetime totals from the distribution, rather than mixing the two accounting
 models. A session is not re-indexed when its activity stays inside the second the
 ledger already recorded, and a larger backlog drains in bounded batches. Sessions
 from agents that do not record token usage (for example Cursor Agent chats) are
-reported separately instead of being counted as pending. No billed cost is shown:
-ORC has no reliable price source for every provider and plan.
+reported separately instead of being counted as pending. The global usage report
+does not show billed cost, while per-session analytics estimate USD cost and
+cache savings from built-in model rates plus optional custom overrides configured
+under **Settings → Usage → Model pricing** (`preferences.model_pricing` in
+`config.json`, in USD per million tokens for input, output, cache read and cache
+write). Models without a configured price show `-` rather than `$0`.
 
 Raw requests are kept for 95 days, just past the 90-day window, so every normal
 period stays exact. Older usage rolls up per session, UTC day and model: totals,
@@ -404,7 +415,7 @@ An invalid config file stops ORC with `Invalid orc config` and the failing key.
     "max_workers": 2
   },
   "runner": { "default_timeout_secs": 300, "max_concurrent_jobs": 5 },
-  "rules": { "enabled": true }
+  "rules": { "enabled": true, "retention_days": 30, "max_decision_rows": 200000 }
 }
 ```
 
@@ -515,6 +526,8 @@ Pick the execution host from the SSH row under **Settings → Hosts**: **Change*
 | Key                | Default | Env                 | Purpose                                               |
 | ------------------ | ------- | ------------------- | ----------------------------------------------------- |
 | `rules.enabled`    | `false` | `ORC_RULES_ENABLED` | Enforce [agent rules](./agent-rules.md)               |
+| `rules.retention_days` | `30` | none | Days to keep deny, approval, job, script, rewrite, context and error rows before pruning |
+| `rules.max_decision_rows` | `200000` | none | Hard row cap for retained rule decisions; overflow is pruned oldest first |
 | `mcp.default_mode` | `meta`  | none                | MCP tool surface: `meta` or `full` |
 | `mcp.code_execution` | `true` | none | Make `tool_execute` available in meta mode on local stdio and authenticated HTTP connections. |
 | `github.token`     | none    | `ORC_GITHUB_TOKEN`  | Token for ORC's GitHub calls (pull requests, reviews) |
@@ -717,6 +730,8 @@ launchctl list | grep orc             # macOS
 systemctl --user status orc-daemon    # Linux
 ```
 
+`orc daemon stop` asks the running API to shut down (`POST /api/system/shutdown`) on every platform instead of signaling the process, because a signal is a hard kill on Windows and the only portable graceful path is the API. If the API does not answer, macOS and Linux fall back to `SIGTERM`, which the daemon handles the same way; Windows has no graceful signal, so the daemon must either accept the drain or be killed with `--force`. The daemon first refuses new chat turns, gives active ones a few seconds to finish, and writes through the provider session identity of any turn that cannot finish, so a stopped or restarted daemon never leaves a conversation that cannot continue. It exits with code 0, including when a drain overruns its budget, which the bundled supervisor and systemd's `Restart=on-failure` treat as an intentional stop; the macOS agent is installed with `SuccessfulExit=false` for the same reason, so re-run `orc daemon install` after upgrading an agent installed by an older version. `--force` skips the drain and kills the process; in-flight turns resume from their saved state on the next start. `--timeout <seconds>` bounds each wait (default 30).
+
 `orc daemon install` refuses an `orc` that lives under nvm, fnm, volta, asdf or nodenv paths. Install a [pre-built binary](./install.md#pre-built-binary), or pass `--force`.
 
 `orc daemon start` merges your login shell's `PATH` on macOS and Linux, so agent CLIs such as `claude`, `codex` and `cursor-agent` are found when the daemon runs as a service.
@@ -768,7 +783,9 @@ For exposing ORC beyond localhost, see [Self-hosting](./self-hosted.md).
 "args": ["literal", "arguments"] }`. Add the ID to `preferences.agents` to select it
 in chat. The `opencode` agent already ships a built-in direct ACP command
 (`opencode acp`); an `acp_commands.opencode` entry overrides it, for example to pin a
-specific installation. Commands run on the chosen execution host; authenticate using that agent's
+specific installation. ORC-managed OpenCode sessions also receive the session-scoped
+plugin and permission baseline described in [Agent rules](./agent-rules.md#opencode-session-permissions);
+no global `opencode.json` edit is needed. Commands run on the chosen execution host; authenticate using that agent's
 own login or existing secure environment configuration. Arguments are not shell
 expressions and must not contain secrets. See [Connect agents](./connect-agents.md#capabilities-and-direct-acp)
 for setup, capability negotiation and permission limitations. Existing chats retain

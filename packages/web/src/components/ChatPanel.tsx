@@ -1,7 +1,12 @@
 import { MessagePrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { agentLabel, supportsManualCompaction } from "@orc/core/coding-agents";
-import { sessionMessageHookSupported } from "@orc/core/session-messages";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  parseSessionDeliveryEnvelope,
+  type SessionDelivery,
+  type SessionMessage,
+  sessionMessageHookSupported,
+} from "@orc/core/session-messages";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
   ArrowLeft,
@@ -26,7 +31,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
 import { AgentMessageText, AgentTextStreamProvider } from "@/components/AgentMessageText";
@@ -40,6 +45,7 @@ import {
 } from "@/components/ChatContinueInTerminal";
 import { ChatSessionPicker } from "@/components/ChatControls";
 import { ChatConversationInfo } from "@/components/ChatConversationInfo";
+import { ChatDeliveryList } from "@/components/ChatDeliveryCard";
 import {
   ChatDictationButton,
   ChatDictationPill,
@@ -81,11 +87,13 @@ import {
 import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
 import { SessionView } from "@/components/SessionView";
+import { SnoozedWaitingBanner } from "@/components/SnoozeMenu";
 import { StateBadge } from "@/components/StateBadge";
 import { ScratchpadFormDialog } from "@/components/scratchpad/ScratchpadFormDialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useChat } from "@/hooks/useChat";
+import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useOpenLiveSession } from "@/hooks/useOpenLiveSession";
 import { usePanelWidth } from "@/hooks/usePanelWidth";
@@ -93,9 +101,13 @@ import { usePinnedScroll } from "@/hooks/usePinnedScroll";
 import { useProjects } from "@/hooks/useProjects";
 import { useSessionHome } from "@/hooks/useSessionHome";
 import {
+  useCancelSessionMessage,
+  useDeliverSessionMessage,
+  useMoveSessionMessage,
   useSendSessionMessage,
   useSessionChildren,
   useSessionLineage,
+  useSessionMessages,
   useSessionSubagents,
 } from "@/hooks/useSessions";
 import { useCompactViewport } from "@/hooks/useVisualViewport";
@@ -109,6 +121,7 @@ import { chatBackgroundWork } from "@/lib/chat-background";
 import { commandSegments } from "@/lib/chat-commands";
 import { chatDividers } from "@/lib/chat-dividers";
 import { groupChatMessages } from "@/lib/chat-message-groups";
+import { retryPrompt } from "@/lib/chat-retry";
 import {
   appendDraftQuote,
   boundedText,
@@ -127,6 +140,7 @@ import {
 } from "@/lib/composer-handoff";
 import { THIS_SERVER } from "@/lib/host-labels";
 import { scratchpadPath } from "@/lib/scratchpad-routes";
+import { isRequestSnoozed, pendingRequestsForSession } from "@/lib/snooze";
 import { matchSubagents } from "@/lib/subagent-links";
 import { cn } from "@/lib/utils";
 
@@ -266,6 +280,7 @@ export function ChatPanel({
   onToggleFullscreen,
 }: ChatPanelProps) {
   const {
+    surface,
     messages,
     streaming,
     reconnecting,
@@ -350,15 +365,53 @@ export function ChatPanel({
   }, [thread?.id, session.data?.live?.status]);
   const agentBlocked = agentRunning && !agentInbox && !agentOverride;
   const queueToAgent = useSendSessionMessage(agentInbox?.id ?? null);
+  const threadInboxId = !agentInbox && thread?.id ? thread.id : null;
+  const threadSessionMessages = useSessionMessages(threadInboxId);
+  const queuedSessionMessages = useMemo(
+    () => (threadSessionMessages.data ?? []).filter((entry) => entry.state === "queued"),
+    [threadSessionMessages.data],
+  );
+  const deliverSessionMessage = useDeliverSessionMessage(threadInboxId);
+  const cancelSessionMessage = useCancelSessionMessage(threadInboxId);
+  const moveSessionMessage = useMoveSessionMessage(threadInboxId);
+  const resetSessionQueueMutations = useCallback(() => {
+    deliverSessionMessage.reset();
+    cancelSessionMessage.reset();
+    moveSessionMessage.reset();
+  }, [deliverSessionMessage.reset, cancelSessionMessage.reset, moveSessionMessage.reset]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset stale mutation errors when switching threads
+  useEffect(() => {
+    resetSessionQueueMutations();
+  }, [threadInboxId, resetSessionQueueMutations]);
+  const sessionQueueError =
+    deliverSessionMessage.error ?? cancelSessionMessage.error ?? moveSessionMessage.error;
   const runElsewhere = !!session.data?.running && !streaming && !refreshing;
   const turnElsewhere = runElsewhere || (agentRunning && !refreshing);
   // The usage API only knows sessions it discovered from an agent or terminal.
   const contextUsage = useChatContextUsage(thread?.sourceId, streaming);
+  const humanRequests = useHumanRequests();
+  const threadPendingRequests = useMemo(
+    () =>
+      thread
+        ? pendingRequestsForSession(humanRequests.data, {
+            threadId: thread.id,
+            sourceId: thread.sourceId,
+            runtimeId: thread.runtimeId,
+            backend: thread.backend,
+            host: thread.host,
+          })
+        : [],
+    [humanRequests.data, thread],
+  );
+  const snoozedThreadRequest = useMemo(
+    () => threadPendingRequests.find((request) => isRequestSnoozed(request)) ?? null,
+    [threadPendingRequests],
+  );
   const runClaim =
     !!session.data?.running ||
     (session.data?.live?.status === "running" && session.data.live.agent !== "codex");
   const sessionState: AgentState | null = chatSessionState({
-    needsYou: !!permission || !!question,
+    needsYou: !!permission || !!question || threadPendingRequests.length > 0,
     failed: !!error,
     streaming,
     reconnecting,
@@ -406,6 +459,14 @@ export function ChatPanel({
     streaming,
   );
   const queryClient = useQueryClient();
+  const wakeSnoozedRequest = useMutation({
+    mutationFn: ({ id, version }: { id: string; version: number }) =>
+      api.humanRequests.unsnooze(id, version),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["human-requests"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
   const [backgroundError, setBackgroundError] = useState<string | null>(null);
   const openBackground = async (sessionId: string, native?: boolean) => {
     setBackgroundError(null);
@@ -441,6 +502,8 @@ export function ChatPanel({
     setStopRequested(true);
     cancel();
   };
+  const { pathname } = useLocation();
+  const ownsSessionHome = fullscreen || pathname !== "/chat";
   const home = useSessionHome();
   const lineage = useSessionLineage(thread?.sourceId ? thread.id : null);
   const parentSession = thread?.sourceId ? (lineage.data?.parent ?? null) : null;
@@ -455,7 +518,11 @@ export function ChatPanel({
       if (parentSession.kind === "chat") {
         const next = await api.chat.get(parentSession.id);
         openThread(next);
-        home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
+        if (surface === "page") {
+          home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
+        } else if (ownsSessionHome && home.terminalId) {
+          home.go({ terminalId: null });
+        }
       } else await openSession(parentSession.id);
     } catch (cause) {
       setParentError(
@@ -465,8 +532,24 @@ export function ChatPanel({
       setParentOpening(false);
     }
   };
+  const openDeliverySession = useCallback(
+    async (sessionId: string, _kind: SessionDelivery["kind"]) => {
+      try {
+        const next = await api.chat.get(sessionId);
+        openThread(next);
+        if (surface === "page") {
+          home.go({ viewId: null, terminalId: null, liveId: null }, { chatThread: next.id });
+        } else if (ownsSessionHome && home.terminalId) {
+          home.go({ terminalId: null });
+        }
+      } catch {
+        await openSession(sessionId);
+      }
+    },
+    [home, openSession, openThread, ownsSessionHome, surface],
+  );
   const terminalControl = useChatContinueInTerminal({
-    inChat: true,
+    inChat: ownsSessionHome,
     onOpened: (terminal) => home.go({ terminalId: terminal.id }),
   });
   const desktop = useBreakpoint("xl");
@@ -524,7 +607,7 @@ export function ChatPanel({
   });
   const docked = fullscreen && desktop && !home.listHidden;
   const rail = fullscreen && desktop && home.listHidden;
-  const terminalCenter = !!home.terminalId;
+  const terminalCenter = ownsSessionHome && !!home.terminalId;
   const viewId = fullscreen && !terminalCenter ? home.viewId : null;
   const viewed = useQuery({
     queryKey: ["sessions", "live-one", viewId],
@@ -533,7 +616,7 @@ export function ChatPanel({
     retry: false,
   }).data;
   const context = useSessionContext(
-    home.terminalId,
+    terminalCenter ? home.terminalId : null,
     viewId ? { id: viewId, session: viewed } : undefined,
   );
   // The drawer can take the conversation's space; collapsing or closing it
@@ -579,6 +662,14 @@ export function ChatPanel({
     () => new Map(messages.map((message) => [message.id, message])),
     [messages],
   );
+  // Only the latest interrupted turn offers Retry: resending an older prompt
+  // into a conversation that has moved on would re-inject stale instructions.
+  const retry = useMemo(() => {
+    const last = [...messages].reverse().find((message) => message.role === "assistant");
+    if (!last) return null;
+    const prompt = retryPrompt(messages, last.id);
+    return prompt ? { messageId: last.id, ...prompt } : null;
+  }, [messages]);
   // What an attribution line needs from a message the user selected text in.
   const messageSources = useMemo(
     () =>
@@ -686,6 +777,11 @@ export function ChatPanel({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [analyticsFocusModel, setAnalyticsFocusModel] = useState<string | null>(null);
+  const openModelSplit = (model: string) => {
+    setAnalyticsFocusModel(model);
+    setAnalyticsOpen(true);
+  };
   const actionMenuRows = (includeSessionActions: boolean) => (
     <>
       <button
@@ -889,11 +985,19 @@ export function ChatPanel({
       setQueueDisclosure((current) =>
         current.key === activeKey && current.open ? current : { key: activeKey, open: true },
       );
-    else if (!queued.length && !answers.length && !streaming)
+    else if (!queued.length && !answers.length && !queuedSessionMessages.length && !streaming)
       setQueueDisclosure((current) =>
         current.key === activeKey && current.open ? { key: activeKey, open: false } : current,
       );
-  }, [activeKey, answers.length, editingQueuedId, open, queued.length, streaming]);
+  }, [
+    activeKey,
+    answers.length,
+    editingQueuedId,
+    open,
+    queued.length,
+    queuedSessionMessages.length,
+    streaming,
+  ]);
   const panel = usePanelWidth({
     storageKey: "orc_chat_panel_width",
     initial: 384,
@@ -924,6 +1028,7 @@ export function ChatPanel({
   return (
     <ThreadPrimitive.Root
       data-testid="chat-panel"
+      data-chat-surface={surface}
       data-streaming={streaming ? "true" : "false"}
       data-focus={focusChat ? "true" : "false"}
       style={embedded ? undefined : { width: panel.width, maxWidth: "50vw" }}
@@ -1018,7 +1123,7 @@ export function ChatPanel({
                   className={cn(iconButton, "min-h-11 min-w-11")}
                   onClick={() => {
                     newTab();
-                    home.go({ terminalId: null });
+                    if (ownsSessionHome) home.go({ terminalId: null });
                   }}
                 >
                   <SquarePen size={17} />
@@ -1235,6 +1340,7 @@ export function ChatPanel({
             )}
             <div className={cn("relative flex min-h-0 flex-col", !hero && "flex-1")}>
               <ChatSelectionToolbar
+                surface={surface}
                 resetKey={`${thread?.id ?? "new"}:${open ? "open" : "closed"}`}
                 resolveSource={resolveSelectionSource}
                 onAction={actOnSelection}
@@ -1290,35 +1396,49 @@ export function ChatPanel({
                       const content = typeof custom.content === "string" ? custom.content : "";
                       const stored = storedMessages.get(message.id);
                       const usage = message.id === lastAssistant?.id ? turnUsage : null;
+                      const deliveries =
+                        message.role === "user"
+                          ? Array.isArray(custom.deliveries) && custom.deliveries.length > 0
+                            ? (custom.deliveries as SessionDelivery[])
+                            : parseSessionDeliveryEnvelope(content)
+                          : null;
+                      const isDelivery = !!deliveries?.length;
                       return (
                         <>
                           {dividers.byMessage.get(message.id)?.map((divider, index) => (
-                            // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
-                            <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                            <ChatTurnDivider
+                              // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                              key={`${divider.type}-${index}`}
+                              divider={divider}
+                              onOpenModelSplit={thread ? openModelSplit : undefined}
+                            />
                           ))}
                           <MessagePrimitive.Root
                             style={{
                               contentVisibility: "auto",
-                              containIntrinsicSize: "auto 120px",
+                              containIntrinsicSize: isDelivery ? "auto 44px" : "auto 120px",
                             }}
                             data-testid="chat-message"
                             data-role={message.role}
+                            data-delivery={isDelivery ? "true" : undefined}
                             data-message-id={message.id}
                             className="group/message mx-auto mb-1 w-full max-w-(--chat-width) min-w-0 chat-message"
                           >
                             <div
                               className={
-                                message.role === "user"
+                                message.role === "user" && !isDelivery
                                   ? "ml-auto w-fit max-w-[90%] rounded-2xl bg-surface px-4 py-2"
                                   : undefined
                               }
                             >
                               <div data-testid="chat-message-agent" className="sr-only">
-                                {message.role === "user"
-                                  ? "You"
-                                  : typeof custom.agent === "string"
-                                    ? custom.agent
-                                    : "Assistant"}
+                                {isDelivery
+                                  ? "Delivery"
+                                  : message.role === "user"
+                                    ? "You"
+                                    : typeof custom.agent === "string"
+                                      ? custom.agent
+                                      : "Assistant"}
                               </div>
                               <div
                                 data-testid="chat-message-content"
@@ -1331,15 +1451,29 @@ export function ChatPanel({
                                   live={live}
                                   subagents={subagentLinks}
                                 />
-                                <ChatAttachments value={custom.attachments} />
-                                <AgentTextStreamProvider streaming={live}>
-                                  <MessagePrimitive.Parts
-                                    components={message.role === "user" ? userTextParts : textParts}
+                                {isDelivery ? (
+                                  <ChatDeliveryList
+                                    deliveries={deliveries}
+                                    timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
+                                    rawContent={content}
+                                    onOpenSession={openDeliverySession}
                                   />
-                                </AgentTextStreamProvider>
+                                ) : (
+                                  <>
+                                    <ChatAttachments value={custom.attachments} />
+                                    <AgentTextStreamProvider streaming={live}>
+                                      <MessagePrimitive.Parts
+                                        components={
+                                          message.role === "user" ? userTextParts : textParts
+                                        }
+                                      />
+                                    </AgentTextStreamProvider>
+                                  </>
+                                )}
                               </div>
                             </div>
                             {!live &&
+                              !isDelivery &&
                               (message.role === "user" ||
                                 !!content.trim() ||
                                 !!custom.turn ||
@@ -1361,6 +1495,16 @@ export function ChatPanel({
                                     typeof custom.agent === "string" ? custom.agent : config.agent,
                                   )}
                                   timestamp={stored?.timestamp ?? message.createdAt?.getTime()}
+                                  onRetry={
+                                    retry?.messageId === message.id && !streaming
+                                      ? () => void send(retry.prompt)
+                                      : undefined
+                                  }
+                                  retryHint={
+                                    retry && !retry.received
+                                      ? "Send this prompt again. The agent may not have received it."
+                                      : undefined
+                                  }
                                   onSelectionAction={actOnSelection}
                                 />
                               )}
@@ -1370,8 +1514,12 @@ export function ChatPanel({
                     }}
                   </ThreadPrimitive.Messages>
                   {dividers.trailing.map((divider, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
-                    <ChatTurnDivider key={`${divider.type}-${index}`} divider={divider} />
+                    <ChatTurnDivider
+                      // biome-ignore lint/suspicious/noArrayIndexKey: dividers are positional
+                      key={`${divider.type}-${index}`}
+                      divider={divider}
+                      onOpenModelSplit={thread ? openModelSplit : undefined}
+                    />
                   ))}
                 </div>
               </ThreadPrimitive.Viewport>
@@ -1433,6 +1581,19 @@ export function ChatPanel({
               >
                 {error}
               </div>
+            )}
+            {snoozedThreadRequest && snoozedThreadRequest.snooze_until !== null && (
+              <SnoozedWaitingBanner
+                until={snoozedThreadRequest.snooze_until}
+                busy={wakeSnoozedRequest.isPending}
+                error={wakeSnoozedRequest.error?.message ?? null}
+                onWake={() =>
+                  wakeSnoozedRequest.mutate({
+                    id: snoozedThreadRequest.id,
+                    version: snoozedThreadRequest.version,
+                  })
+                }
+              />
             )}
             {(permission || question) && (
               <div
@@ -1508,7 +1669,7 @@ export function ChatPanel({
                   onRevise={(feedback) => void send(feedback)}
                 />
               )}
-            {!focusChat && queued.length + answers.length > 0 && (
+            {!focusChat && queued.length + answers.length + queuedSessionMessages.length > 0 && (
               <details
                 key={activeKey}
                 open={queueDisclosure.key === activeKey && queueDisclosure.open}
@@ -1528,7 +1689,8 @@ export function ChatPanel({
                     className="shrink-0 transition-transform group-open:rotate-180"
                   />
                   <span role="status" data-testid="chat-pending-count">
-                    {queued.length + answers.length} pending{queuePaused ? " · Paused" : ""}
+                    {queued.length + answers.length + queuedSessionMessages.length} pending
+                    {queuePaused ? " · Paused" : ""}
                   </span>
                 </summary>
                 <ol className="max-h-[min(30vh,14rem)] overflow-y-auto pb-1">
@@ -1541,6 +1703,53 @@ export function ChatPanel({
                       <span className="shrink-0 text-xs text-on-surface-variant">ORC answer</span>
                       <span className="min-w-0 truncate">{answer.title}</span>
                     </li>
+                  ))}
+                  {queuedSessionMessages.map((entry, index) => (
+                    <QueuedSessionMessage
+                      key={entry.id}
+                      message={entry}
+                      canMoveUp={index > 0}
+                      canMoveDown={index < queuedSessionMessages.length - 1}
+                      canDeliverNow={steerAvailable && !permission && !question}
+                      deliverDisabledReason={
+                        permission || question
+                          ? "Answer the pending prompt first"
+                          : !steerAvailable
+                            ? "Wait for the current response to finish or become steerable"
+                            : undefined
+                      }
+                      busy={
+                        deliverSessionMessage.isPending ||
+                        cancelSessionMessage.isPending ||
+                        moveSessionMessage.isPending
+                      }
+                      onOpenSource={
+                        entry.sender_session_id
+                          ? () => {
+                              void openDeliverySession(
+                                entry.sender_session_id as string,
+                                entry.delivery?.kind ?? "relay",
+                              ).catch(() => {});
+                            }
+                          : undefined
+                      }
+                      onMoveUp={() => {
+                        resetSessionQueueMutations();
+                        moveSessionMessage.mutate({ messageId: entry.id, direction: "up" });
+                      }}
+                      onMoveDown={() => {
+                        resetSessionQueueMutations();
+                        moveSessionMessage.mutate({ messageId: entry.id, direction: "down" });
+                      }}
+                      onDeliverNow={() => {
+                        resetSessionQueueMutations();
+                        deliverSessionMessage.mutate(entry.id);
+                      }}
+                      onCancel={() => {
+                        resetSessionQueueMutations();
+                        cancelSessionMessage.mutate(entry.id);
+                      }}
+                    />
                   ))}
                   {queued.map((entry, index) => (
                     <QueuedMessage
@@ -1562,6 +1771,15 @@ export function ChatPanel({
                     />
                   ))}
                 </ol>
+                {sessionQueueError && (
+                  <p
+                    role="alert"
+                    data-testid="chat-queued-session-error"
+                    className="pb-1 text-xs text-error"
+                  >
+                    {sessionQueueError.message}
+                  </p>
+                )}
               </details>
             )}
             <div
@@ -1933,13 +2151,25 @@ export function ChatPanel({
           }}
         />
       )}
-      <Dialog open={analyticsOpen} onOpenChange={setAnalyticsOpen}>
+      <Dialog
+        open={analyticsOpen}
+        onOpenChange={(open) => {
+          setAnalyticsOpen(open);
+          if (!open) setAnalyticsFocusModel(null);
+        }}
+      >
         <DialogContent
           data-testid="chat-analytics-dialog"
           className="max-h-[85dvh] w-[min(56rem,calc(100vw-24px))] max-w-none overflow-y-auto"
         >
           <DialogTitle className="sr-only">Session analytics</DialogTitle>
-          {analyticsOpen && <ChatSessionAnalytics threadId={thread?.id} streaming={false} />}
+          {analyticsOpen && (
+            <ChatSessionAnalytics
+              threadId={thread?.id}
+              streaming={false}
+              focusModel={analyticsFocusModel}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </ThreadPrimitive.Root>
@@ -2089,6 +2319,119 @@ function QueuedMessage({
           {removeButton}
         </div>
       )}
+    </li>
+  );
+}
+
+function QueuedSessionMessage({
+  message,
+  canMoveUp,
+  canMoveDown,
+  canDeliverNow,
+  deliverDisabledReason,
+  busy,
+  onOpenSource,
+  onMoveUp,
+  onMoveDown,
+  onDeliverNow,
+  onCancel,
+}: {
+  message: SessionMessage;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  canDeliverNow: boolean;
+  deliverDisabledReason?: string;
+  busy: boolean;
+  onOpenSource?: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+  onDeliverNow: () => void;
+  onCancel: () => void;
+}) {
+  const sourceLabel = message.delivery?.title ?? message.sender_label;
+  const preview = message.delivery?.summary || message.body;
+  return (
+    <li
+      data-testid="chat-queued-session-message"
+      data-message-id={message.id}
+      className="flex min-h-11 flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-outline-variant py-1 text-xs sm:min-h-9 sm:flex-nowrap sm:py-0"
+    >
+      <div className="flex min-w-0 flex-1 basis-48 items-center gap-1.5 overflow-hidden">
+        {onOpenSource ? (
+          <button
+            type="button"
+            data-testid="chat-queued-session-sender"
+            onClick={onOpenSource}
+            title={sourceLabel}
+            className="min-h-8 shrink-0 max-w-36 truncate font-medium text-on-surface underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus max-sm:min-h-11"
+          >
+            {sourceLabel}
+          </button>
+        ) : (
+          <span
+            data-testid="chat-queued-session-sender"
+            title={sourceLabel}
+            className="shrink-0 max-w-36 truncate font-medium text-on-surface"
+          >
+            {sourceLabel}
+          </span>
+        )}
+        <span
+          data-testid="chat-queued-session-summary"
+          title={preview}
+          className="min-w-0 flex-1 truncate text-on-surface-variant"
+        >
+          {preview}
+        </span>
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          data-testid="chat-queued-deliver-now"
+          disabled={!canDeliverNow || busy}
+          title={deliverDisabledReason ?? "Deliver into the active turn now"}
+          onClick={onDeliverNow}
+          className="min-h-11 shrink-0 rounded-md border border-control-border px-2 text-xs font-medium text-on-surface hover:bg-surface focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-40 sm:min-h-7"
+        >
+          Deliver now
+        </button>
+        <ActionHelp label="Move pending message up">
+          <button
+            type="button"
+            data-testid="chat-queued-session-up"
+            disabled={!canMoveUp || busy}
+            aria-label="Move pending message up"
+            onClick={onMoveUp}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <ArrowUp size={14} />
+          </button>
+        </ActionHelp>
+        <ActionHelp label="Move pending message down">
+          <button
+            type="button"
+            data-testid="chat-queued-session-down"
+            disabled={!canMoveDown || busy}
+            aria-label="Move pending message down"
+            onClick={onMoveDown}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-on-surface focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <ArrowDown size={14} />
+          </button>
+        </ActionHelp>
+        <ActionHelp label="Cancel pending message">
+          <button
+            type="button"
+            data-testid="chat-queued-session-cancel"
+            disabled={busy}
+            aria-label="Cancel pending message"
+            onClick={onCancel}
+            className="flex size-11 shrink-0 items-center justify-center rounded text-on-surface-variant hover:bg-surface hover:text-destructive focus-visible:ring-2 focus-visible:ring-focus disabled:opacity-40 sm:size-8"
+          >
+            <Trash2 size={14} />
+          </button>
+        </ActionHelp>
+      </div>
     </li>
   );
 }

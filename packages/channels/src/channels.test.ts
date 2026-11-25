@@ -16,11 +16,16 @@ import { channelProvider } from "./providers/registry.js";
 import { routeMessage } from "./routing.js";
 import { ChannelService } from "./service.js";
 
-const original = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+const original = {
+  HOME: process.env.HOME,
+  USERPROFILE: process.env.USERPROFILE,
+  ORC_HOME: process.env.ORC_HOME,
+};
 const home = mkdtempSync(join(tmpdir(), "orc-channels-"));
 beforeAll(() => {
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.ORC_HOME = join(home, ".orc");
   resetConfig();
 });
 afterAll(() => {

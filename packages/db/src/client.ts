@@ -11,6 +11,7 @@ import { installKnowledgeBases } from "./kb.js";
 import { installMcpPrompts } from "./mcp-prompts.js";
 import { installMemories } from "./memories.js";
 import { NotificationStore } from "./notifications.js";
+import { installProjectSecrets } from "./project-secrets.js";
 import { installReusableWebhooks } from "./reusable-webhooks.js";
 import { installRules } from "./rules.js";
 import * as schema from "./schema.js";
@@ -746,6 +747,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installScratchpads(sqlite);
   installMcpPrompts(sqlite);
   installWorkspaceEnvironments(sqlite);
+  installProjectSecrets(sqlite);
   new HumanRequestStore(sqlite);
   new SessionMessageStore(sqlite);
   new NotificationStore(sqlite);

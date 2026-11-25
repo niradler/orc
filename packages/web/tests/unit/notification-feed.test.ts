@@ -17,6 +17,7 @@ const item = (id: string, type = "future.type"): OrcNotification => ({
   expires_at: 10000,
   read_at: null,
   dismissed_at: null,
+  snooze_until: null,
 });
 test("should settle new generic types once and never replay initial history", () => {
   const feed = new NotificationFeed();
@@ -243,5 +244,90 @@ test("should recognize a session notification in the chat thread resumed from it
       },
       { ...resumed, threadSourceId: "native-2", sessions: [] },
     ),
+  ).toBe(false);
+});
+
+test("should recognize both independently open Chat page and side chat threads", () => {
+  const pageFinished = {
+    ...item("done-page", "agent.finished"),
+    path: "/chat?chatThread=page-thread",
+  };
+  const sideFinished = {
+    ...item("done-side", "agent.finished"),
+    path: "/activity?chat=open&chatThread=side-thread",
+  };
+  const otherFinished = {
+    ...item("done-other", "agent.finished"),
+    path: "/chat?chatThread=other-thread",
+  };
+  const bothOpen = {
+    active: true,
+    pathname: "/chat",
+    search: "?chat=open&chatThread=page-thread&sideChatThread=side-thread",
+    chatThreadId: "page-thread",
+    sideChatThreadId: "side-thread",
+  };
+  expect(notificationInView(pageFinished, bothOpen)).toBe(true);
+  expect(notificationInView(sideFinished, bothOpen)).toBe(true);
+  expect(notificationInView(otherFinished, bothOpen)).toBe(false);
+
+  const pageOnly = {
+    ...bothOpen,
+    search: "?chatThread=page-thread",
+  };
+  expect(notificationInView(pageFinished, pageOnly)).toBe(true);
+  expect(notificationInView(sideFinished, pageOnly)).toBe(false);
+
+  const sideOnly = {
+    ...bothOpen,
+    pathname: "/tasks",
+    search: "?chat=open&chatThread=side-thread",
+  };
+  expect(notificationInView(pageFinished, sideOnly)).toBe(false);
+  expect(notificationInView(sideFinished, sideOnly)).toBe(true);
+
+  const nativeSideFinished = {
+    ...item("native-side", "agent.finished"),
+    path: "/chat?sessionLive=native-side",
+  };
+  const sideRequest = HumanRequestSchema.parse({
+    id: "request-side",
+    input: {
+      kind: "question",
+      prompt: "Approve?",
+      origin: { backend: "codex-cli", session_id: "runtime-side", request_id: "request-side" },
+    },
+    status: "pending",
+    version: 1,
+    response: null,
+    created_at: 1000,
+    expires_at: 10000,
+    responded_at: null,
+    delivered_at: null,
+  });
+  const sideRequestNotification = {
+    ...item(sideRequest.id, "human.request"),
+    source_id: sideRequest.id,
+    path: `/activity?notifications=open&request=${sideRequest.id}`,
+  };
+  const sideNativeView = {
+    ...sideOnly,
+    sideThreadSourceId: "native-side",
+    sessions: [{ id: "native-side", agent: "codex-cli", host: null, session_id: "runtime-side" }],
+    requests: [sideRequest],
+  };
+  expect(notificationInView(nativeSideFinished, sideNativeView)).toBe(true);
+  expect(notificationInView(sideRequestNotification, sideNativeView)).toBe(true);
+  expect(
+    notificationInView(nativeSideFinished, {
+      ...sideNativeView,
+      search: "?project=all",
+    }),
+  ).toBe(false);
+  expect(
+    notificationInView(sideRequestNotification, {
+      ...sideNativeView,
+      search: "?project=all",
+    }),
   ).toBe(false);
 });

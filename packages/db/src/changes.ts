@@ -52,6 +52,7 @@ const TABLE_RESOURCES: Record<string, ChangeResource> = {
   session_messages: "session-messages",
   scratchpads: "scratchpads",
   workspace_environments: "workspaces",
+  project_secrets: "project-secrets",
 };
 const observers = new WeakMap<Database, () => void>();
 

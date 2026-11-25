@@ -1093,7 +1093,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1185,10 +1186,30 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            secretRefs?: {
+                                [key: string]: string;
+                            };
                             transcriptMark?: string;
                             forkedFrom?: {
                                 /** Format: uuid */
@@ -1220,6 +1241,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -1489,7 +1536,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1581,10 +1629,30 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            secretRefs?: {
+                                [key: string]: string;
+                            };
                             transcriptMark?: string;
                             forkedFrom?: {
                                 /** Format: uuid */
@@ -1616,6 +1684,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -1821,7 +1915,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -1913,10 +2008,30 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            secretRefs?: {
+                                [key: string]: string;
+                            };
                             transcriptMark?: string;
                             forkedFrom?: {
                                 /** Format: uuid */
@@ -1948,6 +2063,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -2156,7 +2297,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -2248,10 +2390,30 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            secretRefs?: {
+                                [key: string]: string;
+                            };
                             transcriptMark?: string;
                             forkedFrom?: {
                                 /** Format: uuid */
@@ -2283,6 +2445,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -2411,6 +2599,7 @@ export interface paths {
                             outcomes: {
                                 completed: number;
                                 stopped: number;
+                                interrupted: number;
                                 failed: number;
                                 running: number;
                             };
@@ -2435,12 +2624,95 @@ export interface paths {
                                 startedAt: number;
                                 durationMs: number | null;
                                 /** @enum {string} */
-                                outcome: "completed" | "stopped" | "failed" | "running";
+                                outcome: "completed" | "stopped" | "interrupted" | "failed" | "running";
                                 toolCalls: number;
                                 toolFailures: number;
                                 responseChars: number;
+                                /** @default null */
+                                model: string | null;
+                                /** @default null */
+                                usage: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                /** @default null */
+                                costUsd: number | null;
+                                /**
+                                 * @default unreadable
+                                 * @enum {string}
+                                 */
+                                usageSource: "recorded" | "estimated" | "unreadable";
                             }[];
                             turnTimelineTruncated: boolean;
+                            /**
+                             * @default {
+                             *       "totals": null,
+                             *       "attributed": null,
+                             *       "unattributed": null,
+                             *       "unattributedRequests": 0,
+                             *       "cacheHitRate": null,
+                             *       "cacheSavingsUsd": null,
+                             *       "totalCostUsd": null,
+                             *       "costComplete": false,
+                             *       "usageSource": "unreadable",
+                             *       "byModel": []
+                             *     }
+                             */
+                            usage: {
+                                totals: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                attributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributedRequests: number;
+                                cacheHitRate: number | null;
+                                cacheSavingsUsd: number | null;
+                                totalCostUsd: number | null;
+                                costComplete: boolean;
+                                /** @enum {string} */
+                                usageSource: "recorded" | "estimated" | "unreadable";
+                                byModel: {
+                                    model: string | null;
+                                    turns: number;
+                                    requests: number;
+                                    usage: {
+                                        input: number;
+                                        output: number;
+                                        cacheRead: number;
+                                        cacheWrite: number;
+                                        reasoning: number;
+                                        total: number;
+                                    };
+                                    costUsd: number | null;
+                                    cacheHitRate: number | null;
+                                    cacheSavingsUsd: number | null;
+                                    /** @enum {string} */
+                                    usageSource: "recorded" | "estimated" | "unreadable";
+                                }[];
+                            };
                             context: {
                                 backend: string;
                                 model: string | null;
@@ -2695,7 +2967,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -2787,10 +3060,30 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            secretRefs?: {
+                                [key: string]: string;
+                            };
                             transcriptMark?: string;
                             forkedFrom?: {
                                 /** Format: uuid */
@@ -2822,6 +3115,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3096,7 +3415,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3188,10 +3508,30 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            secretRefs?: {
+                                [key: string]: string;
+                            };
                             transcriptMark?: string;
                             forkedFrom?: {
                                 /** Format: uuid */
@@ -3223,6 +3563,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3278,7 +3644,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3369,6 +3736,23 @@ export interface paths {
                                     size: number;
                                     mimeType: string;
                                     description?: string;
+                                }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
                                 }[];
                             }[];
                             before: number | null;
@@ -3578,7 +3962,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -3670,10 +4055,30 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            secretRefs?: {
+                                [key: string]: string;
+                            };
                             transcriptMark?: string;
                             forkedFrom?: {
                                 /** Format: uuid */
@@ -3705,6 +4110,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -3968,7 +4399,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -4060,10 +4492,30 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             }[];
                             historyBefore?: number | null;
                             importedMessages?: number;
                             projectId?: string;
+                            secretRefs?: {
+                                [key: string]: string;
+                            };
                             transcriptMark?: string;
                             forkedFrom?: {
                                 /** Format: uuid */
@@ -4095,6 +4547,32 @@ export interface paths {
                             };
                             systemPromptDelivered?: boolean;
                             handoffBriefing?: string;
+                            turn?: {
+                                /** Format: uuid */
+                                runId: string;
+                                startedAt: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                lastHeartbeatAt?: number;
+                                host?: string;
+                                pid?: number;
+                                epoch?: number;
+                            };
+                            providerRefs?: {
+                                backend: string;
+                                host: string | null;
+                                runtimeId: string;
+                                cwd: string;
+                                attachedAt: number;
+                                /** @enum {string} */
+                                source: "started" | "resumed";
+                            }[];
+                            recovery?: {
+                                at: number;
+                                /** @enum {string} */
+                                mode: "transcript_handoff";
+                                reason: string;
+                            };
                             spawnedBy?: {
                                 sessionId: string;
                                 requestId?: string;
@@ -4164,7 +4642,8 @@ export interface paths {
                                     finishedAt?: number;
                                     durationMs?: number;
                                     /** @enum {string} */
-                                    outcome?: "completed" | "stopped" | "failed";
+                                    outcome?: "completed" | "stopped" | "failed" | "interrupted";
+                                    error?: string;
                                     usage?: {
                                         input_tokens: number;
                                         cached_input_tokens: number;
@@ -4256,6 +4735,23 @@ export interface paths {
                                     mimeType: string;
                                     description?: string;
                                 }[];
+                                deliveries?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                }[];
                             };
                         };
                     };
@@ -4313,6 +4809,7 @@ export interface paths {
                         permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
                         /** @enum {string} */
                         sendWhileRunning?: "steer" | "queue";
+                        confirmBusy?: boolean;
                         agentOptions?: {
                             [key: string]: {
                                 /** @enum {string} */
@@ -4375,6 +4872,9 @@ export interface paths {
                             route?: string;
                             /** @enum {boolean} */
                             voice?: true;
+                        };
+                        secret_refs?: {
+                            [key: string]: string;
                         };
                     };
                 };
@@ -7163,7 +7663,7 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval" | "command";
+                                kind: "question" | "approval" | "command" | "secret";
                                 command?: {
                                     script: string;
                                     cwd: string;
@@ -7179,6 +7679,18 @@ export interface paths {
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
                                 title?: string;
                                 prompt: string;
                                 /** @default [] */
@@ -7224,6 +7736,17 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "approval";
                                 approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
                             } | unknown;
                             created_at: number;
                             expires_at: number;
@@ -7231,6 +7754,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -7286,7 +7811,7 @@ export interface paths {
                             workspace: string;
                         }[];
                         /** @enum {string} */
-                        kind: "question" | "approval" | "command";
+                        kind: "question" | "approval" | "command" | "secret";
                         command?: {
                             script: string;
                             cwd: string;
@@ -7302,6 +7827,18 @@ export interface paths {
                             /** @default 60 */
                             timeout_seconds?: number;
                         };
+                        fields?: {
+                            key: string;
+                            label: string;
+                            description?: string;
+                            /** @default true */
+                            required?: boolean;
+                            /** @default false */
+                            multiline?: boolean;
+                            link?: string;
+                            reference_name?: string;
+                        }[];
+                        save_to_project?: boolean;
                         title?: string;
                         prompt: string;
                         /** @default [] */
@@ -7369,7 +7906,7 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval" | "command";
+                                kind: "question" | "approval" | "command" | "secret";
                                 command?: {
                                     script: string;
                                     cwd: string;
@@ -7385,6 +7922,18 @@ export interface paths {
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
                                 title?: string;
                                 prompt: string;
                                 /** @default [] */
@@ -7430,6 +7979,17 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "approval";
                                 approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
                             } | unknown;
                             created_at: number;
                             expires_at: number;
@@ -7437,6 +7997,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -7514,7 +8076,7 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval" | "command";
+                                kind: "question" | "approval" | "command" | "secret";
                                 command?: {
                                     script: string;
                                     cwd: string;
@@ -7530,6 +8092,18 @@ export interface paths {
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
                                 title?: string;
                                 prompt: string;
                                 /** @default [] */
@@ -7575,6 +8149,17 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "approval";
                                 approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
                             } | unknown;
                             created_at: number;
                             expires_at: number;
@@ -7582,6 +8167,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -7596,6 +8183,191 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/human-requests/{id}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Claim one-time secret response values or saved references */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description One-time secret delivery payload */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            request: {
+                                id: string;
+                                input: {
+                                    origin: {
+                                        session_id: string;
+                                        backend: string;
+                                        request_id: string;
+                                        tool_call_id?: string;
+                                        /** Format: uuid */
+                                        chat_thread_id?: string;
+                                        session_title?: string;
+                                        native_session_id?: string;
+                                        native_request_key?: string;
+                                        execution_host?: string | null;
+                                        channel?: {
+                                            connection: string;
+                                            target: string;
+                                            chat_id: string;
+                                            thread_id?: string;
+                                            sender_id: string;
+                                        };
+                                    };
+                                    /** @default null */
+                                    project_id: string | null;
+                                    rule_binding?: {
+                                        revision_id: string;
+                                        rule_id: string;
+                                        workspace: string;
+                                    };
+                                    rule_bindings?: {
+                                        revision_id: string;
+                                        rule_id: string;
+                                        workspace: string;
+                                    }[];
+                                    /** @enum {string} */
+                                    kind: "question" | "approval" | "command" | "secret";
+                                    command?: {
+                                        script: string;
+                                        cwd: string;
+                                        host?: string | null;
+                                        /** @default [] */
+                                        arguments: {
+                                            name: string;
+                                            label: string;
+                                            description?: string;
+                                            /** @default true */
+                                            required: boolean;
+                                        }[];
+                                        /** @default 60 */
+                                        timeout_seconds: number;
+                                    };
+                                    fields?: {
+                                        key: string;
+                                        label: string;
+                                        description?: string;
+                                        /** @default true */
+                                        required: boolean;
+                                        /** @default false */
+                                        multiline: boolean;
+                                        link?: string;
+                                        reference_name?: string;
+                                    }[];
+                                    save_to_project?: boolean;
+                                    title?: string;
+                                    prompt: string;
+                                    /** @default [] */
+                                    choices: string[];
+                                    /** @default {} */
+                                    choice_descriptions: {
+                                        [key: string]: string;
+                                    };
+                                    /** @default false */
+                                    multi_select: boolean;
+                                    /** @default [] */
+                                    notify: ("telegram" | "slack" | "slack-user")[];
+                                    action?: {
+                                        tool: string;
+                                        input: {
+                                            [key: string]: unknown;
+                                        };
+                                        cwd: string;
+                                        host: string;
+                                    };
+                                    /** @default 86400 */
+                                    expires_in_seconds: number;
+                                };
+                                /** @enum {string} */
+                                status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                                /** @default null */
+                                delivery_error: string | null;
+                                version: number;
+                                response: {
+                                    /** @enum {string} */
+                                    kind: "command";
+                                    script?: string;
+                                    exit_code: number;
+                                    stdout: string;
+                                    stderr: string;
+                                    truncated: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    kind: "question";
+                                    answer: string;
+                                    selected_choices?: string[];
+                                } | {
+                                    /** @enum {string} */
+                                    kind: "approval";
+                                    approved: boolean;
+                                } | {
+                                    /** @enum {string} */
+                                    kind: "secret";
+                                    stored: boolean;
+                                    references?: {
+                                        [key: string]: string;
+                                    };
+                                    /** @default [] */
+                                    delivered_fields: string[];
+                                    /** @default false */
+                                    consumed: boolean;
+                                } | unknown;
+                                created_at: number;
+                                expires_at: number;
+                                responded_at: number | null;
+                                delivered_at: number | null;
+                                /** @default null */
+                                seen_at: number | null;
+                                /** @default null */
+                                snooze_until: number | null;
+                                /**
+                                 * @default null
+                                 * @enum {string|null}
+                                 */
+                                push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                                /** @default null */
+                                push_error: string | null;
+                            };
+                            /** @enum {boolean} */
+                            secret: true;
+                            consumed: boolean;
+                            stored: boolean;
+                            values?: {
+                                [key: string]: string;
+                            };
+                            references?: {
+                                [key: string]: string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -7662,7 +8434,7 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval" | "command";
+                                kind: "question" | "approval" | "command" | "secret";
                                 command?: {
                                     script: string;
                                     cwd: string;
@@ -7678,6 +8450,18 @@ export interface paths {
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
                                 title?: string;
                                 prompt: string;
                                 /** @default [] */
@@ -7723,6 +8507,17 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "approval";
                                 approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
                             } | unknown;
                             created_at: number;
                             expires_at: number;
@@ -7730,6 +8525,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -7774,14 +8571,6 @@ export interface paths {
                         version: number;
                         response: {
                             /** @enum {string} */
-                            kind: "command";
-                            script?: string;
-                            exit_code: number;
-                            stdout: string;
-                            stderr: string;
-                            truncated: boolean;
-                        } | {
-                            /** @enum {string} */
                             kind: "question";
                             answer: string;
                             selected_choices?: string[];
@@ -7789,6 +8578,17 @@ export interface paths {
                             /** @enum {string} */
                             kind: "approval";
                             approved: boolean;
+                        } | {
+                            /** @enum {string} */
+                            kind: "secret";
+                            values: {
+                                [key: string]: string;
+                            };
+                            /** @default false */
+                            save_to_project?: boolean;
+                            reference_names?: {
+                                [key: string]: string;
+                            };
                         };
                     };
                 };
@@ -7835,7 +8635,7 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval" | "command";
+                                kind: "question" | "approval" | "command" | "secret";
                                 command?: {
                                     script: string;
                                     cwd: string;
@@ -7851,6 +8651,18 @@ export interface paths {
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
                                 title?: string;
                                 prompt: string;
                                 /** @default [] */
@@ -7896,6 +8708,17 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "approval";
                                 approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
                             } | unknown;
                             created_at: number;
                             expires_at: number;
@@ -7903,6 +8726,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -7916,6 +8741,346 @@ export interface paths {
             };
         };
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/human-requests/{id}/snooze": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Snooze a pending request until a future timestamp without changing its status or expiry */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        version: number;
+                        until?: number;
+                        after_seconds?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
+                                    execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval" | "command" | "secret";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host?: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        description?: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
+                                title?: string;
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack" | "slack-user")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        /** Wake a snoozed pending request immediately */
+        delete: {
+            parameters: {
+                query?: {
+                    version?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Human request */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            input: {
+                                origin: {
+                                    session_id: string;
+                                    backend: string;
+                                    request_id: string;
+                                    tool_call_id?: string;
+                                    /** Format: uuid */
+                                    chat_thread_id?: string;
+                                    session_title?: string;
+                                    native_session_id?: string;
+                                    native_request_key?: string;
+                                    execution_host?: string | null;
+                                    channel?: {
+                                        connection: string;
+                                        target: string;
+                                        chat_id: string;
+                                        thread_id?: string;
+                                        sender_id: string;
+                                    };
+                                };
+                                /** @default null */
+                                project_id: string | null;
+                                rule_binding?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                };
+                                rule_bindings?: {
+                                    revision_id: string;
+                                    rule_id: string;
+                                    workspace: string;
+                                }[];
+                                /** @enum {string} */
+                                kind: "question" | "approval" | "command" | "secret";
+                                command?: {
+                                    script: string;
+                                    cwd: string;
+                                    host?: string | null;
+                                    /** @default [] */
+                                    arguments: {
+                                        name: string;
+                                        label: string;
+                                        description?: string;
+                                        /** @default true */
+                                        required: boolean;
+                                    }[];
+                                    /** @default 60 */
+                                    timeout_seconds: number;
+                                };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
+                                title?: string;
+                                prompt: string;
+                                /** @default [] */
+                                choices: string[];
+                                /** @default {} */
+                                choice_descriptions: {
+                                    [key: string]: string;
+                                };
+                                /** @default false */
+                                multi_select: boolean;
+                                /** @default [] */
+                                notify: ("telegram" | "slack" | "slack-user")[];
+                                action?: {
+                                    tool: string;
+                                    input: {
+                                        [key: string]: unknown;
+                                    };
+                                    cwd: string;
+                                    host: string;
+                                };
+                                /** @default 86400 */
+                                expires_in_seconds: number;
+                            };
+                            /** @enum {string} */
+                            status: "pending" | "running" | "answered" | "delivered" | "cancelled" | "expired" | "unavailable";
+                            /** @default null */
+                            delivery_error: string | null;
+                            version: number;
+                            response: {
+                                /** @enum {string} */
+                                kind: "command";
+                                script?: string;
+                                exit_code: number;
+                                stdout: string;
+                                stderr: string;
+                                truncated: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "question";
+                                answer: string;
+                                selected_choices?: string[];
+                            } | {
+                                /** @enum {string} */
+                                kind: "approval";
+                                approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
+                            } | unknown;
+                            created_at: number;
+                            expires_at: number;
+                            responded_at: number | null;
+                            delivered_at: number | null;
+                            /** @default null */
+                            seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
+                            /**
+                             * @default null
+                             * @enum {string|null}
+                             */
+                            push_state: "pushing" | "pushed" | "failed" | "interrupted" | null;
+                            /** @default null */
+                            push_error: string | null;
+                        };
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -7992,7 +9157,7 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval" | "command";
+                                kind: "question" | "approval" | "command" | "secret";
                                 command?: {
                                     script: string;
                                     cwd: string;
@@ -8008,6 +9173,18 @@ export interface paths {
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
                                 title?: string;
                                 prompt: string;
                                 /** @default [] */
@@ -8053,6 +9230,17 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "approval";
                                 approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
                             } | unknown;
                             created_at: number;
                             expires_at: number;
@@ -8060,6 +9248,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -8145,7 +9335,7 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval" | "command";
+                                kind: "question" | "approval" | "command" | "secret";
                                 command?: {
                                     script: string;
                                     cwd: string;
@@ -8161,6 +9351,18 @@ export interface paths {
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
                                 title?: string;
                                 prompt: string;
                                 /** @default [] */
@@ -8206,6 +9408,17 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "approval";
                                 approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
                             } | unknown;
                             created_at: number;
                             expires_at: number;
@@ -8213,6 +9426,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -8298,7 +9513,7 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval" | "command";
+                                kind: "question" | "approval" | "command" | "secret";
                                 command?: {
                                     script: string;
                                     cwd: string;
@@ -8314,6 +9529,18 @@ export interface paths {
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
                                 title?: string;
                                 prompt: string;
                                 /** @default [] */
@@ -8359,6 +9586,17 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "approval";
                                 approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
                             } | unknown;
                             created_at: number;
                             expires_at: number;
@@ -8366,6 +9604,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -9171,6 +10411,16 @@ export interface paths {
                                 claude?: string;
                                 codex?: string;
                             };
+                            model_pricing?: {
+                                [key: string]: {
+                                    inputPerMillion: number;
+                                    outputPerMillion: number;
+                                    cacheReadPerMillion?: number;
+                                    cacheWritePerMillion?: number;
+                                };
+                            };
+                            /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
+                            setup_dismissed?: boolean;
                         };
                     };
                 };
@@ -9313,6 +10563,16 @@ export interface paths {
                             claude?: string;
                             codex?: string;
                         };
+                        model_pricing?: {
+                            [key: string]: {
+                                inputPerMillion: number;
+                                outputPerMillion: number;
+                                cacheReadPerMillion?: number;
+                                cacheWritePerMillion?: number;
+                            };
+                        };
+                        /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
+                        setup_dismissed?: boolean;
                     };
                 };
             };
@@ -9445,11 +10705,60 @@ export interface paths {
                                 claude?: string;
                                 codex?: string;
                             };
+                            model_pricing?: {
+                                [key: string]: {
+                                    inputPerMillion: number;
+                                    outputPerMillion: number;
+                                    cacheReadPerMillion?: number;
+                                    cacheWritePerMillion?: number;
+                                };
+                            };
+                            /** @description The first-run setup screen was dismissed; it stays hidden while no project exists. */
+                            setup_dismissed?: boolean;
                         };
                     };
                 };
             };
         };
+        trace?: never;
+    };
+    "/api/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * First-run status: detected agents and projects suggested from their session history
+         * @description Powers the web first-run screen: which coding agents are installed and signed in on the ORC host, which folders their discovered sessions were last used in, and the current default agent. Detection is file- and PATH-based; it does not start any agent.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description First-run setup status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SetupStatus"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/usage/history": {
@@ -11082,6 +12391,100 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/system/shutdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop the daemon gracefully: refuse new chat turns, let active ones finish and persist their resumable session state, then exit */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description Shutdown accepted; the process exits once active work is durable */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ShutdownResponse"];
+                    };
+                };
+                /** @description This process registered no shutdown handler, as with an embedded app that mounts the API routes without the daemon runtime */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            code: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read recent structured daemon logs and spawn diagnostics */
+        get: {
+            parameters: {
+                query?: {
+                    lines?: number;
+                    level?: "debug" | "info" | "warn" | "error";
+                    ns?: string;
+                    q?: string;
+                    source?: "orc" | "daemon" | "all";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Recent daemon log entries */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SystemLogs"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/mcp/tool": {
         parameters: {
             query?: never;
@@ -12121,6 +13524,442 @@ export interface paths {
                     };
                     content: {
                         "application/json": components["schemas"]["ProjectComment"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List project secret metadata (never returns values) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Project secret metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            secrets: {
+                                id: string;
+                                project_id: string;
+                                name: string;
+                                reference: string;
+                                description: string | null;
+                                check: {
+                                    /** @enum {string} */
+                                    type: "http";
+                                    url: string;
+                                    /**
+                                     * @default GET
+                                     * @enum {string}
+                                     */
+                                    method: "GET" | "HEAD" | "POST";
+                                    /** @default Authorization */
+                                    header_name: string;
+                                    /** @default Bearer */
+                                    value_prefix: string;
+                                    expected_status?: number[];
+                                    /** @default 10 */
+                                    timeout_seconds: number;
+                                } | {
+                                    /** @enum {string} */
+                                    type: "command";
+                                    script: string;
+                                    /** @default ORC_SECRET_VALUE */
+                                    env_name: string;
+                                    cwd?: string;
+                                    host?: string | null;
+                                    /** @default 15 */
+                                    timeout_seconds: number;
+                                } | unknown;
+                                /** Format: date-time */
+                                created_at: string;
+                                /** Format: date-time */
+                                updated_at: string;
+                                /** Format: date-time */
+                                last_used_at: string | null;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Create or rotate a project secret */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        name: string;
+                        value: string;
+                        description?: string | null;
+                        check?: {
+                            /** @enum {string} */
+                            type: "http";
+                            url: string;
+                            /**
+                             * @default GET
+                             * @enum {string}
+                             */
+                            method?: "GET" | "HEAD" | "POST";
+                            /** @default Authorization */
+                            header_name?: string;
+                            /** @default Bearer */
+                            value_prefix?: string;
+                            expected_status?: number[];
+                            /** @default 10 */
+                            timeout_seconds?: number;
+                        } | {
+                            /** @enum {string} */
+                            type: "command";
+                            script: string;
+                            /** @default ORC_SECRET_VALUE */
+                            env_name?: string;
+                            cwd?: string;
+                            host?: string | null;
+                            /** @default 15 */
+                            timeout_seconds?: number;
+                        } | unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Rotated project secret metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string;
+                            name: string;
+                            reference: string;
+                            description: string | null;
+                            check: {
+                                /** @enum {string} */
+                                type: "http";
+                                url: string;
+                                /**
+                                 * @default GET
+                                 * @enum {string}
+                                 */
+                                method: "GET" | "HEAD" | "POST";
+                                /** @default Authorization */
+                                header_name: string;
+                                /** @default Bearer */
+                                value_prefix: string;
+                                expected_status?: number[];
+                                /** @default 10 */
+                                timeout_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                type: "command";
+                                script: string;
+                                /** @default ORC_SECRET_VALUE */
+                                env_name: string;
+                                cwd?: string;
+                                host?: string | null;
+                                /** @default 15 */
+                                timeout_seconds: number;
+                            } | unknown;
+                            /** Format: date-time */
+                            created_at: string;
+                            /** Format: date-time */
+                            updated_at: string;
+                            /** Format: date-time */
+                            last_used_at: string | null;
+                        };
+                    };
+                };
+                /** @description Created project secret metadata */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string;
+                            name: string;
+                            reference: string;
+                            description: string | null;
+                            check: {
+                                /** @enum {string} */
+                                type: "http";
+                                url: string;
+                                /**
+                                 * @default GET
+                                 * @enum {string}
+                                 */
+                                method: "GET" | "HEAD" | "POST";
+                                /** @default Authorization */
+                                header_name: string;
+                                /** @default Bearer */
+                                value_prefix: string;
+                                expected_status?: number[];
+                                /** @default 10 */
+                                timeout_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                type: "command";
+                                script: string;
+                                /** @default ORC_SECRET_VALUE */
+                                env_name: string;
+                                cwd?: string;
+                                host?: string | null;
+                                /** @default 15 */
+                                timeout_seconds: number;
+                            } | unknown;
+                            /** Format: date-time */
+                            created_at: string;
+                            /** Format: date-time */
+                            updated_at: string;
+                            /** Format: date-time */
+                            last_used_at: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/secrets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Rotate a project secret value or update its metadata */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        value?: string;
+                        description?: string | null;
+                        check?: {
+                            /** @enum {string} */
+                            type: "http";
+                            url: string;
+                            /**
+                             * @default GET
+                             * @enum {string}
+                             */
+                            method?: "GET" | "HEAD" | "POST";
+                            /** @default Authorization */
+                            header_name?: string;
+                            /** @default Bearer */
+                            value_prefix?: string;
+                            expected_status?: number[];
+                            /** @default 10 */
+                            timeout_seconds?: number;
+                        } | {
+                            /** @enum {string} */
+                            type: "command";
+                            script: string;
+                            /** @default ORC_SECRET_VALUE */
+                            env_name?: string;
+                            cwd?: string;
+                            host?: string | null;
+                            /** @default 15 */
+                            timeout_seconds?: number;
+                        } | unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Updated project secret metadata */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string;
+                            name: string;
+                            reference: string;
+                            description: string | null;
+                            check: {
+                                /** @enum {string} */
+                                type: "http";
+                                url: string;
+                                /**
+                                 * @default GET
+                                 * @enum {string}
+                                 */
+                                method: "GET" | "HEAD" | "POST";
+                                /** @default Authorization */
+                                header_name: string;
+                                /** @default Bearer */
+                                value_prefix: string;
+                                expected_status?: number[];
+                                /** @default 10 */
+                                timeout_seconds: number;
+                            } | {
+                                /** @enum {string} */
+                                type: "command";
+                                script: string;
+                                /** @default ORC_SECRET_VALUE */
+                                env_name: string;
+                                cwd?: string;
+                                host?: string | null;
+                                /** @default 15 */
+                                timeout_seconds: number;
+                            } | unknown;
+                            /** Format: date-time */
+                            created_at: string;
+                            /** Format: date-time */
+                            updated_at: string;
+                            /** Format: date-time */
+                            last_used_at: string | null;
+                        };
+                    };
+                };
+            };
+        };
+        post?: never;
+        /** Delete a project secret */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/projects/{id}/secrets/{name}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Validate a project secret reference without revealing its value */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        check?: {
+                            /** @enum {string} */
+                            type: "http";
+                            url: string;
+                            /**
+                             * @default GET
+                             * @enum {string}
+                             */
+                            method?: "GET" | "HEAD" | "POST";
+                            /** @default Authorization */
+                            header_name?: string;
+                            /** @default Bearer */
+                            value_prefix?: string;
+                            expected_status?: number[];
+                            /** @default 10 */
+                            timeout_seconds?: number;
+                        } | {
+                            /** @enum {string} */
+                            type: "command";
+                            script: string;
+                            /** @default ORC_SECRET_VALUE */
+                            env_name?: string;
+                            cwd?: string;
+                            host?: string | null;
+                            /** @default 15 */
+                            timeout_seconds?: number;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Validation result without secret values */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok: boolean;
+                            reference: string;
+                            /** @enum {string} */
+                            mode: "stored" | "http" | "command";
+                            status: number | null;
+                            message: string;
+                            /** Format: date-time */
+                            checked_at: string;
+                        };
                     };
                 };
             };
@@ -13451,7 +15290,7 @@ export interface paths {
                                     workspace: string;
                                 }[];
                                 /** @enum {string} */
-                                kind: "question" | "approval" | "command";
+                                kind: "question" | "approval" | "command" | "secret";
                                 command?: {
                                     script: string;
                                     cwd: string;
@@ -13467,6 +15306,18 @@ export interface paths {
                                     /** @default 60 */
                                     timeout_seconds: number;
                                 };
+                                fields?: {
+                                    key: string;
+                                    label: string;
+                                    description?: string;
+                                    /** @default true */
+                                    required: boolean;
+                                    /** @default false */
+                                    multiline: boolean;
+                                    link?: string;
+                                    reference_name?: string;
+                                }[];
+                                save_to_project?: boolean;
                                 title?: string;
                                 prompt: string;
                                 /** @default [] */
@@ -13512,6 +15363,17 @@ export interface paths {
                                 /** @enum {string} */
                                 kind: "approval";
                                 approved: boolean;
+                            } | {
+                                /** @enum {string} */
+                                kind: "secret";
+                                stored: boolean;
+                                references?: {
+                                    [key: string]: string;
+                                };
+                                /** @default [] */
+                                delivered_fields: string[];
+                                /** @default false */
+                                consumed: boolean;
                             } | unknown;
                             created_at: number;
                             expires_at: number;
@@ -13519,6 +15381,8 @@ export interface paths {
                             delivered_at: number | null;
                             /** @default null */
                             seen_at: number | null;
+                            /** @default null */
+                            snooze_until: number | null;
                             /**
                              * @default null
                              * @enum {string|null}
@@ -13911,6 +15775,73 @@ export interface paths {
                                     rewrite_command: boolean;
                                 }[];
                             };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/rules/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    workspace?: string;
+                    days?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Aggregated rule volume, abstain rate and denials per rule */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            days: number;
+                            totals: {
+                                events: number;
+                                abstains: number;
+                                outcomes: number;
+                                denials: number;
+                                abstain_rate: number;
+                            };
+                            per_workspace: {
+                                workspace: string;
+                                events: number;
+                                abstains: number;
+                                outcomes: number;
+                                last_seen: number;
+                            }[];
+                            per_rule: {
+                                workspace: string;
+                                revision_id: string;
+                                rule_id: string;
+                                outcome: string;
+                                count: number;
+                                last_seen: number;
+                            }[];
+                            per_day: {
+                                day: number;
+                                events: number;
+                                abstains: number;
+                            }[];
                         };
                     };
                 };
@@ -17477,7 +19408,7 @@ export interface paths {
                 query?: {
                     project_id?: string;
                     scope?: "global" | "all";
-                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "job_run" | "settings" | "task" | "job" | "rule" | "terminal" | "auth";
+                    entity_type?: "memory" | "skill" | "kb" | "notification" | "human_request" | "project_secret" | "job_run" | "settings" | "task" | "job" | "rule" | "terminal" | "auth";
                     session_id?: string;
                     since?: number | null;
                     limit?: number;
@@ -20175,6 +22106,7 @@ export interface paths {
                             outcomes: {
                                 completed: number;
                                 stopped: number;
+                                interrupted: number;
                                 failed: number;
                                 running: number;
                             };
@@ -20199,12 +22131,95 @@ export interface paths {
                                 startedAt: number;
                                 durationMs: number | null;
                                 /** @enum {string} */
-                                outcome: "completed" | "stopped" | "failed" | "running";
+                                outcome: "completed" | "stopped" | "interrupted" | "failed" | "running";
                                 toolCalls: number;
                                 toolFailures: number;
                                 responseChars: number;
+                                /** @default null */
+                                model: string | null;
+                                /** @default null */
+                                usage: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                /** @default null */
+                                costUsd: number | null;
+                                /**
+                                 * @default unreadable
+                                 * @enum {string}
+                                 */
+                                usageSource: "recorded" | "estimated" | "unreadable";
                             }[];
                             turnTimelineTruncated: boolean;
+                            /**
+                             * @default {
+                             *       "totals": null,
+                             *       "attributed": null,
+                             *       "unattributed": null,
+                             *       "unattributedRequests": 0,
+                             *       "cacheHitRate": null,
+                             *       "cacheSavingsUsd": null,
+                             *       "totalCostUsd": null,
+                             *       "costComplete": false,
+                             *       "usageSource": "unreadable",
+                             *       "byModel": []
+                             *     }
+                             */
+                            usage: {
+                                totals: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                attributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributed: {
+                                    input: number;
+                                    output: number;
+                                    cacheRead: number;
+                                    cacheWrite: number;
+                                    reasoning: number;
+                                    total: number;
+                                } | null;
+                                unattributedRequests: number;
+                                cacheHitRate: number | null;
+                                cacheSavingsUsd: number | null;
+                                totalCostUsd: number | null;
+                                costComplete: boolean;
+                                /** @enum {string} */
+                                usageSource: "recorded" | "estimated" | "unreadable";
+                                byModel: {
+                                    model: string | null;
+                                    turns: number;
+                                    requests: number;
+                                    usage: {
+                                        input: number;
+                                        output: number;
+                                        cacheRead: number;
+                                        cacheWrite: number;
+                                        reasoning: number;
+                                        total: number;
+                                    };
+                                    costUsd: number | null;
+                                    cacheHitRate: number | null;
+                                    cacheSavingsUsd: number | null;
+                                    /** @enum {string} */
+                                    usageSource: "recorded" | "estimated" | "unreadable";
+                                }[];
+                            };
                             context: {
                                 backend: string;
                                 model: string | null;
@@ -21021,6 +23036,23 @@ export interface paths {
                                 sender_backend: string | null;
                                 sender_label: string;
                                 body: string;
+                                delivery?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                } | null;
                                 position: number;
                                 hop: number;
                                 /** @enum {string} */
@@ -21087,6 +23119,23 @@ export interface paths {
                                 sender_backend: string | null;
                                 sender_label: string;
                                 body: string;
+                                delivery?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                } | null;
                                 position: number;
                                 hop: number;
                                 /** @enum {string} */
@@ -21105,6 +23154,11 @@ export interface paths {
                                 status: string;
                                 /** @enum {string} */
                                 delivery: "hook" | "resume" | "unsupported" | "chat" | "steer";
+                            };
+                            receipt?: {
+                                /** @enum {string} */
+                                status: "queued" | "steered" | "resumed" | "unsupported" | "failed";
+                                note: string;
                             };
                         };
                     };
@@ -21188,6 +23242,23 @@ export interface paths {
                                 sender_backend: string | null;
                                 sender_label: string;
                                 body: string;
+                                delivery?: {
+                                    id?: string;
+                                    /** @enum {string} */
+                                    kind: "child_outcome" | "relay";
+                                    session_id?: string | null;
+                                    title: string;
+                                    /** @enum {string} */
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    /** @enum {string} */
+                                    waiting_for?: "question" | "approval";
+                                    summary: string;
+                                    body?: string;
+                                    /** @enum {string} */
+                                    sender_kind?: "session" | "human" | "channel" | "system";
+                                    hop?: number;
+                                    timestamp?: number;
+                                } | null;
                                 position: number;
                                 hop: number;
                                 /** @enum {string} */
@@ -21206,6 +23277,11 @@ export interface paths {
                                 status: string;
                                 /** @enum {string} */
                                 delivery: "hook" | "resume" | "unsupported" | "chat" | "steer";
+                            };
+                            receipt?: {
+                                /** @enum {string} */
+                                status: "queued" | "steered" | "resumed" | "unsupported" | "failed";
+                                note: string;
                             };
                         };
                     };
@@ -21279,6 +23355,23 @@ export interface paths {
                             sender_backend: string | null;
                             sender_label: string;
                             body: string;
+                            delivery?: {
+                                id?: string;
+                                /** @enum {string} */
+                                kind: "child_outcome" | "relay";
+                                session_id?: string | null;
+                                title: string;
+                                /** @enum {string} */
+                                outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                /** @enum {string} */
+                                waiting_for?: "question" | "approval";
+                                summary: string;
+                                body?: string;
+                                /** @enum {string} */
+                                sender_kind?: "session" | "human" | "channel" | "system";
+                                hop?: number;
+                                timestamp?: number;
+                            } | null;
                             position: number;
                             hop: number;
                             /** @enum {string} */
@@ -21362,6 +23455,116 @@ export interface paths {
                             sender_backend: string | null;
                             sender_label: string;
                             body: string;
+                            delivery?: {
+                                id?: string;
+                                /** @enum {string} */
+                                kind: "child_outcome" | "relay";
+                                session_id?: string | null;
+                                title: string;
+                                /** @enum {string} */
+                                outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                /** @enum {string} */
+                                waiting_for?: "question" | "approval";
+                                summary: string;
+                                body?: string;
+                                /** @enum {string} */
+                                sender_kind?: "session" | "human" | "channel" | "system";
+                                hop?: number;
+                                timestamp?: number;
+                            } | null;
+                            position: number;
+                            hop: number;
+                            /** @enum {string} */
+                            state: "queued" | "delivering" | "delivered" | "cancelled" | "interrupted" | "failed";
+                            /** @enum {string|null} */
+                            delivered_via: "hook" | "chat" | "resume" | "steer" | null;
+                            delivery_error: string | null;
+                            request_id: string | null;
+                            created_at: number;
+                            updated_at: number;
+                            delivered_at: number | null;
+                        };
+                    };
+                };
+                /** @description Session or message not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description Message is no longer queued, or a safety limit was reached */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/session-messages/{id}/deliver": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Steer a queued session message into the active turn now */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Session message */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            project_id: string | null;
+                            target_session_id: string;
+                            target_native_id: string | null;
+                            target_backend: string;
+                            /** @enum {string} */
+                            sender_kind: "session" | "human" | "channel" | "system";
+                            sender_session_id: string | null;
+                            sender_native_id: string | null;
+                            sender_backend: string | null;
+                            sender_label: string;
+                            body: string;
+                            delivery?: {
+                                id?: string;
+                                /** @enum {string} */
+                                kind: "child_outcome" | "relay";
+                                session_id?: string | null;
+                                title: string;
+                                /** @enum {string} */
+                                outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                /** @enum {string} */
+                                waiting_for?: "question" | "approval";
+                                summary: string;
+                                body?: string;
+                                /** @enum {string} */
+                                sender_kind?: "session" | "human" | "channel" | "system";
+                                hop?: number;
+                                timestamp?: number;
+                            } | null;
                             position: number;
                             hop: number;
                             /** @enum {string} */
@@ -21468,6 +23671,12 @@ export interface paths {
                             cwd: string;
                             started_at: number | null;
                             updated_at: number;
+                            last_activity_at?: number | null;
+                            last_activity?: string | null;
+                            activity_count?: number;
+                            start_error?: string | null;
+                            native_session_id?: string | null;
+                            live_session_id?: string | null;
                         };
                     };
                 };
@@ -21552,6 +23761,12 @@ export interface paths {
                             cwd: string;
                             started_at: number | null;
                             updated_at: number;
+                            last_activity_at?: number | null;
+                            last_activity?: string | null;
+                            activity_count?: number;
+                            start_error?: string | null;
+                            native_session_id?: string | null;
+                            live_session_id?: string | null;
                         };
                     };
                 };
@@ -21625,6 +23840,12 @@ export interface paths {
                                 cwd: string;
                                 started_at: number | null;
                                 updated_at: number;
+                                last_activity_at?: number | null;
+                                last_activity?: string | null;
+                                activity_count?: number;
+                                start_error?: string | null;
+                                native_session_id?: string | null;
+                                live_session_id?: string | null;
                             }[];
                         };
                     };
@@ -21808,6 +24029,12 @@ export interface paths {
                             cwd: string;
                             started_at: number | null;
                             updated_at: number;
+                            last_activity_at?: number | null;
+                            last_activity?: string | null;
+                            activity_count?: number;
+                            start_error?: string | null;
+                            native_session_id?: string | null;
+                            live_session_id?: string | null;
                             timed_out: boolean;
                         };
                     };
@@ -21898,6 +24125,12 @@ export interface paths {
                                 cwd: string;
                                 started_at: number | null;
                                 updated_at: number;
+                                last_activity_at?: number | null;
+                                last_activity?: string | null;
+                                activity_count?: number;
+                                start_error?: string | null;
+                                native_session_id?: string | null;
+                                live_session_id?: string | null;
                             }[];
                             timed_out: boolean;
                         };
@@ -21974,6 +24207,12 @@ export interface paths {
                             cwd: string;
                             started_at: number | null;
                             updated_at: number;
+                            last_activity_at?: number | null;
+                            last_activity?: string | null;
+                            activity_count?: number;
+                            start_error?: string | null;
+                            native_session_id?: string | null;
+                            live_session_id?: string | null;
                         };
                     };
                 };
@@ -22691,6 +24930,10 @@ export interface paths {
                          * @enum {string}
                          */
                         permissionMode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                        /** @description Opt-in project secret references (ENV_VAR -> project/<name>) injected into the launched process. */
+                        secret_refs?: {
+                            [key: string]: string;
+                        };
                     };
                 };
             };
@@ -24399,6 +26642,8 @@ export interface components {
         };
         NotificationPage: {
             notifications: components["schemas"]["OrcNotification"][];
+            /** @default [] */
+            snoozed: components["schemas"]["OrcNotification"][];
             unread: number;
             has_more: boolean;
         };
@@ -24417,6 +26662,38 @@ export interface components {
             expires_at: number;
             read_at: number | null;
             dismissed_at: number | null;
+            /** @default null */
+            snooze_until: number | null;
+        };
+        SetupStatus: {
+            agents: components["schemas"]["SetupAgent"][];
+            suggestions: components["schemas"]["SetupProjectSuggestion"][];
+            /** @description Agent of the default provider profile (Settings → Providers). */
+            default_agent: string | null;
+        };
+        SetupAgent: {
+            /** @enum {string} */
+            agent: "claude" | "codex" | "opencode" | "pi" | "cursor";
+            label: string;
+            installed: boolean;
+            path: string | null;
+            version: string | null;
+            /** @description Null when the credential store cannot be inspected (e.g. macOS keychain). */
+            signed_in: boolean | null;
+            account_label: string | null;
+            /** @description The one action that unblocks this agent, when one exists. */
+            fix: {
+                label: string;
+                command: string;
+            } | null;
+        };
+        SetupProjectSuggestion: {
+            path: string;
+            name: string;
+            agents: string[];
+            sessions: number;
+            /** Format: date-time */
+            last_activity_at: string;
         };
         SystemAbout: {
             version: string;
@@ -24432,6 +26709,26 @@ export interface components {
             instance_id: string;
             /** @enum {boolean} */
             restarting: true;
+        };
+        ShutdownResponse: {
+            instance_id: string;
+            /** @enum {boolean} */
+            shutting_down: true;
+        };
+        SystemLogs: {
+            path: string;
+            daemon_log_path: string;
+            entries: {
+                ts: string | null;
+                /** @enum {string|null} */
+                level: "debug" | "info" | "warn" | "error" | null;
+                ns: string | null;
+                msg: string;
+                data?: string;
+                /** @enum {string} */
+                source: "orc" | "daemon";
+            }[];
+            total: number;
         };
         McpToolResult: {
             result: string;

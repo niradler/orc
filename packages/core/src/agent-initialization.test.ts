@@ -12,11 +12,16 @@ import {
 } from "./provider-service.js";
 
 const home = mkdtempSync(join(tmpdir(), "orc-agent-init-"));
-const original = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+const original = {
+  HOME: process.env.HOME,
+  USERPROFILE: process.env.USERPROFILE,
+  ORC_HOME: process.env.ORC_HOME,
+};
 
 beforeEach(() => {
   process.env.HOME = home;
   process.env.USERPROFILE = home;
+  process.env.ORC_HOME = join(home, ".orc");
   mkdirSync(join(home, ".orc"), { recursive: true });
   writeFileSync(globalConfigPath(), "{}");
   resetConfig();

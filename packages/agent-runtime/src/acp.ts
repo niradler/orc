@@ -84,6 +84,25 @@ function thoughtLevelOption(
 
 type ChildSessionMeta = { id: string; title?: string; parentId?: string };
 
+/**
+ * OpenCode's native question tool blocks the turn until its form is answered.
+ * Versions that surface it over ACP send `elicitation/create` referencing the
+ * tool call within milliseconds (verified on 2.2.6 and 2.3.0); a question tool
+ * call that stays pending without one can never be answered through ORC, so it
+ * fails the turn instead of hanging silently (#512).
+ */
+const QUESTION_SURFACE_GRACE_MS = 30_000;
+const QUESTION_NOT_SURFACED_MESSAGE =
+  "The agent asked a question with its native question tool, but the question never reached ORC over ACP. The turn was stopped instead of waiting forever. Update the agent on the execution host if this repeats.";
+
+type QuestionToolFrame = {
+  sessionUpdate?: string;
+  toolCallId?: string;
+  name?: unknown;
+  title?: string | null;
+  status?: string | null;
+};
+
 /** OpenCode tags child-session updates with _meta["opencode/child-session"]. */
 function childSessionMeta(update: unknown): ChildSessionMeta | null {
   const meta = (update as { _meta?: Record<string, unknown> } | null)?._meta?.[
@@ -241,11 +260,14 @@ export class AcpSession implements AgentSession {
       resolve: (value: CreateElicitationResponse) => void;
     }
   >();
+  /** Pending OpenCode `question` tool calls awaiting their elicitation, by tool-call id. */
+  private readonly questionSurfaceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     private readonly opts: SessionOpts,
     private readonly command: readonly string[],
     initial: AgentCapabilities = ACP_CAPABILITIES,
+    private readonly guardNativeQuestions = false,
   ) {
     this.capabilities = { ...initial };
     this.runtimeId = opts.runtimeSessionId;
@@ -269,6 +291,7 @@ export class AcpSession implements AgentSession {
     this.failure = this.stderr.append(message);
     if (!this.done) this.queue.push({ type: "error", data: this.failure });
     this.done = true;
+    this.clearQuestionSurfaceTimers();
     this.cancelPending();
     this.wake?.();
     this.connection?.close();
@@ -289,6 +312,51 @@ export class AcpSession implements AgentSession {
   private cancelPending(): void {
     this.cancelPermissions();
     this.cancelQuestions();
+  }
+
+  /** Stop watching every pending native question (turn end, close, or failure). */
+  private clearQuestionSurfaceTimers(): void {
+    for (const timer of this.questionSurfaceTimers.values()) clearTimeout(timer);
+    this.questionSurfaceTimers.clear();
+  }
+
+  /** A surfaced question (its elicitation arrived) no longer needs the guard. */
+  private clearQuestionSurface(toolCallId: string | undefined): void {
+    if (!toolCallId) return;
+    const timer = this.questionSurfaceTimers.get(toolCallId);
+    if (timer) {
+      clearTimeout(timer);
+      this.questionSurfaceTimers.delete(toolCallId);
+    }
+  }
+
+  /** Arms or disarms the no-deadlock guard from a parent tool-call frame. */
+  private watchQuestionTool(update: unknown): void {
+    if (!this.guardNativeQuestions || this.closed || this.failure) return;
+    const frame = update as QuestionToolFrame;
+    if (frame.sessionUpdate !== "tool_call" && frame.sessionUpdate !== "tool_call_update") return;
+    const toolCallId = frame.toolCallId;
+    if (!toolCallId) return;
+    const status = frame.status;
+    if (status === "completed" || status === "failed" || status === "cancelled") {
+      this.clearQuestionSurface(toolCallId);
+      return;
+    }
+    const isQuestion = frame.title === "question" || frame.name === "question";
+    if (!isQuestion) return;
+    if (status !== "pending" && status !== "in_progress") return;
+    if (this.questionSurfaceTimers.has(toolCallId)) return;
+    const grace = this.opts.acpQuestionSurfaceMs ?? QUESTION_SURFACE_GRACE_MS;
+    const timer = setTimeout(() => {
+      this.questionSurfaceTimers.delete(toolCallId);
+      if (this.closed || this.failure || this.done) return;
+      this.push({ type: "error", data: QUESTION_NOT_SURFACED_MESSAGE });
+      // close() cancels the turn first, so the agent can settle its own form
+      // instead of leaving it pending in its store.
+      void this.close();
+    }, grace);
+    timer.unref();
+    this.questionSurfaceTimers.set(toolCallId, timer);
   }
 
   private async request<T>(operation: Promise<T>, method: string): Promise<T> {
@@ -379,6 +447,13 @@ export class AcpSession implements AgentSession {
     params: CreateElicitationRequest,
     signal: AbortSignal,
   ): Promise<CreateElicitationResponse> {
+    // The question surfaced over ACP, so the guard must not fire for it. A form
+    // elicitation without a toolCallId clears every watch rather than risk
+    // failing a turn that is legitimately waiting (#512).
+    const surfacedToolCallId = (params as { toolCallId?: unknown }).toolCallId;
+    if (typeof surfacedToolCallId === "string" && surfacedToolCallId)
+      this.clearQuestionSurface(surfacedToolCallId);
+    else this.clearQuestionSurfaceTimers();
     if (
       this.replaying ||
       this.closed ||
@@ -595,6 +670,7 @@ export class AcpSession implements AgentSession {
             this.childUpdate(child, params);
             return;
           }
+          this.watchQuestionTool(params.update);
           const events = this.parse(JSON.stringify({ method: "session/update", params }));
           for (const event of events) {
             this.push(event);
@@ -844,6 +920,7 @@ export class AcpSession implements AgentSession {
     this.parse = createAcpxParser();
     this.children.clear();
     this.tasks.clear();
+    this.clearQuestionSurfaceTimers();
     this.push({ type: "capabilities", data: this.capabilities });
     for (const note of this.setupNotes.splice(0)) this.push({ type: "system_status", data: note });
     if (this.movedFrom && !this.moveNoted) {
@@ -932,6 +1009,7 @@ export class AcpSession implements AgentSession {
       .finally(() => {
         this.done = true;
         this.busy = false;
+        this.clearQuestionSurfaceTimers();
         this.cancelPending();
         this.wake?.();
       });
@@ -1064,6 +1142,7 @@ export class AcpSession implements AgentSession {
     // An explicit Stop already cancelled the turn; do not cancel a second time.
     if (!this.cancelling) await this.interrupt().catch(() => {});
     this.closed = true;
+    this.clearQuestionSurfaceTimers();
     this.cancelPending();
     this.connection?.close();
     if (this.child) {
@@ -1183,7 +1262,12 @@ function createAcpBackend(builtin?: BuiltinAcpAgent): AgentBackend {
       throw new Error(
         "ACPX launch flags do not apply to direct ACP. Configure the ACP command in ORC config.",
       );
-    const session = new AcpSession(opts, acpCommand(opts, builtin), builtin?.capabilities);
+    const session = new AcpSession(
+      opts,
+      acpCommand(opts, builtin),
+      builtin?.capabilities,
+      builtin?.name === "opencode" || opts.acpAgent === "opencode",
+    );
     await session.initialize();
     return session;
   };

@@ -1,7 +1,8 @@
-export function buildMcpUrl(apiBase: string, project?: string): string {
+export function buildMcpUrl(apiBase: string, project?: string, sessionId?: string): string {
   const url = new URL(`${apiBase.replace(/\/+$/, "")}/mcp`);
   url.searchParams.set("mode", "meta");
   if (project) url.searchParams.set("project", project);
+  if (sessionId) url.searchParams.set("session", sessionId);
   return url.toString();
 }
 

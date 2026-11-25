@@ -20,6 +20,7 @@ import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { FormDialog } from "@/components/FormDialog";
 import { GithubSyncFields } from "@/components/GithubSyncFields";
 import { HelpPopover } from "@/components/HelpPopover";
+import { ProjectSecretsSettings } from "@/components/ProjectSecretsSettings";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { TaskDetailSheet } from "@/components/TaskDetailSheet";
 import { Button } from "@/components/ui/button";
@@ -535,6 +536,7 @@ function EditProjectDialog({
       { id: "details", label: "Details" },
       { id: "configuration", label: "Configuration" },
       { id: "workspace", label: "Workspace" },
+      { id: "secrets", label: "Secrets" },
     ],
     open,
   );
@@ -809,6 +811,9 @@ function EditProjectDialog({
                 </FormStepPanel>
                 <FormStepPanel steps={steps} id="workspace">
                   <WorkspaceEnvironmentFields value={workspace} onChange={setWorkspace} />
+                </FormStepPanel>
+                <FormStepPanel steps={steps} id="secrets">
+                  <ProjectSecretsSettings projectId={project.id} active={open} embedded />
                 </FormStepPanel>
                 {updateProject.error && (
                   <p role="alert" className="text-sm text-error md:col-span-2">
