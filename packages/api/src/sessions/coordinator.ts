@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { chatBackendFor } from "@orc/agent-runtime";
-import type { ChatThread } from "@orc/core/chat";
+import type { ChatSettings, ChatThread } from "@orc/core/chat";
 import { providerChatDefaults } from "@orc/core/provider-service";
 import { AuditLog } from "@orc/db/audit";
 import { ChatStore } from "@orc/db/chat";
@@ -36,9 +36,29 @@ export function coordinatorSessionId(client: string): string {
 }
 
 /**
+ * Children inherit the coordinator thread's config at spawn time while `session_start`
+ * reports live Settings defaults, so the creation-time snapshot would otherwise disagree
+ * with the reported values forever after a defaults change. Treat the coordinator's chat
+ * settings as a view of the current defaults and rewrite them only when they diverge.
+ */
+function refreshCoordinatorDefaults(
+  store: ChatStore,
+  existing: ChatThread,
+  defaults: ChatSettings,
+): ChatThread {
+  // Key order is deterministic on both sides (schema parse, then JSON round-trip
+  // through the thread store), so an equality check avoids a write on every request.
+  if (JSON.stringify(existing.config) === JSON.stringify(defaults)) return existing;
+  store.save({ ...existing, config: defaults, backend: chatBackendFor(defaults.agent) });
+  return store.get(existing.id) ?? existing;
+}
+
+/**
  * The lightweight root session an authenticated MCP connection gets when it has no
  * `?session=` binding. A real chat thread, so spawn/stop/message ownership works through
- * the existing lineage rules. Children inherit its Settings defaults and folder.
+ * the existing lineage rules. Children inherit its chat settings and folder, so its
+ * config is kept in sync with the live Settings defaults on every use; manual edits to
+ * a coordinator's own chat settings do not persist across requests.
  */
 export function ensureCoordinatorSession(input: {
   client?: string | undefined;
@@ -48,8 +68,13 @@ export function ensureCoordinatorSession(input: {
   const id = coordinatorSessionId(client);
   const sqlite = getSqlite();
   const store = new ChatStore(sqlite);
+  const defaults = providerChatDefaults(
+    undefined,
+    undefined,
+    process.env.ORC_E2E_CHAT_MOCK === "1",
+  );
   const existing = store.get(id);
-  if (existing) return existing;
+  if (existing) return refreshCoordinatorDefaults(store, existing, defaults);
   const project = input.projects?.length === 1 ? input.projects[0] : undefined;
   const scope = project
     ? sqlite
@@ -58,12 +83,11 @@ export function ensureCoordinatorSession(input: {
         )
         .get(project.id)?.scope
     : null;
-  const config = providerChatDefaults(undefined, undefined, process.env.ORC_E2E_CHAT_MOCK === "1");
   const thread: ChatThread = {
     id,
     title: `MCP coordinator (${client})`,
-    config,
-    backend: chatBackendFor(config.agent),
+    config: defaults,
+    backend: chatBackendFor(defaults.agent),
     runtimeId: null,
     cwd: scope || homedir(),
     host: null,

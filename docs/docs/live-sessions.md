@@ -266,9 +266,14 @@ Guardrails:
 External coordinators: an authenticated MCP HTTP client without `?session=`
 gets a lightweight coordinator session (one per `?client=<name>`, reused across
 requests) and can drive the same tools — `session_start` returns
-`coordinator_session_id` plus the Settings `defaults`, children default
-`notify` to false, and `session_wait`/`session_status`/`session_read` follow
-them. See [MCP → Transports](./mcp.md#transports).
+`coordinator_session_id` plus the Settings `defaults` (children keep inheriting
+the live defaults even after they change), children default `notify` to false,
+and `session_wait`/`session_status`/`session_read` follow them. The client name
+is attribution, not a security boundary: any holder of the shared API secret
+may claim any name, and coordinators are never garbage-collected — each name
+leaves a permanent root session, and unnamed clients share the default `mcp`
+coordinator and its hourly spawn limit. See [MCP →
+Transports](./mcp.md#transports).
 
 Chat and the session detail show the lineage: **Started by** links the parent,
 and **Started N sessions** lists the children, including the worker sessions

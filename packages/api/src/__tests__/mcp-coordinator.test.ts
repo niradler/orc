@@ -151,6 +151,49 @@ describe("MCP coordinator identity", () => {
     expect((await statusUntil(client, heldId, "stopped")).status).toBe("stopped");
   });
 
+  test("a Settings default-agent change reaches children of an existing coordinator", async () => {
+    const client = await connect({ client: "default-shift" });
+    const coordinatorId = coordinatorSessionId("default-shift");
+    const first = await call(client, "session_start", {
+      prompt: "Reply with exactly: default shift one",
+    });
+    expect(first.isError).toBe(false);
+    expect(first.data.defaults).toEqual({
+      agent: "claude",
+      model: "fixture",
+      provider_id: "claude",
+    });
+    expect(thread(first.data.session_id as string)?.config.agent).toBe("claude");
+    await call(client, "session_wait", { session_id: first.data.session_id, timeout_s: 15 });
+
+    updateGlobalConfig((raw) => {
+      raw.preferences = { chat: { agent: "codex", model: "fixture2", autoApprove: false } };
+    });
+    try {
+      const second = await call(client, "session_start", {
+        prompt: "Reply with exactly: default shift two",
+      });
+      expect(second.isError).toBe(false);
+      expect(second.data.defaults).toEqual({
+        agent: "codex",
+        model: "fixture2",
+        provider_id: "codex",
+      });
+      // The reused coordinator is refreshed from live Settings before the child
+      // spawns, so the effective inheritance matches the reported defaults.
+      const childId = second.data.session_id as string;
+      expect(thread(childId)?.config.agent).toBe("codex");
+      expect(thread(childId)?.config.model).toBe("fixture2");
+      expect(thread(coordinatorId)?.config.agent).toBe("codex");
+      const wait = await call(client, "session_wait", { session_id: childId, timeout_s: 15 });
+      expect(wait.data.last_message).toBe("default shift two");
+    } finally {
+      updateGlobalConfig((raw) => {
+        raw.preferences = { chat: { agent: "claude", model: "fixture", autoApprove: false } };
+      });
+    }
+  });
+
   test("the coordinator is reused per client name, distinct across clients, and listed", async () => {
     const grok = await connect({ client: "grok-bot" });
     const first = await call(grok, "session_list");

@@ -39,10 +39,19 @@ client name and binds the connection to it, so external orchestrators can use
 `session_start`, `session_list`, `session_status`, `session_read`,
 `session_send`, `session_wait` and `session_stop` without a pre-existing session
 id. Name the client with `?client=<name>` or the `X-ORC-Actor-Name` header;
-unnamed clients share the `mcp` coordinator. `session_start` and `session_list`
-return `coordinator_session_id`, and `session_start` also returns the effective
-Settings `defaults` (`agent`, `model`, `provider_id`). Coordinator children
-default `notify` to false — follow them with `session_wait`/`session_status`.
+unnamed clients share the `mcp` coordinator. The name is self-declared
+attribution, not isolation: any connection holding the API secret may claim any
+name and then acts as that client's coordinator — its session, children, and
+spawn budget. Bearer authentication against the shared API secret is the
+security boundary. `session_start` and `session_list` return
+`coordinator_session_id`, and `session_start` also returns the effective
+Settings `defaults` (`agent`, `model`, `provider_id`); the coordinator's chat
+settings are refreshed from the live defaults on every request, so children
+inherit those same values even when the defaults change after the coordinator
+was created. Manual edits to a coordinator thread's own chat settings do not
+persist across MCP requests — bind with `?session=` for a fixed configuration.
+Coordinator children default `notify` to false — follow them with
+`session_wait`/`session_status`.
 The coordinator appears in Chat and Sessions like any root conversation, and
 the same ownership guardrails apply: it can steer or stop only its own
 descendants. The coordinator identity does not enable `speak` or desktop
@@ -51,6 +60,9 @@ secret configured, unbound connections keep the explicit-identity requirement.
 Coordinator creation is recorded in `audit_list` (entity `session`) with the
 client name. A connection scoped to a single project roots its coordinator in
 that project's folder, so `workspace: same` children start there.
+Coordinators are not garbage-collected: each distinct client name permanently
+leaves one root session and one audit entry, and unnamed connections share the
+single `mcp` coordinator — including its ten-spawns-per-hour budget.
 
 ## Desktop preview tools
 
