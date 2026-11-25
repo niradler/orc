@@ -1,7 +1,7 @@
 import { nativeChatAgent, nativeChatResumeUnavailableReason } from "@orc/core/chat";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, Check, ChevronLeft, ChevronRight, Copy, RefreshCw, Search } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, type LiveSession, type TranscriptPage } from "@/api/client";
 import { AgentMessageText } from "@/components/AgentMessageText";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
@@ -10,12 +10,15 @@ import { SessionActions } from "@/components/SessionActions";
 import { SessionCacheUsage } from "@/components/SessionCacheUsage";
 import { SessionLineage } from "@/components/SessionLineage";
 import { SessionMessageInbox } from "@/components/SessionMessageInbox";
+import { SnoozedWaitingBanner } from "@/components/SnoozeMenu";
 import { StateBadge } from "@/components/StateBadge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useChat } from "@/hooks/useChat";
+import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { useTranscript } from "@/hooks/useSessions";
 import { liveSessionState } from "@/lib/agent-state";
 import { formatTokens, formatWhen, resumeCommand } from "@/lib/live-sessions";
+import { isRequestSnoozed, pendingRequestsForSession } from "@/lib/snooze";
 
 type Turn = TranscriptPage["turns"][number];
 type TurnBlock = Turn["blocks"][number];
@@ -305,6 +308,38 @@ export function SessionView({
     }
   };
 
+  const queryClient = useQueryClient();
+  const humanRequests = useHumanRequests();
+  const pendingRequests = useMemo(
+    () =>
+      session
+        ? pendingRequestsForSession(humanRequests.data, {
+            sourceId: session.id,
+            runtimeId: session.session_id,
+            backend: session.agent,
+            host: session.host,
+          })
+        : [],
+    [humanRequests.data, session],
+  );
+  const snoozedRequest = useMemo(
+    () => pendingRequests.find((request) => isRequestSnoozed(request)) ?? null,
+    [pendingRequests],
+  );
+  const wakeSnoozed = useMutation({
+    mutationFn: ({ id, version }: { id: string; version: number }) =>
+      api.humanRequests.unsnooze(id, version),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["human-requests"] });
+      void queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+  const effectiveState = session
+    ? pendingRequests.length > 0
+      ? "needs-you"
+      : liveSessionState(session)
+    : null;
+
   return (
     <div data-testid="session-view" className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0 border-b border-surface-highest px-4 py-4 sm:px-6">
@@ -313,10 +348,10 @@ export function SessionView({
               renders before this data arrives, and shifting its position would
               remount it. */}
         <div className="contents">
-          {session && (
+          {session && effectiveState && (
             <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 font-body text-xs text-on-surface tabular-nums">
               <span className="font-medium text-primary">{session.agent}</span>
-              <StateBadge state={liveSessionState(session)} />
+              <StateBadge state={effectiveState} />
               <span>
                 <span className="text-on-surface-variant">tokens </span>
                 {formatTokens(session)}
@@ -360,6 +395,18 @@ export function SessionView({
               )}
               <span className="truncate max-w-full text-on-surface-variant">{session.cwd}</span>
             </div>
+          )}
+          {snoozedRequest && snoozedRequest.snooze_until !== null && (
+            <SnoozedWaitingBanner
+              compact
+              className="mt-2"
+              until={snoozedRequest.snooze_until}
+              busy={wakeSnoozed.isPending}
+              error={wakeSnoozed.error?.message ?? null}
+              onWake={() =>
+                wakeSnoozed.mutate({ id: snoozedRequest.id, version: snoozedRequest.version })
+              }
+            />
           )}
           {session && !resumable && continueReason && (
             <p data-testid="session-view-read-only" className="mt-2 text-xs text-outline">

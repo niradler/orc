@@ -32,6 +32,7 @@ import { mcpToolRouter } from "./routes/mcp-tool.js";
 import { memoriesRouter } from "./routes/memories.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { primitivesRouter } from "./routes/primitives.js";
+import { projectSecretsRouter } from "./routes/project-secrets.js";
 import { projectsRouter } from "./routes/projects.js";
 import { pushRouter } from "./routes/push.js";
 import { remoteHostsRouter } from "./routes/remote-hosts.js";
@@ -44,6 +45,7 @@ import { sessionMessagesRouter } from "./routes/session-messages.js";
 import { sessionSendRouter } from "./routes/session-send.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import { settingsRouter } from "./routes/settings.js";
+import { setupRouter } from "./routes/setup.js";
 import { skillsRouter } from "./routes/skills.js";
 import { sshRouter } from "./routes/ssh.js";
 import { systemRouter } from "./routes/system.js";
@@ -112,8 +114,8 @@ export function createApp() {
       return c.json({ error: z.prettifyError(err), code: "VALIDATION_ERROR" }, 400);
     if (orcErr) {
       return c.json(
-        { error: orcErr.message, code: orcErr.code },
-        orcErr.statusCode as 400 | 401 | 403 | 404 | 409 | 500 | 503,
+        { ...orcErr.details, error: orcErr.message, code: orcErr.code },
+        orcErr.statusCode as 400 | 401 | 403 | 404 | 409 | 429 | 500 | 503,
       );
     }
     // Hono's own request errors (e.g. malformed JSON body) carry their status.
@@ -144,6 +146,7 @@ export function createApp() {
   app.route("/api", humanRequestsRouter);
   app.route("/api", notificationsRouter);
   app.route("/api", settingsRouter);
+  app.route("/api", setupRouter);
   app.route("/api", usageRouter);
   app.route("/api", channelsRouter);
   app.route("/api", systemRouter);
@@ -151,6 +154,7 @@ export function createApp() {
   app.route("/api", integrationsRouter);
   app.route("/", mcpRouter);
   app.route("/api", projectsRouter);
+  app.route("/api", projectSecretsRouter);
   app.route("/api", skillsRouter);
   app.route("/api", rulesRouter);
   app.route("/api", searchRouter);

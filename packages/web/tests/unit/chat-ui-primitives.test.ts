@@ -12,4 +12,13 @@ test("should preserve link fragments and the docked conversation", () => {
   expect(chatUiHref("/tasks/t1?tab=log#comment", "?chat=open&chatThread=thread1")).toBe(
     "/tasks/t1?tab=log&chat=open&chatThread=thread1#comment",
   );
+  expect(chatUiHref("/chat", "?chat=open&chatThread=side1", "/activity")).toBe(
+    "/chat?chat=open&sideChatThread=side1",
+  );
+  expect(chatUiHref("/tasks/t1", "?chat=open&chatThread=page1&sideChatThread=side1", "/chat")).toBe(
+    "/tasks/t1?chat=open&chatThread=side1",
+  );
+  expect(chatUiHref("/tasks/t1", "?chat=open&chatThread=page1", "/chat")).toBe(
+    "/tasks/t1?chat=open",
+  );
 });

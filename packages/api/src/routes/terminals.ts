@@ -13,9 +13,11 @@ import {
 import { removeTreeBestEffort } from "@orc/core/fs-cleanup";
 import { jobShellArgv } from "@orc/core/job-settings";
 import { AgentSetupSchema } from "@orc/core/package-launch";
+import { SecretRefsMapSchema } from "@orc/core/project-secrets";
 import { ProviderIdSchema } from "@orc/core/providers";
 import { prepareSessionDirectory } from "@orc/core/session-dir";
 import { getDb, getSqlite } from "@orc/db/client";
+import { resolveExplicitSecretRefs } from "@orc/db/project-secrets";
 import { RuleStore } from "@orc/db/rules";
 import { gateway_sessions } from "@orc/db/schema";
 import { and, eq } from "drizzle-orm";
@@ -147,6 +149,10 @@ const createTerminalRoute = createRoute({
             permissionMode: ChatPermissionModeSchema.optional().openapi({
               description:
                 "Fresh agent terminals only. Mapped to the CLI's own flags; a mode the CLI lacks is rejected.",
+            }),
+            secret_refs: SecretRefsMapSchema.optional().openapi({
+              description:
+                "Opt-in project secret references (ENV_VAR -> project/<name>) injected into the launched process.",
             }),
           }),
         },
@@ -533,13 +539,18 @@ app.openapi(createTerminalRoute, async (c) => {
   if (launch.kind !== "shell") checkRules(cwd);
   const workspace = await workspaceLaunch(host, cwd, body.project_id);
   const project = body.project_id ? projectById(body.project_id) : resolveProjectForPath(cwd);
+  const injectedSecrets = resolveExplicitSecretRefs(
+    getSqlite(),
+    project?.id ?? workspace.projectId,
+    body.secret_refs,
+  );
   const devScript = project ? projectWorkspaceConfig(project).dev_script?.trim() : null;
   if (body.dev && !devScript)
     throw new ValidationError("This project has no dev script. Add one in project settings.");
   const withWorkspace: typeof launch = {
     ...launch,
     cwd,
-    env: { ...launch.env, ...workspace.env },
+    env: { ...launch.env, ...workspace.env, ...injectedSecrets.env },
     ...(body.dev && devScript ? { argv: jobShellArgv(undefined, devScript, deps.platform) } : {}),
   };
   const name =

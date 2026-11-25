@@ -5,6 +5,12 @@ import type { AgentBackend, AgentBackendName, SessionOpts } from "./types.js";
 
 const registry = new Map<AgentBackendName, () => AgentBackend>();
 
+function withSessionEnv(opts: SessionOpts): SessionOpts {
+  const sessionId = opts.orcPreviewSessionId ?? opts.attentionContext?.chatThreadId;
+  if (!sessionId || opts.env?.ORC_SESSION_ID) return opts;
+  return { ...opts, env: { ...opts.env, ORC_SESSION_ID: sessionId } };
+}
+
 export function registerBackend(name: AgentBackendName, factory: () => AgentBackend): void {
   registry.set(name, factory);
 }
@@ -43,7 +49,7 @@ export function createBackend(name: AgentBackendName): AgentBackend {
           : result;
       },
       startSession: async (opts) => {
-        opts = providerSessionOptions(String(name), opts);
+        opts = withSessionEnv(providerSessionOptions(String(name), opts));
         if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
           throw new Error(
             `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
@@ -65,7 +71,7 @@ export function createBackend(name: AgentBackendName): AgentBackend {
         );
       },
       resumeSession: async (id, opts) => {
-        opts = providerSessionOptions(String(name), opts, true);
+        opts = withSessionEnv(providerSessionOptions(String(name), opts, true));
         if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
           throw new Error(
             `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
@@ -89,7 +95,7 @@ export function createBackend(name: AgentBackendName): AgentBackend {
       ...(forkSession
         ? {
             forkSession: async (sourceRuntimeId: string, opts: SessionOpts) => {
-              opts = providerSessionOptions(String(name), opts, true);
+              opts = withSessionEnv(providerSessionOptions(String(name), opts, true));
               if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
                 throw new Error(
                   `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,

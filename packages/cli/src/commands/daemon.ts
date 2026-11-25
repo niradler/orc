@@ -1,22 +1,38 @@
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import {
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
   realpathSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, platform } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { instanceId, registerShutdownHook } from "@orc/api/lifecycle";
-import { configuredApiSecret, globalConfigPath, loadConfig } from "@orc/core/config";
+import {
+  configuredApiSecret,
+  dialableHost,
+  globalConfigPath,
+  loadConfig,
+  resolveApiBase,
+} from "@orc/core/config";
 import {
   canonicalPath,
   clearDaemonRuntime,
   daemonHome,
+  isProcessAlive,
+  readDaemonRuntime,
   writeDaemonRuntime,
 } from "@orc/core/daemon-runtime";
+import {
+  type LogLevel,
+  type LogSource,
+  type ReadLogsResult,
+  readRecentLogs,
+} from "@orc/core/logger";
 import { superviseServer } from "@orc/core/process-supervisor";
 import { ORC_VERSION } from "@orc/core/version";
 import {
@@ -28,8 +44,9 @@ import {
   stopWatchers,
 } from "@orc/runner";
 import { createOrcClient } from "@orc/sdk/client";
-import { Command } from "commander";
+import { Command, InvalidArgumentError } from "commander";
 import { inheritLoginShellPath } from "../login-path.js";
+import { isJson, jsonOut } from "../output.js";
 import { listAllJobs } from "./job.js";
 
 export const ORC_HOME = daemonHome();
@@ -114,9 +131,13 @@ function installWindows(): void {
   );
 }
 
-function installMacos(): void {
-  const bin = resolveOrcBin();
-  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+/**
+ * launchd agent for the daemon. `SuccessfulExit: false` restarts the daemon
+ * when it crashes but leaves it stopped after a clean `orc daemon stop`; plain
+ * `KeepAlive: true` would start it again immediately and make stop a no-op.
+ */
+export function launchdPlist(bin: string): string {
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -131,13 +152,21 @@ function installMacos(): void {
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <true/>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
   <key>StandardOutPath</key>
   <string>${ORC_LOG}</string>
   <key>StandardErrorPath</key>
   <string>${ORC_LOG}</string>
 </dict>
 </plist>`;
+}
+
+function installMacos(): void {
+  const bin = resolveOrcBin();
+  const plist = launchdPlist(bin);
 
   mkdirSync(join(homedir(), "Library", "LaunchAgents"), { recursive: true });
   writeFileSync(LAUNCHD_PLIST, plist);
@@ -235,10 +264,164 @@ function writePid() {
   writeFileSync(ORC_PID, String(process.pid));
 }
 
-function removePid() {
+/**
+ * Drop the pid file, but only when it still names the process being stopped: a
+ * restart writes the new pid before the old process exits, and clearing the
+ * file blindly would leave that daemon untrackable.
+ */
+function removePid(pid?: number) {
   try {
-    require("node:fs").unlinkSync(ORC_PID);
+    if (pid !== undefined && readDaemonPid() !== pid) return;
+    unlinkSync(ORC_PID);
   } catch {}
+}
+
+/**
+ * Where the running daemon answers: the discovery record's bound port wins over
+ * the configured one; a wildcard bind is reached over loopback and an IPv6 host
+ * keeps the brackets its URL needs.
+ */
+export function daemonApiTarget(): { host: string; port: number; secret: string | undefined } {
+  const runtime = readDaemonRuntime();
+  const config = loadConfig();
+  return {
+    host: dialableHost(config.api.host),
+    port: runtime?.port ?? config.api.port,
+    secret: configuredApiSecret(config.api.secret),
+  };
+}
+
+async function waitUntilGone(
+  pid: number,
+  timeoutSeconds: number,
+  alive: (pid: number) => boolean,
+): Promise<boolean> {
+  const deadline = Date.now() + Math.max(1, timeoutSeconds) * 1000;
+  while (Date.now() < deadline) {
+    if (!alive(pid)) {
+      removePid(pid);
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!alive(pid)) {
+    removePid(pid);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Ask the running daemon to drain and exit over HTTP, then wait for the pid to
+ * go. This is the graceful path on every platform and launch mode (supervisor,
+ * desktop app, service manager, npx); on Windows a signal is a hard kill, so it
+ * is the only one there. Returns true once the process is gone.
+ */
+export async function requestGracefulStop(
+  pid: number,
+  timeoutSeconds: number,
+  target = daemonApiTarget(),
+  alive: (pid: number) => boolean = isProcessAlive,
+): Promise<boolean> {
+  try {
+    const response = await fetch(`http://${target.host}:${target.port}/api/system/shutdown`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(target.secret ? { authorization: `Bearer ${target.secret}` } : {}),
+      },
+      body: "{}",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (response.status !== 202) return false;
+  } catch {
+    // No reachable API (already gone, or the port never bound): fall through to
+    // the pid check so a finished shutdown still reports success.
+  }
+  return waitUntilGone(pid, timeoutSeconds, alive);
+}
+
+/** Last resort: signal the pid. The resumable chat state is already on disk. */
+function signalDaemon(pid: number, signal: NodeJS.Signals): boolean {
+  try {
+    process.kill(pid, signal);
+    return true;
+  } catch {
+    removePid(pid);
+    return false;
+  }
+}
+
+function parseSeconds(value: string): number {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0)
+    throw new InvalidArgumentError("Pass a positive number of seconds.");
+  return seconds;
+}
+
+export interface StopDaemonOptions {
+  timeoutSeconds: number;
+  force?: boolean;
+  /** Injected in tests to exercise the Windows and POSIX branches anywhere. */
+  platform?: NodeJS.Platform;
+  gracefulStop?: (pid: number, timeoutSeconds: number) => Promise<boolean>;
+  signal?: (pid: number, signal: NodeJS.Signals) => boolean;
+  alive?: (pid: number) => boolean;
+}
+
+export type StopOutcome = { stopped: true; how: "drain" | "signal" | "kill" } | { stopped: false };
+
+/**
+ * Stop a daemon the same way on Windows, macOS and Linux: ask the API to drain,
+ * then fall back to SIGTERM only where the platform delivers it to the daemon's
+ * handler. Windows has no graceful signal, so a stuck drain needs `--force`.
+ */
+export async function stopDaemon(pid: number, options: StopDaemonOptions): Promise<StopOutcome> {
+  const timeoutSeconds = Math.max(1, options.timeoutSeconds);
+  const alive = options.alive ?? isProcessAlive;
+  const signal = options.signal ?? signalDaemon;
+  if (options.force) {
+    if (!signal(pid, "SIGKILL") && !alive(pid)) return { stopped: true, how: "kill" };
+    return (await waitUntilGone(pid, timeoutSeconds, alive))
+      ? { stopped: true, how: "kill" }
+      : { stopped: false };
+  }
+  const gracefulStop = options.gracefulStop ?? requestGracefulStop;
+  if (await gracefulStop(pid, timeoutSeconds)) return { stopped: true, how: "drain" };
+  if ((options.platform ?? platform()) === "win32") return { stopped: false };
+  if (!signal(pid, "SIGTERM")) {
+    return alive(pid) ? { stopped: false } : { stopped: true, how: "signal" };
+  }
+  return (await waitUntilGone(pid, timeoutSeconds, alive))
+    ? { stopped: true, how: "signal" }
+    : { stopped: false };
+}
+
+export function openDaemonLogFd(logPath: string = ORC_LOG): number {
+  mkdirSync(dirname(logPath), { recursive: true });
+  return openSync(logPath, "a");
+}
+
+function startDetachedDaemon(): void {
+  const standalone = import.meta.path.includes("$bunfs") || import.meta.path.includes("~BUN");
+  const entry = process.argv[1];
+  if (!standalone && !entry) {
+    console.error("Could not locate the orc entry point to restart the daemon.");
+    process.exitCode = 1;
+    return;
+  }
+  const logFd = openDaemonLogFd(ORC_LOG);
+  try {
+    const child = spawn(
+      process.execPath,
+      standalone ? ["daemon"] : [...process.execArgv, entry as string, "daemon"],
+      { detached: true, stdio: ["ignore", logFd, logFd], windowsHide: true },
+    );
+    child.unref();
+    console.log(`Daemon restarting in the background (pid ${child.pid}, log ${ORC_LOG}).`);
+  } finally {
+    closeSync(logFd);
+  }
 }
 
 export function daemonCommand() {
@@ -252,6 +435,7 @@ export function daemonCommand() {
     .action(async () => {
       if (!(await superviseServer())) return;
       ensureOrcHome();
+      if (process.env.ORC_LOG_FILE === undefined) process.env.ORC_LOG_FILE = "1";
       inheritLoginShellPath();
 
       const existingPid = readDaemonPid();
@@ -314,20 +498,70 @@ export function daemonCommand() {
 
   cmd
     .command("stop")
-    .description("Stop the running daemon")
-    .action(() => {
+    .description("Stop the running daemon gracefully (active chat turns drain first)")
+    .option(
+      "--force",
+      "Kill the daemon instead of asking it to drain; an in-flight turn is cut and resumes from the next boot",
+    )
+    .option(
+      "--timeout <seconds>",
+      "Seconds to wait for the drain before giving up",
+      parseSeconds,
+      30,
+    )
+    .action(async (opts) => {
       const daemonPid = readDaemonPid();
       if (!daemonPid) {
         console.log(`No daemon running (no pid file at ${ORC_PID}).`);
         return;
       }
-      try {
-        process.kill(daemonPid, "SIGTERM");
-        console.log(`Sent SIGTERM to daemon (pid ${daemonPid}).`);
-      } catch {
-        console.error(`Could not signal pid ${daemonPid} - process may already be stopped.`);
-        removePid();
+      const outcome = await stopDaemon(daemonPid, {
+        timeoutSeconds: opts.timeout,
+        force: Boolean(opts.force),
+      });
+      if (!outcome.stopped) {
+        console.error(
+          platform() === "win32"
+            ? `The daemon is still running after ${opts.timeout}s. Windows cannot deliver a graceful signal, so re-run with --force to kill it. In-flight turns resume from their last saved state.`
+            : `The daemon is still running after ${opts.timeout}s. Re-run with --force to kill it; in-flight turns resume from their last saved state.`,
+        );
+        process.exitCode = 1;
+        return;
       }
+      console.log(
+        outcome.how === "kill"
+          ? `Killed daemon (pid ${daemonPid}). In-flight turns resume from their saved state.`
+          : outcome.how === "signal"
+            ? `Daemon stopped (pid ${daemonPid}) after SIGTERM drained it.`
+            : `Daemon stopped (pid ${daemonPid}).`,
+      );
+    });
+
+  cmd
+    .command("restart")
+    .description("Stop the daemon gracefully, then start it again")
+    .option("--force", "Kill instead of draining before the restart")
+    .option(
+      "--timeout <seconds>",
+      "Seconds to wait for the drain before giving up",
+      parseSeconds,
+      30,
+    )
+    .action(async (opts) => {
+      const daemonPid = readDaemonPid();
+      if (daemonPid) {
+        const outcome = await stopDaemon(daemonPid, {
+          timeoutSeconds: opts.timeout,
+          force: Boolean(opts.force),
+        });
+        // The replacement must not race the old process for its port.
+        if (!outcome.stopped) {
+          console.error(`The daemon is still running after ${opts.timeout}s; not restarting.`);
+          process.exitCode = 1;
+          return;
+        }
+      }
+      startDetachedDaemon();
     });
 
   cmd
@@ -407,4 +641,67 @@ export function daemonCommand() {
     });
 
   return cmd;
+}
+
+export function logsCommand() {
+  return new Command("logs")
+    .description("Show recent ORC daemon and worker logs")
+    .option("-n, --lines <n>", "Max entries to show", "100")
+    .option("-l, --level <level>", "Minimum level: debug|info|warn|error")
+    .option("--ns <namespace>", "Filter by logger namespace (e.g. api:chat, runner:flow)")
+    .option("-q, --query <text>", "Filter entries containing text")
+    .option("--source <source>", "Log source: orc|daemon|all", "orc")
+    .option("--local", "Read local log files directly without calling the API")
+    .action(
+      async (opts: {
+        lines: string;
+        level?: LogLevel;
+        ns?: string;
+        query?: string;
+        source: LogSource;
+        local?: boolean;
+      }) => {
+        const lines = Math.min(Math.max(Number(opts.lines) || 100, 1), 1000);
+        let result: ReadLogsResult | null = null;
+        if (!opts.local) {
+          try {
+            const config = loadConfig();
+            const qs = new URLSearchParams({ lines: String(lines), source: opts.source });
+            if (opts.level) qs.set("level", opts.level);
+            if (opts.ns) qs.set("ns", opts.ns);
+            if (opts.query) qs.set("q", opts.query);
+            const headers: Record<string, string> = {};
+            const secret = configuredApiSecret(process.env.ORC_API_SECRET ?? config.api.secret);
+            if (secret) headers.Authorization = `Bearer ${secret}`;
+            const res = await fetch(`${resolveApiBase(config)}/api/system/logs?${qs}`, {
+              headers,
+              signal: AbortSignal.timeout(5000),
+            });
+            if (res.ok) result = (await res.json()) as ReadLogsResult;
+          } catch {}
+        }
+        result ??= readRecentLogs({
+          lines,
+          level: opts.level,
+          ns: opts.ns,
+          q: opts.query,
+          source: opts.source,
+        });
+
+        if (isJson()) return jsonOut(result);
+        if (!result.entries.length) {
+          console.log(
+            `No matching log entries in ${opts.source === "daemon" ? result.daemon_log_path : result.path}.`,
+          );
+          return;
+        }
+        for (const entry of result.entries) {
+          const ts = entry.ts ? entry.ts.slice(0, 19).replace("T", " ") : "-------------------";
+          const level = (entry.level ?? "log").toUpperCase().padEnd(5);
+          const ns = entry.ns ? `[${entry.ns}] ` : "";
+          const data = entry.data ? ` ${entry.data}` : "";
+          console.log(`${ts} ${level} ${ns}${entry.msg}${data}`);
+        }
+      },
+    );
 }

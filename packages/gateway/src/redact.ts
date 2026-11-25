@@ -1,3 +1,5 @@
+import { redactRegisteredSecrets } from "@orc/core/secret-redactor";
+
 const SENSITIVE_KEYS = new Set([
   "token",
   "bot_token",
@@ -20,10 +22,11 @@ const TOKEN_PREFIXES =
   /\b(sk-[A-Za-z0-9\-_]{20,}|xox[bpoacd]-[A-Za-z0-9-]+|ghp_[A-Za-z0-9]{36}|AIza[A-Za-z0-9\-_]{35}|[0-9]{8,10}:[A-Za-z0-9\-_]{35})\b/g;
 
 export function redactSecrets(text: string): string {
-  return text.replace(
+  const masked = text.replace(
     TOKEN_PREFIXES,
     (match) => `${"*".repeat(match.length - 4)}${match.slice(-4)}`,
   );
+  return redactRegisteredSecrets(masked);
 }
 
 export function redactObject(obj: unknown, depth = 0): unknown {

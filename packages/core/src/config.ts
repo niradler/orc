@@ -7,6 +7,7 @@ import { orcHome, userHome } from "./home.js";
 import { McpSettingsSchema } from "./mcp-settings.js";
 import { StoredProvidersSchema } from "./providers.js";
 import { decryptSecret } from "./secrets.js";
+import { ModelPricingMapSchema } from "./usage.js";
 
 export function localAgentBinary(name: string): string | null {
   const paths = loadConfig().preferences.provider_paths;
@@ -110,6 +111,8 @@ export const OrcConfigSchema = z.object({
       composer_profiles: ComposerProfilesSchema.optional(),
       agents: z.array(z.string().regex(AGENT_ID_PATTERN)).max(64).optional(),
       provider_paths: ProviderPathsSchema.optional(),
+      model_pricing: ModelPricingMapSchema.optional(),
+      setup_dismissed: z.boolean().optional(),
     })
     .default({}),
   skills: z
@@ -252,7 +255,13 @@ export const OrcConfigSchema = z.object({
       embedding: { provider: "none", batch_size: 32, timeout_secs: 60 },
     }),
 
-  rules: z.object({ enabled: z.boolean().default(false) }).default({ enabled: false }),
+  rules: z
+    .object({
+      enabled: z.boolean().default(false),
+      retention_days: z.number().int().min(1).max(3650).default(30),
+      max_decision_rows: z.number().int().min(1000).max(1_000_000).default(200_000),
+    })
+    .default({ enabled: false, retention_days: 30, max_decision_rows: 200_000 }),
 
   agent_loop: z
     .object({
@@ -522,6 +531,17 @@ export function configuredApiSecret(secret: string | undefined | null): string |
 }
 
 /**
+ * Host a client on this machine dials for a configured API bind address: a
+ * wildcard bind is reached on loopback, and an IPv6 literal keeps the URL
+ * brackets that `host:port` needs. "localhost" is dialled as written because
+ * Bun may bind it to ::1 only.
+ */
+export function dialableHost(host: string): string {
+  const target = ["0.0.0.0", "::", "[::]", ""].includes(host) ? "127.0.0.1" : host;
+  return target.includes(":") && !target.startsWith("[") ? `[${target}]` : target;
+}
+
+/**
  * Origin of the local ORC API (no trailing slash or `/api`) for clients on this host.
  * `ORC_API_BASE` wins (set for agents on remote exec hosts); a wildcard bind address
  * is dialled on loopback.
@@ -530,10 +550,7 @@ export function resolveApiBase(config?: Pick<OrcConfig, "api">): string {
   const env = process.env.ORC_API_BASE?.trim();
   if (env) return env.replace(/\/+$/, "").replace(/\/api$/, "");
   const { host, port } = (config ?? loadConfig()).api;
-  // "localhost" is dialled as written: Bun may bind it to ::1 only.
-  const target = ["0.0.0.0", "::", "[::]", ""].includes(host) ? "127.0.0.1" : host;
-  const bracketed = target.includes(":") && !target.startsWith("[") ? `[${target}]` : target;
-  return `http://${bracketed}:${port}`;
+  return `http://${dialableHost(host)}:${port}`;
 }
 
 let _config: OrcConfig | null = null;
@@ -612,4 +629,13 @@ export function updateGlobalConfig(mutate: (raw: Record<string, unknown>) => voi
   renameSync(temp, path);
   resetConfig();
   return loadConfig();
+}
+
+/** The first-run setup screen stays dismissed only until a project exists. */
+export function clearSetupDismissal(): void {
+  if (!loadConfig().preferences.setup_dismissed) return;
+  updateGlobalConfig((raw) => {
+    const preferences = raw.preferences as Record<string, unknown> | undefined;
+    if (preferences) delete preferences.setup_dismissed;
+  });
 }

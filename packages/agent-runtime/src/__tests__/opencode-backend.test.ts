@@ -34,6 +34,7 @@ const emit=value=>console.log(JSON.stringify({jsonrpc:'2.0',...value}));
 const update=(sessionId,u)=>emit({method:'session/update',params:{sessionId,update:u}});
 const answerFile=${JSON.stringify(`${argvFile}.answers`)};
 writeFileSync(${JSON.stringify(argvFile)}, JSON.stringify(process.argv.slice(2)));
+writeFileSync(${JSON.stringify(`${argvFile}.env`)}, JSON.stringify({config:process.env.OPENCODE_CONFIG_CONTENT??null,db:process.env.ORC_DB_PATH??null,command:process.env.ORC_COMMAND??null}));
 let forms=0;
 const prompts=new Map();
 const held=new Map();
@@ -45,7 +46,7 @@ const schemas={
   unsupported:{type:'object',properties:{choice:{type:'external',title:'Unsupported input'}}},
   cancel:{type:'object',required:['target'],properties:{target:{type:'string',title:'Target',oneOf:[{const:'local-value',title:'This machine'}]}}},
 };
-const ask=(scenario,sessionId)=>{const id='elicitation-'+(++forms);emit({id,method:'elicitation/create',params:{mode:'form',sessionId,message:'Agent question',_meta:{kind:'question'},requestedSchema:schemas[scenario]}});return id};
+const ask=(scenario,sessionId,toolCallId)=>{if(toolCallId){update(sessionId,{sessionUpdate:'tool_call',toolCallId,name:'question',title:'question',kind:'other',status:'pending',locations:[],rawInput:{}});update(sessionId,{sessionUpdate:'tool_call_update',toolCallId,status:'in_progress',kind:'other',title:'question',locations:[],rawInput:{}});}const id='elicitation-'+(++forms);emit({id,method:'elicitation/create',params:{mode:'form',sessionId,...(toolCallId?{toolCallId}:{}),message:'Agent question',_meta:{kind:'question'},requestedSchema:schemas[scenario]}});return id};
 for await (const line of createInterface({input:process.stdin})) {
   const m=JSON.parse(line);appendFileSync(${JSON.stringify(`${argvFile}.wire`)},line+'\\n');
   if(m.method==='initialize')emit({id:m.id,result:{protocolVersion:1,agentCapabilities:{loadSession:true,promptCapabilities:{image:true},mcpCapabilities:{http:true}}}});
@@ -58,6 +59,8 @@ for await (const line of createInterface({input:process.stdin})) {
     else if(text.includes('STEER-REJECT')){emit({id:m.id,error:{code:-32000,message:'a prompt is already running'}});update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'STILL RUNNING'}});}
     else if(text.includes('STEER-LATE')){setTimeout(()=>emit({id:m.id,error:{code:-32000,message:'late turn failure'}}),2300);}
     else if(text.includes('STEER-APPLY')){update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'STEERED'}});const target=held.get('hold');held.delete('hold');emit({id:m.id,result:{stopReason:'end_turn'}});if(target)emit({id:target,result:{stopReason:'end_turn'}});}
+    else if(text.includes('STALL-QUESTION')){const tc='call_stall_1';update('oc-ses-1',{sessionUpdate:'tool_call',toolCallId:tc,name:'question',title:'question',kind:'other',status:'pending',locations:[],rawInput:{}});update('oc-ses-1',{sessionUpdate:'tool_call_update',toolCallId:tc,status:'in_progress',kind:'other',title:'question',locations:[],rawInput:{questions:[{header:'Color',question:'Pick a color',options:[{label:'Red',description:''},{label:'Blue',description:''}]}]}});held.set('stall',m.id);}
+    else if(text.includes('GUARDED-QUESTION')){prompts.set(String(ask('single','oc-ses-1','call_guard_1')),{promptId:m.id,scenario:'single'});}
     else{
       const scenario=['single','multi','free','custom','unsupported','cancel'].find(name=>text.includes(name));
       if(!scenario){update('oc-ses-1',{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'OPENCODE REPLY'}});emit({id:m.id,result:{stopReason:'end_turn'}});}
@@ -151,6 +154,88 @@ async function startPeer(
   });
   return { argvFile, session };
 }
+
+test("opencode spawns with the session-scoped rule configuration", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-env-"));
+  const config = JSON.stringify({
+    permissions: [{ action: "shell", resource: "*", effect: "ask" }],
+    plugins: [{ package: "C:/orc/opencode-plugin" }],
+  });
+  const { argvFile, session } = await startPeer(cwd, {
+    env: {
+      OPENCODE_CONFIG_CONTENT: config,
+      ORC_DB_PATH: join(cwd, "orc.db"),
+      ORC_COMMAND: '"C:/orc.exe"',
+    },
+  });
+  try {
+    expect(JSON.parse(readFileSync(`${argvFile}.env`, "utf8"))).toEqual({
+      config,
+      db: join(cwd, "orc.db"),
+      command: '"C:/orc.exe"',
+    });
+  } finally {
+    await session.close();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("opencode propagates bound ORC session identity via MCP URL, X-ORC-Session header, and ORC_SESSION_ID", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-mcp-session-"));
+  const previousSecret = process.env.ORC_API_SECRET;
+  process.env.ORC_API_SECRET = "opencode-test-secret";
+  resetConfig();
+  try {
+    const argvFile = join(cwd, "argv.json");
+    const envSessionFile = join(cwd, "session-env.txt");
+    const source = join(cwd, "opencode.ts");
+    writeFileSync(
+      source,
+      `#!/usr/bin/env bun\nimport { writeFileSync as wf } from 'node:fs';\nwf(${JSON.stringify(envSessionFile)}, process.env.ORC_SESSION_ID ?? '');\n${peerSource(argvFile)}`,
+      { mode: 0o755 },
+    );
+    const script = process.platform === "win32" ? join(cwd, "opencode.exe") : source;
+    if (process.platform === "win32")
+      expect(
+        Bun.spawnSync([process.execPath, "build", source, "--compile", "--outfile", script], {
+          timeout: 30_000,
+        }).exitCode,
+      ).toBe(0);
+    const session = await createBackend("opencode").startSession({
+      cwd,
+      orcMcp: true,
+      orcPreviewSessionId: "chat-thread-521",
+      providerExecutable: script,
+      acpAgent: "opencode",
+    });
+    try {
+      const requests = readFileSync(`${argvFile}.wire`, "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      const newSession = requests.find((request) => request.method === "session/new");
+      const orcMcp = newSession?.params?.mcpServers?.find(
+        (server: { name: string }) => server.name === "orc",
+      );
+      expect(orcMcp).toBeDefined();
+      const url = new URL(orcMcp.url);
+      expect(url.searchParams.get("session")).toBe("chat-thread-521");
+      expect(url.searchParams.get("preview_session")).toBe("chat-thread-521");
+      expect(orcMcp.headers).toContainEqual({
+        name: "X-ORC-Session",
+        value: "chat-thread-521",
+      });
+      expect(readFileSync(envSessionFile, "utf8")).toBe("chat-thread-521");
+    } finally {
+      await session.close();
+    }
+  } finally {
+    if (previousSecret === undefined) delete process.env.ORC_API_SECRET;
+    else process.env.ORC_API_SECRET = previousSecret;
+    resetConfig();
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+});
 
 test("opencode backend runs the builtin ACP command with a provider executable override", async () => {
   const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-backend-"));
@@ -550,6 +635,64 @@ test("should cancel a pending ACP question when the turn is interrupted", async 
   }
 });
 
+test("a native question that never surfaces over ACP fails the turn visibly", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-question-stall-"));
+  try {
+    const { session } = await startPeer(cwd, { acpQuestionSurfaceMs: 250 });
+    try {
+      await session.send("STALL-QUESTION");
+      const events: AgentEvent[] = [];
+      for await (const event of session.events()) {
+        events.push(event);
+        if (event.type === "result" || event.type === "error") break;
+      }
+      expect(
+        events.some((event) => event.type === "tool_use" && event.data.name === "question"),
+      ).toBe(true);
+      expect(events.some((event) => event.type === "question_request")).toBe(false);
+      const error = events.find((event) => event.type === "error");
+      expect(typeof error?.data === "string" ? error.data : "").toContain("never reached ORC");
+      expect(session.alive()).toBe(false);
+      expect(session.waitingForHuman?.()).toBe(false);
+    } finally {
+      await session.close();
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+}, 30_000);
+
+test("an elicited question clears the surface guard while the answer outlasts the grace", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "orc-opencode-question-guard-"));
+  try {
+    const { argvFile, session } = await startPeer(cwd, { acpQuestionSurfaceMs: 250 });
+    try {
+      await session.send("GUARDED-QUESTION");
+      const events: AgentEvent[] = [];
+      for await (const event of session.events()) {
+        events.push(event);
+        if (event.type === "question_request") {
+          // Answer later than the grace: the elicitation already cleared the guard.
+          await Bun.sleep(600);
+          session.respondQuestion?.(event.data.requestId, { target: ["Remote host"] });
+        }
+        if (event.type === "result" || event.type === "error") break;
+      }
+      expect(events.some((event) => event.type === "error")).toBe(false);
+      expect(events.some((event) => event.type === "result")).toBe(true);
+      expect(lastAnswer(argvFile)).toEqual({
+        scenario: "single",
+        result: { action: "accept", content: { target: "remote-value" } },
+      });
+      expect(session.alive()).toBe(true);
+    } finally {
+      await session.close();
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });
+  }
+}, 30_000);
+
 test("opencode preflight reports a missing install with actionable guidance", async () => {
   const backend = createBackend("opencode");
   const result = await backend.preflight({
@@ -592,7 +735,7 @@ test("agent_loop.acp_commands.opencode overrides the builtin command and routes 
       }
     } finally {
       resetConfig();
-      loadConfig({ rules: { enabled: false } });
+      loadConfig({ rules: { enabled: false, retention_days: 30, max_decision_rows: 200_000 } });
     }
   } finally {
     rmSync(cwd, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 });

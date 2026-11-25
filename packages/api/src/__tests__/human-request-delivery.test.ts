@@ -282,6 +282,7 @@ test("should describe question and approval answers for the agent", () => {
     responded_at: 0,
     delivered_at: null,
     seen_at: null,
+    snooze_until: null,
     push_state: null,
     push_error: null,
   };

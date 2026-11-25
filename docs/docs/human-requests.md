@@ -107,9 +107,33 @@ orc attention request request.json --wait
 orc attention list
 orc attention get REQUEST_ID
 orc attention respond REQUEST_ID response.json --version 1
+orc attention snooze REQUEST_ID --for 1h
+orc attention unsnooze REQUEST_ID
 orc attention acknowledge REQUEST_ID --version 2
 orc attention cancel REQUEST_ID --version 1
 ```
+
+## Snoozing pending requests
+
+Snooze hides a `pending` question, approval or command from **Needs you** and
+the header bell unread count until a chosen time (`15m`, `1h`, `3h`,
+`Tomorrow 9:00` or a custom timestamp) without answering, denying or cancelling
+it. The request stays `pending` and answerable, its `expires_at` deadline is
+unchanged, and the waiting session still shows **Waiting for you · snoozed until …**
+with **Wake now**.
+
+- Snoozed items move into a separate **Snoozed** group in the notification
+  center, where you can answer them early or click **Wake now**.
+- Push notifications and channel reminders are suppressed while snoozed. When
+  the snooze ends, the request returns to **Needs you** with one notification
+  (a periodic sweep also recovers due snoozes after a restart).
+- Answering, cancelling, making unavailable or expiring a request clears its
+  snooze automatically. Only `pending` requests can be snoozed.
+- REST API: `POST /api/human-requests/{id}/snooze` with `{ version, until | after_seconds }`
+  and `DELETE /api/human-requests/{id}/snooze` (optional `?version=<n>`).
+- MCP tools: `human_request_snooze` and `human_request_unsnooze`.
+- CLI: `orc attention snooze <id> --for 1h` (or `--until <iso>`) and
+  `orc attention unsnooze <id>`.
 
 Use `-` instead of a file for JSON on stdin. Example question:
 
@@ -206,6 +230,24 @@ only the required tools in the workspace's `.cursor/cli.json`, following
 Replace `orc` with that server's name in `.cursor/mcp.json`. This permits calling
 the request service; it does not approve the requested action.
 
+## Secret requests and project secrets
+
+Use `kind: "secret"` on `human_request` when an agent needs one or more credentials without pasting them into chat:
+
+- Supply 1–10 `fields` (`key`, `label`, optional `description`, `required`, `multiline`, `link`, `reference_name`) and optional `save_to_project`. `choices` are rejected.
+- Each field renders masked with a per-field show/hide eye toggle, a paste button (never blocking native paste), password-manager autocomplete hints, multiline support, and an optional wrapping/copyable sign-in link.
+- Raw secret values are **never** persisted in `human_requests.payload`, `human_requests.response`, audit snapshots, notifications, or push payloads.
+- When **Save to project secrets** is unchecked, values live in an encrypted, short-lived in-memory delivery vault (machine key in `~/.orc/secret.key`, aggressive 5-minute TTL) and are cleared on first claim, cancellation, or expiry. If the daemon restarts before delivery, the request becomes `unavailable` and values cannot be recovered.
+- `human_request_get` (backed by `POST /api/human-requests/{id}/claim`) returns values once with `secret: true` and marks them consumed immediately; subsequent reads return `consumed` without values.
+- When **Save to project secrets** is checked, values are stored encrypted at rest in `project_secrets` and the agent receives only `project/<name>` references, never raw values.
+- Channel sessions (Telegram/Slack) **never** accept secrets in chat text. When an ORC web URL is configured under notification forwarding, ORC sends a link to the web card (`/notifications?request=<id>`); if no web surface is configured, the request fails visibly with `"Open ORC to answer this secret request"` instead of hanging.
+- Secret requests are rate-limited per session (10 per 10-minute window) and pending requests expire within 30 minutes.
+- Manage saved secrets per project in **Settings → Secrets** (or the **Secrets** tab of a project): create, rotate, delete, copy `project/<name>` reference, view `last_used_at`, and run **Check** (stored decryption check, optional HTTP check, or optional command check without revealing the value).
+- Reference saved secrets as `project/<name>` in job environment variables, workspace environment variables, or opt-in `secret_refs` on terminal and chat launches. Rotating or deleting a secret applies to the next launch.
+- Saved project secrets and delivered secrets are registered with ORC's output redactor for command outputs, job logs, and channel redaction.
+
+> **Best-effort redaction warning:** An agent that prints a secret value into its own transcript can still leak it. Redaction covers known exact values (and URL/base64/JSON-escaped forms), not transformed or partial forms (such as substrings, reversed text, or hashes). Prefer **Save to project secrets** whenever a secret only needs to be injected into ORC-launched jobs, terminals, or checks.
+
 ## Telegram and Slack
 
 Enable either notification checkbox on the Ask user action. A channel
@@ -219,7 +261,11 @@ The notification supplies an explicit response command:
 /attention REQUEST_ID VERSION answer My answer
 /attention REQUEST_ID VERSION approve
 /attention REQUEST_ID VERSION deny
+/attention REQUEST_ID VERSION snooze 1h
 ```
+
+Snoozing suppresses channel reminders until the due time, while a channel reply
+still answers the request and clears the snooze.
 
 Replies are checked against the current authorized user and the original
 chat/thread/request/version binding before they reach agent chat. Large requests
@@ -227,6 +273,13 @@ that cannot be shown completely, and multi-select forms, require the web inbox.
 Notification failures retry through durable leases; a repeated notification cannot
 cause a repeated decision. Telegram/Slack routing is tested at the adapter boundary;
 live provider credentials were not used during validation.
+
+A channel-originated turn has no chat surface to fall back to, so a secret
+question or any question or approval that cannot enter the durable inbox stops
+the turn with a visible failure in the originating chat instead of leaving the
+agent waiting silently. Secret input is never written to the inbox or channel
+logs; continue in ORC chat or the agent's native client when a tool requires a
+secret. The failure reason is recorded in the ORC logs.
 
 ## Lifecycle and limits
 

@@ -1,6 +1,6 @@
 import { changes } from "@orc/core/changes";
 import { createLogger } from "@orc/core/logger";
-import { sessionMessageContext } from "@orc/core/session-messages";
+import { sessionDeliveryFromMessage, sessionMessageContext } from "@orc/core/session-messages";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
 import { gateway_sessions } from "@orc/db/schema";
@@ -14,7 +14,13 @@ import {
   pushTargetForSession,
   sessionIdle,
 } from "./human-request-delivery.js";
-import { activeTurns, chatControl, runChatTurn, turnKey } from "./sessions/turns.js";
+import {
+  activeTurns,
+  type ChatTurnOptions,
+  chatControl,
+  runChatTurn,
+  turnKey,
+} from "./sessions/turns.js";
 
 const logger = createLogger("session-message-delivery");
 
@@ -26,7 +32,7 @@ type DeliveryDeps = {
   idle(target: PushTarget): Promise<boolean>;
   resumed(target: PushTarget): Promise<void>;
   backend: ReturnType<typeof defaultDeliveryBackend>;
-  chatTurn(target: PushTarget, prompt: string): Promise<void> | null;
+  chatTurn(target: PushTarget, prompt: string, options?: ChatTurnOptions): Promise<void> | null;
 };
 
 function chatTarget(threadId: string): PushTarget | null {
@@ -73,8 +79,8 @@ function defaultDeps(): DeliveryDeps {
         : sessionIdle(target),
     resumed: (target) => getHandoffService().markResumed(target.sourceId),
     backend: defaultDeliveryBackend(),
-    chatTurn: (target, prompt) =>
-      runChatTurn(target.threadId ? { threadId: target.threadId } : target, prompt) ??
+    chatTurn: (target, prompt, options) =>
+      runChatTurn(target.threadId ? { threadId: target.threadId } : target, prompt, options) ??
       (target.threadId
         ? Promise.reject(new Error("The chat could not start a turn; retry when it is idle"))
         : null),
@@ -108,6 +114,7 @@ function deliver(
     label: "session messages into an exited session",
     claim: () => deps.store.claimTarget(target.sourceId),
     prompt: sessionMessageContext,
+    deliveries: (claimed) => claimed.map(sessionDeliveryFromMessage),
     delivered: (claimed, via) =>
       deps.store.deliver(
         claimed.map((message) => message.id),

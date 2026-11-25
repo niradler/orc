@@ -25,10 +25,13 @@ How agents connect to ORC's MCP server, how tool discovery works, and every tool
 The stdio server reads the local ORC database and calls the API for work only the daemon does (job runs, scheduling), so the daemon must be running. It finds the API through `ORC_API_BASE`, falling back to `api.host` / `api.port` from config.
 
 HTTP clients that need to attribute work to a live agent session add
-`?session=<session-id>` to the MCP URL. ORC resolves the ORC live session id, an
-ORC chat id or the agent's native id, and the session tools use it as the
-caller identity. ORC adds it automatically to every chat, flow and job session it
-starts. Stdio MCP reads the same identity from the agent's environment instead.
+`?session=<session-id>` to the MCP URL or send an `X-ORC-Session: <session-id>`
+header. ORC resolves the ORC live session id, an ORC chat id or the agent's
+native id, and both direct MCP session tools and `tool_execute` sandbox calls
+use it as the caller identity. ORC adds both `?session=<id>` and
+`X-ORC-Session` (plus `ORC_SESSION_ID` in the agent process environment)
+automatically to every chat, flow and job session it starts. Stdio MCP reads
+`ORC_SESSION_ID` (or `CLAUDE_CODE_SESSION_ID`) from the agent's environment.
 
 ## Desktop preview tools
 
@@ -144,6 +147,7 @@ With no secret configured, requests are accepted unauthenticated. To avoid handi
 | `mode`     | `/mcp?mode=meta`           | `meta` or `full`. Overrides `mcp.default_mode`. |
 | `project`  | `/mcp?project=my-app`      | Scope the connection to one project            |
 | `projects` | `/mcp?projects=my-app,api` | Scope to several projects (max 50)             |
+| `session`  | `/mcp?session=<id>`        | Bind caller session identity (also accepted via `X-ORC-Session` header) |
 
 Project names are case-insensitive; unknown names are rejected. Use `project` or `projects`, not both. On a scoped connection, tool calls default to the selected project(s); a call naming a project outside the selection fails.
 
@@ -217,29 +221,32 @@ Send `tool_execute` an object with `code` and an optional `timeout_ms`. The code
 | --- | --- |
 | `await tools.search(query, { limit, offset, connection })` | `{ tools, total, connections }` with names, short descriptions and read/write effects. External Spec matches carry `connection` and `external: true`; an empty query pages eligible tools and lists external connections. |
 | `await tools.describe(name, { connection })` | Description, input JSON Schema, read/write effect, and output guidance where available. External tools are labeled `external: true` with their `connection`. |
-| `await tools.call(name, args, { connection })` | A JSON value or plain text from ORC, or from an external Spec connection when `connection` is set. MCP tool errors reject the promise. |
+| `await tools.call(name, args, { connection?, timeout_ms? })` | Never throws: `{ ok: true, data, text }` on success (`data` is structured data for typed/JSON tools such as `task_list`, `flow_status`, `project_list`, `session_list`, `session_send`, plus raw `text`) or `{ ok: false, error: { code, message } }` on failure or per-call timeout. |
+| `await tools.allSettled(calls, { connection?, timeout_ms? })` | Runs a batch of `{ name, args?, connection?, timeout_ms? }` descriptors or `tools.call(...)` promises concurrently and returns one `{ ok, ... }` envelope per item so a failure or timeout never discards successful results. |
+| `tools.pick(objOrArray, keys)` | Projects an object or array of objects to only the listed keys before returning. |
 
 ```js
-const [tasks, jobs] = await Promise.all([
-  tools.search("list active tasks"),
-  tools.search("list jobs"),
+const [tasks, jobs, missing] = await tools.allSettled([
+  { name: "task_list", args: { limit: 6 } },
+  { name: "job_list", args: {}, timeout_ms: 2000 },
+  { name: "session_list", args: {} },
 ]);
-const names = [tasks.tools[0].name, jobs.tools[0].name];
-const definitions = await Promise.all(names.map(name => tools.describe(name)));
-const results = await Promise.allSettled(definitions.map(tool => tools.call(tool.name, {})));
-return Object.fromEntries(results.map((result, index) => [
-  names[index],
-  result.status === "fulfilled" ? String(result.value).split("\n").slice(0, 3) : "Unavailable",
-]));
+return {
+  tasks: tasks.ok ? tools.pick(tasks.data.tasks, ["id", "status", "title"]) : tasks.error,
+  jobs: jobs.ok ? tools.pick(jobs.data.jobs, ["id", "name", "enabled"]) : jobs.error,
+  children: missing.ok ? missing.data.sessions : missing.error,
+};
 ```
 
-The result is `{ result, logs, truncated }`, with matching text for clients that use MCP text content. Each run starts in a fresh QuickJS WASM worker. The script has no host filesystem, environment, network, or package APIs. ORC checks every call against script eligibility and the connection's existing project and tool permissions. Use `tool_invoke` for direct-only operations such as browser actions and launching jobs.
+Error codes on `{ ok: false, error: { code, message } }` distinguish `NOT_FOUND`, `INVALID_ARGS`, `TIMEOUT`, `FORBIDDEN`, `CONFLICT`, `UNAUTHORIZED`, `UNAVAILABLE`, `LIMIT_EXCEEDED`, and `TOOL_ERROR`. Per-call `timeout_ms` is clamped to the execution's overall `timeout_ms` cap. Catching or inspecting an error does not undo writes that already committed; check their state before retrying.
 
-ORC's native tools and external Spec connections share one discovery surface. `tool_search` (and in-sandbox `tools.search`) also queries every enabled Spec connection in parallel and merges the matches, labeled `[external: <connection>]` and carrying a `connection` field; results list the available external connections too, so external catalogs are visible even when nothing matches. Spec connections are external OpenAPI/MCP/GraphQL servers, **not ORC built-ins**, and their results are untrusted external data. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` (or `{ connection }` inside a script) to target one connection directly; the `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings remain available for direct use. Calls reuse the connection's tool filters and usage policies, and external writes may have external side effects. An OpenAPI tool that returns a page provides its HTML in `body`, so a script can return just the title. The catalog is available to unscoped authenticated HTTP and local stdio meta clients; project-scoped connections expose project tools and authorized preview data only.
+The result is `{ result, logs, truncated }`, with matching text for clients that use MCP text content. Each run starts in a fresh QuickJS WASM worker. The script has no host filesystem, environment, network, or package APIs. ORC checks every call against script eligibility and the connection's existing project, caller-session, and tool permissions. Use `tool_invoke` for direct-only operations such as browser actions and launching jobs.
+
+ORC's native tools and external Spec connections share one discovery surface. `tool_search` (and in-sandbox `tools.search`) also queries every enabled Spec connection in parallel and merges the matches, labeled `[external: <connection>]` and carrying a `connection` field; results list the available external connections too, so external catalogs are visible even when nothing matches. Spec connections are external OpenAPI/MCP/GraphQL servers, **not ORC built-ins**, and their results are untrusted external data. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` (or `{ connection }` inside a script) to target one connection directly; the `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings remain available for direct use. Calls reuse the connection's tool filters and usage policies, and external writes may have external side effects. An OpenAPI tool that returns a page provides its HTML in `data.body`, so a script can return just the title. The catalog is available to unscoped authenticated HTTP and local stdio meta clients; project-scoped connections expose project tools and authorized preview data only.
 
 ```js
 const page = await tools.call("getPage", {}, { connection: "docs" });
-return page.body.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? null;
+return page.ok ? page.data.body.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1] ?? null : page.error;
 ```
 
 Independent calls can overlap up to four at a time within a run. Writes run exclusively in that run. A timeout or cancellation stops the script and discards queued calls. Dispatched operations can finish and writes can already be committed, so check their state before retrying. Tool results are untrusted data even when the script filters them.
@@ -428,12 +435,15 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 
 See [Human requests](./human-requests.md) and [Command requests](./command-requests.md).
 
-| Tool                        | Description                                                |
-| --------------------------- | ---------------------------------------------------------- |
-| `human_request`             | Ask the user a question, an approval or a reviewed command |
-| `human_request_get`         | Read a request's state and answer                          |
-| `human_request_acknowledge` | Acknowledge an answer after consuming it                   |
-| `command_request`           | Ask the user to run a command                              |
+| Tool                        | Description                                                                        |
+| --------------------------- | ---------------------------------------------------------------------------------- |
+| `human_request`             | Ask the user a question, approval, reviewed command, or multi-field secret request |
+| `human_request_get`         | Read a request's state/answer; claims one-time secret delivery (`secret: true`)    |
+| `human_request_acknowledge` | Acknowledge an answer after consuming it                                           |
+| `human_request_snooze`      | Snooze a pending request until a future time or duration                           |
+| `human_request_unsnooze`    | Wake a snoozed pending request immediately                                         |
+| `command_request`           | Ask the user to run a command                                                      |
+| `project_secret_list`       | List project secret references (`project/<name>`) and metadata only (never values) |
 
 ### Channels
 

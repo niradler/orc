@@ -8,7 +8,13 @@ import type {
 } from "@orc/core/channels";
 import { loadConfig, resolveApiBase } from "@orc/core/config";
 import type { GithubSyncState } from "@orc/core/github-sync";
-import type { HumanRequest, HumanRequestInput, HumanResponse } from "@orc/core/human-requests";
+import type {
+  HumanRequest,
+  HumanRequestInput,
+  HumanRequestSnoozeInput,
+  HumanRespondPayload,
+  SecretClaimResult,
+} from "@orc/core/human-requests";
 import type {
   KbCallSource,
   KbComment,
@@ -53,6 +59,13 @@ import type {
   OrcNotification,
 } from "@orc/core/notifications";
 import type { PackageDiscovery } from "@orc/core/primitive-types";
+import type {
+  ProjectSecretCheck,
+  ProjectSecretCheckResult,
+  ProjectSecretMetadata,
+  ProjectSecretRotate,
+  ProjectSecretUpsert,
+} from "@orc/core/project-secrets";
 import type { PushConfig, PushDevice, PushSubscriptionInput, PushTopic } from "@orc/core/push";
 import type { RuleTemplate } from "@orc/core/rule-catalog";
 import type { RuleEventCapability, RuleHookBackend } from "@orc/core/rule-events";
@@ -366,12 +379,38 @@ export function createOrcClient(options?: OrcClientOptions) {
       list: () => c<HumanRequest[]>("GET", "/human-requests"),
       create: (input: HumanRequestInput) => c<HumanRequest>("POST", "/human-requests", input),
       get: (id: string) => c<HumanRequest>("GET", `/human-requests/${e(id)}`),
-      respond: (id: string, version: number, response: HumanResponse) =>
+      claim: (id: string) => c<SecretClaimResult>("POST", `/human-requests/${e(id)}/claim`),
+      respond: (id: string, version: number, response: HumanRespondPayload) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/respond`, { version, response }),
       acknowledge: (id: string, version: number) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/acknowledge`, { version }),
       cancel: (id: string, version: number) =>
         c<HumanRequest>("POST", `/human-requests/${e(id)}/cancel`, { version }),
+      snooze: (id: string, input: HumanRequestSnoozeInput) =>
+        c<HumanRequest>("POST", `/human-requests/${e(id)}/snooze`, input),
+      unsnooze: (id: string, version?: number) =>
+        c<HumanRequest>(
+          "DELETE",
+          `/human-requests/${e(id)}/snooze`,
+          undefined,
+          version === undefined ? undefined : { version },
+        ),
+    },
+    projectSecrets: {
+      list: (projectId: string) =>
+        c<{ secrets: ProjectSecretMetadata[] }>("GET", `/projects/${e(projectId)}/secrets`),
+      upsert: (projectId: string, input: ProjectSecretUpsert) =>
+        c<ProjectSecretMetadata>("POST", `/projects/${e(projectId)}/secrets`, input),
+      rotate: (projectId: string, name: string, input: ProjectSecretRotate) =>
+        c<ProjectSecretMetadata>("PUT", `/projects/${e(projectId)}/secrets/${e(name)}`, input),
+      delete: (projectId: string, name: string) =>
+        c<void>("DELETE", `/projects/${e(projectId)}/secrets/${e(name)}`),
+      check: (projectId: string, name: string, check?: ProjectSecretCheck) =>
+        c<ProjectSecretCheckResult>(
+          "POST",
+          `/projects/${e(projectId)}/secrets/${e(name)}/check`,
+          check ? { check } : {},
+        ),
     },
     rules: {
       catalog: () => c<{ templates: RuleTemplate[] }>("GET", "/rules/catalog"),
@@ -406,6 +445,36 @@ export function createOrcClient(options?: OrcClientOptions) {
         }),
       revert: (id: string, reason: string) =>
         c<RuleRevision>("POST", "/rules/revert", { id, reason }),
+      metrics: (workspace?: string, days?: number) =>
+        c<{
+          days: number;
+          totals: {
+            events: number;
+            abstains: number;
+            outcomes: number;
+            denials: number;
+            abstain_rate: number;
+          };
+          per_workspace: {
+            workspace: string;
+            events: number;
+            abstains: number;
+            outcomes: number;
+            last_seen: number;
+          }[];
+          per_rule: {
+            workspace: string;
+            revision_id: string;
+            rule_id: string;
+            outcome: string;
+            count: number;
+            last_seen: number;
+          }[];
+          per_day: { day: number; events: number; abstains: number }[];
+        }>("GET", "/rules/metrics", undefined, {
+          ...(workspace ? { workspace } : {}),
+          ...(days === undefined ? {} : { days }),
+        }),
       check: (event: RuleEvent) => c<RuleDecision>("POST", "/rules/check", event),
     },
     tasks: {

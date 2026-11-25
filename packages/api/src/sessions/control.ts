@@ -1,18 +1,23 @@
 import { changes } from "@orc/core/changes";
 import type { ChatThread } from "@orc/core/chat";
-import { ForbiddenError } from "@orc/core/errors";
+import { ConflictError, ForbiddenError } from "@orc/core/errors";
 import { execHostFor, hostRuntime } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import {
+  childOutcomeSummary,
   SESSION_MESSAGE_MAX_BODY,
+  type SessionDelivery,
   type SessionLineage,
+  type SessionMessage,
   type SessionMessageCreate,
   type SessionMessageResult,
   type SessionMessageSender,
   type SessionSubagents,
+  sessionDeliveryFromMessage,
   sessionMessageBackend,
   sessionMessageContext,
   sessionMessageHookSupported,
+  sessionMessageReceipt,
 } from "@orc/core/session-messages";
 import { ChatStore } from "@orc/db/chat";
 import { getSqlite } from "@orc/db/client";
@@ -48,13 +53,14 @@ export function requireAncestor(sender: SessionMessageSender, targetId: string):
 export async function sendToSession(
   input: SessionMessageCreate,
   sender: SessionMessageSender,
+  structuredDelivery?: SessionDelivery | null,
 ): Promise<SessionMessageResult> {
   const mails = new SessionMessageStore(getSqlite());
   const target = mails.target(input.session_id, input.backend);
   const chat = target.status === "chat";
   const mode = input.mode ?? "queue";
   if (mode !== "queue") requireAncestor(sender, target.id);
-  const message = mails.create(input, sender);
+  const message = mails.create(input, sender, structuredDelivery ?? null);
   let delivery: SessionMessageResult["target"]["delivery"] = chat
     ? "chat"
     : target.status === "stopped"
@@ -64,25 +70,78 @@ export async function sendToSession(
         : "unsupported";
   if (chat && mode === "steer" && message.state === "queued" && mails.take(message.id)) {
     try {
-      if (await chatControl().steer({ threadId: target.id }, sessionMessageContext([message]))) {
+      if (
+        await chatControl().steer({ threadId: target.id }, sessionMessageContext([message]), {
+          deliveries: [sessionDeliveryFromMessage(message)],
+        })
+      ) {
         mails.deliver([message.id], "steer");
         delivery = "steer";
       } else mails.release(message.id);
     } catch (error) {
-      mails.failed([message.id], error instanceof Error ? error.message : String(error));
+      if (error instanceof ConflictError && error.code !== "STEER_UNCONFIRMED") {
+        mails.release(message.id);
+      } else {
+        mails.failed([message.id], error instanceof Error ? error.message : String(error));
+      }
     }
   }
   if (chat && mode === "interrupt") chatControl().stop(target.id);
   changes.publish("session-messages", "sessions");
+  const saved = mails.get(message.id);
+  if (saved.delivered_via === "steer") delivery = "steer";
   return {
-    message: mails.get(message.id),
+    message: saved,
     target: {
       session_id: target.id,
       backend: sessionMessageBackend(target.backend),
       status: chat ? (chatControl().running(target.id) ? "running" : "idle") : target.status,
       delivery,
     },
+    receipt: sessionMessageReceipt(delivery, saved.state),
   };
+}
+
+export async function deliverSessionMessageNow(id: string): Promise<SessionMessage> {
+  const mails = new SessionMessageStore(getSqlite());
+  const message = mails.get(id);
+  if (message.state !== "queued")
+    throw new ConflictError("Only a queued message can be delivered now");
+  const waiting = chatControl().waiting(message.target_session_id);
+  if (waiting)
+    throw new ConflictError(
+      "Answer the pending prompt first. This message stays queued until then.",
+    );
+  if (!chatControl().canSteer({ threadId: message.target_session_id }))
+    throw new ConflictError(
+      "This response cannot be steered right now. The message stays queued for the next safe point.",
+    );
+  if (!mails.take(message.id)) throw new ConflictError("This message is already being delivered");
+  try {
+    const steered = await chatControl().steer(
+      { threadId: message.target_session_id },
+      sessionMessageContext([message]),
+      { deliveries: [sessionDeliveryFromMessage(message)] },
+    );
+    if (!steered) {
+      mails.release(message.id);
+      throw new ConflictError(
+        "This response cannot be steered right now. The message stays queued for the next safe point.",
+      );
+    }
+    mails.deliver([message.id], "steer");
+    changes.publish("session-messages", "sessions");
+    return mails.get(message.id);
+  } catch (error) {
+    if (error instanceof ConflictError && error.code !== "STEER_UNCONFIRMED") {
+      mails.release(message.id);
+      changes.publish("session-messages", "sessions");
+      throw error;
+    }
+    mails.failed([message.id], error instanceof Error ? error.message : String(error));
+    changes.publish("session-messages", "sessions");
+    throw error;
+  }
 }
 
 export function lastReply(thread: ChatThread): string {
@@ -266,20 +325,31 @@ export function notifySpawner(thread: ChatThread, eventId: string, outcome: Chil
   const tail = `Read more with session_status {"session_id":"${thread.id}"}; reply with session_send.`;
   const room = SESSION_MESSAGE_MAX_BODY - head.length - tail.length - 40;
   const reply = outcome === "question" || outcome === "approval" ? "" : lastReply(thread);
-  const body = [
-    head,
-    reply
-      ? `Last reply:\n${reply.length > room ? `${reply.slice(0, room)}\n[truncated]` : reply}`
-      : "",
-    tail,
-  ]
+  const trimmedReply = reply
+    ? reply.length > room
+      ? `${reply.slice(0, room)}\n[truncated]`
+      : reply
+    : "";
+  const body = [head, trimmedReply ? `Last reply:\n${trimmedReply}` : "", tail]
     .filter(Boolean)
     .join("\n\n");
+  const normalizedOutcome = outcome === "question" || outcome === "approval" ? "waiting" : outcome;
+  const waitingFor = outcome === "question" || outcome === "approval" ? outcome : undefined;
+  const safeTitle = (thread.title.trim() || thread.id).slice(0, 200);
+  const structuredDelivery: SessionDelivery = {
+    kind: "child_outcome",
+    session_id: thread.id,
+    title: safeTitle,
+    outcome: normalizedOutcome,
+    ...(waitingFor ? { waiting_for: waitingFor } : {}),
+    summary: childOutcomeSummary(normalizedOutcome, reply, waitingFor),
+    body: trimmedReply || body,
+  };
   sendToSession(
     {
       session_id: spawn.sessionId,
       body,
-      mode: "steer",
+      mode: "queue",
       request_id: `child:${thread.id}:${eventId}`.slice(0, 128),
     },
     {
@@ -289,6 +359,7 @@ export function notifySpawner(thread: ChatThread, eventId: string, outcome: Chil
       backend: sessionMessageBackend(thread.backend),
       label: `child session ${thread.title}`.slice(0, 200),
     },
+    structuredDelivery,
   ).catch((error) =>
     logger.warn("Could not notify the parent session", {
       child: thread.id,

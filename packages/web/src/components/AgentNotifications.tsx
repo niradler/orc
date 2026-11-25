@@ -1,11 +1,14 @@
+import type { HumanRequest, HumanRequestSnoozeInput } from "@orc/core/human-requests";
 import type { OrcNotification } from "@orc/core/notifications";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Bell,
+  BellRing,
   Check,
   CheckCheck,
   ChevronDown,
   ChevronRight,
+  Clock,
   MoreHorizontal,
   X,
 } from "lucide-react";
@@ -22,10 +25,11 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import { api } from "@/api/client";
 import { RequestCard, type RequestDraft } from "@/components/RequestCard";
+import { SnoozeMenu } from "@/components/SnoozeMenu";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useActiveLiveSessionsSummary } from "@/hooks/useActiveLiveSessions";
-import { CHAT_THREAD_PARAM, useChat } from "@/hooks/useChat";
+import { CHAT_THREAD_PARAM, SIDE_CHAT_THREAD_PARAM, useChatSurfaces } from "@/hooks/useChat";
 import { useHumanRequests } from "@/hooks/useHumanRequests";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
@@ -39,6 +43,7 @@ import {
 } from "@/lib/notification-sound";
 import { formatRelative } from "@/lib/relative-time";
 import { sessionPath } from "@/lib/session-links";
+import { formatSnoozeUntil } from "@/lib/snooze";
 import { cn } from "@/lib/utils";
 
 export const FOCUS_NOTIFICATIONS_EVENT = "orc-focus-notifications";
@@ -65,6 +70,8 @@ type Center = {
   close: () => void;
   phone: boolean;
   items: OrcNotification[];
+  snoozed: OrcNotification[];
+  requests: HumanRequest[];
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -80,6 +87,12 @@ type Center = {
   mutationError: string | null;
   setRead: (id: string, read: boolean) => void;
   dismiss: (id: string) => void;
+  snoozeRequest: (
+    id: string,
+    version: number,
+    choice: Omit<HumanRequestSnoozeInput, "version">,
+  ) => void;
+  unsnoozeRequest: (id: string, version?: number) => void;
   markAllRead: () => void;
   markAllBusy: boolean;
   hasNextPage: boolean;
@@ -95,19 +108,19 @@ export function useNotificationCenter(): Center {
   return center;
 }
 
-/** Default scope and the chat's assigned identity do not navigate away from the open menu. */
 function menuPlace({ pathname, search }: { pathname: string; search: string }): string {
   const params = new URLSearchParams(search);
   params.delete("project");
   params.delete(CHAT_THREAD_PARAM);
+  params.delete(SIDE_CHAT_THREAD_PARAM);
   return `${pathname}?${params}`;
 }
 
-/** Phone navigation target for the bell: a full page, never a modal. */
 export function notificationsPath(search: string): string {
   const params = new URLSearchParams(search);
   params.delete("chat");
   params.delete(CHAT_THREAD_PARAM);
+  params.delete(SIDE_CHAT_THREAD_PARAM);
   params.delete("notifications");
   return `/notifications?${params}`;
 }
@@ -117,28 +130,38 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const phone = !useBreakpoint("md");
-  const { tabs, activeKey, projectScope } = useChat();
+  const desktopViewport = useBreakpoint("xl");
+  const { page: pageTab, side: sideTab, projectScope } = useChatSurfaces();
   const requests = useHumanRequests();
   const summary = useActiveLiveSessionsSummary();
   const viewParams = new URLSearchParams(location.search);
-  const viewedSessionId =
-    location.pathname === "/chat"
-      ? (viewParams.get("sessionLive") ??
-        viewParams.get("sessionView") ??
-        tabs.find((tab) => tab.key === activeKey)?.thread?.sourceId ??
-        null)
-      : null;
+  const pageOpen = location.pathname === "/chat" || viewParams.get("chat") === "full";
+  const sideOpen = desktopViewport && viewParams.get("chat") === "open";
+  const viewedSessionId = pageOpen
+    ? (viewParams.get("sessionLive") ??
+      viewParams.get("sessionView") ??
+      pageTab.thread?.sourceId ??
+      null)
+    : null;
+  const viewedSideSessionId = sideOpen ? (sideTab.thread?.sourceId ?? null) : null;
   const viewedSession = useQuery({
     queryKey: ["sessions", "live-one", viewedSessionId],
     queryFn: () => api.sessions.liveOne(viewedSessionId as string),
     enabled: !!viewedSessionId,
     retry: false,
   }).data;
-  const sessions = useMemo(
-    () =>
-      viewedSession ? [viewedSession, ...(summary.data?.sessions ?? [])] : summary.data?.sessions,
-    [viewedSession, summary.data],
-  );
+  const viewedSideSession = useQuery({
+    queryKey: ["sessions", "live-one", viewedSideSessionId],
+    queryFn: () => api.sessions.liveOne(viewedSideSessionId as string),
+    enabled: !!viewedSideSessionId && viewedSideSessionId !== viewedSessionId,
+    retry: false,
+  }).data;
+  const sessions = useMemo(() => {
+    const extra = [viewedSession, viewedSideSession].filter(
+      (session): session is NonNullable<typeof session> => Boolean(session),
+    );
+    return extra.length ? [...extra, ...(summary.data?.sessions ?? [])] : summary.data?.sessions;
+  }, [viewedSession, viewedSideSession, summary.data]);
   const [expanded, setExpanded] = useState(false);
   const [showRead, setShowRead] = useState(false);
   const [needsYou, setNeedsYou] = useState(false);
@@ -149,20 +172,27 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   const [pulse, setPulse] = useState(0);
   const [announcement, setAnnouncement] = useState("");
   const feed = useRef(new NotificationFeed());
-  // Completion IDs already settled for the open view; the inbox refetch catches up.
   const acknowledged = useRef(new Set<string>());
   const acknowledge = useRef<(items: readonly OrcNotification[]) => void>(() => {});
+  const activeThreadId = pageOpen ? (pageTab.thread?.id ?? null) : null;
+  const activeThreadSourceId = pageOpen ? (pageTab.thread?.sourceId ?? null) : null;
+  const sideThreadId = sideOpen ? (sideTab.thread?.id ?? null) : null;
+  const sideThreadSourceId = sideOpen ? (sideTab.thread?.sourceId ?? null) : null;
   const delivery = useRef({
     location,
-    tabs,
-    activeKey,
+    activeThreadId,
+    activeThreadSourceId,
+    sideThreadId,
+    sideThreadSourceId,
     requests: requests.data,
     sessions,
   });
   delivery.current = {
     location,
-    tabs,
-    activeKey,
+    activeThreadId,
+    activeThreadSourceId,
+    sideThreadId,
+    sideThreadSourceId,
     requests: requests.data,
     sessions,
   };
@@ -191,11 +221,15 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     ],
     [query.data],
   );
+  const snoozed = useMemo(() => query.data?.pages[0]?.snoozed ?? [], [query.data]);
   const unread = query.data?.pages[0]?.unread ?? 0;
   useEffect(() => {
     document.title = unread ? `(${unread}) Notifications · ORC` : "ORC";
   }, [unread]);
-  const refresh = () => client.invalidateQueries({ queryKey: ["notifications"] });
+  const refresh = () => {
+    void client.invalidateQueries({ queryKey: ["notifications"] });
+    void client.invalidateQueries({ queryKey: ["human-requests"] });
+  };
   const update = useMutation({
     mutationFn: ({ id, ...change }: { id: string; read?: boolean; dismissed?: boolean }) =>
       api.notifications.update(id, change),
@@ -205,6 +239,28 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
   });
   const markAll = useMutation({
     mutationFn: api.notifications.markAllRead,
+    onSuccess: () => {
+      void refresh();
+    },
+  });
+  const snoozeRequestMutation = useMutation({
+    mutationFn: ({
+      id,
+      version,
+      choice,
+    }: {
+      id: string;
+      version: number;
+      choice: Omit<HumanRequestSnoozeInput, "version">;
+    }) => api.humanRequests.snooze(id, { version, ...choice }),
+    onSuccess: (_data, variables) => {
+      setSelected((current) => (current === variables.id ? null : current));
+      void refresh();
+    },
+  });
+  const unsnoozeRequestMutation = useMutation({
+    mutationFn: ({ id, version }: { id: string; version?: number }) =>
+      api.humanRequests.unsnooze(id, version),
     onSuccess: () => {
       void refresh();
     },
@@ -235,10 +291,6 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     feed.current.update(latest, Date.now());
   }, [query.data]);
 
-  const activeThreadId = tabs.find((tab) => tab.key === activeKey)?.thread?.id ?? null;
-  const activeThreadSourceId = tabs.find((tab) => tab.key === activeKey)?.thread?.sourceId ?? null;
-  // A completion for the chat or session already on screen is settled instead of
-  // waiting unread in the bell; the visible conversation is the acknowledgement.
   useEffect(() => {
     if (document.visibilityState === "hidden" || !document.hasFocus()) return;
     const view = {
@@ -247,6 +299,8 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
       search: location.search,
       chatThreadId: activeThreadId,
       threadSourceId: activeThreadSourceId,
+      sideChatThreadId: sideThreadId,
+      sideThreadSourceId: sideThreadSourceId,
       sessions,
       requests: requests.data,
     };
@@ -267,6 +321,8 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     location.search,
     activeThreadId,
     activeThreadSourceId,
+    sideThreadId,
+    sideThreadSourceId,
     sessions,
     requests.data,
   ]);
@@ -280,9 +336,10 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
           active: true,
           pathname: state.location.pathname,
           search: state.location.search,
-          chatThreadId: state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.id ?? null,
-          threadSourceId:
-            state.tabs.find((tab) => tab.key === state.activeKey)?.thread?.sourceId ?? null,
+          chatThreadId: state.activeThreadId,
+          threadSourceId: state.activeThreadSourceId,
+          sideChatThreadId: state.sideThreadId,
+          sideThreadSourceId: state.sideThreadSourceId,
           sessions: state.sessions,
           requests: state.requests ?? undefined,
         });
@@ -424,6 +481,8 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     close: () => setExpanded(false),
     phone,
     items,
+    snoozed,
+    requests: requests.data ?? [],
     loading: query.isPending,
     error: query.error?.message ?? null,
     refresh,
@@ -435,10 +494,17 @@ export function AgentNotifications({ children }: { children: ReactNode }) {
     setSelected,
     drafts,
     onDraft,
-    busy: update.isPending,
-    mutationError: update.error?.message ?? markAll.error?.message ?? null,
+    busy: update.isPending || snoozeRequestMutation.isPending || unsnoozeRequestMutation.isPending,
+    mutationError:
+      update.error?.message ??
+      markAll.error?.message ??
+      snoozeRequestMutation.error?.message ??
+      unsnoozeRequestMutation.error?.message ??
+      null,
     setRead: (id, read) => update.mutate({ id, read }),
     dismiss: (id) => update.mutate({ id, dismissed: true }),
+    snoozeRequest: (id, version, choice) => snoozeRequestMutation.mutate({ id, version, choice }),
+    unsnoozeRequest: (id, version) => unsnoozeRequestMutation.mutate({ id, version }),
     markAllRead: () => {
       setSelected(null);
       // Only what the scoped inbox shows, so another project's unread items survive.
@@ -524,6 +590,7 @@ export function NotificationListBody({ onOpenRequest }: { onOpenRequest?: (id: s
   const shown = center.needsYou
     ? center.items.filter((item) => item.requires_action)
     : center.items;
+  const snoozedItems = center.needsYou ? [] : center.snoozed;
   // Updates from one session/request collapse into a quiet summary row.
   const groups = useMemo(() => {
     const map = new Map<string, OrcNotification[]>();
@@ -556,7 +623,12 @@ export function NotificationListBody({ onOpenRequest }: { onOpenRequest?: (id: s
   // fallback slot; return focus to the answer so an in-progress draft keeps typing.
   useEffect(() => {
     if (!center.selected) return;
-    if (shown.some((item) => item.type === "human.request" && item.source_id === center.selected))
+    if (
+      shown.some((item) => item.type === "human.request" && item.source_id === center.selected) ||
+      snoozedItems.some(
+        (item) => item.type === "human.request" && item.source_id === center.selected,
+      )
+    )
       return;
     if (document.activeElement && document.activeElement !== document.body) return;
     document
@@ -564,7 +636,7 @@ export function NotificationListBody({ onOpenRequest }: { onOpenRequest?: (id: s
         `[data-testid="attention-request-${center.selected}"] [data-testid="attention-answer"]`,
       )
       ?.focus();
-  }, [center.selected, shown]);
+  }, [center.selected, shown, snoozedItems]);
   const chip =
     "max-md:min-h-11 pointer-coarse:min-h-11 rounded-md aria-pressed:bg-surface-highest aria-pressed:text-on-surface";
   return (
@@ -638,15 +710,19 @@ export function NotificationListBody({ onOpenRequest }: { onOpenRequest?: (id: s
             </Button>
           </p>
         )}
-        {!center.loading && !center.error && shown.length === 0 && !center.selected && (
-          <p data-testid="notifications-empty" className="py-5 text-sm text-outline">
-            {center.needsYou
-              ? "Nothing needs you right now."
-              : center.showRead
-                ? "No notifications."
-                : "No unread notifications."}
-          </p>
-        )}
+        {!center.loading &&
+          !center.error &&
+          shown.length === 0 &&
+          snoozedItems.length === 0 &&
+          !center.selected && (
+            <p data-testid="notifications-empty" className="py-5 text-sm text-outline">
+              {center.needsYou
+                ? "Nothing needs you right now."
+                : center.showRead
+                  ? "No notifications."
+                  : "No unread notifications."}
+            </p>
+          )}
         {sections.map((section) => (
           <section key={section.id} aria-label={section.name ?? "Latest notifications"}>
             {section.name && (
@@ -664,8 +740,27 @@ export function NotificationListBody({ onOpenRequest }: { onOpenRequest?: (id: s
             ))}
           </section>
         ))}
+        {snoozedItems.length > 0 && (
+          <section
+            data-testid="notifications-snoozed-section"
+            aria-label="Snoozed notifications"
+            className="mt-2 border-t border-border pt-2"
+          >
+            <h2 className="flex items-center gap-1.5 px-1 py-1 text-xs font-medium text-outline">
+              <Clock aria-hidden="true" className="size-3.5 shrink-0" />
+              <span>Snoozed</span>
+              <span data-testid="notifications-snoozed-count">{snoozedItems.length}</span>
+            </h2>
+            {snoozedItems.map((item) => (
+              <SnoozedNotificationRow key={item.id} item={item} onOpenRequest={onOpenRequest} />
+            ))}
+          </section>
+        )}
         {center.selected &&
           !shown.some(
+            (item) => item.type === "human.request" && item.source_id === center.selected,
+          ) &&
+          !snoozedItems.some(
             (item) => item.type === "human.request" && item.source_id === center.selected,
           ) && (
             <div ref={selectedDetails} className="py-2">
@@ -883,10 +978,98 @@ function NotificationRow({
   );
 }
 
+function SnoozedNotificationRow({
+  item,
+  onOpenRequest,
+}: {
+  item: OrcNotification;
+  onOpenRequest?: (id: string) => void;
+}) {
+  const center = useNotificationCenter();
+  const expandedHere = center.selected === item.source_id;
+  const request = center.requests.find((entry) => entry.id === item.source_id);
+  const until = item.snooze_until ?? request?.snooze_until ?? null;
+  const open = () => {
+    if (onOpenRequest) onOpenRequest(item.source_id);
+    else center.setSelected(expandedHere ? null : item.source_id);
+  };
+  return (
+    <div
+      data-testid="snoozed-notification-item"
+      data-notification-id={item.id}
+      data-source-id={item.source_id}
+      className="border-b border-border py-1.5 last:border-b-0"
+    >
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          {!expandedHere ? (
+            <RequestDetails
+              id={item.source_id}
+              summary={item.title}
+              expanded={false}
+              borderless
+              onToggle={open}
+              onNavigate={() => {
+                center.setSelected(null);
+                center.close();
+              }}
+              drafts={center.drafts}
+              onDraft={center.onDraft}
+            />
+          ) : (
+            <RequestDetails
+              key={item.source_id}
+              id={item.source_id}
+              summary={item.title}
+              expanded
+              borderless
+              onToggle={() => center.setSelected(null)}
+              onNavigate={() => {
+                center.setSelected(null);
+                center.close();
+              }}
+              drafts={center.drafts}
+              onDraft={center.onDraft}
+            />
+          )}
+          {until !== null && !request && (
+            <span
+              data-testid="notification-snoozed-until"
+              className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
+            >
+              <Clock className="size-3 shrink-0" aria-hidden="true" />
+              Snoozed until {formatSnoozeUntil(until)}
+            </span>
+          )}
+        </div>
+        {!expandedHere && (
+          <Button
+            size="sm"
+            variant="ghost"
+            type="button"
+            data-testid="notification-wake-now"
+            disabled={center.busy}
+            className="shrink-0 max-md:min-h-11 pointer-coarse:min-h-11"
+            onClick={() => center.unsnoozeRequest(item.source_id, request?.version)}
+          >
+            <BellRing className="size-3.5" aria-hidden="true" />
+            Wake now
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /** Desktop keeps direct icon actions; phones get one named row menu (44px target). */
 function NotificationRowActions({ item }: { item: OrcNotification }) {
   const center = useNotificationCenter();
   const [open, setOpen] = useState(false);
+  const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const pendingRequest =
+    item.type === "human.request"
+      ? center.requests.find((entry) => entry.id === item.source_id && entry.status === "pending")
+      : undefined;
   const act = (run: () => void) => {
     if (center.selected === item.source_id) center.setSelected(null);
     run();
@@ -894,6 +1077,27 @@ function NotificationRowActions({ item }: { item: OrcNotification }) {
   if (!center.phone)
     return (
       <div className="flex shrink-0">
+        {pendingRequest && (
+          <SnoozeMenu
+            align="end"
+            disabled={center.busy}
+            onSelect={(choice) =>
+              center.snoozeRequest(pendingRequest.id, pendingRequest.version, choice)
+            }
+            trigger={
+              <Button
+                size="icon"
+                variant="ghost"
+                data-testid="notification-snooze"
+                aria-label="Snooze request"
+                title="Snooze"
+                disabled={center.busy}
+              >
+                <Clock className="size-4" />
+              </Button>
+            }
+          />
+        )}
         <Button
           size="icon"
           variant="ghost"
@@ -917,45 +1121,71 @@ function NotificationRowActions({ item }: { item: OrcNotification }) {
       </div>
     );
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          size="icon"
-          variant="ghost"
-          data-testid="notification-actions"
-          aria-label={`Actions for ${item.title}`}
-          className="min-h-11 min-w-11 shrink-0"
-        >
-          <MoreHorizontal className="size-4" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-44 p-1" aria-label={`Actions for ${item.title}`}>
-        <button
-          type="button"
-          data-testid="notification-mark-read"
-          className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-on-surface-variant hover:bg-surface hover:text-on-surface"
-          onClick={() => {
-            setOpen(false);
-            act(() => center.setRead(item.id, !item.read_at));
-          }}
-        >
-          <Check className="size-4" />
-          {item.read_at ? "Mark unread" : "Mark read"}
-        </button>
-        <button
-          type="button"
-          data-testid="notification-dismiss"
-          className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-on-surface-variant hover:bg-surface hover:text-on-surface"
-          onClick={() => {
-            setOpen(false);
-            act(() => center.dismiss(item.id));
-          }}
-        >
-          <X className="size-4" />
-          Dismiss
-        </button>
-      </PopoverContent>
-    </Popover>
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button
+            size="icon"
+            variant="ghost"
+            data-testid="notification-actions"
+            aria-label={`Actions for ${item.title}`}
+            className="min-h-11 min-w-11 shrink-0"
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-44 p-1" aria-label={`Actions for ${item.title}`}>
+          {pendingRequest && (
+            <button
+              type="button"
+              data-testid="notification-snooze"
+              className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-on-surface-variant hover:bg-surface hover:text-on-surface"
+              onClick={() => {
+                setOpen(false);
+                setSnoozeOpen(true);
+              }}
+            >
+              <Clock className="size-4" />
+              Snooze
+            </button>
+          )}
+          <button
+            type="button"
+            data-testid="notification-mark-read"
+            className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-on-surface-variant hover:bg-surface hover:text-on-surface"
+            onClick={() => {
+              setOpen(false);
+              act(() => center.setRead(item.id, !item.read_at));
+            }}
+          >
+            <Check className="size-4" />
+            {item.read_at ? "Mark unread" : "Mark read"}
+          </button>
+          <button
+            type="button"
+            data-testid="notification-dismiss"
+            className="flex min-h-11 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-on-surface-variant hover:bg-surface hover:text-on-surface"
+            onClick={() => {
+              setOpen(false);
+              act(() => center.dismiss(item.id));
+            }}
+          >
+            <X className="size-4" />
+            Dismiss
+          </button>
+        </PopoverContent>
+      </Popover>
+      {pendingRequest && (
+        <SnoozeMenu
+          open={snoozeOpen}
+          onOpenChange={setSnoozeOpen}
+          disabled={center.busy}
+          onSelect={(choice) =>
+            center.snoozeRequest(pendingRequest.id, pendingRequest.version, choice)
+          }
+        />
+      )}
+    </>
   );
 }
 
@@ -963,6 +1193,7 @@ function RequestDetails({
   id,
   summary,
   expanded,
+  borderless = false,
   onToggle,
   drafts,
   onDraft,
@@ -971,6 +1202,7 @@ function RequestDetails({
   id: string;
   summary: string;
   expanded: boolean;
+  borderless?: boolean;
   onToggle: () => void;
   drafts: Record<string, RequestDraft>;
   onDraft: (id: string, update: Partial<RequestDraft>) => void;
@@ -1003,8 +1235,10 @@ function RequestDetails({
     <RequestCard
       request={value}
       expanded={expanded}
+      borderless={borderless}
       onToggle={onToggle}
       onNavigate={onNavigate}
+      onSnoozed={expanded ? onToggle : undefined}
       draft={drafts[id]}
       onDraftChange={(update) =>
         onDraft(id, {

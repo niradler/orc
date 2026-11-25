@@ -3,9 +3,11 @@ import { loadConfig } from "@orc/core/config";
 import { ConflictError } from "@orc/core/errors";
 import { resolveExecHost } from "@orc/core/exec-host";
 import type { HumanRequest } from "@orc/core/human-requests";
+import { createLogger } from "@orc/core/logger";
 import type { RuleDecision } from "@orc/core/rule-types";
 import { getSqlite } from "@orc/db/client";
 import { currentHumanRequest, HumanRequestStore } from "@orc/db/human-requests";
+import { NotificationDeliveryStore } from "@orc/db/notification-deliveries";
 import { RuleStore } from "@orc/db/rules";
 import {
   type AgentEvent,
@@ -15,7 +17,22 @@ import {
   type SessionOpts,
 } from "./types.js";
 
+const logger = createLogger("agent-runtime:human-requests");
+
 type Pause = Extract<AgentEvent, { type: "permission_request" | "question_request" }>;
+
+/** One-line failure reason for logs and channel messages; zod errors stringify as JSON. */
+function failureReason(error: unknown): string {
+  if (error && typeof error === "object" && Array.isArray((error as { issues?: unknown }).issues)) {
+    const issues = (error as { issues: { path?: PropertyKey[]; message?: string }[] }).issues;
+    const summary = issues
+      .map((issue) => `${(issue.path ?? []).join(".") || "input"}: ${issue.message ?? "invalid"}`)
+      .join("; ");
+    if (summary) return summary.slice(0, 300);
+  }
+  return (error instanceof Error ? error.message : String(error)).slice(0, 300);
+}
+
 type Wait = {
   abort: AbortController;
   requests: HumanRequest[];
@@ -23,10 +40,27 @@ type Wait = {
   permissionResult?: PermissionResult;
   permissionFeedback?: string | undefined;
   questionIds: string[];
+  secretFieldKeys?: Map<string, string>;
   tool?: string;
   ruleBound: boolean;
   task: Promise<void>;
 };
+
+function secretFieldKey(id: string, index: number, used: Set<string>): string {
+  const normalized = id
+    .trim()
+    .replace(/[^A-Za-z0-9_.-]+/g, "_")
+    .replace(/^[^A-Za-z]+/, "")
+    .slice(0, 58);
+  const base = normalized || `field_${index + 1}`;
+  let key = base;
+  let suffix = 2;
+  while (used.has(key)) {
+    key = `${base.slice(0, 58)}_${suffix++}`;
+  }
+  used.add(key);
+  return key;
+}
 
 export function withHumanRequests(
   session: AgentSession,
@@ -123,9 +157,29 @@ export function withHumanRequests(
       const questions = event.type === "question_request" ? event.data.questions : [null];
       const occurrence = randomUUID();
       const nativeSessionId = session.getRuntimeSessionId?.();
-      if (questions.some((question) => question?.isSecret))
-        throw new Error("Secret input cannot enter the inbox");
-      for (const question of questions) {
+      const isSecretRequest =
+        event.type === "question_request" && questions.some((question) => question?.isSecret);
+      if (isSecretRequest) {
+        const webBaseUrl =
+          opts.humanRequestContext?.webBaseUrl?.trim() ||
+          new NotificationDeliveryStore(store.db).policy().base_url.trim();
+        if (opts.humanRequestContext?.channel && !webBaseUrl) {
+          throw new Error("Open ORC to answer this secret request");
+        }
+        const usedKeys = new Set<string>();
+        const fieldMap = new Map<string, string>();
+        const fields = event.data.questions.slice(0, 10).map((question, index) => {
+          const key = secretFieldKey(question.id, index, usedKeys);
+          fieldMap.set(question.id, key);
+          return {
+            key,
+            label:
+              (question.header || question.question).trim().slice(0, 200) || `Secret ${index + 1}`,
+            description: question.question.trim().slice(0, 1000) || undefined,
+            required: true,
+          };
+        });
+        wait.secretFieldKeys = fieldMap;
         const record = store.create(
           {
             origin: {
@@ -146,14 +200,7 @@ export function withHumanRequests(
                   }
                 : {}),
               request_id: createHash("sha256")
-                .update(
-                  JSON.stringify([
-                    event.data.requestId,
-                    question?.id ?? "approval",
-                    bindings,
-                    occurrence,
-                  ]),
-                )
+                .update(JSON.stringify([event.data.requestId, "secret", bindings, occurrence]))
                 .digest("hex"),
             },
             project_id:
@@ -161,16 +208,15 @@ export function withHumanRequests(
               opts.humanRequestContext?.projectId ??
               null,
             ...(bindings.length ? { rule_bindings: bindings } : {}),
-            kind: event.type === "question_request" ? "question" : "approval",
+            kind: "secret",
+            title: "Secret input requested",
             prompt:
-              question?.question ??
-              ([...new Set(actions.map((action) => action.target.prompt))].join("\n") ||
-                `Allow ${event.type === "permission_request" ? event.data.tool : "action"}?`),
-            choices: question?.options?.map((option) => option.label) ?? [],
-            choice_descriptions: Object.fromEntries(
-              question?.options?.map((option) => [option.label, option.description]) ?? [],
-            ),
-            multi_select: question?.multiSelect ?? false,
+              event.data.questions
+                .map((question) => question.question)
+                .filter(Boolean)
+                .join("\n")
+                .slice(0, 16000) || "Enter the requested credentials in ORC.",
+            fields,
             notify: [
               ...new Set([
                 ...actions.flatMap((action) => action.target.notify),
@@ -178,23 +224,86 @@ export function withHumanRequests(
               ]),
             ],
             expires_in_seconds: actions.length
-              ? Math.min(...actions.map((action) => action.target.expires_in_seconds))
-              : 86400,
-            ...(event.type === "permission_request"
-              ? {
-                  action: {
-                    tool: event.data.tool,
-                    input: event.data.input ?? { command: event.data.command },
-                    cwd: event.data.cwd ?? opts.cwd,
-                    host: host.kind === "ssh" ? host.alias : "local",
-                  },
-                }
-              : {}),
+              ? Math.min(...actions.map((action) => action.target.expires_in_seconds), 1800)
+              : 1800,
           },
           owner,
         );
         wait.requests.push(record);
-        wait.questionIds.push(question?.id ?? "approval");
+        wait.questionIds.push("secret");
+      } else {
+        for (const question of questions) {
+          const record = store.create(
+            {
+              origin: {
+                session_id: session.id,
+                backend: agent,
+                ...(opts.humanRequestContext?.channel
+                  ? { channel: opts.humanRequestContext.channel }
+                  : {}),
+                execution_host: host.kind === "ssh" ? host.alias : null,
+                native_request_key: createHash("sha256").update(event.data.requestId).digest("hex"),
+                ...(nativeSessionId && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(nativeSessionId)
+                  ? { native_session_id: nativeSessionId }
+                  : {}),
+                ...(opts.attentionContext
+                  ? {
+                      chat_thread_id: opts.attentionContext.chatThreadId,
+                      session_title: opts.attentionContext.sessionTitle,
+                    }
+                  : {}),
+                request_id: createHash("sha256")
+                  .update(
+                    JSON.stringify([
+                      event.data.requestId,
+                      question?.id ?? "approval",
+                      bindings,
+                      occurrence,
+                    ]),
+                  )
+                  .digest("hex"),
+              },
+              project_id:
+                revisions.find((revision) => revision.id === bindings[0]?.revision_id)
+                  ?.project_id ??
+                opts.humanRequestContext?.projectId ??
+                null,
+              ...(bindings.length ? { rule_bindings: bindings } : {}),
+              kind: event.type === "question_request" ? "question" : "approval",
+              prompt:
+                question?.question ??
+                ([...new Set(actions.map((action) => action.target.prompt))].join("\n") ||
+                  `Allow ${event.type === "permission_request" ? event.data.tool : "action"}?`),
+              choices: question?.options?.map((option) => option.label) ?? [],
+              choice_descriptions: Object.fromEntries(
+                question?.options?.map((option) => [option.label, option.description]) ?? [],
+              ),
+              multi_select: question?.multiSelect ?? false,
+              notify: [
+                ...new Set([
+                  ...actions.flatMap((action) => action.target.notify),
+                  ...(opts.humanRequestContext?.notify ?? []),
+                ]),
+              ],
+              expires_in_seconds: actions.length
+                ? Math.min(...actions.map((action) => action.target.expires_in_seconds))
+                : 86400,
+              ...(event.type === "permission_request"
+                ? {
+                    action: {
+                      tool: event.data.tool,
+                      input: event.data.input ?? { command: event.data.command },
+                      cwd: event.data.cwd ?? opts.cwd,
+                      host: host.kind === "ssh" ? host.alias : "local",
+                    },
+                  }
+                : {}),
+            },
+            owner,
+          );
+          wait.requests.push(record);
+          wait.questionIds.push(question?.id ?? "approval");
+        }
       }
       const replies = await Promise.all(wait.requests.map((record) => waitForAnswer(record, wait)));
       if (wait.abort.signal.aborted || !session.alive())
@@ -208,6 +317,21 @@ export function withHumanRequests(
           wait.permissionResult ?? (response.approved ? "approved" : "denied"),
           wait.permissionFeedback,
         );
+      } else if (isSecretRequest) {
+        if (!session.respondQuestion) throw new Error("Native answer delivery unsupported");
+        const reply = replies[0];
+        if (!reply) throw new Error("Missing secret response");
+        const claimed = store.claimSecret(reply.id);
+        const answers = Object.fromEntries(
+          event.data.questions.map((question) => {
+            const key = wait.secretFieldKeys?.get(question.id) ?? question.id;
+            const value = claimed.stored
+              ? (claimed.references?.[key] ?? "")
+              : (claimed.values?.[key] ?? "");
+            return [question.id, [value]];
+          }),
+        );
+        await session.respondQuestion(event.data.requestId, answers);
       } else {
         if (!session.respondQuestion) throw new Error("Native answer delivery unsupported");
         const answers = Object.fromEntries(
@@ -225,9 +349,35 @@ export function withHumanRequests(
       }
       emit({ type: "request_resolved", data: { requestId: event.data.requestId } });
       emit({ type: "system_status", data: "Human response sent to the originating agent" });
-    } catch {
+    } catch (error) {
+      logger.warn("Human request bridge fell back or failed", {
+        session: session.id,
+        requestId: event.data.requestId,
+        kind: event.type,
+        created: wait.requests.length,
+        aborted: wait.abort.signal.aborted,
+        channel: !!opts.humanRequestContext?.channel,
+        error: failureReason(error),
+      });
       if (!wait.abort.signal.aborted) {
-        const expected = event.type === "question_request" ? event.data.questions.length : 1;
+        const isSecret =
+          event.type === "question_request" &&
+          event.data.questions.some((question) => question.isSecret);
+        const expected =
+          event.type === "question_request" ? (isSecret ? 1 : event.data.questions.length) : 1;
+        if (opts.humanRequestContext?.channel && wait.requests.length < expected) {
+          stopWait(wait, true);
+          emit({
+            type: "error",
+            data: isSecret
+              ? "Open ORC to answer this secret request"
+              : `This ${event.type === "question_request" ? "question" : "approval"} could not be delivered to the originating channel; the turn was stopped and nothing was authorized.`,
+          });
+          try {
+            await session.close();
+          } catch {}
+          return;
+        }
         if (!wait.ruleBound && wait.requests.length < expected) {
           stopWait(wait, false);
           emit({ type: "system_status", data: "Answer this request in the original chat." });
@@ -271,6 +421,7 @@ export function withHumanRequests(
             continue;
           }
           if (
+            !opts.humanRequestContext?.channel &&
             !decision.human_requests?.length &&
             event.type === "question_request" &&
             event.data.questions.some((question) => question.isSecret)
@@ -290,20 +441,25 @@ export function withHumanRequests(
             };
             waits.set(event.data.requestId, wait);
             wait.task = answer(event, decision, wait);
-            if (decision.human_requests?.length)
-              emit({
-                type: "system_status",
-                data: `ORC rule requires your response: ${decision.human_requests.map((action) => action.target.prompt).join("; ")}`,
-              });
             if (
               wait.requests.length ===
-              (event.type === "question_request" ? event.data.questions.length : 1)
-            )
+              (event.type === "question_request"
+                ? event.data.questions.some((question) => question.isSecret)
+                  ? 1
+                  : event.data.questions.length
+                : 1)
+            ) {
+              if (decision.human_requests?.length)
+                emit({
+                  type: "system_status",
+                  data: `ORC rule requires your response: ${decision.human_requests.map((action) => action.target.prompt).join("; ")}`,
+                });
               emit(
                 wait.ruleBound && event.type === "permission_request"
                   ? { ...event, data: { ...event.data, allowSession: false } }
                   : event,
               );
+            }
             continue;
           }
         }

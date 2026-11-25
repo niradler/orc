@@ -10,6 +10,7 @@ import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { notificationProjectLabel, publishNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
+import { pruneRuleStorage } from "@orc/db/rules";
 import { notify, sessionWaitingMessage } from "./push/service.js";
 import { activeTurns, turnKey } from "./sessions/turns.js";
 
@@ -261,25 +262,66 @@ export function syncRequestNotifications(sqlite: Database): void {
     notifications.resolve(row.source_key);
 }
 
+export function wakeDueHumanRequestSnoozes(sqlite: Database = getSqlite(), now?: number) {
+  const store = new HumanRequestStore(sqlite, now === undefined ? Date.now : () => now);
+  const woken = store.wakeDueSnoozes(now);
+  if (woken.length) changes.publish("human-requests", "notifications");
+  return woken;
+}
+
 export function maintainNotifications(sqlite: Database = getSqlite()): void {
+  wakeDueHumanRequestSnoozes(sqlite);
   syncFinishedNotificationSessions(sqlite);
   syncRequestNotifications(sqlite);
   new NotificationStore(sqlite).cleanup();
   cleanupAuditLog(sqlite, loadConfig().preferences.audit_retention_days ?? 90);
+  const rules = loadConfig().rules;
+  pruneRuleStorage(sqlite, {
+    retentionDays: rules.retention_days,
+    maxRows: rules.max_decision_rows,
+  });
 }
 
 export function startNotificationMaintenance(): () => void {
+  let wakeTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleWake = () => {
+    clearTimeout(wakeTimer);
+    try {
+      const next = new HumanRequestStore(getSqlite()).nextSnoozeAt();
+      if (next === null) return;
+      const delay = Math.min(60_000, Math.max(0, next - Date.now()) + 50);
+      wakeTimer = setTimeout(() => {
+        try {
+          wakeDueHumanRequestSnoozes();
+        } catch (error) {
+          logger.error("Snooze wake sweep failed", error);
+        } finally {
+          scheduleWake();
+        }
+      }, delay);
+      wakeTimer.unref();
+    } catch (error) {
+      logger.error("Snooze wake timer scheduling failed", error);
+    }
+  };
   const run = () => {
     try {
       maintainNotifications();
     } catch (error) {
       logger.error("Notification and audit cleanup failed", error);
+    } finally {
+      scheduleWake();
     }
   };
+  const unsubscribe = changes.subscribe(({ resources }) => {
+    if (resources.includes("human-requests")) scheduleWake();
+  });
   run();
   const timer = setInterval(run, 60_000);
   timer.unref();
   return () => {
+    unsubscribe();
+    clearTimeout(wakeTimer);
     clearInterval(timer);
     for (const timer of observedTimers.values()) clearTimeout(timer);
     observedTimers.clear();

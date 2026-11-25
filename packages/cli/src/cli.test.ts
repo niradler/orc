@@ -392,3 +392,45 @@ describe("CLI - native memory and skill folders", () => {
     expect(listed.stdout).toMatch(/orc-platform/);
   });
 });
+
+describe("CLI - attention snooze and unsnooze", () => {
+  test("orc attention snooze --for / --until and unsnooze round-trip", async () => {
+    const reqDir = join(tmpdir(), `orc-cli-snooze-${Date.now()}`);
+    mkdirSync(reqDir, { recursive: true });
+    try {
+      const reqFile = join(reqDir, "request.json");
+      writeFileSync(
+        reqFile,
+        JSON.stringify({
+          origin: { session_id: "cli-snooze-s", backend: "codex", request_id: "cli-snooze-1" },
+          kind: "question",
+          prompt: "Deploy now?",
+          choices: ["Yes", "Later"],
+        }),
+      );
+      const created = await cli("attention", "request", reqFile);
+      expect(created.exitCode).toBe(0);
+      const request = JSON.parse(created.stdout) as { id: string; version: number };
+
+      const snoozed = await cli("attention", "snooze", request.id, "--for", "1h");
+      expect(snoozed.exitCode).toBe(0);
+      const snoozedBody = JSON.parse(snoozed.stdout) as {
+        status: string;
+        snooze_until: number | null;
+      };
+      expect(snoozedBody.status).toBe("pending");
+      expect(snoozedBody.snooze_until).toBeGreaterThan(Date.now());
+
+      const futureIso = new Date(Date.now() + 7_200_000).toISOString();
+      const resnoozed = await cli("attention", "snooze", request.id, "--until", futureIso);
+      expect(resnoozed.exitCode).toBe(0);
+      expect(JSON.parse(resnoozed.stdout).snooze_until).toBe(Date.parse(futureIso));
+
+      const woken = await cli("attention", "unsnooze", request.id);
+      expect(woken.exitCode).toBe(0);
+      expect(JSON.parse(woken.stdout).snooze_until).toBeNull();
+    } finally {
+      rmSync(reqDir, { recursive: true, force: true });
+    }
+  });
+});

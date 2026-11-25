@@ -126,6 +126,29 @@ export const DEFAULT_ENABLED_AGENTS = ["codex", "claude", "cursor", "gemini", "o
 
 export const AGENT_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
 
+const AGENT_ALIASES: Record<string, string> = {
+  "claude-cli": "claude",
+  "claude-code": "claude",
+  "codex-cli": "codex",
+  "cursor-agent": "cursor",
+};
+
+export function canonicalAgentId(name: string): string {
+  const lower = name.trim().toLowerCase();
+  if (!lower) return name;
+  const direct = codingAgent(lower);
+  if (direct) return direct.id;
+  const alias = AGENT_ALIASES[lower];
+  if (alias) return alias;
+  const byBackend = agentForSessionBackend(lower);
+  if (byBackend) return byBackend.id;
+  if (lower !== "acpx") {
+    const byRuntime = CODING_AGENTS.filter((agent) => agent.chatRuntime === lower);
+    if (byRuntime.length === 1 && byRuntime[0]) return byRuntime[0].id;
+  }
+  return name;
+}
+
 export function codingAgent(id: string): CodingAgent | undefined {
   return CODING_AGENTS.find((agent) => agent.id === id);
 }

@@ -115,15 +115,15 @@ export function ChatAgentOptionsEditor() {
   const help = (
     <HelpPopover label="Agent launch options" testId="chat-agent-options-help">
       {directAcp
-        ? "Direct ACP agents read their launch command from ORC's agent_loop.acp_commands or a built-in ACP command. Environment variables and executables are saved per provider in Settings → Providers, including secret values. Changes apply to the next turn."
+        ? "Runs its own ACP command from ORC's agent_loop.acp_commands; provider env and executables live in Settings → Providers."
         : runtime === "claude-sdk"
-          ? 'SDK fields: permissionMode, maxTurns, maxBudgetUsd, effort, thinking, fallbackModel, extraArgs. Example: {"maxTurns": 20, "effort": "high"}. Environment variables and secrets belong to the agent profile in Settings → Providers.'
+          ? 'Example: {"maxTurns": 20, "effort": "high"}. Fields: permissionMode, maxTurns, maxBudgetUsd, effort, thinking, fallbackModel, extraArgs.'
           : runtime === "pi"
-            ? 'Pi fields: thinkingLevel, steeringMode, followUpMode, autoCompaction, autoRetry. Example: {"thinkingLevel":"high"}. Queue mode, auto-retry and auto-compaction are saved to Pi\'s own settings on the execution host; thinking level is session-only. Environment variables belong to the agent profile in Settings → Providers.'
+            ? 'Example: {"thinkingLevel":"high"}. Fields: thinkingLevel, steeringMode, followUpMode, autoCompaction, autoRetry. Pi keeps queue and retry changes on the host.'
             : runtime === "acpx"
-              ? `Arguments passed to the ACPX transport that launches ${agentName}. Example: ["--approve-all", "--timeout", "120"]. Other options include --approve-reads, --deny-all, --ttl and --non-interactive-permissions. Environment variables, executable paths and secrets belong to the agent profile in Settings → Providers.`
-              : "Use -c / --config for reasoning, verbosity, context, web_search or feature settings, or --enable / --disable. Set sandbox and approval behavior with Permissions above. Environment variables and secrets belong to the agent profile in Settings → Providers."}{" "}
-      Options are kept separately for each agent.
+              ? 'Example: ["--approve-all"]. Also --approve-reads, --deny-all, --ttl and --non-interactive-permissions. Provider env and secrets live in Settings → Providers.'
+              : "Use -c/--config for reasoning, verbosity and web search, or --enable/--disable. Sandbox and approvals are set above."}{" "}
+      Options are kept per agent and apply to the next turn.
     </HelpPopover>
   );
   return (
@@ -136,8 +136,7 @@ export function ChatAgentOptionsEditor() {
             data-testid="chat-agent-options-direct-acp"
           >
             {agentName} connects over ACP directly, so ACPX launch flags do not apply. Set its
-            command in ORC configuration and its environment, executable or secrets in Settings →
-            Providers. Those profile values also apply to this chat.
+            command in ORC configuration and its profile values in Settings → Providers.
           </p>
           {help}
         </div>

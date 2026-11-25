@@ -1,6 +1,8 @@
 import { changes } from "@orc/core/changes";
 import type { ExecHost } from "@orc/core/exec-host";
+import { createJobOutputRedactor } from "@orc/core/job-environment";
 import { createLogger } from "@orc/core/logger";
+import { getRegisteredSecrets, redactRegisteredSecrets } from "@orc/core/secret-redactor";
 import {
   ensureWorkspaceEnvironment,
   parseWorkspaceEnvironment,
@@ -13,6 +15,7 @@ import {
   worktreeRoot,
 } from "@orc/core/workspace-environment";
 import { getSqlite } from "@orc/db/client";
+import { resolveProjectSecretEnv } from "@orc/db/project-secrets";
 import type { projects } from "@orc/db/schema";
 import {
   clearWorkspacePreview,
@@ -109,11 +112,17 @@ export async function workspaceLaunch(
 
   const config = projectWorkspaceConfig(project);
   const resolved = resolveWorkspaceEnvironment(config);
+  const withProjectSecrets = resolveProjectSecretEnv(getSqlite(), project.id, resolved.env);
+  const secrets = [...new Set([...resolved.secrets, ...withProjectSecrets.secrets])];
+  const redact = (text: string): string => {
+    const redactor = createJobOutputRedactor([...secrets, ...getRegisteredSecrets()]);
+    return redactRegisteredSecrets(redactor.write(text) + redactor.finish(), secrets);
+  };
   const worktree = worktreeDir(cwd);
   const launch: WorkspaceLaunch = {
     projectId: project.id,
     worktreePath: worktree,
-    env: resolved.env,
+    env: withProjectSecrets.env,
     previewUrl: null,
     setup: null,
     warning: null,
@@ -128,8 +137,8 @@ export async function workspaceLaunch(
       path,
       // Ports stay stable for the main checkout, but its setup is the developer's own.
       workspace: worktree ? config : { ...config, setup_script: null },
-      redact: resolved.redact,
-      env: resolved.env,
+      redact,
+      env: withProjectSecrets.env,
     });
   } catch (error) {
     logger.error(`Workspace environment failed for ${path}: ${String(error)}`);
@@ -148,7 +157,7 @@ export async function workspaceLaunch(
       ORC_PROJECT_ID: project.id,
       ORC_WORKSPACE: path,
       ...(worktree ? { ORC_WORKTREE: worktree } : {}),
-      ...resolved.env,
+      ...withProjectSecrets.env,
     },
     previewUrl: record.preview_url,
     setup: record,
