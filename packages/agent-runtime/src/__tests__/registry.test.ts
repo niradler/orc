@@ -2,7 +2,12 @@ import { describe, expect, it } from "bun:test";
 import { AcpSession } from "../acp.js";
 import { ClaudeSession } from "../claude.js";
 import { CodexAppSession } from "../codex-app.js";
-import { createBackend, listRegisteredBackends } from "../index.js";
+import {
+  backendSupportsToolAllowlist,
+  createBackend,
+  listRegisteredBackends,
+  toolAllowlistBackends,
+} from "../index.js";
 import type { AgentSession } from "../types.js";
 
 describe("backend registry", () => {
@@ -62,6 +67,22 @@ describe("backend registry", () => {
       expect((err as Error).message).toContain("acpx");
       expect((err as Error).message).toContain("claude");
     }
+  });
+
+  // A KB digest always runs with a tool whitelist, so this is the set it may be pointed at, and
+  // the set the digest backend picker filters to.
+  it("reports which backends can enforce a session tool whitelist", () => {
+    expect(backendSupportsToolAllowlist("claude")).toBe(true);
+    expect(backendSupportsToolAllowlist("claude-cli")).toBe(true);
+    for (const name of ["acpx", "acp", "opencode", "codex-cli", "pi", "a2a", "agentapi"])
+      expect(backendSupportsToolAllowlist(name)).toBe(false);
+    // An unknown name means "acpx driving that agent", and acpx ignores the whitelist.
+    expect(backendSupportsToolAllowlist("gemini")).toBe(false);
+    const capable = toolAllowlistBackends();
+    expect(capable).toContain("claude");
+    expect(capable).toContain("claude-cli");
+    for (const name of ["acpx", "codex-cli", "opencode", "a2a"])
+      expect(capable).not.toContain(name);
   });
 
   it("advertises only controls whose session methods exist", () => {

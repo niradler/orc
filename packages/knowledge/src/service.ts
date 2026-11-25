@@ -212,6 +212,20 @@ type DigestJoin = {
 };
 
 /**
+ * A digest always runs with a tool whitelist, so reject a backend that cannot enforce one instead
+ * of scheduling a job that fails on every run. Every path that turns a digest on calls this: the
+ * digest settings and the job page, which may enable the job without going through `setDigest`.
+ */
+export function assertDigestBackend(backend: string): void {
+  if (backendSupportsToolAllowlist(backend)) return;
+  const capable = toolAllowlistBackends();
+  throw new ValidationError(
+    `Backend "${backend}" cannot enforce a digest's tool whitelist.` +
+      (capable.length ? ` Choose ${capable.join(" or ")}.` : ""),
+  );
+}
+
+/**
  * Single knowledge-base service. REST, MCP, CLI and the web UI are transports over it; each call
  * carries a KbCallContext (actor + transport) used for authorization and read accounting.
  */
@@ -1080,19 +1094,6 @@ export class KnowledgeService {
   }
 
   /**
-   * A digest always runs with a tool whitelist, so reject a backend that cannot enforce one
-   * instead of scheduling a job that fails on every run.
-   */
-  private assertDigestBackend(backend: string): void {
-    if (backendSupportsToolAllowlist(backend)) return;
-    const capable = toolAllowlistBackends();
-    throw new ValidationError(
-      `Backend "${backend}" cannot enforce a digest's tool whitelist.` +
-        (capable.length ? ` Choose ${capable.join(" or ")}.` : ""),
-    );
-  }
-
-  /**
    * Creates or changes a KB's digest and its job. The digest agent writes through MCP, so the KB's
    * `editable_by` must include mcp.
    */
@@ -1112,7 +1113,7 @@ export class KnowledgeService {
     const backend = input.backend ?? existing?.backend ?? this.defaultBackend();
     // The digest reads untrusted session text and comments, so it always runs with an explicit
     // tool whitelist; a backend that cannot enforce one would run it unrestricted.
-    if (enabled) this.assertDigestBackend(backend);
+    if (enabled) assertDigestBackend(backend);
     const timeout = input.timeout_secs ?? existing?.timeout_secs ?? DIGEST_TIMEOUT_SECS;
     const cron = schedule.type === "cron" ? schedule.cron : null;
     const now = Date.now();
@@ -1186,7 +1187,7 @@ export class KnowledgeService {
     if (!row) throw new NotFoundError("Digest", kbId);
     if (!this.jobHooks)
       throw new ValidationError("Digest runs start in the ORC daemon; call the ORC API");
-    this.assertDigestBackend(row.backend);
+    assertDigestBackend(row.backend);
     const runId = await this.jobHooks.run(row.job_id, ctx.source);
     this.audit(ctx, "kb.digest.started", [kbId, runId], kb.project_id);
     return { run_id: runId };

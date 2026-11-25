@@ -458,9 +458,12 @@ export function kbCommand() {
   digest
     .command("set <kb>")
     .description(
-      "Add or change a digest; a new one starts from the template, daily at 03:00, default backend",
+      "Add or change a digest; a new one starts from the template, daily at 03:00, on the default backend",
     )
-    .option("-b, --backend <name>", "Agent backend, e.g. codex or claude")
+    .option(
+      "-b, --backend <name>",
+      "Digest backend: claude or claude-cli (a digest runs with a tool whitelist)",
+    )
     .option("--cron <expr>", "Run on this cron schedule")
     .option("--manual", "Run only when started")
     .option("-i, --instructions <file>", "Read the instructions from a file")

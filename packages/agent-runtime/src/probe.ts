@@ -12,6 +12,11 @@ export type BackendProbe = {
   name: string;
   capabilities: AgentCapabilities;
   kind: BackendKind;
+  /**
+   * Whether a session here can be restricted to an explicit tool whitelist. A KB digest needs
+   * one and cannot run on a backend that ignores it, so the picker has to know before saving.
+   */
+  toolAllowlist: boolean;
   /** Usable right now: preflight passed. */
   available: boolean;
   /** Why it is not usable, verbatim from preflight. */
@@ -43,6 +48,7 @@ export async function probeBackend(name: AgentBackendName): Promise<BackendProbe
     return {
       name,
       capabilities: { ...UNKNOWN_CAPABILITIES },
+      toolAllowlist: false,
       kind: FALLBACK_KIND[name] ?? "cli",
       available: false,
       error: err instanceof Error ? err.message : String(err),
@@ -70,6 +76,7 @@ export async function probeBackend(name: AgentBackendName): Promise<BackendProbe
   return {
     name,
     capabilities: backend.capabilities ?? { ...UNKNOWN_CAPABILITIES },
+    toolAllowlist: backend.profileCapabilities?.toolAllowlist === true,
     kind: described?.kind ?? FALLBACK_KIND[name] ?? "cli",
     available,
     error,

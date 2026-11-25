@@ -299,4 +299,32 @@ describe("starter Learnings KBs", () => {
     expect(svc.ensureLearningsKbs()).toEqual([]);
     expect(svc.listKbs(human, "all").map((k) => k.name)).toEqual(["learnings"]);
   });
+
+  test("a starter KB stays digest-free when the default backend cannot enforce the whitelist", async () => {
+    db.exec("INSERT INTO projects(id, name) VALUES ('p7', 'codex-default')");
+    const config: KnowledgeConfig = { ...OrcConfigSchema.parse({}).knowledge, root };
+    const codexSvc = await KnowledgeService.open({
+      db,
+      config: () => config,
+      root,
+      embedder: null,
+      defaultBackend: () => "codex",
+    });
+    try {
+      const created = codexSvc.ensureLearningsKbs();
+      expect(created).toHaveLength(1);
+      // The KB is still there to set up by hand; only the unconditional digest is skipped, so no
+      // digest row and no scheduled job exist for it.
+      expect(codexSvc.getDigest(created[0] as string)).toBeNull();
+      expect(
+        db.query("SELECT 1 FROM jobs WHERE command = ?").get(kbDigestCommand(created[0] as string)),
+      ).toBeNull();
+      expect(actions()).toContain("kb.created");
+      expect(actions()).not.toContain("kb.digest.set");
+      // The next sweep does not retry the digest: the starter is recorded either way.
+      expect(codexSvc.ensureLearningsKbs()).toEqual([]);
+    } finally {
+      codexSvc.close();
+    }
+  });
 });

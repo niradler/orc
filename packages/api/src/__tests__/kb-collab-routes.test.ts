@@ -169,6 +169,41 @@ describe("/api/kb collaboration", () => {
     expect((await req(app, "GET", jobPath)).status).toBe(404);
   });
 
+  // Flipping `enabled` is the one digest-job change that does not go through setDigest, so it has
+  // to carry the same backend guard: otherwise the jobs page recreates a job that runs and fails.
+  test("enabling a digest job needs a backend that can enforce the digest's whitelist", async () => {
+    const kbId = (
+      await (await call("POST", "/bases", { name: "Paused digest", project_id: null })).json()
+    ).id;
+    // A paused digest may store an incapable backend - nothing runs, so nothing can fail.
+    const paused = await call("PUT", `/bases/${kbId}/digest`, {
+      backend: "opencode",
+      schedule: { type: "cron", cron: "0 3 * * *" },
+      enabled: false,
+    });
+    expect(paused.status).toBe(200);
+    const { job_id: jobId } = await paused.json();
+
+    const enable = await req(app, "PATCH", `/jobs/${jobId}`, { enabled: true });
+    expect(enable.status).toBe(400);
+    expect(((await enable.json()) as { error: string }).error).toContain(
+      "cannot enforce a digest's tool whitelist",
+    );
+    expect((await (await call("GET", `/bases/${kbId}/digest`)).json()).digest.enabled).toBe(false);
+
+    // Other paused-digest changes stay available; only turning the schedule on is guarded.
+    expect((await req(app, "PATCH", `/jobs/${jobId}`, { cron_expr: "0 4 * * *" })).status).toBe(
+      200,
+    );
+    expect((await req(app, "PATCH", `/jobs/${jobId}`, { enabled: false })).status).toBe(200);
+
+    // With a capable backend stored, the same job page change works.
+    expect((await call("PUT", `/bases/${kbId}/digest`, { backend: "claude" })).status).toBe(200);
+    expect((await req(app, "PATCH", `/jobs/${jobId}`, { enabled: true })).status).toBe(200);
+    const digest = await (await call("GET", `/bases/${kbId}/digest`)).json();
+    expect(digest.digest).toMatchObject({ backend: "claude", enabled: true });
+  });
+
   test("KB changes are in the audit log under entity type kb", async () => {
     const audit = await (await req(app, "GET", "/audit?entity_type=kb&limit=100")).json();
     const names = (audit.entries as { action: string }[]).map((a) => a.action);

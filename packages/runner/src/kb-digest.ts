@@ -1,7 +1,8 @@
 import {
   type AgentSession,
-  backendSupportsToolAllowlist,
   openAgentSession,
+  resolveToolAllowlistSupport,
+  type SessionOpts,
   toolAllowlistBackends,
 } from "@orc/agent-runtime";
 import { ulid } from "@orc/core/ids";
@@ -177,16 +178,35 @@ export async function runKbDigest(kbId: string, opts: KbDigestRunOptions): Promi
   return note;
 }
 
+/** The refusal for a digest whose backend cannot enforce its whitelist, naming what to pick. */
+function digestBackendRefusal(requested: string, resolved: string): string {
+  const capable = toolAllowlistBackends();
+  const via = resolved === requested ? "" : `, which runs on "${resolved}"`;
+  return (
+    `Digest backend "${requested}"${via} cannot enforce this digest's tool whitelist, so the run` +
+    ` is refused instead of running unrestricted; change the digest backend${
+      capable.length ? ` to ${capable.join(" or ")}` : ""
+    } in the knowledge base's digest settings.`
+  );
+}
+
 /** Opens the digest's backend, sends the prompt and waits for the turn to end. */
 export async function runKbDigestAgent(run: KbDigestAgentRun): Promise<KbDigestAgentResult> {
+  const sessionOpts: SessionOpts = {
+    ruleBuiltinActions: false,
+    cwd: run.cwd,
+    autoApprove: true,
+    mcpAlwaysLoad: true,
+    systemPromptAppend:
+      "This is an assigned knowledge base digest. Follow the digest's instructions and rules in the prompt. Do not call startup context. MCP tool schemas are loaded for this session.",
+    toolAllowlist: KB_DIGEST_TOOLS,
+  };
   // A digest stored before its backend was checked can still name one that cannot enforce the
-  // whitelist; fail with how to fix it rather than the generic unrestricted-session refusal.
-  if (!backendSupportsToolAllowlist(run.backend)) {
-    const capable = toolAllowlistBackends();
-    throw new Error(
-      `Digest backend "${run.backend}" cannot enforce this digest's tool whitelist; change the digest backend${capable.length ? ` to ${capable.join(" or ")}` : ""} in the knowledge base's digest settings.`,
-    );
-  }
+  // whitelist, and a backend can be rerouted by the session factory ("claude" falls back to acpx
+  // when its preflight fails). Judge the backend this run would actually get, so the refusal
+  // names the real cause instead of the generic unrestricted-session error.
+  const { allowed, resolved } = await resolveToolAllowlistSupport(run.backend, sessionOpts);
+  if (!allowed) throw new Error(digestBackendRefusal(run.backend, resolved));
   const sqlite = getSqlite();
   let session: AgentSession | undefined;
   let expired = false;
@@ -201,15 +221,7 @@ export async function runKbDigestAgent(run: KbDigestAgentRun): Promise<KbDigestA
     }, run.timeoutMs);
   });
   const work = async () => {
-    session = await openAgentSession(run.backend, {
-      ruleBuiltinActions: false,
-      cwd: run.cwd,
-      autoApprove: true,
-      mcpAlwaysLoad: true,
-      systemPromptAppend:
-        "This is an assigned knowledge base digest. Follow the digest's instructions and rules in the prompt. Do not call startup context. MCP tool schemas are loaded for this session.",
-      toolAllowlist: KB_DIGEST_TOOLS,
-    });
+    session = await openAgentSession(run.backend, sessionOpts);
     if (expired) return;
     const active = session;
     let error: string | null = null;

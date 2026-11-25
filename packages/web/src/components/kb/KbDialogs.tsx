@@ -11,7 +11,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { FileText, Trash2, Upload, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
-import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
+import {
+  BackendPicker,
+  suggestDigestBackend,
+  USE_DEFAULT_BACKEND,
+} from "@/components/BackendPicker";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { HelpPopover } from "@/components/HelpPopover";
 import { cronLabel, cronProblem, WEEKDAYS } from "@/components/kb/KbDigest";
@@ -908,7 +912,11 @@ export function DigestDialog({
   const backends = useBackends();
   const template = useKbDigestTemplate(!digest);
   const [instructions, setInstructions] = useState<string | null>(digest?.instructions ?? null);
-  const [backend, setBackend] = useState(digest?.backend ?? USE_DEFAULT_BACKEND);
+  // Null until the user picks. A new digest opens on the default backend only when that backend
+  // can enforce the digest's tool whitelist; otherwise it opens on one that can, so the first
+  // Save on a codex-default install is not a guaranteed 400.
+  const [chosenBackend, setChosenBackend] = useState<string | null>(digest?.backend ?? null);
+  const backend = chosenBackend ?? suggestDigestBackend(backends.data);
   const [schedule, setSchedule] = useState(() =>
     scheduleForm(digest?.schedule ?? { type: "cron", cron: KB_DIGEST_DEFAULT_CRON }),
   );
@@ -944,7 +952,12 @@ export function DigestDialog({
           </p>
         )}
         <ScheduleFields value={schedule} onChange={setSchedule} />
-        <BackendPicker value={backend} onChange={setBackend} testId="kb-digest-backend" />
+        <BackendPicker
+          value={backend}
+          onChange={setChosenBackend}
+          testId="kb-digest-backend"
+          requireToolAllowlist
+        />
         <Field label="Instructions">
           {ready ? (
             <MarkdownEditor
@@ -983,7 +996,7 @@ export function DigestDialog({
             <span />
           )}
           <div className="flex gap-2">
-            <Button type="button" variant="ghost" onClick={onClose}>
+            <Button type="button" variant="ghost" data-testid="kb-digest-cancel" onClick={onClose}>
               Cancel
             </Button>
             <Button

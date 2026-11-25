@@ -164,6 +164,25 @@ describe("KB digest runner", () => {
         runKbDigest(kbId, { runId: newRun(), triggerBy: "manual", timeoutMs: 60_000 }),
       ).rejects.toThrow(/cannot enforce this digest's tool whitelist/);
       expect(digest()?.last_note).toContain("change the digest backend to");
+      // Refusing before the session opens means no unrestricted digest agent ever runs.
+      expect(digest()?.last_status).toBe("failed");
+    } finally {
+      getSqlite().query("UPDATE kb_digests SET backend = 'codex' WHERE kb_id = ?").run(kbId);
+    }
+  });
+
+  // "claude" is a capable backend that often is not: its preflight can fail and the session
+  // factory then runs the turn on acpx, which ignores the whitelist. The guard judges the backend
+  // the run would get, so the note names it instead of the generic refusal. An unregistered name
+  // reaches acpx the same way and is deterministic here.
+  test("the refusal names the backend the run resolves to", async () => {
+    getSqlite().query("UPDATE kb_digests SET backend = 'gemini' WHERE kb_id = ?").run(kbId);
+    try {
+      await expect(
+        runKbDigest(kbId, { runId: newRun(), triggerBy: "manual", timeoutMs: 60_000 }),
+      ).rejects.toThrow(/cannot enforce this digest's tool whitelist/);
+      expect(digest()?.last_note).toContain('Digest backend "gemini", which runs on "acpx"');
+      expect(digest()?.last_note).toContain("change the digest backend to");
     } finally {
       getSqlite().query("UPDATE kb_digests SET backend = 'codex' WHERE kb_id = ?").run(kbId);
     }

@@ -12,10 +12,11 @@ import {
 } from "@orc/core/job-settings";
 import { createLogger } from "@orc/core/logger";
 import { JobOverlapSchema, JobStatusSchema, JobTriggerTypeSchema } from "@orc/core/types";
-import { getDb } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { KB_DIGEST_COMMAND_PREFIX, kbDigestKbId } from "@orc/db/kb-digest";
 import { gateway_sessions, job_run_logs, job_runs, jobs } from "@orc/db/schema";
 import { deleteJob, withTx } from "@orc/db/tx";
+import { assertDigestBackend } from "@orc/knowledge";
 import { executeJob } from "@orc/runner/executor";
 import { syncJob, unscheduleJob } from "@orc/runner/scheduler";
 import { Cron } from "croner";
@@ -51,7 +52,8 @@ function assertNotDigestCommand(command: string | undefined): void {
 }
 
 function assertDigestJobUpdate(command: string, body: Record<string, unknown>): void {
-  if (!kbDigestKbId(command)) return;
+  const kbId = kbDigestKbId(command);
+  if (!kbId) return;
   const other = Object.keys(body).filter((k) => body[k] !== undefined && !DIGEST_JOB_FIELDS.has(k));
   if (other.length)
     throw new ValidationError(
@@ -63,6 +65,16 @@ function assertDigestJobUpdate(command: string, body: Record<string, unknown>): 
     body.trigger_type !== "manual"
   )
     throw new ValidationError("A digest job runs on a cron schedule or manually");
+  // Enabling a paused digest is the other way a digest job gets scheduled, so it needs the same
+  // backend check the digest settings apply. A backend that cannot enforce the digest's tool
+  // whitelist would leave a job that runs on schedule and fails every time. When the digest row
+  // is already gone the run reports that itself, so nothing is invented here.
+  if (body.enabled === true) {
+    const backend = getSqlite()
+      .query<{ backend: string }, [string]>("SELECT backend FROM kb_digests WHERE kb_id = ?")
+      .get(kbId)?.backend;
+    if (backend) assertDigestBackend(backend);
+  }
 }
 
 const JobSchema = z

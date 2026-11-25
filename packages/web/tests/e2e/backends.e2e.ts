@@ -6,6 +6,7 @@ interface Backend {
   name: string;
   kind: "in-process" | "cli" | "http";
   available: boolean;
+  tool_allowlist: boolean;
   error: string | null;
   requires: string;
   target: string | null;
@@ -34,6 +35,12 @@ test.describe("Agent backends", () => {
     // The split that decides whether a user has to install anything.
     expect(backends.find((b) => b.name === "claude")?.kind).toBe("in-process");
     expect(backends.find((b) => b.name === "acpx")?.kind).toBe("cli");
+
+    // The split the KB digest picker filters on: a digest runs with a tool whitelist, so it can
+    // only use a backend that enforces one. There has to be at least one, or the dialog is empty.
+    expect(backends.find((b) => b.name === "claude")?.tool_allowlist).toBe(true);
+    expect(backends.find((b) => b.name === "acpx")?.tool_allowlist).toBe(false);
+    expect(backends.filter((b) => b.tool_allowlist).map((b) => b.name)).toContain("claude");
 
     // Every unusable backend has to say why, or the UI has nothing to show.
     for (const backend of backends) {

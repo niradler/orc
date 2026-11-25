@@ -620,6 +620,8 @@ export type AgentBackendInfo = {
   capabilities: import("@orc/core/types").AgentCapabilities;
   name: string;
   kind: AgentBackendKind;
+  /** A KB digest runs with a tool whitelist and can only use a backend that enforces one. */
+  tool_allowlist: boolean;
   available: boolean;
   error: string | null;
   requires: string;

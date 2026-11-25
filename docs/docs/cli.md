@@ -153,7 +153,7 @@ Memories are short project facts. Every subcommand takes `-p, --project` (defaul
 | `orc kb status` | Counts, jobs, embeddings, parsers |
 | `orc kb settings` | `--parser auto\|basic\|docling`, `--embedding-provider`, `--embedding-model`, `--embedding-url`, `--embedding-key` |
 | `orc kb comment list\|add\|resolve\|dismiss\|reopen` | Comments on a KB or document (`--doc`) |
-| `orc kb digest show\|template\|set\|run\|runs\|rm` | Digest agent; `set` takes `-b, --backend`, `--cron` or `--manual`, `-i, --instructions <file>`, `--enable`/`--disable`, `--timeout` |
+| `orc kb digest show\|template\|set\|run\|runs\|rm` | Digest agent; `set` takes `-b, --backend` (`claude` or `claude-cli`: a digest runs with a tool whitelist), `--cron` or `--manual`, `-i, --instructions <file>`, `--enable`/`--disable`, `--timeout` |
 | `orc kb sources list\|add\|scan\|rm` | Local folders synced into a KB; `add` takes `--pattern <glob>` |
 | `orc kb docling status\|install\|remove` | Optional Docling parser |
 

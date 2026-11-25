@@ -6,6 +6,7 @@ import { createBackend, registerBackend } from "../index.js";
 import {
   applyAgentProfile,
   openAgentSession,
+  resolveToolAllowlistSupport,
   validateProfileCapabilities,
 } from "../session-factory.js";
 import type { AgentEvent, AgentSession, SessionOpts } from "../types.js";
@@ -181,5 +182,56 @@ describe("portable shared profiles", () => {
         agentProfile: "missing-profile",
       }),
     ).rejects.toThrow("not found");
+  });
+});
+
+describe("tool whitelist resolution", () => {
+  function stubBackend(name: string, toolAllowlist: boolean) {
+    registerBackend(name, () => ({
+      name,
+      profileCapabilities: { model: true, toolAllowlist },
+      preflight: async () => ({ ok: true }),
+      stop: async () => {},
+      startSession: async () => {
+        throw new Error("not started in this test");
+      },
+      resumeSession: async () => {
+        throw new Error("not resumed in this test");
+      },
+    }));
+    return name;
+  }
+
+  // A digest refuses its run on this answer, so it must describe the session the caller would
+  // actually get: resolveBackend reroutes names, and judging the requested one alone hides the
+  // most common case - "claude" landing on acpx when its preflight fails.
+  test("answers for the backend a name resolves to, not for the name", async () => {
+    const opts = { cwd: process.cwd() };
+    // An unregistered name runs as acpx's agent, and acpx ignores a tool whitelist.
+    expect(await resolveToolAllowlistSupport("gemini", opts)).toEqual({
+      allowed: false,
+      resolved: "acpx",
+    });
+    const incapable = stubBackend(`no-allowlist-${process.pid}`, false);
+    expect(await resolveToolAllowlistSupport(incapable, opts)).toEqual({
+      allowed: false,
+      resolved: incapable,
+    });
+    const capable = stubBackend(`allowlist-${process.pid}`, true);
+    expect(await resolveToolAllowlistSupport(capable, opts)).toEqual({
+      allowed: true,
+      resolved: capable,
+    });
+  });
+
+  test("falls back to the requested name when no backend can be resolved", async () => {
+    const broken = `broken-backend-${process.pid}`;
+    registerBackend(broken, () => {
+      throw new Error("factory is down");
+    });
+    expect(await resolveToolAllowlistSupport(broken, { cwd: process.cwd() })).toEqual({
+      allowed: false,
+      resolved: broken,
+    });
   });
 });

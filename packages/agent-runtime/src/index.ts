@@ -24,7 +24,11 @@ export {
   toolAllowlistBackends,
 } from "./registry.js";
 export { type RuleGap, sessionRules } from "./rules.js";
-export { openAgentSession, pickUsableBackend } from "./session-factory.js";
+export {
+  openAgentSession,
+  pickUsableBackend,
+  resolveToolAllowlistSupport,
+} from "./session-factory.js";
 export type {
   AgentBackend,
   AgentBackendName,
