@@ -6,6 +6,7 @@ import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { Hono } from "hono";
 import { mcpRouter } from "../routes/mcp.js";
 import { createApp } from "../server.js";
+import { coordinatorSessionId } from "../sessions/coordinator.js";
 
 let app: ReturnType<typeof createApp>;
 
@@ -209,7 +210,7 @@ describe("MCP HTTP endpoint mode", () => {
 });
 
 describe("MCP HTTP session caller identity and code mode integration", () => {
-  test("propagates bound session identity into direct and sandboxed session_list/session_send, enforces ancestry, and falls back to human relay only for unbound queue", async () => {
+  test("propagates bound session identity into direct and sandboxed session_list/session_send, enforces ancestry, and sends unbound authenticated queue as the coordinator", async () => {
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -360,24 +361,27 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       expect(nonAncestorSteer.isError).toBe(true);
       expect(nonAncestorSteer.content[0]?.text).toContain("Only the session that started");
 
+      // An authenticated unbound connection sends as its coordinator session;
+      // the human-relay fallback remains for anonymous installs only.
       const unboundQueue = await callMcp("?mode=meta", "session_send", {
         session_id: childId,
         mode: "queue",
-        body: "Unbound relay queue",
+        body: "Unbound coordinator queue",
       });
       expect(unboundQueue.isError).toBeUndefined();
       expect(JSON.parse(unboundQueue.content[0]?.text ?? "{}").message).toMatchObject({
-        sender_kind: "human",
-        sender_session_id: null,
+        sender_kind: "session",
+        sender_session_id: coordinatorSessionId("mcp"),
       });
 
+      // The coordinator is bound but not an ancestor of this child, so steer fails.
       const unboundSteer = await callMcp("?mode=meta", "session_send", {
         session_id: childId,
         mode: "steer",
-        body: "Unbound steer must fail",
+        body: "Non-ancestor steer must fail",
       });
       expect(unboundSteer.isError).toBe(true);
-      expect(unboundSteer.content[0]?.text).toContain("requires a bound calling session identity");
+      expect(unboundSteer.content[0]?.text).toContain("Only the session that started");
 
       const scriptedBound = await callMcp(
         "?mode=meta",
@@ -426,7 +430,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       });
       expect(scriptedUnbound.isError).toBeUndefined();
       expect(scriptedUnbound.structuredContent?.result).toEqual({
-        queuedKind: "human",
+        queuedKind: "session",
         steeredOk: false,
         steeredCode: "FORBIDDEN",
       });
