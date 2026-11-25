@@ -54,8 +54,12 @@ its own notifications and usage.
 
 The list shows only sessions that can be opened. An ended Claude, Codex, Gemini or
 Pi session leaves it when its transcript file is gone, including a session that
-ended before any prompt was sent, and returns when the file comes back. A task's
-session list keeps its linked sessions either way. A Codex
+ended before any prompt was sent, and returns when the file comes back. A Pi session
+file that exists but holds no message — the file Pi creates when it launches — is
+not listed either, so a Pi started without a prompt leaves no empty row once it ends.
+While an older `@orc/pi` still has such a Pi open, that row stays in the list as idle or
+running: the live registration, not the transcript, carries its status, and it leaves
+when Pi exits. A task's session list keeps its linked sessions either way. A Codex
 rollout compressed in place (`.jsonl.zst`) stays listed and opens as before. Codex's
 own review and approval runs are not listed. Titles skip slash-command and IDE
 wrappers and terminal color codes, and a Cursor chat whose title was never generated
