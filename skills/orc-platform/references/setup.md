@@ -119,6 +119,24 @@ mode. Keep API authentication in the configured Authorization header.
 | `mode` | `full`, `meta` | `full`: lists domain tools directly. `meta`: lists `tool_search`, `tool_describe`, `tool_invoke`, `tool_execute`; domain operations keep the same validation and scope. |
 | `project` | One readable project name, such as `orc` | Unset: existing tool/config defaults apply. When set, project-aware tools inherit this project. |
 | `projects` | Comma-separated readable names, such as `orc,project2` | Selects multiple projects in priority order. Use instead of `project`. |
+| `session` | An ORC live/chat/native session id | Binds the calling session identity for session tools; the `X-ORC-Session` header works too. |
+| `client` | A short client name, such as `grok-bot` | Names the coordinator session for an authenticated connection without `session`. |
+
+An authenticated HTTP connection without a `session` binding acts as a
+coordinator: ORC reuses one lightweight root chat session per client name
+(default `mcp`) and binds the connection to it. External orchestrators can then
+`session_start` children (owned by the coordinator), `session_wait`,
+`session_status`, `session_read`, `session_send` and `session_stop` without a
+pre-existing session id. `session_start`/`session_list` return
+`coordinator_session_id`; `session_start` also returns the effective Settings
+`defaults` (agent/model/provider) and its `agent` parameter enumerates harness
+ids (claude, codex, opencode, ...) — `agent_list` lists role profiles, not
+harnesses. Coordinator children default `notify` to false; poll with
+`session_wait`/`session_status`. A single-project scope roots the coordinator
+in that project's folder. `speak` and preview tools still need an explicit
+`session` binding; anonymous installs (no API secret) keep the
+explicit-identity requirement. Creation is audited (`session` entity) with the
+client name.
 
 Examples, relative to the selected ORC origin:
 

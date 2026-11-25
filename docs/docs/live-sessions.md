@@ -194,7 +194,8 @@ queued.
 
 The same queue is available to agents through the `session_send` MCP tool
 (bind the connection with `?session=<session id>` or run stdio MCP inside the
-agent) and to chat channels with `/send <session id> <message>`.
+agent; an authenticated unbound HTTP connection sends as its coordinator
+session) and to chat channels with `/send <session id> <message>`.
 
 ```text
 /send                  list live sessions
@@ -246,6 +247,13 @@ Guardrails:
   for that pair.
 - A chain of started sessions stops at three levels, and a session can start
   at most ten sessions an hour.
+
+External coordinators: an authenticated MCP HTTP client without `?session=`
+gets a lightweight coordinator session (one per `?client=<name>`, reused across
+requests) and can drive the same tools — `session_start` returns
+`coordinator_session_id` plus the Settings `defaults`, children default
+`notify` to false, and `session_wait`/`session_status`/`session_read` follow
+them. See [MCP → Transports](./mcp.md#transports).
 
 Chat and the session detail show the lineage: **Started by** links the parent,
 and **Started N sessions** lists the children, including the worker sessions
