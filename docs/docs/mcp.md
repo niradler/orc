@@ -261,6 +261,15 @@ The server implements the official [Skills extension](https://modelcontextprotoc
 
 Entries respect the connection's [project scope](#query-parameters), discovery visibility and effective (project-edited) `SKILL.md` overlays; manifests are computed from the exact bytes served, so hosts can verify integrity. Cache scope is `private` because entries depend on the connection's scope. The `skill_list` / `skill_read` [tools](#skills) remain available for existing agents.
 
+## Tasks (long-running tool calls)
+
+The server can return a durable **task handle** instead of blocking, so a client can disconnect and poll for the result later. Task state lives in the database and survives restarts; results stay available for a TTL after the task finishes. Two wire flavors share one store:
+
+- **SDK task-augmented requests (2025-11-25):** the client opts in per call by sending `params.task` on `tools/call`. The server replies `{ task: { taskId, status, ttl, createdAt, ... } }`, the client polls `tasks/get`, and fetches the final payload with `tasks/result`. `tasks/list` and `tasks/cancel` are also supported. Any tool can be augmented this way.
+- **Tasks extension (`io.modelcontextprotocol/tasks`):** the client opts in via `_meta["io.modelcontextprotocol/clientCapabilities"].extensions["io.modelcontextprotocol/tasks"]`. The server then decides per call (server-directed) and returns `resultType: "task"` for long-running tools (`session_start`, `session_wait`, `job_run`, `tool_execute`); other tools still return synchronously. `tasks/get` carries the final `result` (or `error`) inline, `tasks/update` delivers mid-flight input, and `tasks/cancel` acknowledges with `resultType: "complete"`.
+
+Statuses are `working`, `input_required`, `completed`, `failed`, `cancelled`. Cancellation is cooperative. Tasks are bound to the connection's [project scope](#query-parameters); a scoped connection cannot read another scope's tasks. Unknown or expired task IDs fail with `-32602`. A restart marks in-flight tasks `failed` with a clear status message rather than leaving them hanging.
+
 ## Calling tools over REST
 
 Hook scripts and other non-MCP clients run any tool with:

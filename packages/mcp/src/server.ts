@@ -1,6 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
+  type CallToolRequest,
   CallToolRequestSchema,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
@@ -13,6 +14,7 @@ import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { z } from "zod";
 import { codeToolListing, runCodeMode, scriptToolInfo } from "./code-mode.js";
+import { maybeAugmentCallTool, registerMcpTasks, TASKS_EXTENSION_ID } from "./mcp-tasks.js";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
 export { parseMcpProjects } from "./project-scope.js";
@@ -87,7 +89,11 @@ export function createMcpServer({
         tools: {},
         prompts: {},
         resources: {},
-        extensions: { [SKILLS_EXTENSION_ID]: { directoryRead: true } },
+        tasks: { list: {}, cancel: {}, requests: { tools: { call: {} } } },
+        extensions: {
+          [SKILLS_EXTENSION_ID]: { directoryRead: true },
+          [TASKS_EXTENSION_ID]: {},
+        },
       },
       ...(codeEnabled
         ? {
@@ -255,15 +261,15 @@ export function createMcpServer({
   // In meta mode a CallTool naming a real tool is routed through the same
   // callTool as tool_invoke, so clients that already know a name keep working;
   // the served set still bounds what is reachable.
-  server.setRequestHandler(CallToolRequestSchema, async (request, { signal }) => {
+  async function executeCallTool(
+    request: CallToolRequest,
+    signal: AbortSignal,
+  ): Promise<ToolResult> {
     const { name, arguments: args } = request.params;
     if (name === codeToolListing.name) {
       if (codeEnabled) {
-        return runCodeMode(
-          await servedTools(),
-          args,
-          requestSignal ? AbortSignal.any([signal, requestSignal]) : signal,
-          (tool, input) => callTool(tool, input, true),
+        return runCodeMode(await servedTools(), args, signal, (tool, input) =>
+          callTool(tool, input, true),
         );
       }
       return {
@@ -285,8 +291,38 @@ export function createMcpServer({
       return runMetaTool(served, name, args, callTool, codeEnabled ? scriptToolInfo : undefined);
     }
     return callTool(name, args);
+  }
+
+  const taskOwner = selected
+    ? selected
+        .map((p) => p.id)
+        .sort()
+        .join(",")
+    : "global";
+  const taskEligibleTools = new Set([
+    "session_wait",
+    "session_start",
+    "job_run",
+    codeToolListing.name,
+  ]);
+  const tasksOptions = { owner: taskOwner, eligibleTools: taskEligibleTools };
+
+  server.setRequestHandler(CallToolRequestSchema, async (request, { signal }) => {
+    // A task-augmented call returns a durable handle now and runs in the
+    // background on its own signal, so it outlives this request/transport.
+    const augmented = maybeAugmentCallTool(
+      request,
+      (taskSignal) => executeCallTool(request, taskSignal),
+      tasksOptions,
+    );
+    if (augmented) return augmented;
+    return executeCallTool(
+      request,
+      requestSignal ? AbortSignal.any([signal, requestSignal]) : signal,
+    );
   });
 
+  registerMcpTasks(server, tasksOptions);
   registerSkillResources(server, { projectScopes: selected });
 
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
