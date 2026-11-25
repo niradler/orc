@@ -26,6 +26,7 @@ import {
   type ToolResult,
 } from "./meta-tools.js";
 import { availablePreviewTools, previewToolContent } from "./preview-tools.js";
+import { registerSkillResources, SKILLS_EXTENSION_ID } from "./skill-resources.js";
 import { executeSpecTool, isSpecTool, specToolDefinitions } from "./spec-tools.js";
 import {
   agentSessionFromEnv,
@@ -82,7 +83,12 @@ export function createMcpServer({
   const server = new Server(
     { name: "orc", version: "0.0.1" },
     {
-      capabilities: { tools: {}, prompts: {} },
+      capabilities: {
+        tools: {},
+        prompts: {},
+        resources: {},
+        extensions: { [SKILLS_EXTENSION_ID]: { directoryRead: true } },
+      },
       ...(codeEnabled
         ? {
             instructions:
@@ -280,6 +286,8 @@ export function createMcpServer({
     }
     return callTool(name, args);
   });
+
+  registerSkillResources(server, { projectScopes: selected });
 
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     prompts: new McpPromptStore(getSqlite()).list().map(({ name, title, description }) => ({

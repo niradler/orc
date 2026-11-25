@@ -250,6 +250,17 @@ Execution defaults to 15 seconds and accepts 100 to 25,000 milliseconds, with a 
 
 The server also lists MCP prompts defined in **Settings → Agents → MCP** (API: `GET`/`PATCH /api/settings/mcp`). Each prompt accepts one optional argument, `request`.
 
+## Skills over MCP (resources)
+
+The server implements the official [Skills extension](https://modelcontextprotocol.io/extensions/skills/overview) (`io.modelcontextprotocol/skills`, SEP-2640) on top of the standard Resources primitive, so spec-compliant clients can discover and load ORC skills without ORC-specific tools:
+
+- `skills/list` / `skills/get` return skill entries with the full YAML frontmatter and a complete file manifest (URI, SHA-256 digest and byte size per file), plus `resultType`, `ttlMs` and `cacheScope`. Results paginate with `cursor` / `nextCursor`.
+- Skill files are served through `resources/read` at `skill://<name>/SKILL.md` and `skill://<name>/<relative path>`; `resources/list` enumerates them. Text files arrive as `text`, binary assets as base64 `blob`.
+- `resources/directory/read` lists a skill directory's direct children (`skill://<name>` or `skill://<name>/references`); subdirectories use `mimeType: "inode/directory"`.
+- Unknown skills or files fail with JSON-RPC `-32602`.
+
+Entries respect the connection's [project scope](#query-parameters), discovery visibility and effective (project-edited) `SKILL.md` overlays; manifests are computed from the exact bytes served, so hosts can verify integrity. Cache scope is `private` because entries depend on the connection's scope. The `skill_list` / `skill_read` [tools](#skills) remain available for existing agents.
+
 ## Calling tools over REST
 
 Hook scripts and other non-MCP clients run any tool with:
@@ -355,7 +366,7 @@ Project-scoped MCP sessions can only create and read goals inside their scopes.
 
 ### Skills
 
-See [Skills](./skills.md).
+See [Skills](./skills.md). Spec-compliant clients can also use the standard [Skills over MCP resources](#skills-over-mcp-resources) surface (`skills/list`, `skills/get`, `resources/read`).
 
 | Tool               | Description                                                                                    |
 | ------------------ | ---------------------------------------------------------------------------------------------- |

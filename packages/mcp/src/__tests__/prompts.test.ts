@@ -133,7 +133,9 @@ test("edited prompts are served from the store and deletions stick", async () =>
 
 test("the UI catalog is neither a resource nor a tool", async () => {
   const client = await connect("full");
-  await expect(client.listResources()).rejects.toThrow();
+  // Resources exist for Skills over MCP only; the UI catalog stays out of them.
+  const resources = await client.listResources();
+  expect(resources.resources.every((resource) => resource.uri.startsWith("skill://"))).toBe(true);
   const found = textOf(
     await (await connect()).callTool({
       name: "tool_search",
