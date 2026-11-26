@@ -310,7 +310,7 @@ The server can return a durable **task handle** instead of blocking, so a client
 
 Statuses are `working`, `input_required`, `completed`, `failed`, `cancelled`. Cancellation is cooperative. Tasks are bound to the connection's [project scope](#query-parameters); a scoped connection cannot read another scope's tasks. Unknown or expired task IDs fail with `-32602`. A restart marks in-flight tasks `failed` with a clear status message rather than leaving them hanging.
 
-porc's `OrcMcpClient` wraps both flavors: `callTask` returns a handle, `waitForTask` polls to a terminal state and fetches the payload, and `cancelTask` stops one. The Pi extension exposes the same operations as `task_start`, `task_status`, `task_result` and `task_cancel` ([Pi and porc](./pi.md)).
+porc's `OrcMcpClient` wraps v1 task-augmented calls: `callTask` returns a handle, `waitForTask` polls to a terminal state and fetches the payload, and `cancelTask` stops one. The Pi extension exposes the same operations as `task_start`, `task_status`, `task_result` and `task_cancel` ([Pi and porc](./pi.md)).
 
 ## Elicitation
 

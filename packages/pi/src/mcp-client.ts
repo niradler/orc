@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -47,18 +48,19 @@ export type OrcTaskOptions = {
 
 const TERMINAL_TASK = new Set(["completed", "failed", "cancelled"]);
 const SKILLS_EXTENSION_ID = "io.modelcontextprotocol/skills";
+const SKILL_ENTRY_SCHEMA = z.object({
+  uri: z.string(),
+  frontmatter: z.record(z.string(), z.unknown()).default({}),
+  resources: z.array(z.object({ uri: z.string(), digest: z.string(), size: z.number() })),
+});
 const SKILLS_LIST_SCHEMA = z.object({
-  skills: z.array(
-    z.object({
-      uri: z.string(),
-      frontmatter: z.record(z.string(), z.unknown()).default({}),
-      resources: z.array(z.object({ uri: z.string(), digest: z.string(), size: z.number() })),
-    }),
-  ),
+  skills: z.array(SKILL_ENTRY_SCHEMA),
   nextCursor: z.string().optional(),
 });
+const SKILLS_GET_SCHEMA = z.object({
+  skill: SKILL_ENTRY_SCHEMA,
+});
 
-/** Answer a server elicitation; omit content for decline/cancel. */
 export type OrcElicitationHandler = (params: {
   message: string;
   requestedSchema: Record<string, unknown>;
@@ -67,7 +69,7 @@ export type OrcElicitationHandler = (params: {
   content?: Record<string, string | number | boolean | string[]> | undefined;
 }>;
 
-const META_TOOLS = new Set(["tool_search", "tool_describe", "tool_invoke"]);
+const META_TOOLS = new Set(["tool_search", "tool_describe", "tool_invoke", "tool_execute"]);
 
 export class OrcMcpError extends Error {
   constructor(message: string) {
@@ -112,6 +114,21 @@ function inheritedEnv(): Record<string, string> {
 
 function requestOptions(timeoutMs: number, signal?: AbortSignal) {
   return { timeout: timeoutMs, ...(signal ? { signal } : {}) };
+}
+
+function sleepUntil(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted || ms <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 export class OrcMcpClient {
@@ -269,21 +286,24 @@ export class OrcMcpClient {
     );
   }
 
-  /**
-   * Poll a task to a terminal state and return its tool result. `tasks/get`
-   * carries status only; the payload comes from `tasks/result` once completed.
-   */
   async waitForTask(taskId: string, options: OrcTaskOptions = {}): Promise<OrcToolResult> {
     const client = await this.connect();
     const deadline = Date.now() + (options.timeoutMs ?? 10 * 60_000);
+    if (options.signal?.aborted) throw new OrcMcpError(`ORC task ${taskId} wait aborted`);
     let status = await this.taskStatus(taskId, options);
     while (!TERMINAL_TASK.has(status.status)) {
+      if (options.signal?.aborted) throw new OrcMcpError(`ORC task ${taskId} wait aborted`);
       if (Date.now() >= deadline) {
         throw new OrcMcpError(
           `ORC task ${taskId} is still ${status.status} after ${options.timeoutMs ?? 600_000}ms`,
         );
       }
-      await Bun.sleep(options.pollMs ?? status.pollInterval ?? 1000);
+      const step = Math.min(
+        options.pollMs ?? status.pollInterval ?? 1000,
+        Math.max(1, deadline - Date.now()),
+      );
+      await sleepUntil(step, options.signal);
+      if (options.signal?.aborted) throw new OrcMcpError(`ORC task ${taskId} wait aborted`);
       status = await this.taskStatus(taskId, options);
     }
     if (status.status === "failed")
@@ -350,7 +370,8 @@ export class OrcMcpClient {
       );
       for (const skill of page.skills) {
         const name = String(
-          skill.frontmatter.name ?? skill.uri.replace(/^skill:\/\//, "").split("/")[0],
+          skill.frontmatter.name ??
+            skill.uri.replace(/^skill:\/\//, "").replace(/\/SKILL\.md$/, ""),
         );
         const description = String(skill.frontmatter.description ?? "");
         if (query && !`${name} ${description}`.toLowerCase().includes(query)) continue;
@@ -379,7 +400,19 @@ export class OrcMcpClient {
         ...(options.ref ? { ref: options.ref } : {}),
       });
     const client = await this.connect();
-    const uri = `skill://${name.replace(/^\/+/, "")}/${(options.ref ?? "SKILL.md").replace(/^\/+/, "")}`;
+    const cleanName = name.replace(/^\/+|\/+$/g, "");
+    const cleanRef = (options.ref ?? "SKILL.md").replace(/^\/+/, "");
+    const entryUri = `skill://${cleanName}/SKILL.md`;
+    const uri = `skill://${cleanName}/${cleanRef}`;
+    const entry = await timeout(
+      client.request({ method: "skills/get", params: { uri: entryUri } }, SKILLS_GET_SCHEMA, {
+        timeout: this.config.timeoutMs,
+      }),
+      this.config.timeoutMs,
+      `ORC skill manifest ${name}`,
+    );
+    const manifest = entry.skill.resources.find((file) => file.uri === uri);
+    if (!manifest) throw new OrcMcpError(`Skill resource missing from manifest: ${uri}`);
     const result = await timeout(
       client.request({ method: "resources/read", params: { uri } }, ReadResourceResultSchema, {
         timeout: this.config.timeoutMs,
@@ -387,8 +420,20 @@ export class OrcMcpClient {
       this.config.timeoutMs,
       `ORC skill ${name}`,
     );
+    const item = result.contents[0];
+    if (!item) throw new OrcMcpError(`Empty skill resource response: ${uri}`);
+    const bytes =
+      "blob" in item && typeof item.blob === "string"
+        ? Buffer.from(item.blob, "base64")
+        : Buffer.from("text" in item && typeof item.text === "string" ? item.text : "", "utf8");
+    const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+    if (bytes.length !== manifest.size || digest !== manifest.digest) {
+      throw new OrcMcpError(`Skill resource failed integrity check: ${uri}`);
+    }
     const text = result.contents
-      .map((item) => ("text" in item && typeof item.text === "string" ? item.text : ""))
+      .map((entryItem) =>
+        "text" in entryItem && typeof entryItem.text === "string" ? entryItem.text : "",
+      )
       .filter(Boolean)
       .join("\n");
     return { text, isError: false, raw: result };

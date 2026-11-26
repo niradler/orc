@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -27,8 +28,13 @@ const SKILLS_EXTENSION_ID = "io.modelcontextprotocol/skills";
 
 type FakeOptions = {
   skills?: boolean;
+  tamperSkillBody?: boolean;
   taskPollsToComplete?: number;
 };
+
+const SKILL_BODY = "# orc-tasks body";
+const SKILL_BYTES = Buffer.from(SKILL_BODY, "utf8");
+const SKILL_DIGEST = `sha256:${createHash("sha256").update(SKILL_BYTES).digest("hex")}`;
 
 async function fakeServer(options: FakeOptions = {}) {
   const polls = new Map<string, number>();
@@ -72,24 +78,40 @@ async function fakeServer(options: FakeOptions = {}) {
     return task(request.params.taskId, "cancelled");
   });
   if (options.skills) {
+    const skillEntry = {
+      uri: "skill://orc-tasks/SKILL.md",
+      frontmatter: { name: "orc-tasks", description: "Durable tasks" },
+      resources: [
+        {
+          uri: "skill://orc-tasks/SKILL.md",
+          digest: SKILL_DIGEST,
+          size: SKILL_BYTES.length,
+        },
+      ],
+    };
     server.setRequestHandler(
       z.object({
         method: z.literal("skills/list"),
         params: z.object({ cursor: z.string().optional() }).optional(),
       }),
-      async () => ({
-        skills: [
-          {
-            uri: "skill://orc-tasks/SKILL.md",
-            frontmatter: { name: "orc-tasks", description: "Durable tasks" },
-            resources: [{ uri: "skill://orc-tasks/SKILL.md", digest: "sha256:abc", size: 10 }],
-          },
-        ],
+      async () => ({ skills: [skillEntry] }),
+    );
+    server.setRequestHandler(
+      z.object({
+        method: z.literal("skills/get"),
+        params: z.object({ uri: z.string() }),
       }),
+      async () => ({ skill: skillEntry }),
     );
     server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [] }));
     server.setRequestHandler(ReadResourceRequestSchema, async (request) => ({
-      contents: [{ uri: request.params.uri, mimeType: "text/markdown", text: "# orc-tasks body" }],
+      contents: [
+        {
+          uri: request.params.uri,
+          mimeType: "text/markdown",
+          text: options.tamperSkillBody ? "# tampered body" : SKILL_BODY,
+        },
+      ],
     }));
   }
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -142,6 +164,22 @@ describe("OrcMcpClient tasks", () => {
     await fake.client.close();
     await fake.server.close();
   });
+
+  test("callTask forwards tool_execute directly and waitForTask aborts promptly on signal", async () => {
+    const fake = await fakeServer({ taskPollsToComplete: 50 });
+    const orc = orcClient(fake.client);
+    await orc.callTask("tool_execute", { code: "return 1" });
+    expect(fake.requests).toContain("tools/call:tool_execute");
+
+    const controller = new AbortController();
+    const started = Date.now();
+    const waiting = orc.waitForTask("task-1", { pollMs: 5000, signal: controller.signal });
+    setTimeout(() => controller.abort(), 20);
+    await expect(waiting).rejects.toThrow("aborted");
+    expect(Date.now() - started).toBeLessThan(400);
+    await fake.client.close();
+    await fake.server.close();
+  });
 });
 
 describe("OrcMcpClient skills", () => {
@@ -156,6 +194,14 @@ describe("OrcMcpClient skills", () => {
     const read = await orc.readSkill("orc-tasks");
     expect(read.text).toBe("# orc-tasks body");
     expect(fake.requests).not.toContain("tools/call:tool_invoke");
+    await fake.client.close();
+    await fake.server.close();
+  });
+
+  test("readSkill fails closed when served bytes do not match manifest digest", async () => {
+    const fake = await fakeServer({ skills: true, tamperSkillBody: true });
+    const orc = orcClient(fake.client);
+    await expect(orc.readSkill("orc-tasks")).rejects.toThrow("integrity check");
     await fake.client.close();
     await fake.server.close();
   });

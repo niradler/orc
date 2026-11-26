@@ -611,6 +611,7 @@ async function mcpAction(session: SessionState, params: OrcInput): Promise<strin
       if (!["completed", "failed", "cancelled"].includes(status.status))
         return `task ${taskId} is ${status.status}; call task_result again after polling.`;
       const result = await client.waitForTask(taskId);
+      if (result.isError) throw new Error(result.text || "Task failed");
       return result.text || "Task completed with no output.";
     }
     case "task_cancel": {

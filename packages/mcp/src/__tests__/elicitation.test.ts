@@ -116,6 +116,31 @@ describe("Elicitation inside tool_execute", () => {
     await server.close();
   });
 
+  test("rejects secret fields before sending elicitation to the client", async () => {
+    let called = false;
+    const { client, server } = await connect({
+      handler: () => {
+        called = true;
+        return { action: "accept", content: {} };
+      },
+    });
+    for (const schema of [
+      { type: "object", properties: { api_key: { type: "string" } } },
+      { type: "object", properties: { value: { type: "string", format: "password" } } },
+      { type: "object", properties: { value: { type: "string", writeOnly: true } } },
+    ]) {
+      const result = await runScript(
+        client,
+        `await tools.elicit("Credentials", ${JSON.stringify(schema)}); return 1;`,
+      );
+      expect(result.isError).toBe(true);
+      expect((result.content[0] as { text?: string })?.text ?? "").toContain("secrets");
+    }
+    expect(called).toBe(false);
+    await client.close();
+    await server.close();
+  });
+
   test("without the client elicitation capability, tools.elicit fails clearly", async () => {
     const { client, server } = await connect({ elicitationCapability: false });
     const result = await runScript(

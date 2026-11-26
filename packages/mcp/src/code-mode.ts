@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CODE_LIMITS, hasBoundedJsonShape } from "./code-protocol.js";
 import { runCodeWorker } from "./code-runner.js";
+import { assertNonSecretElicitSchema } from "./elicit.js";
 import {
   type CallToolOutcome,
   closeNames,
@@ -111,7 +112,7 @@ export const codeToolListing = {
     "External tools are not ORC built-ins and may have external side effects. " +
     "Independent reads overlap; writes are serialized. " +
     "Executions are fresh and can commit writes before failing. Avoid automatic retries of writes. " +
-    "On a live connection, await tools.elicit(message, requestedSchema) asks the user a form question and " +
+    "await tools.elicit(message, requestedSchema) asks the user a non-secret form question and " +
     "returns { action, content } where action is accept, decline or cancel; handle decline/cancel explicitly. " +
     "Only the JSON return value and bounded console logs are returned.",
   inputSchema: z.toJSONSchema(inputSchema, { target: "draft-7", io: "input" }),
@@ -157,10 +158,10 @@ const requestSchema = z.discriminatedUnion("operation", [
   }),
 ]);
 
-/** Ask the connected MCP client for user input mid-execution (form elicitation). */
 export type ElicitFn = (params: {
   message: string;
   requestedSchema: Record<string, unknown>;
+  signal?: AbortSignal | undefined;
 }) => Promise<{
   action: "accept" | "decline" | "cancel";
   content?: Record<string, unknown> | undefined;
@@ -333,15 +334,17 @@ export async function runCodeMode(
         return {
           serial: true,
           pause: true,
-          async dispatch() {
+          async dispatch(dispatchSignal) {
             if (!elicit)
               return encodeReply({
-                error: "Elicitation needs a live MCP connection; it is unavailable on this call.",
+                error: "Elicitation is unavailable on this call.",
               });
             try {
+              assertNonSecretElicitSchema(request.args);
               const result = await elicit({
                 message: request.name,
                 requestedSchema: request.args,
+                signal: dispatchSignal,
               });
               return encodeReply({ value: result });
             } catch (err) {

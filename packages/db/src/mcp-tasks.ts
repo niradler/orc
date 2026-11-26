@@ -54,15 +54,15 @@ export function installMcpTasks(sqlite: Database): void {
   CREATE INDEX IF NOT EXISTS mcp_tasks_owner_idx ON mcp_tasks(owner, created_at);`);
 }
 
-export function clampTaskTtl(requested: number | null | undefined): number | null {
-  if (requested === null) return null;
+export function clampTaskTtl(requested: number | null | undefined): number {
+  if (requested === null) return MCP_TASK_MAX_TTL_MS;
   if (requested === undefined) return MCP_TASK_DEFAULT_TTL_MS;
   if (!Number.isFinite(requested)) return MCP_TASK_DEFAULT_TTL_MS;
   return Math.min(MCP_TASK_MAX_TTL_MS, Math.max(MCP_TASK_MIN_TTL_MS, Math.floor(requested)));
 }
 
 export class McpTaskStore {
-  constructor(private readonly sqlite: Database) {}
+  constructor(readonly sqlite: Database) {}
 
   create(input: {
     flavor: McpTaskFlavor;
@@ -134,10 +134,10 @@ export class McpTaskStore {
       error?: string | null;
       input_requests?: string | null;
     } = {},
-  ): void {
+  ): number {
     const now = Date.now();
     const terminal = TERMINAL.has(status);
-    this.sqlite
+    return this.sqlite
       .query(
         `UPDATE mcp_tasks SET status=?, status_message=COALESCE(?,status_message),
          result=COALESCE(?,result), error=COALESCE(?,error), input_requests=COALESCE(?,input_requests),
@@ -154,7 +154,7 @@ export class McpTaskStore {
         terminal ? 1 : 0,
         now,
         taskId,
-      );
+      ).changes;
   }
 
   complete(taskId: string, result: unknown): void {
@@ -168,8 +168,8 @@ export class McpTaskStore {
     });
   }
 
-  cancel(taskId: string): void {
-    this.transition(taskId, "cancelled", { status_message: "Cancelled by client" });
+  cancel(taskId: string): boolean {
+    return this.transition(taskId, "cancelled", { status_message: "Cancelled by client" }) > 0;
   }
 
   setInputRequests(taskId: string, requests: Record<string, unknown> | null): void {
@@ -181,18 +181,23 @@ export class McpTaskStore {
       .run(requests === null ? null : JSON.stringify(requests), now, taskId);
   }
 
-  /** Record client answers; the execution owner decides when work resumes. */
   applyInputResponses(taskId: string, responses: Record<string, unknown>): void {
-    const row = this.sqlite
-      .query<{ input_responses: string | null }, [string]>(
-        "SELECT input_responses FROM mcp_tasks WHERE task_id=?",
-      )
-      .get(taskId);
-    if (!row) return;
-    const merged = { ...(JSON.parse(row.input_responses ?? "{}") as object), ...responses };
     this.sqlite
-      .query("UPDATE mcp_tasks SET input_responses=?, updated_at=? WHERE task_id=?")
-      .run(JSON.stringify(merged), Date.now(), taskId);
+      .transaction(() => {
+        const row = this.sqlite
+          .query<{ input_responses: string | null }, [string]>(
+            "SELECT input_responses FROM mcp_tasks WHERE task_id=? AND status='input_required' AND terminal_at IS NULL",
+          )
+          .get(taskId);
+        if (!row) return;
+        const merged = { ...(JSON.parse(row.input_responses ?? "{}") as object), ...responses };
+        this.sqlite
+          .query(
+            "UPDATE mcp_tasks SET input_responses=?, updated_at=? WHERE task_id=? AND status='input_required' AND terminal_at IS NULL",
+          )
+          .run(JSON.stringify(merged), Date.now(), taskId);
+      })
+      .immediate();
   }
 
   resumeWorking(taskId: string): void {
@@ -201,7 +206,10 @@ export class McpTaskStore {
 
   list(owner: string, cursor?: string): { tasks: McpTaskRow[]; nextCursor?: string | undefined } {
     this.prune();
-    const offset = cursor ? Number.parseInt(cursor, 10) : 0;
+    if (cursor !== undefined && !/^\d+$/.test(cursor)) {
+      throw new Error(`Invalid cursor: ${cursor}`);
+    }
+    const offset = cursor !== undefined ? Number(cursor) : 0;
     if (!Number.isSafeInteger(offset) || offset < 0) throw new Error(`Invalid cursor: ${cursor}`);
     const pageSize = 50;
     const tasks = this.sqlite

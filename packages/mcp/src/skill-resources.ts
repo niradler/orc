@@ -15,18 +15,10 @@ import { getSqlite } from "@orc/db/client";
 import { SkillHistory, type SkillListItem } from "@orc/db/skill-history";
 import { z } from "zod";
 
-/**
- * Skills over MCP (io.modelcontextprotocol/skills, SEP-2640). Skills are served
- * through the standard Resources primitive with `skill://` URIs; `skills/list`
- * and `skills/get` carry complete file manifests so hosts can verify integrity.
- * The legacy skill_list/skill_read tools stay available for existing agents.
- */
 export const SKILLS_EXTENSION_ID = "io.modelcontextprotocol/skills";
 
 const URI_PREFIX = "skill://";
 const TTL_MS = 300_000;
-// Entries depend on the connection's project scope and effective overlays, so
-// they must not be shared across users.
 const CACHE_SCOPE = "private";
 const PAGE_SIZE = 50;
 const MANIFEST_CACHE_MAX = 256;
@@ -51,6 +43,10 @@ type SkillEntry = {
   resources: ManifestFile[];
 };
 type ServedBytes = { content: string; encoding: "utf8" | "base64"; bytes: Buffer };
+
+// Shared across per-request stateless HTTP server instances; invalidated by
+// stat mtime/size plus overlay mutation id.
+const manifestCache = new Map<string, { fingerprint: string; entry: SkillEntry }>();
 
 function sha256(bytes: Buffer): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -135,10 +131,15 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
     return projectIds ? history.preferredProject(name, projectIds) : null;
   }
 
-  /** Visible, discoverable skills in a stable order for cursor pagination. */
-  function visibleSkills(): SkillListItem[] {
+  function discoverableSkills(): SkillListItem[] {
     return history
       .list(null, projectIds ? { projectIds } : {})
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  function accessibleSkills(): SkillListItem[] {
+    return history
+      .list(null, { ...(projectIds ? { projectIds } : {}), include_hidden: true })
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
@@ -147,7 +148,6 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
     try {
       result = history.read(name, scopeFor(name), ref) as SkillRefContent | null;
     } catch {
-      // Missing/invalid files surface as unknown resources (-32602), not -32603.
       return null;
     }
     if (!result) return null;
@@ -155,13 +155,8 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
     return { content: result.content, encoding: result.encoding, bytes };
   }
 
-  // Manifests are cached per skill+scope and invalidated by a stat fingerprint
-  // (file mtimes/sizes plus the effective-overlay change id), so listing does
-  // not re-hash every bundle on each request.
-  const manifestCache = new Map<string, { fingerprint: string; entry: SkillEntry }>();
-
   function fingerprint(meta: SkillListItem, files: { name: string; path: string }[]): string {
-    const parts = [meta.mutation?.id ?? ""];
+    const parts = [meta.mutation?.id ?? "", String(meta.mutation?.updated_at ?? "")];
     for (const path of [meta.path, ...files.map((f) => f.path)]) {
       const stat = statSync(path, { throwIfNoEntry: false });
       parts.push(`${path}:${stat ? `${stat.mtimeMs}:${stat.size}` : "gone"}`);
@@ -177,7 +172,7 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
     } catch {
       return null;
     }
-    const cacheKey = `${scopeFor(meta.name) ?? "global"}:${meta.name}`;
+    const cacheKey = `${meta.path}:${scopeFor(meta.name) ?? "global"}:${meta.name}`;
     const fp = fingerprint(meta, files);
     const cached = manifestCache.get(cacheKey);
     if (cached && cached.fingerprint === fp) return cached.entry;
@@ -199,7 +194,6 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
       const served = servedFile(meta.name, file.name);
       if (!served) return null;
       total += served.bytes.length;
-      // The spec's bundle ceiling; oversized skills stay on the tool path only.
       if (total > MAX_SKILL_BUNDLE_BYTES) return null;
       resources.push({
         uri: `${URI_PREFIX}${meta.name}/${file.name}`,
@@ -213,16 +207,16 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
     return entry;
   }
 
-  /** Resolve a skill:// URI against the visible catalog; package names contain '/'. */
-  function resolveUri(uri: string): { name: string; ref: string } | null {
+  function resolveUri(
+    uri: string,
+    catalog: readonly SkillListItem[],
+  ): { meta: SkillListItem; name: string; ref: string } | null {
     if (!uri.startsWith(URI_PREFIX) || uri.endsWith("/")) return null;
     const path = uri.slice(URI_PREFIX.length);
-    const candidates = visibleSkills()
-      .map((s) => s.name)
-      .sort((a, b) => b.length - a.length);
-    for (const name of candidates) {
-      // The skill root itself is a valid directory URI (no trailing slash).
-      if (path === name) return { name, ref: "" };
+    const candidates = [...catalog].sort((a, b) => b.name.length - a.name.length);
+    for (const meta of candidates) {
+      const name = meta.name;
+      if (path === name) return { meta, name, ref: "" };
       if (!path.startsWith(`${name}/`)) continue;
       const ref = path.slice(name.length + 1);
       try {
@@ -230,22 +224,21 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
       } catch {
         return null;
       }
-      return { name, ref };
+      return { meta, name, ref };
     }
     return null;
   }
 
   function entryForUri(uri: string): SkillEntry {
-    const resolved = resolveUri(uri);
-    const meta = resolved ? visibleSkills().find((s) => s.name === resolved.name) : undefined;
-    const entry = meta ? skillEntry(meta) : null;
+    const resolved = resolveUri(uri, accessibleSkills());
+    const entry = resolved ? skillEntry(resolved.meta) : null;
     if (!resolved || !entry || resolved.ref !== "SKILL.md" || entry.uri !== uri)
       throw new McpError(ErrorCode.InvalidParams, `Unknown skill: ${uri}`);
     return entry;
   }
 
   server.setRequestHandler(SkillsListRequestSchema, async (request) => {
-    const items = visibleSkills();
+    const items = discoverableSkills();
     const offset = decodeCursor(request.params?.cursor);
     const page = items.slice(offset, offset + PAGE_SIZE);
     const skills = page
@@ -265,7 +258,7 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
   }));
 
   server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
-    const all = visibleSkills().flatMap((meta) => {
+    const all = discoverableSkills().flatMap((meta) => {
       const entry = skillEntry(meta);
       if (!entry) return [];
       return entry.resources.map((file) => ({
@@ -285,10 +278,24 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const { uri } = request.params;
-    const resolved = resolveUri(uri);
-    const served = resolved?.ref ? servedFile(resolved.name, resolved.ref) : null;
-    if (!resolved || !served)
+    const resolved = resolveUri(uri, accessibleSkills());
+    if (!resolved?.ref) {
       throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+    }
+    // Enforce exact URI paths instead of falling back to legacy references/<name>.
+    if (resolved.ref !== "SKILL.md") {
+      let listed: { name: string; path: string }[];
+      try {
+        listed = listSkillFiles(dirname(resolved.meta.path));
+      } catch {
+        throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+      }
+      if (!listed.some((file) => file.name === resolved.ref)) {
+        throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
+      }
+    }
+    const served = servedFile(resolved.name, resolved.ref);
+    if (!served) throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
     history.recordRead(
       resolved.name,
       scopeFor(resolved.name),
@@ -308,15 +315,12 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
 
   server.setRequestHandler(DirectoryReadRequestSchema, async (request) => {
     const { uri } = request.params;
-    const resolved = resolveUri(uri);
-    const meta = resolved ? visibleSkills().find((s) => s.name === resolved.name) : undefined;
-    if (!resolved || !meta)
-      throw new McpError(ErrorCode.InvalidParams, `Unknown directory: ${uri}`);
-    // Directory URIs address the skill root (skill://name) or a subdirectory.
+    const resolved = resolveUri(uri, accessibleSkills());
+    if (!resolved) throw new McpError(ErrorCode.InvalidParams, `Unknown directory: ${uri}`);
     const dirRef = uri === `${URI_PREFIX}${resolved.name}` ? "" : resolved.ref;
     let files: { name: string; path: string }[];
     try {
-      files = listSkillFiles(dirname(meta.path));
+      files = listSkillFiles(dirname(resolved.meta.path));
     } catch {
       throw new McpError(ErrorCode.InvalidParams, `Unknown directory: ${uri}`);
     }
@@ -334,6 +338,9 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
         name: childName,
         mimeType: slash === -1 ? mimeFor(name, "utf8") : "inode/directory",
       });
+    }
+    if (dirRef && children.size === 0) {
+      throw new McpError(ErrorCode.InvalidParams, `Unknown directory: ${uri}`);
     }
     const all = [...children.values()].sort((a, b) => a.name.localeCompare(b.name));
     const offset = decodeCursor(request.params?.cursor);

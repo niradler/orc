@@ -106,19 +106,32 @@ describe("HTTP elicitation via durable human requests", () => {
     expect(value.action).toBe("accept");
     expect(value.content.color).toBe("red");
 
-    const request = store()
-      .list()
-      .find((item) => item.input.kind === "question" && item.input.prompt.includes("Pick a color"));
-    expect(request?.input.choices).toEqual(["red", "blue"]);
-    expect(request?.input.origin.session_id).toBe(SESSION);
-    expect(request?.input.origin.backend).toBe("codex");
-    expect(request?.input.notify).toContain("telegram");
-    expect(request?.input.deliver_to_session).toBe(false);
-    // The blocked call consumed the answer; it must not be replayed as a turn.
+    const row = getSqlite()
+      .query<{ id: string; status: string; payload: string }, []>(
+        "SELECT id,status,payload FROM human_requests WHERE json_extract(payload,'$.prompt') LIKE '%Pick a color%'",
+      )
+      .get();
+    expect(row?.status).toBe("delivered");
+    const payload = JSON.parse(row?.payload ?? "{}") as {
+      choices: string[];
+      origin: { session_id: string; backend: string };
+      notify: string[];
+      deliver_to_session: boolean;
+    };
+    expect(payload.choices).toEqual(["red", "blue"]);
+    expect(payload.origin.session_id).toBe(SESSION);
+    expect(payload.origin.backend).toBe("codex");
+    expect(payload.notify).toContain("telegram");
+    expect(payload.deliver_to_session).toBe(false);
+    expect(
+      store()
+        .list()
+        .some((item) => item.id === row?.id),
+    ).toBe(false);
     expect(
       store()
         .pushCandidates(0)
-        .some((item) => item.id === request?.id),
+        .some((item) => item.id === row?.id),
     ).toBe(false);
     await client.close();
     await server.close();
@@ -208,5 +221,62 @@ describe("HTTP elicitation via durable human requests", () => {
       )
       .get();
     expect(row?.status).toBe("cancelled");
+  });
+
+  test("rejects invalid answers, supports >20 choices without crashing, and aborts promptly", async () => {
+    const { client, server } = await connectHttp();
+    const badInt = await runScript(client, {
+      marker: "Bad count",
+      code: `const r = await tools.elicit("Bad count", { type: "object", properties: { count: { type: "integer" } } });
+       return r.action;`,
+      answer: "not-a-number",
+    });
+    expect(badInt.structuredContent?.result).toBe("decline");
+
+    const missingRequired = await runScript(client, {
+      marker: "Missing field",
+      code: `const r = await tools.elicit("Missing field", {
+         type: "object",
+         properties: { a: { type: "string" }, b: { type: "integer" } },
+         required: ["a", "b"],
+       });
+       return r.action;`,
+      answer: '{"a":"only-a"}',
+    });
+    expect(missingRequired.structuredContent?.result).toBe("decline");
+
+    const manyChoices = Array.from({ length: 25 }, (_, index) => `opt-${index}`);
+    const picked = await runScript(client, {
+      marker: "Many choices",
+      code: `const r = await tools.elicit("Many choices", {
+         type: "object",
+         properties: { choice: { type: "string", enum: ${JSON.stringify(manyChoices)} } },
+       });
+       return r;`,
+      answer: "opt-22",
+    });
+    expect(picked.structuredContent?.result).toEqual({
+      action: "accept",
+      content: { choice: "opt-22" },
+    });
+
+    const controller = new AbortController();
+    const elicit = createHumanElicit({
+      sessionId: SESSION,
+      waitMs: 10_000,
+      signal: controller.signal,
+    });
+    const started = Date.now();
+    const waiting = elicit({
+      message: "Abort me immediately",
+      requestedSchema: { type: "object", properties: { name: { type: "string" } } },
+    });
+    await pendingQuestion("Abort me immediately");
+    controller.abort();
+    expect(await waiting).toEqual({ action: "cancel" });
+    expect(Date.now() - started).toBeLessThan(400);
+
+    await client.close();
+    await server.close();
   });
 });

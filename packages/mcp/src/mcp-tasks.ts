@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type CallToolRequest, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import { getSqlite } from "@orc/db/client";
@@ -22,7 +23,7 @@ const CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities
 // Cancellation must reach a running execution even when the cancel arrives on a
 // different (stateless HTTP) server instance, so controllers live per process.
 const running = new Map<string, AbortController>();
-let orphansFailed = false;
+const orphansFailedFor = new WeakSet<Database>();
 
 const TaskIdParams = z.object({ taskId: z.string().min(1) });
 const GetTaskRequestSchema = z.object({
@@ -161,8 +162,8 @@ export function maybeAugmentCallTool(
 
 export function registerMcpTasks(server: Server, options: McpTasksOptions): void {
   const store = options.store ?? new McpTaskStore(getSqlite());
-  if (!orphansFailed) {
-    orphansFailed = true;
+  if (!orphansFailedFor.has(store.sqlite)) {
+    orphansFailedFor.add(store.sqlite);
     store.failOrphans();
   }
 
@@ -184,14 +185,25 @@ export function registerMcpTasks(server: Server, options: McpTasksOptions): void
       const error = JSON.parse(row.error ?? '{"code":-32603,"message":"Unknown error"}');
       throw new McpError(error.code ?? ErrorCode.InternalError, error.message ?? "Task failed");
     }
+    if (row.status === "cancelled") {
+      throw new McpError(ErrorCode.InvalidParams, `Task was cancelled: ${row.task_id}`);
+    }
     throw new McpError(ErrorCode.InvalidParams, `Task result not available yet: ${row.task_id}`);
   });
 
   server.setRequestHandler(ListTasksRequestSchema, async (request) => {
-    const { tasks, nextCursor } = store.list(options.owner, request.params?.cursor);
+    let listed: ReturnType<McpTaskStore["list"]>;
+    try {
+      listed = store.list(options.owner, request.params?.cursor);
+    } catch (err) {
+      throw new McpError(
+        ErrorCode.InvalidParams,
+        err instanceof Error ? err.message : "Invalid cursor",
+      );
+    }
     return {
-      tasks: tasks.map(v1Task),
-      ...(nextCursor !== undefined ? { nextCursor } : {}),
+      tasks: listed.tasks.map(v1Task),
+      ...(listed.nextCursor !== undefined ? { nextCursor: listed.nextCursor } : {}),
     };
   });
 
@@ -204,8 +216,16 @@ export function registerMcpTasks(server: Server, options: McpTasksOptions): void
         `Cannot cancel task in terminal status: ${row.status}`,
       );
     if (!terminal) {
-      store.cancel(row.task_id);
-      running.get(row.task_id)?.abort();
+      const cancelled = store.cancel(row.task_id);
+      if (cancelled) {
+        running.get(row.task_id)?.abort();
+      } else if (row.flavor === "v1") {
+        const latest = requireTask(row.task_id);
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Cannot cancel task in terminal status: ${latest.status}`,
+        );
+      }
     }
     const updated = requireTask(row.task_id);
     return row.flavor === "v1" ? v1Task(updated) : { resultType: "complete" as const };

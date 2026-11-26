@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { type CallToolRequest, ResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
-import { McpTaskStore } from "@orc/db/mcp-tasks";
+import { clampTaskTtl, MCP_TASK_MAX_TTL_MS, McpTaskStore } from "@orc/db/mcp-tasks";
 import { maybeAugmentCallTool, TASKS_EXTENSION_ID } from "../mcp-tasks.js";
 import type { ToolResult } from "../meta-tools.js";
 import { createMcpServer } from "../server.js";
@@ -180,6 +180,10 @@ describe("MCP Tasks: protocol (v1, SDK 2025-11-25)", () => {
       (e: unknown) => e,
     );
     expect((error as { code?: number }).code).toBe(-32602);
+    for (const cursor of ["not-a-number", "5abc", "-1"]) {
+      const badCursor = await request(client, "tasks/list", { cursor }).catch((e: unknown) => e);
+      expect((badCursor as { code?: number }).code).toBe(-32602);
+    }
     await client.close();
     await server.close();
   });
@@ -238,6 +242,34 @@ describe("MCP Tasks: protocol (v1, SDK 2025-11-25)", () => {
     // Terminal v1 tasks cannot be cancelled again.
     const error = await request(client, "tasks/cancel", { taskId }).catch((e: unknown) => e);
     expect((error as { code?: number }).code).toBe(-32602);
+    const payloadError = await request(client, "tasks/result", { taskId }).catch((e: unknown) => e);
+    expect((payloadError as { code?: number }).code).toBe(-32602);
+    await client.close();
+    await server.close();
+  });
+
+  test("TTL clamps unlimited requests and prunes expired terminal tasks; failOrphans marks in-flight tasks failed", async () => {
+    expect(clampTaskTtl(null)).toBe(MCP_TASK_MAX_TTL_MS);
+    const store = new McpTaskStore(getSqlite());
+    const expired = store.create({ flavor: "v1", owner: "global", toolName: "project_list" });
+    store.complete(expired.task_id, okResult);
+    getSqlite()
+      .query("UPDATE mcp_tasks SET terminal_at=? WHERE task_id=?")
+      .run(Date.now() - MCP_TASK_MAX_TTL_MS - 10_000, expired.task_id);
+    const { client, server } = await connectClient();
+    const gone = await request(client, "tasks/get", { taskId: expired.task_id }).catch(
+      (e: unknown) => e,
+    );
+    expect((gone as { code?: number }).code).toBe(-32602);
+
+    const orphan = store.create({ flavor: "v1", owner: "global", toolName: "session_wait" });
+    expect(store.failOrphans()).toBeGreaterThanOrEqual(1);
+    const failed = (await request(client, "tasks/get", { taskId: orphan.task_id })) as {
+      status: string;
+      statusMessage?: string;
+    };
+    expect(failed.status).toBe("failed");
+    expect(failed.statusMessage).toContain("restarted");
     await client.close();
     await server.close();
   });

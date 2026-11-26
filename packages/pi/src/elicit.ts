@@ -1,37 +1,94 @@
 import type { OrcElicitationHandler } from "./mcp-client.js";
 
-/** The subset of Pi's UI context needed to answer an elicitation. */
 export type ElicitationUi = {
   select(title: string, options: string[]): Promise<string | undefined>;
   input(title: string, placeholder?: string): Promise<string | undefined>;
   confirm(title: string, message: string): Promise<boolean>;
 };
 
+type OptionEntry = { const?: unknown; title?: unknown; description?: unknown };
 type PropertySchema = {
   type?: string;
   title?: string;
   description?: string;
+  format?: string;
+  writeOnly?: boolean;
   enum?: unknown[];
+  oneOf?: OptionEntry[];
 };
 
-function coerce(value: string, type: string | undefined): string | number | boolean {
-  if (type === "integer" || type === "number") {
-    const numeric = Number(value);
-    if (Number.isFinite(numeric)) return type === "integer" ? Math.trunc(numeric) : numeric;
-  }
-  if (type === "boolean") return /^(true|1|yes|y)$/i.test(value.trim());
-  return value;
+const SECRET_FIELD = /password|passphrase|secret|token|credential|api.?key|private[_ -]?key/i;
+
+function isSecretField(key: string, property: PropertySchema): boolean {
+  if (property.format === "password" || property.writeOnly === true) return true;
+  const optionText = [
+    ...(Array.isArray(property.enum) ? property.enum.map(String) : []),
+    ...(Array.isArray(property.oneOf)
+      ? property.oneOf.flatMap((option) => [
+          option.const !== undefined ? String(option.const) : "",
+          typeof option.title === "string" ? option.title : "",
+          typeof option.description === "string" ? option.description : "",
+        ])
+      : []),
+  ].join(" ");
+  return SECRET_FIELD.test(
+    [key, property.title ?? "", property.description ?? "", optionText].join(" "),
+  );
 }
 
-/**
- * Answer a live MCP elicitation from Pi's terminal UI. Returned content matches
- * the SDK's scalar form values; the server validates it against its schema.
- */
+type ChoiceOption = { label: string; value: string | number | boolean };
+
+function choicesFor(property: PropertySchema): ChoiceOption[] | undefined {
+  if (Array.isArray(property.enum)) {
+    const out: ChoiceOption[] = [];
+    for (const raw of property.enum) {
+      if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+        out.push({ label: String(raw), value: raw });
+      }
+    }
+    return out.length ? out : undefined;
+  }
+  if (Array.isArray(property.oneOf)) {
+    const out: ChoiceOption[] = [];
+    for (const option of property.oneOf) {
+      const val = option.const;
+      if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
+        const label = typeof option.title === "string" && option.title ? option.title : String(val);
+        out.push({ label, value: val });
+      }
+    }
+    return out.length ? out : undefined;
+  }
+  return undefined;
+}
+
+function coerce(
+  value: string,
+  type: string | undefined,
+): { ok: true; value: string | number | boolean } | { ok: false } {
+  if (type === "integer" || type === "number") {
+    const numeric = value.trim() === "" ? Number.NaN : Number(value);
+    if (!Number.isFinite(numeric)) return { ok: false };
+    if (type === "integer" && !Number.isInteger(numeric)) return { ok: false };
+    return { ok: true, value: numeric };
+  }
+  if (type === "boolean") {
+    const normalized = value.trim();
+    if (/^(true|1|yes|y)$/i.test(normalized)) return { ok: true, value: true };
+    if (/^(false|0|no|n)$/i.test(normalized)) return { ok: true, value: false };
+    return { ok: false };
+  }
+  return { ok: true, value };
+}
+
 export function uiElicitation(ui: ElicitationUi): OrcElicitationHandler {
   return async ({ message, requestedSchema }) => {
     const properties = ((requestedSchema as { properties?: Record<string, PropertySchema> })
       .properties ?? {}) as Record<string, PropertySchema>;
     const keys = Object.keys(properties);
+    for (const key of keys) {
+      if (isSecretField(key, properties[key] ?? {})) return { action: "decline" };
+    }
     if (keys.length === 0) {
       if (!(await ui.confirm("ORC needs input", message))) return { action: "decline" };
       return { action: "accept", content: {} };
@@ -40,16 +97,23 @@ export function uiElicitation(ui: ElicitationUi): OrcElicitationHandler {
     for (const key of keys) {
       const property = properties[key] ?? {};
       const title = `${message} — ${property.title ?? key}`;
-      const options = Array.isArray(property.enum) ? property.enum.map(String) : undefined;
+      const options = choicesFor(property);
       if (options?.length) {
-        const picked = await ui.select(title, options);
+        const picked = await ui.select(
+          title,
+          options.map((entry) => entry.label),
+        );
         if (picked === undefined) return { action: "cancel" };
-        content[key] = coerce(picked, property.type);
+        const matched = options.find((entry) => entry.label === picked);
+        if (!matched) return { action: "decline" };
+        content[key] = matched.value;
         continue;
       }
       const value = await ui.input(title, property.description ?? "");
       if (value === undefined) return { action: "cancel" };
-      content[key] = coerce(value, property.type);
+      const parsed = coerce(value, property.type);
+      if (!parsed.ok) return { action: "decline" };
+      content[key] = parsed.value;
     }
     return { action: "accept", content };
   };

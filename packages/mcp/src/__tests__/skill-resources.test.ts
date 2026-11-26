@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ResultSchema } from "@modelcontextprotocol/sdk/types.js";
-import { resetConfig } from "@orc/core/config";
+import { resetConfig, skillVisibility, updateGlobalConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import {
   createSkill,
@@ -217,6 +217,7 @@ describe("Skills over MCP: discovery and integrity", () => {
     for (const [method, params] of [
       ["skills/get", { uri: "skill://no-such-skill-xyz/SKILL.md" }],
       ["resources/read", { uri: `skill://${SKILL}/no-such-file.md` }],
+      ["resources/read", { uri: `skill://${SKILL}/checklist.md` }],
       ["resources/read", { uri: "skill://no-such-skill-xyz/SKILL.md" }],
     ] as const) {
       const error = await request(client, method, params).catch((e: unknown) => e);
@@ -224,6 +225,39 @@ describe("Skills over MCP: discovery and integrity", () => {
     }
     await client.close();
     await server.close();
+  });
+
+  test("known-but-unlisted (hidden) skills stay out of lists but load via skills/get and resources/read", async () => {
+    const previous = skillVisibility().hidden_skills;
+    updateGlobalConfig((raw) => {
+      raw.skills = { ...((raw.skills as Record<string, unknown>) ?? {}), hidden_skills: [SKILL] };
+    });
+    try {
+      const { client, server } = await connectClient();
+      const listed = (await listAllSkills(client)).map((s) => s.uri);
+      expect(listed).not.toContain(`skill://${SKILL}/SKILL.md`);
+      const listedResources = (await listAllResources(client)).map((r) => r.uri);
+      expect(listedResources).not.toContain(`skill://${SKILL}/SKILL.md`);
+
+      const got = (await request(client, "skills/get", {
+        uri: `skill://${SKILL}/SKILL.md`,
+      })) as { skill: { uri: string } };
+      expect(got.skill.uri).toBe(`skill://${SKILL}/SKILL.md`);
+
+      const read = (await request(client, "resources/read", {
+        uri: `skill://${SKILL}/SKILL.md`,
+      })) as { contents: { text: string }[] };
+      expect(read.contents[0]?.text).toContain("Read references/checklist.md");
+      await client.close();
+      await server.close();
+    } finally {
+      updateGlobalConfig((raw) => {
+        raw.skills = {
+          ...((raw.skills as Record<string, unknown>) ?? {}),
+          hidden_skills: previous,
+        };
+      });
+    }
   });
 
   test("resources/list exposes skill files as resources", async () => {
@@ -259,10 +293,16 @@ describe("Skills over MCP: directory read", () => {
       },
     ]);
 
-    const error = await request(client, "resources/directory/read", {
-      uri: `skill://${SKILL}/references/`,
-    }).catch((e: unknown) => e);
-    expect((error as { code?: number }).code).toBe(-32602);
+    for (const badUri of [
+      `skill://${SKILL}/references/`,
+      `skill://${SKILL}/no-such-dir`,
+      `skill://${SKILL}/SKILL.md`,
+    ]) {
+      const error = await request(client, "resources/directory/read", {
+        uri: badUri,
+      }).catch((e: unknown) => e);
+      expect((error as { code?: number }).code).toBe(-32602);
+    }
     await client.close();
     await server.close();
   });

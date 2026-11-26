@@ -75,4 +75,49 @@ describe("uiElicitation", () => {
       action: "decline",
     });
   });
+
+  test("declines secret fields without prompting and handles oneOf choices and invalid numbers", async () => {
+    const secretUi = ui({ input: ["should-not-be-read"] });
+    const secretHandler = uiElicitation(secretUi);
+    expect(
+      await secretHandler({
+        message: "Auth",
+        requestedSchema: {
+          type: "object",
+          properties: { api_key: { type: "string" } },
+        },
+      }),
+    ).toEqual({ action: "decline" });
+    expect(secretUi.prompts).toEqual([]);
+
+    const oneOfHandler = uiElicitation(ui({ select: ["Production"] }));
+    expect(
+      await oneOfHandler({
+        message: "Target",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            env: {
+              type: "string",
+              oneOf: [
+                { const: "staging", title: "Staging" },
+                { const: "prod", title: "Production" },
+              ],
+            },
+          },
+        },
+      }),
+    ).toEqual({ action: "accept", content: { env: "prod" } });
+
+    const badNumHandler = uiElicitation(ui({ input: ["not-a-number"] }));
+    expect(
+      await badNumHandler({
+        message: "Count",
+        requestedSchema: {
+          type: "object",
+          properties: { count: { type: "integer" } },
+        },
+      }),
+    ).toEqual({ action: "decline" });
+  });
 });

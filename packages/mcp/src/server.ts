@@ -376,25 +376,29 @@ export function createMcpServer({
   server.setRequestHandler(CallToolRequestSchema, async (request, { signal, requestId }) => {
     const specElicit =
       (elicitSignal: AbortSignal, related?: string | number): ElicitFn =>
-      (params) =>
-        server.elicitInput(
+      (params) => {
+        const combined = params.signal
+          ? AbortSignal.any([elicitSignal, params.signal])
+          : elicitSignal;
+        return server.elicitInput(
           {
             mode: "form",
             message: params.message,
             requestedSchema: params.requestedSchema,
           } as Parameters<typeof server.elicitInput>[0],
           {
-            signal: elicitSignal,
+            signal: combined,
             ...(related ? { relatedRequestId: related } : {}),
           },
         );
+      };
     const elicitFor = (elicitSignal: AbortSignal, related?: string | number): ElicitFn =>
       requestSignal ? humanElicit(elicitSignal) : specElicit(elicitSignal, related);
     // A task-augmented call returns a durable handle now and runs in the
     // background on its own signal, so it outlives this request/transport.
     const augmented = maybeAugmentCallTool(
       request,
-      (taskSignal) => executeCallTool(request, taskSignal, elicitFor(taskSignal, requestId)),
+      (taskSignal) => executeCallTool(request, taskSignal, elicitFor(taskSignal)),
       tasksOptions,
     );
     if (augmented) return augmented;
