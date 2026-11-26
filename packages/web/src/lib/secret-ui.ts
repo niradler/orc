@@ -1,5 +1,15 @@
 import type { SecretField } from "@orc/core/human-requests";
-import { defaultProjectSecretName } from "@orc/core/project-secrets";
+import { defaultProjectSecretName, parseProjectSecretRef } from "@orc/core/project-secrets";
+
+export const COMMAND_ARGUMENT_MANUAL = "__manual__";
+
+export function commandArgumentPickerValue(value: string): string {
+  return parseProjectSecretRef(value) !== null ? value : COMMAND_ARGUMENT_MANUAL;
+}
+
+export function commandArgumentFromPicker(selection: string): string {
+  return selection === COMMAND_ARGUMENT_MANUAL ? "" : selection;
+}
 
 export function secretAutocompleteHint(
   field: Pick<SecretField, "key" | "label" | "multiline">,

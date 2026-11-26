@@ -50,6 +50,9 @@ While Pi is open, porc registers the session in `~/.orc/live-sessions` with Pi's
 so ORC shows it as running or idle, refuses session messages while it is open, and refuses
 chat turns while it runs a turn. It shows as ended when Pi exits or its process dies.
 
+A Pi launched without a prompt is not registered, so it leaves no session behind in ORC,
+and a resumed session is registered as soon as it opens.
+
 ## Ask for it in chat
 
 ```text

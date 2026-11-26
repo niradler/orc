@@ -1,11 +1,23 @@
 import type { HumanRequest } from "@orc/core/human-requests";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { ApiError, api } from "@/api/client";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  COMMAND_ARGUMENT_MANUAL,
+  commandArgumentFromPicker,
+  commandArgumentPickerValue,
+} from "@/lib/secret-ui";
 
 export type CommandRequestDraft = {
   script: string;
@@ -25,6 +37,13 @@ export function CommandRequestForm({
   onDraftChange?: (update: Partial<CommandRequestDraft>) => void;
 }) {
   const spec = request.input.command;
+  const projectId = request.input.project_id;
+  const secretsQuery = useQuery({
+    queryKey: ["project-secrets", projectId],
+    queryFn: () => api.projectSecrets.list(projectId ?? ""),
+    enabled: Boolean(projectId),
+  });
+  const savedSecrets = secretsQuery.data?.secrets ?? [];
   const [localDraft, setLocalDraft] = useState<CommandRequestDraft>({
     script:
       request.response?.kind === "command"
@@ -52,6 +71,15 @@ export function CommandRequestForm({
   });
   if (!spec) return null;
   const pending = request.status === "pending" && !run.isPending;
+  // Without a project nothing resolves (the Run fails closed), so the note must
+  // not claim secrets will be injected.
+  const injectedSecrets = projectId
+    ? spec.arguments.filter(
+        (arg) =>
+          arg.allow_secret_ref &&
+          commandArgumentPickerValue(values[arg.name] ?? "") !== COMMAND_ARGUMENT_MANUAL,
+      ).length
+    : 0;
   return (
     <div className="space-y-2">
       <dl className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -123,50 +151,107 @@ export function CommandRequestForm({
         </div>
         <div className="grid gap-x-3 gap-y-2 sm:grid-cols-2">
           {pending &&
-            spec.arguments.map((arg) => (
-              <label
-                htmlFor={`argument-${request.id}-${arg.name}`}
-                className="block min-w-0 space-y-1 text-xs"
-                key={arg.name}
-              >
-                <span className="flex flex-wrap items-baseline gap-x-2">
-                  <span>
-                    {arg.label}
-                    {!arg.required ? " (optional)" : ""}
+            spec.arguments.map((arg) => {
+              const value = values[arg.name] ?? "";
+              const canPick = Boolean(arg.allow_secret_ref) && savedSecrets.length > 0;
+              const isSavedRef = commandArgumentPickerValue(value) !== COMMAND_ARGUMENT_MANUAL;
+              const refWithoutProject = Boolean(arg.allow_secret_ref) && !projectId && isSavedRef;
+              const inputId = `argument-${request.id}-${arg.name}`;
+              return (
+                <div className="block min-w-0 space-y-1 text-xs" key={arg.name}>
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <label htmlFor={inputId}>
+                      {arg.label}
+                      {!arg.required ? " (optional)" : ""}
+                    </label>
+                    <code
+                      data-testid={`attention-argument-name-${arg.name}`}
+                      className="break-all font-mono text-xs text-muted-foreground"
+                    >
+                      {`ORC_INPUT_${arg.name}`}
+                    </code>
                   </span>
-                  <code
-                    data-testid={`attention-argument-name-${arg.name}`}
-                    className="break-all font-mono text-xs text-muted-foreground"
-                  >
-                    {`ORC_INPUT_${arg.name}`}
-                  </code>
-                </span>
-                <Input
-                  id={`argument-${request.id}-${arg.name}`}
-                  type="password"
-                  autoComplete="off"
-                  data-testid={`attention-argument-${arg.name}`}
-                  value={values[arg.name] ?? ""}
-                  required={arg.required}
-                  maxLength={16000}
-                  aria-describedby={
-                    arg.description ? `argument-help-${request.id}-${arg.name}` : undefined
-                  }
-                  onChange={(event) =>
-                    setValues((previous) => ({ ...previous, [arg.name]: event.target.value }))
-                  }
-                />
-                {arg.description && (
-                  <span
-                    id={`argument-help-${request.id}-${arg.name}`}
-                    className="block text-muted-foreground"
-                  >
-                    {arg.description}
-                  </span>
-                )}
-              </label>
-            ))}
+                  {canPick && (
+                    <Select
+                      value={commandArgumentPickerValue(value)}
+                      onValueChange={(next) =>
+                        setValues((previous) => ({
+                          ...previous,
+                          [arg.name]: commandArgumentFromPicker(next),
+                        }))
+                      }
+                    >
+                      <SelectTrigger
+                        data-testid={`attention-argument-secret-${arg.name}`}
+                        aria-label={`Use a saved secret for ${arg.label}`}
+                        className="min-h-11 w-full sm:min-h-8 [@media(pointer:coarse)]:min-h-11"
+                      >
+                        <SelectValue placeholder="Use a saved secret" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={COMMAND_ARGUMENT_MANUAL}>Type a value</SelectItem>
+                        {savedSecrets.map((secret) => (
+                          <SelectItem key={secret.reference} value={secret.reference}>
+                            {secret.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  {canPick && isSavedRef ? (
+                    <p
+                      data-testid={`attention-argument-ref-${arg.name}`}
+                      className="wrap-anywhere rounded-sm bg-surface px-2 py-1.5 font-mono text-xs text-muted-foreground"
+                    >
+                      {value}
+                    </p>
+                  ) : (
+                    <Input
+                      id={inputId}
+                      type={arg.allow_secret_ref ? "password" : "text"}
+                      autoComplete="off"
+                      data-testid={`attention-argument-${arg.name}`}
+                      value={value}
+                      required={arg.required}
+                      maxLength={16000}
+                      aria-describedby={
+                        arg.description ? `argument-help-${request.id}-${arg.name}` : undefined
+                      }
+                      onChange={(event) =>
+                        setValues((previous) => ({ ...previous, [arg.name]: event.target.value }))
+                      }
+                    />
+                  )}
+                  {refWithoutProject && (
+                    <span
+                      data-testid={`attention-argument-noproject-${arg.name}`}
+                      className="block text-warning"
+                    >
+                      This looks like a secret reference, but the request has no project to resolve
+                      it.
+                    </span>
+                  )}
+                  {arg.description && (
+                    <span
+                      id={`argument-help-${request.id}-${arg.name}`}
+                      className="block text-muted-foreground"
+                    >
+                      {arg.description}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
         </div>
+        {pending && injectedSecrets > 0 && (
+          <p
+            data-testid="attention-secret-injection-note"
+            className="text-xs text-muted-foreground"
+          >
+            This run injects {injectedSecrets} saved secret{injectedSecrets > 1 ? "s" : ""} into the
+            command as environment variable{injectedSecrets > 1 ? "s" : ""}.
+          </p>
+        )}
         {(pending || run.isPending || request.status === "running") && (
           <div className="flex flex-wrap items-center gap-1">
             <Button
@@ -183,8 +268,10 @@ export function CommandRequestForm({
             </Button>
             {pending && actions}
             <HelpPopover label="Secure input handling" testId="attention-input-help">
-              All entered values are used only for this run and redacted from its output. The agent
-              receives the result without the raw inputs.
+              Only arguments the agent opted in offer saved project secrets and mask the typed
+              value; every other argument stays plain and keeps exactly what you type. Submitted
+              values are used only for this run and redacted from its output. The agent receives the
+              result without the raw inputs.
             </HelpPopover>
           </div>
         )}

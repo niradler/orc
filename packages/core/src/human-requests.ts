@@ -66,6 +66,10 @@ export const CommandSpecSchema = z
             label: z.string().trim().min(1).max(200),
             description: z.string().trim().min(1).max(1000).optional(),
             required: z.boolean().default(true),
+            // Opt-in: only these arguments resolve a project/<name> reference to a
+            // saved secret. Other arguments stay literal so a path like project/foo
+            // can never silently inject a credential.
+            allow_secret_ref: z.boolean().default(false),
           })
           .strict(),
       )

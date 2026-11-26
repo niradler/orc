@@ -19,7 +19,7 @@ import { createHumanElicit } from "./elicit.js";
 import { maybeAugmentCallTool, registerMcpTasks, TASKS_EXTENSION_ID } from "./mcp-tasks.js";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
-export { parseMcpProjects } from "./project-scope.js";
+export { type McpProject, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
 import {
   type CallToolOutcome,
@@ -166,7 +166,7 @@ export function createMcpServer({
     return exposedTools.filter(
       (tool) =>
         (!tool.name.startsWith("preview_") || available.has(tool.name)) &&
-        (tool.name !== "speak" || options.agentSessionId),
+        (tool.name !== "speak" || (options.agentSessionId && !options.coordinatorSessionId)),
     );
   }
 
@@ -303,9 +303,10 @@ export function createMcpServer({
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     if (selectedMode === "full") return { tools: listing(await servedTools()) };
     const surface = [...metaToolListing(), ...(codeEnabled ? [codeToolListing] : [])];
-    const speak = options.agentSessionId
-      ? listing(toolDefinitions.filter((tool) => tool.name === "speak"))
-      : [];
+    const speak =
+      options.agentSessionId && !options.coordinatorSessionId
+        ? listing(toolDefinitions.filter((tool) => tool.name === "speak"))
+        : [];
     return { tools: [...surface, ...speak] };
   });
 
