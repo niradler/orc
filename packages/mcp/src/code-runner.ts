@@ -42,7 +42,8 @@ export interface CodeRequest {
   toolName?: string | undefined;
   timeoutMs?: number | undefined;
   envelope?: boolean | undefined;
-  dispatch(): Promise<string>;
+  pause?: boolean | undefined;
+  dispatch(signal: AbortSignal): Promise<string>;
 }
 
 function errorPayload(error: string): string {
@@ -73,6 +74,9 @@ export function runCodeWorker(
   }
   const started = Date.now();
   const deadline = started + timeoutMs;
+  let effectiveDeadline = deadline;
+  let pausedMs = 0;
+  let pauseStartedAt: number | undefined;
   let worker: Worker;
   try {
     worker = startWorker();
@@ -91,6 +95,8 @@ export function runCodeWorker(
     let replyBytes = 0;
     const dispatchedTools: string[] = [];
     let closed = false;
+    const workerAbort = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     function finish(result: CodeOutput | Error): void {
       if (closed) return;
@@ -99,6 +105,7 @@ export function runCodeWorker(
       for (const activeTimer of callTimers) clearTimeout(activeTimer);
       callTimers.clear();
       signal.removeEventListener("abort", cancel);
+      workerAbort.abort();
       queue.length = 0;
       worker.terminate();
       if (running === 0) activeExecutions--;
@@ -121,19 +128,54 @@ export function runCodeWorker(
       if (!closed) worker.postMessage(message);
     }
 
+    // Extend the worker's wall-clock budget after an elicitation pause. Sent
+    // before the reply so the resumed script does not see a stale deadline.
+    function resumeClock(): void {
+      if (pauseStartedAt === undefined) return;
+      clearTimeout(timer);
+      pausedMs += Date.now() - pauseStartedAt;
+      pauseStartedAt = undefined;
+      if (pausedMs > CODE_LIMITS.maxPauseMs) {
+        finish(new Error("Code execution waited too long for user input"));
+        return;
+      }
+      effectiveDeadline = deadline + pausedMs;
+      const remaining = effectiveDeadline - Date.now();
+      if (remaining <= 0) {
+        finish(new Error("Code execution timed out"));
+        return;
+      }
+      post({ type: "deadline", deadline: effectiveDeadline });
+      timer = setTimeout(() => finish(new Error("Code execution timed out")), remaining);
+    }
+
     function drain(): void {
-      while (!closed && !signal.aborted && Date.now() < deadline) {
+      while (!closed && !signal.aborted && Date.now() < effectiveDeadline) {
         const request = queue[0];
         if (!request || serialRunning || running >= CODE_LIMITS.parallelCalls) return;
         if (request.serial && running > 0) return;
         queue.shift();
+        if (request.pause) {
+          const remainingPause = CODE_LIMITS.maxPauseMs - pausedMs;
+          if (remainingPause <= 0) {
+            finish(new Error("Code execution waited too long for user input"));
+            return;
+          }
+          pauseStartedAt = Date.now();
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(
+            () => finish(new Error("Code execution waited too long for user input")),
+            remainingPause,
+          );
+          post({ type: "deadline", deadline: pauseStartedAt + remainingPause });
+        }
         running++;
         serialRunning = request.serial;
         if (request.toolName) dispatchedTools.push(request.toolName);
         let replied = false;
         let callTimer: ReturnType<typeof setTimeout> | undefined;
         if (request.timeoutMs !== undefined) {
-          const remaining = Math.max(1, deadline - Date.now());
+          const remaining = Math.max(1, effectiveDeadline - Date.now());
           const limitMs = Math.max(1, Math.min(request.timeoutMs, remaining));
           callTimer = setTimeout(() => {
             if (callTimer) callTimers.delete(callTimer);
@@ -158,9 +200,10 @@ export function runCodeWorker(
           callTimer = undefined;
         };
         void request
-          .dispatch()
+          .dispatch(workerAbort.signal)
           .then(
             (payload) => {
+              if (request.pause) resumeClock();
               clearCallTimer();
               if (closed || replied) return;
               replied = true;
@@ -172,6 +215,7 @@ export function runCodeWorker(
               post({ type: "reply", id: request.id, payload });
             },
             () => {
+              if (request.pause) resumeClock();
               clearCallTimer();
               if (closed || replied) return;
               replied = true;
@@ -194,12 +238,13 @@ export function runCodeWorker(
       }
     }
 
-    const timer = setTimeout(() => finish(new Error("Code execution timed out")), timeoutMs);
+    timer = setTimeout(() => finish(new Error("Code execution timed out")), timeoutMs);
     signal.addEventListener("abort", cancel, { once: true });
     worker.addEventListener("error", () => finish(new Error("Code worker failed to start or run")));
     worker.addEventListener("message", ({ data }: MessageEvent<WorkerOutput>) => {
       if (closed) return;
-      if (Date.now() >= deadline) return finish(new Error("Code execution timed out"));
+      if (pauseStartedAt === undefined && Date.now() >= effectiveDeadline)
+        return finish(new Error("Code execution timed out"));
       switch (data.type) {
         case "ready":
           post({

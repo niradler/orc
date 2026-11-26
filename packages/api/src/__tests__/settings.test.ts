@@ -222,7 +222,9 @@ test("should persist MCP defaults and serve DB prompts over HTTP and MCP", async
       (tool: { name: string }) => tool.name,
     ),
   ).toEqual(["tool_search", "tool_describe", "tool_invoke"]);
-  expect((await rpc("resources/list")).error).toBeDefined();
+  // Resources exist for Skills over MCP; the UI catalog is not one of them.
+  const resources = (await rpc("resources/list")).result.resources as { uri: string }[];
+  expect(resources.every((resource) => resource.uri.startsWith("skill://"))).toBe(true);
   expect((await rpc("prompts/list")).result.prompts).toEqual([
     {
       name: "render-ui",

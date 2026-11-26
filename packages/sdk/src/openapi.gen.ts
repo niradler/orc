@@ -7859,6 +7859,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -8009,6 +8011,8 @@ export interface paths {
                             cwd: string;
                             host: string;
                         };
+                        /** @default true */
+                        deliver_to_session?: boolean;
                         /** @default 86400 */
                         expires_in_seconds?: number;
                     };
@@ -8106,6 +8110,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -8278,6 +8284,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -8456,6 +8464,8 @@ export interface paths {
                                         cwd: string;
                                         host: string;
                                     };
+                                    /** @default true */
+                                    deliver_to_session: boolean;
                                     /** @default 86400 */
                                     expires_in_seconds: number;
                                 };
@@ -8640,6 +8650,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -8843,6 +8855,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -9026,6 +9040,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -9188,6 +9204,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -9371,6 +9389,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -9551,6 +9571,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -9731,6 +9753,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };
@@ -15510,6 +15534,8 @@ export interface paths {
                                     cwd: string;
                                     host: string;
                                 };
+                                /** @default true */
+                                deliver_to_session: boolean;
                                 /** @default 86400 */
                                 expires_in_seconds: number;
                             };

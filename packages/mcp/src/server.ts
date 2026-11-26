@@ -1,6 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
+  type CallToolRequest,
   CallToolRequestSchema,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
@@ -13,7 +14,9 @@ import { MCP_PROMPT_REQUEST_ARG, renderMcpPrompt } from "@orc/core/mcp-prompts";
 import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { z } from "zod";
-import { codeToolListing, runCodeMode, scriptToolInfo } from "./code-mode.js";
+import { codeToolListing, type ElicitFn, runCodeMode, scriptToolInfo } from "./code-mode.js";
+import { createHumanElicit } from "./elicit.js";
+import { maybeAugmentCallTool, registerMcpTasks, TASKS_EXTENSION_ID } from "./mcp-tasks.js";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
 export { type McpProject, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
@@ -29,6 +32,7 @@ import {
   type ToolResult,
 } from "./meta-tools.js";
 import { availablePreviewTools, previewToolContent } from "./preview-tools.js";
+import { registerSkillResources, SKILLS_EXTENSION_ID } from "./skill-resources.js";
 import { executeSpecTool, isSpecTool, specToolDefinitions } from "./spec-tools.js";
 import {
   agentSessionFromEnv,
@@ -116,7 +120,16 @@ export function createMcpServer({
   const server = new Server(
     { name: "orc", version: "0.0.1" },
     {
-      capabilities: { tools: {}, prompts: {} },
+      capabilities: {
+        tools: {},
+        prompts: {},
+        resources: {},
+        tasks: { list: {}, cancel: {}, requests: { tools: { call: {} } } },
+        extensions: {
+          [SKILLS_EXTENSION_ID]: { directoryRead: true },
+          [TASKS_EXTENSION_ID]: {},
+        },
+      },
       ...(codeEnabled
         ? {
             instructions:
@@ -300,15 +313,20 @@ export function createMcpServer({
   // In meta mode a CallTool naming a real tool is routed through the same
   // callTool as tool_invoke, so clients that already know a name keep working;
   // the served set still bounds what is reachable.
-  server.setRequestHandler(CallToolRequestSchema, async (request, { signal }) => {
+  async function executeCallTool(
+    request: CallToolRequest,
+    signal: AbortSignal,
+    elicit?: ElicitFn | undefined,
+  ): Promise<ToolResult> {
     const { name, arguments: args } = request.params;
     if (name === codeToolListing.name) {
       if (codeEnabled) {
         return runCodeMode(
           await servedTools(),
           args,
-          requestSignal ? AbortSignal.any([signal, requestSignal]) : signal,
+          signal,
           (tool, input) => callToolInternal(tool, input, true),
+          elicit,
         );
       }
       return {
@@ -330,7 +348,66 @@ export function createMcpServer({
       return runMetaTool(served, name, args, callTool, codeEnabled ? scriptToolInfo : undefined);
     }
     return callTool(name, args);
+  }
+
+  const taskOwner = selected
+    ? selected
+        .map((p) => p.id)
+        .sort()
+        .join(",")
+    : "global";
+  const taskEligibleTools = new Set([
+    "session_wait",
+    "session_start",
+    "job_run",
+    codeToolListing.name,
+  ]);
+  const tasksOptions = { owner: taskOwner, eligibleTools: taskEligibleTools };
+  const elicitProjectId = selected?.[0]?.id ?? null;
+  // HTTP/stateless connections ask through a durable human request (webchat,
+  // Telegram); live stdio connections use spec elicitation.
+  const humanElicit = (elicitSignal: AbortSignal): ElicitFn =>
+    createHumanElicit({
+      sessionId: options.agentSessionId,
+      projectId: elicitProjectId,
+      signal: elicitSignal,
+    });
+
+  server.setRequestHandler(CallToolRequestSchema, async (request, { signal, requestId }) => {
+    const specElicit =
+      (elicitSignal: AbortSignal, related?: string | number): ElicitFn =>
+      (params) => {
+        const combined = params.signal
+          ? AbortSignal.any([elicitSignal, params.signal])
+          : elicitSignal;
+        return server.elicitInput(
+          {
+            mode: "form",
+            message: params.message,
+            requestedSchema: params.requestedSchema,
+          } as Parameters<typeof server.elicitInput>[0],
+          {
+            signal: combined,
+            ...(related ? { relatedRequestId: related } : {}),
+          },
+        );
+      };
+    const elicitFor = (elicitSignal: AbortSignal, related?: string | number): ElicitFn =>
+      requestSignal ? humanElicit(elicitSignal) : specElicit(elicitSignal, related);
+    // A task-augmented call returns a durable handle now and runs in the
+    // background on its own signal, so it outlives this request/transport.
+    const augmented = maybeAugmentCallTool(
+      request,
+      (taskSignal) => executeCallTool(request, taskSignal, elicitFor(taskSignal)),
+      tasksOptions,
+    );
+    if (augmented) return augmented;
+    const liveSignal = requestSignal ? AbortSignal.any([signal, requestSignal]) : signal;
+    return executeCallTool(request, liveSignal, elicitFor(liveSignal, requestId));
   });
+
+  registerMcpTasks(server, tasksOptions);
+  registerSkillResources(server, { projectScopes: selected });
 
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     prompts: new McpPromptStore(getSqlite()).list().map(({ name, title, description }) => ({

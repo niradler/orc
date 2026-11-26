@@ -256,6 +256,7 @@ Send `tool_execute` an object with `code` and an optional `timeout_ms`. The code
 | `await tools.call(name, args, { connection?, timeout_ms? })`  | Never throws: `{ ok: true, data, text }` on success (`data` is structured data for typed/JSON tools such as `task_list`, `flow_status`, `project_list`, `session_list`, `session_send`, plus raw `text`) or `{ ok: false, error: { code, message } }` on failure or per-call timeout. |
 | `await tools.allSettled(calls, { connection?, timeout_ms? })` | Runs a batch of `{ name, args?, connection?, timeout_ms? }` descriptors or `tools.call(...)` promises concurrently and returns one `{ ok, ... }` envelope per item so a failure or timeout never discards successful results.                                                         |
 | `tools.pick(objOrArray, keys)`                                | Projects an object or array of objects to only the listed keys before returning.                                                                                                                                                                                                      |
+| `await tools.elicit(message, requestedSchema)`                | Ask for input with a form schema and return `{ action, content }` (`action` is `accept`, `decline` or `cancel`). Live connections use spec elicitation; stateless HTTP and background tasks route the question to ORC Notifications and configured chat channels. See [Elicitation](#elicitation). |
 
 ```js
 const [tasks, jobs, missing] = await tools.allSettled([
@@ -288,6 +289,39 @@ Execution defaults to 15 seconds and accepts 100 to 25,000 milliseconds, with a 
 ## Prompts
 
 The server also lists MCP prompts defined in **Settings → Agents → MCP** (API: `GET`/`PATCH /api/settings/mcp`). Each prompt accepts one optional argument, `request`.
+
+## Skills over MCP (resources)
+
+The server implements the official [Skills extension](https://modelcontextprotocol.io/extensions/skills/overview) (`io.modelcontextprotocol/skills`, SEP-2640) on top of the standard Resources primitive, so spec-compliant clients can discover and load ORC skills without ORC-specific tools:
+
+- `skills/list` / `skills/get` return skill entries with the full YAML frontmatter and a complete file manifest (URI, SHA-256 digest and byte size per file), plus `resultType`, `ttlMs` and `cacheScope`. Results paginate with `cursor` / `nextCursor`.
+- Skill files are served through `resources/read` at `skill://<name>/SKILL.md` and `skill://<name>/<relative path>`; `resources/list` enumerates them. Text files arrive as `text`, binary assets as base64 `blob`.
+- `resources/directory/read` lists a skill directory's direct children (`skill://<name>` or `skill://<name>/references`); subdirectories use `mimeType: "inode/directory"`.
+- Unknown skills or files fail with JSON-RPC `-32602`.
+
+Entries respect the connection's [project scope](#query-parameters), discovery visibility and effective (project-edited) `SKILL.md` overlays; manifests are computed from the exact bytes served, so hosts can verify integrity. Cache scope is `private` because entries depend on the connection's scope. The `skill_list` / `skill_read` [tools](#skills) remain available for existing agents.
+
+## Tasks (long-running tool calls)
+
+The server can return a durable **task handle** instead of blocking, so a client can disconnect and poll for the result later. Task state lives in the database and survives restarts; results stay available for a TTL after the task finishes. Two wire flavors share one store:
+
+- **SDK task-augmented requests (2025-11-25):** the client opts in per call by sending `params.task` on `tools/call`. The server replies `{ task: { taskId, status, ttl, createdAt, ... } }`, the client polls `tasks/get`, and fetches the final payload with `tasks/result`. `tasks/list` and `tasks/cancel` are also supported. Any tool can be augmented this way.
+- **Tasks extension (`io.modelcontextprotocol/tasks`):** the client opts in via `_meta["io.modelcontextprotocol/clientCapabilities"].extensions["io.modelcontextprotocol/tasks"]`. The server then decides per call (server-directed) and returns `resultType: "task"` for long-running tools (`session_start`, `session_wait`, `job_run`, `tool_execute`); other tools still return synchronously. `tasks/get` carries the final `result` (or `error`) inline, `tasks/update` delivers mid-flight input, and `tasks/cancel` acknowledges with `resultType: "complete"`.
+
+Statuses are `working`, `input_required`, `completed`, `failed`, `cancelled`. Cancellation is cooperative. Tasks are bound to the connection's [project scope](#query-parameters); a scoped connection cannot read another scope's tasks. Unknown or expired task IDs fail with `-32602`. A restart marks in-flight tasks `failed` with a clear status message rather than leaving them hanging.
+
+porc's `OrcMcpClient` wraps v1 task-augmented calls: `callTask` returns a handle, `waitForTask` polls to a terminal state and fetches the payload, and `cancelTask` stops one. The Pi extension exposes the same operations as `task_start`, `task_status`, `task_result` and `task_cancel` ([Pi and porc](./pi.md)).
+
+## Elicitation
+
+The server can ask the user for input mid-call using standard MCP [elicitation](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation) (form mode). Inside `tool_execute`, a script calls `await tools.elicit(message, requestedSchema)` and resumes with `{ action, content }` after the user answers. The script should handle `decline` and `cancel` explicitly. Responses are coerced to the requested schema types (string, number, integer, boolean), and form mode never collects secrets.
+
+ORC picks the transport that can actually reach the user:
+
+- **Live connections** (local stdio, or a client that keeps the request open and declared the `elicitation` capability) receive a standard `elicitation/create` request. ORC's own `porc` client ([`OrcMcpClient`](./pi.md)) answers it when given an `onElicitation` handler.
+- **Stateless HTTP calls and background tasks** cannot round-trip a server-initiated request. ORC creates a durable [human request](./human-requests.md) instead and delivers it to ORC Notifications, the web UI and configured Telegram/Slack channels. The `tool_execute` sandbox pauses its wall-clock budget while waiting (up to 5 minutes) and the answer resumes the same script. A single-choice schema becomes chat buttons; several fields ask for one JSON reply. Unanswered requests expire; the script receives `cancel`.
+
+The durable request is bound to the calling agent session and project scope, so it appears with that session's notifications and expires with it. Set `ORC_MCP_ELICIT_WAIT_MS` to change the wait budget (1s–300s) and `ORC_MCP_ELICIT_NOTIFY` to choose channels (`telegram`, `slack`, `slack-user`; at most two).
 
 ## Calling tools over REST
 
@@ -394,7 +428,7 @@ Project-scoped MCP sessions can only create and read goals inside their scopes.
 
 ### Skills
 
-See [Skills](./skills.md).
+See [Skills](./skills.md). Spec-compliant clients can also use the standard [Skills over MCP resources](#skills-over-mcp-resources) surface (`skills/list`, `skills/get`, `resources/read`).
 
 | Tool               | Description                                                                                    |
 | ------------------ | ---------------------------------------------------------------------------------------------- |

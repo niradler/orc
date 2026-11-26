@@ -14,7 +14,7 @@ npx skills add niradler/orc --all -g
 
 `-g` installs globally instead of into the current project.
 
-Agents connected over [MCP](./mcp.md) do not need a local copy: they discover the same skills with `skill_list` and load them with `skill_read`.
+Agents connected over [MCP](./mcp.md) do not need a local copy: they discover the same skills with `skill_list` and load them with `skill_read`. Spec-compliant MCP clients can instead use the standard [Skills over MCP](./mcp.md#skills-over-mcp-resources) extension (`skills/list`, `skills/get`, `resources/read` with `skill://` URIs and verifiable file manifests).
 
 ## Entry-point skills
 

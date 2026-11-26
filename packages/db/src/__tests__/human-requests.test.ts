@@ -27,6 +27,12 @@ function fixture() {
     },
   };
 }
+function openFileDb(path: string): Database {
+  const db = new Database(path);
+  db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
+  return db;
+}
+
 const question = {
   origin: { session_id: "session-a", backend: "codex", request_id: "question-a" },
   kind: "question",
@@ -294,16 +300,16 @@ test("should reopen pending and answered requests from a closed SQLite database"
   const dir = mkdtempSync(join(tmpdir(), "orc-human-reopen-"));
   tempDirs.push(dir);
   const path = join(dir, "requests.db");
-  let db = new Database(path);
+  let db = openFileDb(path);
   let store = new HumanRequestStore(db);
   const request = store.create(question);
   db.close();
-  db = new Database(path);
+  db = openFileDb(path);
   store = new HumanRequestStore(db);
   expect(store.get(request.id).status).toBe("pending");
   store.respond(request.id, 1, { kind: "question", answer: "Blue" });
   db.close();
-  db = new Database(path);
+  db = openFileDb(path);
   store = new HumanRequestStore(db);
   expect(store.get(request.id).response).toEqual({ kind: "question", answer: "Blue" });
   db.close();
@@ -709,7 +715,7 @@ test("should wake due snoozes exactly once across database restarts", () => {
   tempDirs.push(dir);
   const path = join(dir, "requests.db");
   let clock = 1_000_000;
-  let db = new Database(path);
+  let db = openFileDb(path);
   let store = new HumanRequestStore(db, () => clock);
   const req = store.create(question);
   const initialNote = db
@@ -723,7 +729,7 @@ test("should wake due snoozes exactly once across database restarts", () => {
 
   // Restart during snooze: stays snoozed and does not wake early.
   clock += 5_000;
-  db = new Database(path);
+  db = openFileDb(path);
   store = new HumanRequestStore(db, () => clock);
   expect(store.get(req.id).snooze_until).toBe(1_010_000);
   expect(store.wakeDueSnoozes()).toEqual([]);
@@ -731,7 +737,7 @@ test("should wake due snoozes exactly once across database restarts", () => {
 
   // Restart after due time: wakes exactly once with a fresh unread notification.
   clock += 10_000;
-  db = new Database(path);
+  db = openFileDb(path);
   store = new HumanRequestStore(db, () => clock);
   const woken = store.wakeDueSnoozes();
   expect(woken.map((r) => r.id)).toEqual([req.id]);
@@ -748,7 +754,7 @@ test("should wake due snoozes exactly once across database restarts", () => {
   db.close();
 
   // Another restart after waking does not wake again.
-  db = new Database(path);
+  db = openFileDb(path);
   store = new HumanRequestStore(db, () => clock);
   expect(store.wakeDueSnoozes()).toEqual([]);
   db.close();
