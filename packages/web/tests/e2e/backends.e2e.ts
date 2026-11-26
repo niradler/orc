@@ -36,8 +36,8 @@ test.describe("Agent backends", () => {
     expect(backends.find((b) => b.name === "claude")?.kind).toBe("in-process");
     expect(backends.find((b) => b.name === "acpx")?.kind).toBe("cli");
 
-    // The split the KB digest picker filters on: a digest runs with a tool whitelist, so it can
-    // only use a backend that enforces one. There has to be at least one, or the dialog is empty.
+    // The KB digest picker uses this to suggest capable backends and mark ones that run without a
+    // tool whitelist.
     expect(backends.find((b) => b.name === "claude")?.tool_allowlist).toBe(true);
     expect(backends.find((b) => b.name === "acpx")?.tool_allowlist).toBe(false);
     expect(backends.filter((b) => b.tool_allowlist).map((b) => b.name)).toContain("claude");

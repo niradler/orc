@@ -26574,7 +26574,7 @@ export interface components {
              * @enum {string}
              */
             kind: "in-process" | "cli" | "http";
-            /** @description Whether a session here can be restricted to an explicit tool whitelist. A knowledge base digest always runs with one, so it can only use such a backend. */
+            /** @description Whether a session here can be restricted to an explicit tool whitelist. A knowledge base digest prefers one and warns when running without it. */
             tool_allowlist: boolean;
             /** @description Preflight passed — usable right now */
             available: boolean;

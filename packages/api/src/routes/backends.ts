@@ -16,7 +16,7 @@ const BackendSchema = z
     }),
     tool_allowlist: z.boolean().openapi({
       description:
-        "Whether a session here can be restricted to an explicit tool whitelist. A knowledge base digest always runs with one, so it can only use such a backend.",
+        "Whether a session here can be restricted to an explicit tool whitelist. A knowledge base digest prefers one and warns when running without it.",
     }),
     available: z.boolean().openapi({ description: "Preflight passed — usable right now" }),
     error: z.string().nullable().openapi({ description: "Why it is unavailable" }),

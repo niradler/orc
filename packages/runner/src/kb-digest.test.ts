@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { type AgentEvent, registerBackend, type SessionOpts } from "@orc/agent-runtime";
 import { ulid } from "@orc/core/ids";
 import { createTestDb, getDb, getSqlite } from "@orc/db/client";
 import { KbDigestStore, kbDigestCommand } from "@orc/db/kb-digest";
@@ -200,6 +201,65 @@ describe("KB digest runner", () => {
     expect(resolved).toContain('Digest backend "gemini", which runs on "acpx"');
     expect(resolved).toContain("runs without it");
     expect(digestWhitelistWarning("opencode", "opencode")).not.toContain("which runs on");
+  });
+
+  test("runKbDigestAgent runs end-to-end on a backend without tool-allowlist support and warns", async () => {
+    const backendName = `stub-no-allowlist-${process.pid}`;
+    let seenOpts: SessionOpts | undefined;
+    registerBackend(backendName, () => ({
+      name: backendName,
+      profileCapabilities: { model: true, toolAllowlist: false },
+      preflight: async () => ({ ok: true }),
+      stop: async () => {},
+      startSession: async (opts) => {
+        seenOpts = opts;
+        let finish: (() => void) | undefined;
+        const done = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        return {
+          id: "stub-session",
+          send: async (prompt) => {
+            new KbDigestStore(getSqlite()).complete(
+              tokenOf(prompt),
+              "applied",
+              "updated without whitelist",
+              backendName,
+            );
+            finish?.();
+          },
+          respondPermission: () => {},
+          events: async function* (): AsyncIterable<AgentEvent> {
+            await done;
+            yield { type: "text", data: "digested" };
+            yield {
+              type: "result",
+              data: { outcome: "completed", runtimeSessionId: "rt-stub" },
+            };
+          },
+          alive: () => true,
+          close: async () => {},
+        };
+      },
+      resumeSession: async () => {
+        throw new Error("not resumed");
+      },
+    }));
+    getSqlite().query("UPDATE kb_digests SET backend = ? WHERE kb_id = ?").run(backendName, kbId);
+    try {
+      const runId = newRun();
+      const note = await runKbDigest(kbId, {
+        runId,
+        triggerBy: "manual",
+        timeoutMs: 60_000,
+      });
+      expect(note).toBe("applied: updated without whitelist");
+      expect(seenOpts?.toolAllowlist).toBeUndefined();
+      expect(digest()?.last_status).toBe("completed");
+      expect(runSession(runId)?.summary).toContain(`warning: Digest backend "${backendName}"`);
+    } finally {
+      getSqlite().query("UPDATE kb_digests SET backend = 'codex' WHERE kb_id = ?").run(kbId);
+    }
   });
 
   test("the executor runs a digest job as a digest, not a shell command", async () => {

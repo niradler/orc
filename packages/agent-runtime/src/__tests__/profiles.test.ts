@@ -217,9 +217,9 @@ describe("tool whitelist resolution", () => {
     return name;
   }
 
-  // A digest refuses its run on this answer, so it must describe the session the caller would
-  // actually get: resolveBackend reroutes names, and judging the requested one alone hides the
-  // most common case - "claude" landing on acpx when its preflight fails.
+  // A digest warns on this answer, so it must describe the session the caller would actually get:
+  // resolveBackend reroutes names, and judging the requested one alone hides the most common case
+  // - "claude" landing on acpx when its preflight fails.
   test("answers for the backend a name resolves to, not for the name", async () => {
     const opts = { cwd: process.cwd() };
     // An unregistered name runs as acpx's agent, and acpx ignores a tool whitelist.

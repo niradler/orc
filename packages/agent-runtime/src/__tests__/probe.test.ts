@@ -79,8 +79,7 @@ describe("probeBackends", () => {
     expect(byName.get("agentapi")?.kind).toBe("http");
   });
 
-  // The digest backend picker filters on exactly this, so a wrong answer hides a usable backend or
-  // offers one whose digest can never run.
+  // The digest backend picker uses this to mark backends that run without a tool whitelist.
   it("reports whether a session here can enforce a tool whitelist", async () => {
     const probes = await probeBackends();
     expect(probes.find((p) => p.name === "claude")?.toolAllowlist).toBe(true);

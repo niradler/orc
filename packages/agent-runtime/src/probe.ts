@@ -13,8 +13,8 @@ export type BackendProbe = {
   capabilities: AgentCapabilities;
   kind: BackendKind;
   /**
-   * Whether a session here can be restricted to an explicit tool whitelist. A KB digest needs
-   * one and cannot run on a backend that ignores it, so the picker has to know before saving.
+   * Whether a session here can be restricted to an explicit tool whitelist. A KB digest prefers
+   * one and warns when running without it, so the picker marks incapable backends.
    */
   toolAllowlist: boolean;
   /** Usable right now: preflight passed. */

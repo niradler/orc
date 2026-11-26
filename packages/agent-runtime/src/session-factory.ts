@@ -66,10 +66,9 @@ async function resolveBackend(
  * name of that backend.
  *
  * `resolveBackend` reroutes: "claude" falls back to acpx when its preflight fails, and an
- * unknown name runs as acpx's agent. A caller that must restrict tools has to judge the
- * resolved backend, because the requested name is exactly what hides the fallback it is about
- * to hit — a KB digest asking for "claude" on a machine without a working Claude install ends
- * up on acpx, which cannot enforce its whitelist at all.
+ * unknown name runs as acpx's agent. Callers have to judge the resolved backend, because the
+ * requested name hides the fallback it is about to hit — a KB digest asking for "claude" on a
+ * machine without a working Claude install ends up on acpx and runs without the whitelist.
  *
  * The preflight this triggers is the same one `openAgentSession` runs a moment later.
  */
