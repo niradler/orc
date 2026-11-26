@@ -1,5 +1,6 @@
 export * from "./api.js";
 export * from "./config.js";
+export * from "./elicit.js";
 export * from "./mcp.js";
 export * from "./mcp-client.js";
 export * from "./project.js";

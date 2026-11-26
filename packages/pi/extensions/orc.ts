@@ -17,6 +17,7 @@ import {
   type PorcOverrides,
   porcPaths,
 } from "../src/config.js";
+import { uiElicitation } from "../src/elicit.js";
 import { type PiLiveSession, writePiLiveSession } from "../src/live-session.js";
 import { redact } from "../src/mcp.js";
 import { OrcMcpClient } from "../src/mcp-client.js";
@@ -349,7 +350,7 @@ async function initialize(
     config.timeoutMs,
     config.secretSource,
   );
-  session.client = new OrcMcpClient(config, session.sessionId, ctx.cwd);
+  session.client = new OrcMcpClient(config, session.sessionId, ctx.cwd, uiElicitation(ctx.ui));
   session.health = (await session.api.health()) ? "up" : "down";
 
   await resolveProject(session, ctx, options.interactive === true);

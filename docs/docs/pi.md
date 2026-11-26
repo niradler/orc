@@ -41,6 +41,11 @@ and returns its id, `task_status` polls it, `task_result` returns the payload on
 terminal, and `task_cancel` cancels a running task. Use them for `job_run`, `session_wait`
 and other long calls instead of blocking the conversation.
 
+Live MCP elicitations, when an ORC tool needs input mid-call, appear as Pi prompts (a
+selector for choices, a text input for free values, or a confirmation when there is no
+form schema). Over HTTP, ORC routes the same questions to Notifications and your chat
+channels instead.
+
 While Pi is open, porc registers the session in `~/.orc/live-sessions` with Pi's process id,
 so ORC shows it as running or idle, refuses session messages while it is open, and refuses
 chat turns while it runs a turn. It shows as ended when Pi exits or its process dies.
