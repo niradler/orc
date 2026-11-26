@@ -20,6 +20,15 @@ async function waitFor<T>(fn: () => T | null, timeoutMs = 5000): Promise<T> {
   throw new Error("Timed out waiting for background job state.");
 }
 
+// Commands run through the host shell (sh on POSIX, cmd on Windows).
+const shell = (posix: string, windows: string): string =>
+  process.platform === "win32" ? windows : posix;
+const echoAndSleep = (text: string, seconds: number): string =>
+  shell(
+    `echo "${text}"; sleep ${seconds}`,
+    `echo "${text}" & ping -n ${seconds + 1} 127.0.0.1 >nul`,
+  );
+
 describe("background-jobs detached runner", () => {
   let root: string;
   let workDir: string;
@@ -42,7 +51,10 @@ describe("background-jobs detached runner", () => {
   test("runs detached command, writes logs and exact exit code 0", async () => {
     const started = startBackgroundJob(
       {
-        command: 'echo "hello-stdout"; echo "hello-stderr" >&2',
+        command: shell(
+          'echo "hello-stdout"; echo "hello-stderr" >&2',
+          'echo "hello-stdout" && echo "hello-stderr" 1>&2',
+        ),
         cwd: workDir,
         label: "echo test",
         session_id: "sess-1",
@@ -68,7 +80,13 @@ describe("background-jobs detached runner", () => {
   });
 
   test("records non-zero exit code distinctly as failed", async () => {
-    const started = startBackgroundJob({ command: 'echo "failing"; exit 42', cwd: workDir }, root);
+    const started = startBackgroundJob(
+      {
+        command: shell('echo "failing"; exit 42', 'echo "failing" && exit 42'),
+        cwd: workDir,
+      },
+      root,
+    );
     startedIds.push(started.id);
 
     const done = await waitFor(() => {
@@ -84,7 +102,7 @@ describe("background-jobs detached runner", () => {
 
   test("stops a running detached process group cleanly", async () => {
     const started = startBackgroundJob(
-      { command: 'echo "started"; sleep 30', cwd: workDir, session_id: "sess-stop" },
+      { command: echoAndSleep("started", 30), cwd: workDir, session_id: "sess-stop" },
       root,
     );
     startedIds.push(started.id);
