@@ -59,7 +59,11 @@ preview tools; those follow the explicit session/preview binding. With no API
 secret configured, unbound connections keep the explicit-identity requirement.
 Coordinator creation is recorded in `audit_list` (entity `session`) with the
 client name. A connection scoped to a single project roots its coordinator in
-that project's folder, so `workspace: same` children start there.
+that project's folder, so `workspace: same` children start there. Without a
+project scope the coordinator is rooted on the installation's default execution
+host (`ssh.host` in Settings) in that host's home folder, so children run where
+the agent CLIs are installed and signed in rather than inside the ORC container;
+changing the default host re-anchors existing coordinators on their next use.
 Coordinators are not garbage-collected: each distinct client name permanently
 leaves one root session and one audit entry, and unnamed connections share the
 single `mcp` coordinator — including its ten-spawns-per-hour budget.

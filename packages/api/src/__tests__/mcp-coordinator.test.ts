@@ -321,8 +321,8 @@ describe("MCP coordinator identity", () => {
     }
   });
 
-  test("ensureCoordinatorSession reuses one thread and never clobbers it", () => {
-    const first = ensureCoordinatorSession({ client: "unit-check" });
+  test("ensureCoordinatorSession reuses one thread and never clobbers it", async () => {
+    const first = await ensureCoordinatorSession({ client: "unit-check" });
     first.messages.push({
       id: crypto.randomUUID(),
       role: "user",
@@ -330,10 +330,60 @@ describe("MCP coordinator identity", () => {
       timestamp: Date.now(),
     });
     new ChatStore(getSqlite()).save(first);
-    const second = ensureCoordinatorSession({ client: "unit-check" });
+    const second = await ensureCoordinatorSession({ client: "unit-check" });
     expect(second.id).toBe(first.id);
     expect(second.messages).toHaveLength(1);
     expect(coordinatorSessionId("Unit Check!")).toBe(coordinatorSessionId("unit-check"));
     expect(thread(coordinatorSessionId("unit-check"))?.cwd).toBe(homedir());
+  });
+
+  test("a coordinator anchors children to the configured execution host", async () => {
+    const previous = process.env.ORC_SSH_HOST;
+    process.env.ORC_SSH_HOST = "lab";
+    resetConfig();
+    try {
+      const remote = async () => ({ host: "lab", cwd: "/home/nir" });
+      const created = await ensureCoordinatorSession({ client: "host-check" }, remote);
+      expect(created.host).toBe("lab");
+      expect(created.cwd).toBe("/home/nir");
+
+      // Reuse keeps the anchor without probing the host again.
+      let probes = 0;
+      const reused = await ensureCoordinatorSession({ client: "host-check" }, async () => {
+        probes += 1;
+        return { host: "lab", cwd: "/home/nir" };
+      });
+      expect(reused.host).toBe("lab");
+      expect(probes).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.ORC_SSH_HOST;
+      else process.env.ORC_SSH_HOST = previous;
+      resetConfig();
+    }
+  });
+
+  test("a coordinator left on the container filesystem is re-anchored to the configured host", async () => {
+    const previous = process.env.ORC_SSH_HOST;
+    process.env.ORC_SSH_HOST = "";
+    resetConfig();
+    try {
+      const stale = await ensureCoordinatorSession({ client: "stale-bot" });
+      expect(stale.host).toBeNull();
+      expect(stale.cwd).toBe(homedir());
+
+      process.env.ORC_SSH_HOST = "lab";
+      resetConfig();
+      const repaired = await ensureCoordinatorSession({ client: "stale-bot" }, async () => ({
+        host: "lab",
+        cwd: "/home/nir",
+      }));
+      expect(repaired.host).toBe("lab");
+      expect(repaired.cwd).toBe("/home/nir");
+      expect(thread(coordinatorSessionId("stale-bot"))?.host).toBe("lab");
+    } finally {
+      if (previous === undefined) delete process.env.ORC_SSH_HOST;
+      else process.env.ORC_SSH_HOST = previous;
+      resetConfig();
+    }
   });
 });

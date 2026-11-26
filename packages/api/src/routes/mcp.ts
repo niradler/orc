@@ -62,10 +62,12 @@ app.all("/mcp", async (c) => {
   // installs keep the explicit-identity requirement.
   const coordinatorSessionId =
     !agentSessionId && configuredApiSecret(loadConfig().api.secret)
-      ? ensureCoordinatorSession({
-          client: c.req.query("client") ?? c.req.header("x-orc-actor-name"),
-          projects: projects ? resolveMcpProjects(projects) : undefined,
-        }).id
+      ? (
+          await ensureCoordinatorSession({
+            client: c.req.query("client") ?? c.req.header("x-orc-actor-name"),
+            projects: projects ? resolveMcpProjects(projects) : undefined,
+          })
+        ).id
       : undefined;
   const callingSessionId = agentSessionId ?? coordinatorSessionId;
   const server = createMcpServer({
