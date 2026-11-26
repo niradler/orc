@@ -6,7 +6,13 @@ export type ElicitationUi = {
   confirm(title: string, message: string): Promise<boolean>;
 };
 
-type OptionEntry = { const?: unknown; title?: unknown; description?: unknown };
+type OptionEntry = {
+  const?: unknown;
+  title?: unknown;
+  description?: unknown;
+  format?: unknown;
+  writeOnly?: unknown;
+};
 type PropertySchema = {
   type?: string;
   title?: string;
@@ -25,17 +31,31 @@ type PropertySchema = {
 
 const SECRET_FIELD = /password|passphrase|secret|token|credential|api.?key|private[_ -]?key/i;
 
-function optionTexts(entries: OptionEntry[] | undefined): string[] {
+function objectEntries(entries: OptionEntry[] | undefined): OptionEntry[] {
   if (!Array.isArray(entries)) return [];
-  return entries.flatMap((option) => [
+  return entries.filter(
+    (option): option is OptionEntry =>
+      Boolean(option) && typeof option === "object" && !Array.isArray(option),
+  );
+}
+
+function optionTexts(entries: OptionEntry[] | undefined): string[] {
+  return objectEntries(entries).flatMap((option) => [
     option.const !== undefined ? String(option.const) : "",
     typeof option.title === "string" ? option.title : "",
     typeof option.description === "string" ? option.description : "",
   ]);
 }
 
+function optionsHaveSecretAttr(entries: OptionEntry[] | undefined): boolean {
+  return objectEntries(entries).some(
+    (option) => option.format === "password" || option.writeOnly === true,
+  );
+}
+
 function isSecretField(key: string, property: PropertySchema): boolean {
   if (property.format === "password" || property.writeOnly === true) return true;
+  if (optionsHaveSecretAttr(property.oneOf) || optionsHaveSecretAttr(property.anyOf)) return true;
   const optionText = [
     ...(Array.isArray(property.enum) ? property.enum.map(String) : []),
     ...optionTexts(property.oneOf),
@@ -64,16 +84,18 @@ function choicesFor(property: PropertySchema): ChoiceOption[] | undefined {
     }
     return out.length ? out : undefined;
   }
-  if (Array.isArray(property.oneOf)) {
+  for (const union of [property.oneOf, property.anyOf]) {
+    const entries = objectEntries(union);
+    if (!entries.length) continue;
     const out: ChoiceOption[] = [];
-    for (const option of property.oneOf) {
+    for (const option of entries) {
       const val = option.const;
       if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
         const label = typeof option.title === "string" && option.title ? option.title : String(val);
         out.push({ label, value: val });
       }
     }
-    return out.length ? out : undefined;
+    if (out.length) return out;
   }
   return undefined;
 }

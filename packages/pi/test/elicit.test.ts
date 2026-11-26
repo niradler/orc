@@ -161,5 +161,33 @@ describe("uiElicitation", () => {
       }),
     ).toEqual({ action: "decline" });
     expect(nestedSecretUi.prompts).toEqual([]);
+
+    const unionSecretUi = ui({ input: ["nope"] });
+    const unionSecretHandler = uiElicitation(unionSecretUi);
+    expect(
+      await unionSecretHandler({
+        message: "Union secret",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            field: { anyOf: [null as unknown as Record<string, unknown>, { writeOnly: true }] },
+          },
+        },
+      }),
+    ).toEqual({ action: "decline" });
+    expect(unionSecretUi.prompts).toEqual([]);
+
+    const nullUnionHandler = uiElicitation(ui({ select: ["b"] }));
+    expect(
+      await nullUnionHandler({
+        message: "Malformed union",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            env: { oneOf: [null as unknown as Record<string, unknown>, { const: "b" }] },
+          },
+        },
+      }),
+    ).toEqual({ action: "accept", content: { env: "b" } });
   });
 });

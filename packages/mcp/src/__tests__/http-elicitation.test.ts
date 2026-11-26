@@ -6,7 +6,11 @@ import { resetConfig } from "@orc/core/config";
 import type { HumanRequest } from "@orc/core/human-requests";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
-import { createHumanElicit } from "../elicit.js";
+import {
+  assertNonSecretElicitSchema,
+  createHumanElicit,
+  validateElicitResponse,
+} from "../elicit.js";
 import { createMcpServer } from "../server.js";
 
 beforeAll(() => {
@@ -322,6 +326,44 @@ describe("HTTP elicitation via durable human requests", () => {
         requestedSchema: { type: "object", properties: {} },
       }),
     ).toEqual({ action: "cancel" });
+
+    expect(() =>
+      assertNonSecretElicitSchema({
+        type: "object",
+        properties: {
+          mode: { oneOf: [null, { const: "fast" }] },
+        },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertNonSecretElicitSchema({
+        type: "object",
+        properties: {
+          mode: { anyOf: [null, { writeOnly: true }] },
+        },
+      }),
+    ).toThrow("secrets");
+
+    expect(
+      validateElicitResponse(
+        { action: "accept", content: { tags: ["a", "b"] } },
+        {
+          type: "object",
+          properties: {
+            tags: {
+              type: "array",
+              items: {
+                anyOf: [
+                  { const: "a", title: "A" },
+                  { const: "b", title: "B" },
+                ],
+              },
+            },
+          },
+          required: ["tags"],
+        },
+      ),
+    ).toEqual({ action: "accept", content: { tags: ["a", "b"] } });
 
     await client.close();
     await server.close();

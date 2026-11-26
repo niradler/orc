@@ -153,6 +153,15 @@ function createV2TaskElicit(
  * and start the work in the background. Returns the CreateTaskResult to send
  * immediately, or null to run the call synchronously.
  */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function supportsFormElicitation(elicitation: unknown): boolean {
+  if (!isPlainObject(elicitation)) return false;
+  return Object.keys(elicitation).length === 0 || isPlainObject(elicitation.form);
+}
+
 export function maybeAugmentCallTool(
   request: CallToolRequest,
   run: (signal: AbortSignal, context: TaskRunContext) => Promise<ToolResult>,
@@ -187,7 +196,7 @@ export function maybeAugmentCallTool(
   const controller = new AbortController();
   running.set(row.task_id, controller);
   const v2Elicit =
-    flavor === "v2" && clientCaps?.elicitation !== undefined
+    flavor === "v2" && supportsFormElicitation(clientCaps?.elicitation)
       ? createV2TaskElicit(row.task_id, store, controller.signal)
       : undefined;
   void (async () => {
@@ -301,9 +310,9 @@ export function registerMcpTasks(server: Server, options: McpTasksOptions): void
       for (const [key, value] of Object.entries(request.params.inputResponses)) {
         if (Object.hasOwn(outstanding, key)) responses[key] = value;
       }
-      store.applyInputResponses(row.task_id, responses);
+      const applied = store.applyInputResponses(row.task_id, responses);
       const waiter = inputWaiters.get(row.task_id);
-      if (waiter && Object.hasOwn(responses, waiter.key)) {
+      if (applied && waiter && Object.hasOwn(responses, waiter.key)) {
         inputWaiters.delete(row.task_id);
         store.resumeWorking(row.task_id);
         waiter.resolve(responses[waiter.key]);

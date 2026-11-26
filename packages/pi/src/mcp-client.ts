@@ -437,23 +437,19 @@ export class OrcMcpClient {
       `ORC skill ${name}`,
     );
     const item = result.contents[0];
-    if (!item) throw new OrcMcpError(`Empty skill resource response: ${uri}`);
+    if (!item || result.contents.length !== 1) {
+      throw new OrcMcpError(`Unexpected skill resource response shape: ${uri}`);
+    }
     const isBlob = "blob" in item && typeof item.blob === "string";
-    const bytes = isBlob
-      ? Buffer.from(item.blob, "base64")
-      : Buffer.from("text" in item && typeof item.text === "string" ? item.text : "", "utf8");
+    const textContent = "text" in item && typeof item.text === "string" ? item.text : "";
+    const bytes = isBlob ? Buffer.from(item.blob, "base64") : Buffer.from(textContent, "utf8");
     const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     if (bytes.length !== manifest.size || digest !== manifest.digest) {
       throw new OrcMcpError(`Skill resource failed integrity check: ${uri}`);
     }
     const text = isBlob
       ? `[binary resource ${uri}, ${bytes.length} bytes, ${item.mimeType ?? "application/octet-stream"}]`
-      : result.contents
-          .map((entryItem) =>
-            "text" in entryItem && typeof entryItem.text === "string" ? entryItem.text : "",
-          )
-          .filter(Boolean)
-          .join("\n");
+      : textContent;
     return { text, isError: false, raw: result };
   }
 

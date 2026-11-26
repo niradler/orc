@@ -184,7 +184,7 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
     } catch {
       return null;
     }
-    if (1 + files.length > MAX_SKILL_FILES) return null;
+    if (files.length > MAX_SKILL_FILES) return null;
     const cacheKey = `${meta.path}:${scopeFor(meta.name) ?? "global"}:${meta.name}`;
     const fp = fingerprint(meta, files);
     const cached = manifestCache.get(cacheKey);

@@ -31,7 +31,13 @@ function notifyChannels(): NotifyChannel[] {
   return unique.length ? unique.slice(0, 2) : [...DEFAULT_CHANNELS];
 }
 
-type OptionEntry = { const?: unknown; title?: unknown; description?: unknown };
+type OptionEntry = {
+  const?: unknown;
+  title?: unknown;
+  description?: unknown;
+  format?: unknown;
+  writeOnly?: unknown;
+};
 type PropertySchema = {
   type?: string;
   title?: string;
@@ -42,6 +48,8 @@ type PropertySchema = {
   oneOf?: OptionEntry[];
   anyOf?: OptionEntry[];
   items?: PropertySchema;
+  minItems?: number;
+  maxItems?: number;
   minimum?: number;
   maximum?: number;
   minLength?: number;
@@ -59,17 +67,31 @@ export type HumanElicitTarget = {
   waitMs?: number | undefined;
 };
 
-function optionTexts(entries: OptionEntry[] | undefined): string[] {
+function objectEntries(entries: OptionEntry[] | undefined): OptionEntry[] {
   if (!Array.isArray(entries)) return [];
-  return entries.flatMap((option) => [
+  return entries.filter(
+    (option): option is OptionEntry =>
+      Boolean(option) && typeof option === "object" && !Array.isArray(option),
+  );
+}
+
+function optionTexts(entries: OptionEntry[] | undefined): string[] {
+  return objectEntries(entries).flatMap((option) => [
     option.const !== undefined ? String(option.const) : "",
     typeof option.title === "string" ? option.title : "",
     typeof option.description === "string" ? option.description : "",
   ]);
 }
 
+function optionsHaveSecretAttr(entries: OptionEntry[] | undefined): boolean {
+  return objectEntries(entries).some(
+    (option) => option.format === "password" || option.writeOnly === true,
+  );
+}
+
 function fieldHasSecret(key: string, field: PropertySchema): boolean {
   if (field.format === "password" || field.writeOnly === true) return true;
+  if (optionsHaveSecretAttr(field.oneOf) || optionsHaveSecretAttr(field.anyOf)) return true;
   const optionText = [
     ...(Array.isArray(field.enum) ? field.enum.map(String) : []),
     ...optionTexts(field.oneOf),
@@ -104,8 +126,9 @@ export function assertNonSecretElicitSchema(requestedSchema: Record<string, unkn
 function allowedConstants(schema: PropertySchema | undefined): unknown[] | undefined {
   if (!schema) return undefined;
   if (Array.isArray(schema.enum)) return schema.enum;
-  if (Array.isArray(schema.oneOf)) {
-    const values = schema.oneOf.map((option) => option.const).filter((v) => v !== undefined);
+  for (const union of [schema.oneOf, schema.anyOf]) {
+    const entries = objectEntries(union);
+    const values = entries.map((option) => option.const).filter((v) => v !== undefined);
     if (values.length) return values;
   }
   return undefined;
@@ -263,6 +286,25 @@ function sanitizeChoices(rawChoices: string[] | undefined): string[] {
   return trimmed;
 }
 
+function parseFieldValue(
+  raw: unknown,
+  schema: PropertySchema | undefined,
+): { ok: true; value: string | number | boolean | (string | number | boolean)[] } | { ok: false } {
+  if (schema?.type === "array") {
+    if (!Array.isArray(raw)) return { ok: false };
+    if (typeof schema.minItems === "number" && raw.length < schema.minItems) return { ok: false };
+    if (typeof schema.maxItems === "number" && raw.length > schema.maxItems) return { ok: false };
+    const out: (string | number | boolean)[] = [];
+    for (const entry of raw) {
+      const parsed = parseScalar(entry, schema.items);
+      if (!parsed.ok) return { ok: false };
+      out.push(parsed.value);
+    }
+    return { ok: true, value: out };
+  }
+  return parseScalar(raw, schema);
+}
+
 export function validateElicitResponse(
   raw: unknown,
   requestedSchema: Record<string, unknown>,
@@ -290,7 +332,7 @@ export function validateElicitResponse(
       if (required.includes(key)) return { action: "decline" };
       continue;
     }
-    const coerced = parseScalar(input[key], properties[key]);
+    const coerced = parseFieldValue(input[key], properties[key]);
     if (!coerced.ok) return { action: "decline" };
     content[key] = coerced.value;
   }

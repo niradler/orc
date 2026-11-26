@@ -459,6 +459,42 @@ describe("MCP Tasks: protocol (v2, io.modelcontextprotocol/tasks)", () => {
     await client.close();
     await server.close();
   });
+
+  test("v2 task does not enter input_required when client declares URL-only elicitation", async () => {
+    const { client, server } = await connectClient({ mode: "meta" });
+    const created = (await request(client, "tools/call", {
+      name: "tool_execute",
+      arguments: {
+        code: `return await tools.elicit("Wait", { type: "object", properties: { x: { type: "string" } } });`,
+      },
+      _meta: {
+        [CLIENT_CAPABILITIES_META_KEY]: {
+          extensions: { [TASKS_EXTENSION_ID]: {} },
+          elicitation: { url: {} },
+        },
+      },
+    })) as { taskId: string };
+
+    const waitStart = Date.now();
+    let status = "";
+    while (Date.now() - waitStart < 5000) {
+      const got = (await request(client, "tasks/get", { taskId: created.taskId })) as {
+        status: string;
+      };
+      status = got.status;
+      if (status !== "working") break;
+      await Bun.sleep(20);
+    }
+    expect(status).toBe("completed");
+    const result = (await request(client, "tasks/result", { taskId: created.taskId })) as {
+      isError?: boolean;
+      content: { text?: string }[];
+    };
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text ?? "").toContain("does not support form elicitation");
+    await client.close();
+    await server.close();
+  });
 });
 
 describe("MCP Tasks: owner isolation", () => {

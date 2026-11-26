@@ -29,6 +29,7 @@ const SKILLS_EXTENSION_ID = "io.modelcontextprotocol/skills";
 type FakeOptions = {
   skills?: boolean;
   tamperSkillBody?: boolean;
+  multiPartSkillBody?: boolean;
   taskPollsToComplete?: number;
 };
 
@@ -137,6 +138,9 @@ async function fakeServer(options: FakeOptions = {}) {
             mimeType: "text/markdown",
             text: options.tamperSkillBody ? "# tampered body" : SKILL_BODY,
           },
+          ...(options.multiPartSkillBody
+            ? [{ uri: request.params.uri, mimeType: "text/markdown", text: "# injected" }]
+            : []),
         ],
       };
     });
@@ -245,6 +249,14 @@ describe("OrcMcpClient skills", () => {
     const fake = await fakeServer({ skills: true, tamperSkillBody: true });
     const orc = orcClient(fake.client);
     await expect(orc.readSkill("orc-tasks")).rejects.toThrow("integrity check");
+    await fake.client.close();
+    await fake.server.close();
+  });
+
+  test("readSkill fails closed when resources/read returns multiple content parts", async () => {
+    const fake = await fakeServer({ skills: true, multiPartSkillBody: true });
+    const orc = orcClient(fake.client);
+    await expect(orc.readSkill("orc-tasks")).rejects.toThrow("Unexpected skill resource response");
     await fake.client.close();
     await fake.server.close();
   });
