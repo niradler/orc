@@ -10,7 +10,7 @@ import { loadConfig } from "@orc/core/config";
 import { createLogger } from "@orc/core/logger";
 import { packageInstructionsForAgent } from "@orc/core/package-service";
 import { sessionExecHost } from "./execution-host.js";
-import { createBackend, hasBackend } from "./registry.js";
+import { backendSupportsToolAllowlist, createBackend, hasBackend } from "./registry.js";
 import type { AgentBackend, AgentBackendName, AgentSession, SessionOpts } from "./types.js";
 
 const logger = createLogger("agent-runtime:session-factory");
@@ -58,6 +58,36 @@ async function resolveBackend(
   return {
     backend: createBackend("acpx"),
     resolvedOpts: { ...opts, acpxAgent: opts.acpxAgent ?? name },
+  };
+}
+
+/**
+ * Whether the backend a name will **actually run on** can enforce a tool whitelist, and the
+ * name of that backend.
+ *
+ * `resolveBackend` reroutes: "claude" falls back to acpx when its preflight fails, and an
+ * unknown name runs as acpx's agent. Callers have to judge the resolved backend, because the
+ * requested name hides the fallback it is about to hit — a KB digest asking for "claude" on a
+ * machine without a working Claude install ends up on acpx and runs without the whitelist.
+ *
+ * The preflight this triggers is the same one `openAgentSession` runs a moment later.
+ */
+export async function resolveToolAllowlistSupport(
+  name: string,
+  opts: SessionOpts,
+): Promise<{ allowed: boolean; resolved: string }> {
+  let backend: AgentBackend;
+  try {
+    backend = (await resolveBackend(name, opts)).backend;
+  } catch (err) {
+    // Resolution never got to a backend (e.g. an ssh host refusing the fallback), so judge the
+    // requested name and let openAgentSession surface the real failure.
+    logger.debug(`Backend ${name} could not be resolved for a tool-whitelist check`, { err });
+    return { allowed: backendSupportsToolAllowlist(name), resolved: name };
+  }
+  return {
+    allowed: backend.profileCapabilities?.toolAllowlist === true,
+    resolved: backend.name,
   };
 }
 
@@ -183,7 +213,11 @@ export function validateProfileCapabilities(
 ): void {
   if (profile?.fields.model && !backend.profileCapabilities?.model)
     throw new Error(`Backend ${backend.name} cannot honor profile model ${profile.fields.model}`);
-  if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
+  if (
+    opts.toolAllowlist !== undefined &&
+    !backend.profileCapabilities?.toolAllowlist &&
+    !opts.toolAllowlistOptional
+  )
     throw new Error(
       `Backend ${backend.name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
     );

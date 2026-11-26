@@ -17,6 +17,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@orc/agent-runtime": "workspace:*",
     "@orc/core": "workspace:*",
     "@orc/db": "workspace:*",
     "croner": "^11.0.0",

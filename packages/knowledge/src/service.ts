@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { readFileSync, statSync } from "node:fs";
 import { basename, extname, sep } from "node:path";
+import { backendSupportsToolAllowlist } from "@orc/agent-runtime";
 import { changes } from "@orc/core/changes";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
@@ -209,6 +210,17 @@ type DigestJoin = {
   enabled: number;
   timeout_secs: number;
 };
+
+/**
+ * A digest asks its backend to restrict the agent to an explicit tool whitelist. Not every
+ * backend can enforce one; those still run the digest, just with their own tool set. Choosing
+ * one is valid, so this is a warning for display (settings, jobs page, run output), never a
+ * rejection. Null means the backend enforces the whitelist.
+ */
+export function digestBackendWarning(backend: string): string | null {
+  if (backendSupportsToolAllowlist(backend)) return null;
+  return `Backend "${backend}" cannot enforce a digest's tool whitelist; the digest runs without the whitelist.`;
+}
 
 /**
  * Single knowledge-base service. REST, MCP, CLI and the web UI are transports over it; each call
@@ -1095,6 +1107,7 @@ export class KnowledgeService {
     const schedule: KbDigestSchedule = input.schedule ??
       existing?.schedule ?? { type: "cron", cron: KB_DIGEST_DEFAULT_CRON };
     const enabled = input.enabled ?? existing?.enabled ?? true;
+    const backend = input.backend ?? existing?.backend ?? this.defaultBackend();
     const timeout = input.timeout_secs ?? existing?.timeout_secs ?? DIGEST_TIMEOUT_SECS;
     const cron = schedule.type === "cron" ? schedule.cron : null;
     const now = Date.now();
@@ -1108,12 +1121,7 @@ export class KnowledgeService {
         );
         this.db.run(
           "UPDATE kb_digests SET instructions = ?, backend = ?, updated_at = ? WHERE kb_id = ?",
-          [
-            input.instructions ?? existing.instructions,
-            input.backend ?? existing.backend,
-            now,
-            kbId,
-          ],
+          [input.instructions ?? existing.instructions, backend, now, kbId],
         );
       } else {
         this.db.run(
@@ -1136,14 +1144,7 @@ export class KnowledgeService {
         this.db.run(
           `INSERT INTO kb_digests (kb_id, instructions, backend, job_id, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?)`,
-          [
-            kbId,
-            input.instructions ?? KB_DIGEST_TEMPLATE,
-            input.backend ?? this.defaultBackend(),
-            jobId,
-            now,
-            now,
-          ],
+          [kbId, input.instructions ?? KB_DIGEST_TEMPLATE, backend, jobId, now, now],
         );
       }
       this.audit(
@@ -1246,6 +1247,9 @@ export class KnowledgeService {
       kb.id,
       Date.now(),
     ]);
+    // The starter digest runs on the default backend. If that backend cannot enforce the digest's
+    // tool whitelist it still runs, without the whitelist, which the settings and run output warn
+    // about; the user may switch to a capable backend at any time.
     this.setDigest(ctx, kb.id, {});
     return kb.id;
   }

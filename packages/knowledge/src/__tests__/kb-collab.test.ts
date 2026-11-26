@@ -9,7 +9,7 @@ import { KB_DIGEST_TEMPLATE, type KbCallContext } from "@orc/core/kb";
 import { createTestDb, getSqlite } from "@orc/db";
 import { KbDigestStore, kbDigestCommand } from "@orc/db/kb-digest";
 import type { KnowledgeConfig } from "../engine.js";
-import { KnowledgeService } from "../service.js";
+import { digestBackendWarning, KnowledgeService } from "../service.js";
 
 const human: KbCallContext = { source: "ui", actor: { name: "nir" } };
 const agent: KbCallContext = {
@@ -30,7 +30,7 @@ beforeEach(async () => {
     config: () => config,
     root,
     embedder: null,
-    defaultBackend: () => "codex",
+    defaultBackend: () => "claude",
   });
   svc.start();
 });
@@ -149,7 +149,7 @@ describe("digests", () => {
     const digest = svc.setDigest(human, kb.id, {});
     expect(digest).toMatchObject({
       instructions: KB_DIGEST_TEMPLATE,
-      backend: "codex",
+      backend: "claude",
       schedule: { type: "cron", cron: "0 3 * * *" },
       enabled: true,
       open_comments: 0,
@@ -181,6 +181,17 @@ describe("digests", () => {
       "kb.digest.set",
       "kb.digest.deleted",
     ]);
+  });
+
+  test("an incapable backend is allowed and reported as a warning", () => {
+    const kb = svc.createKb(human, { name: "Warned", project_id: null });
+    // Choosing a backend that cannot enforce the whitelist is valid; the digest runs without it.
+    expect(svc.setDigest(human, kb.id, { backend: "opencode" })).toMatchObject({
+      backend: "opencode",
+      enabled: true,
+    });
+    expect(digestBackendWarning("opencode")).toContain("runs without the whitelist");
+    expect(digestBackendWarning("claude")).toBeNull();
   });
 
   test("a digest needs mcp in editable_by; runs need the daemon hooks", async () => {
@@ -273,7 +284,7 @@ describe("starter Learnings KBs", () => {
     expect(kbs.map((k) => k.project_id)).toEqual(["p1"]);
     const p1 = kbs[0];
     expect(svc.getDigest(p1?.id as string)).toMatchObject({
-      backend: "codex",
+      backend: "claude",
       instructions: KB_DIGEST_TEMPLATE,
       schedule: { type: "cron", cron: "0 3 * * *" },
       enabled: true,
@@ -283,5 +294,35 @@ describe("starter Learnings KBs", () => {
     svc.deleteKb(human, p1?.id as string);
     expect(svc.ensureLearningsKbs()).toEqual([]);
     expect(svc.listKbs(human, "all").map((k) => k.name)).toEqual(["learnings"]);
+  });
+
+  test("a starter KB gets its digest on a default backend that cannot enforce the whitelist", async () => {
+    db.exec("INSERT INTO projects(id, name) VALUES ('p7', 'codex-default')");
+    const config: KnowledgeConfig = { ...OrcConfigSchema.parse({}).knowledge, root };
+    const codexSvc = await KnowledgeService.open({
+      db,
+      config: () => config,
+      root,
+      embedder: null,
+      defaultBackend: () => "codex",
+    });
+    try {
+      const created = codexSvc.ensureLearningsKbs();
+      expect(created).toHaveLength(1);
+      // Warning semantics: the starter digest exists on the default backend even when that
+      // backend cannot enforce the whitelist; the settings and run output show the warning.
+      expect(codexSvc.getDigest(created[0] as string)).toMatchObject({
+        backend: "codex",
+        enabled: true,
+        schedule: { type: "cron", cron: "0 3 * * *" },
+      });
+      expect(
+        db.query("SELECT 1 FROM jobs WHERE command = ?").get(kbDigestCommand(created[0] as string)),
+      ).not.toBeNull();
+      expect(actions()).toContain("kb.digest.set");
+      expect(codexSvc.ensureLearningsKbs()).toEqual([]);
+    } finally {
+      codexSvc.close();
+    }
   });
 });

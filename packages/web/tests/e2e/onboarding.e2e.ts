@@ -106,6 +106,7 @@ test("create and start retries the saved task and persists human approval", asyn
           {
             name: "claude",
             available: true,
+            tool_allowlist: true,
             requires: "fixture probe",
             kind: "in-process",
             error: null,

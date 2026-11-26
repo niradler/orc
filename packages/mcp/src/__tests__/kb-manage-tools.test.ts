@@ -278,10 +278,10 @@ describe("MCP kb management, edits, comments and digests", () => {
     const set = await executeTool("kb_digest", {
       action: "set",
       kb_id: kb,
-      backend: "codex",
+      backend: "claude",
       schedule: { type: "manual" },
     });
-    expect(set).toContain("backend: codex  schedule: manual");
+    expect(set).toContain("backend: claude  schedule: manual");
     expect(set).toContain("open comments: 1");
     expect(await executeTool("kb_digest", { action: "run", kb_id: kb })).toContain("run-1");
     expect(await executeTool("kb_digest", { action: "runs", kb_id: kb })).toBe("No runs yet.");

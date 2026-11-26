@@ -68,6 +68,12 @@ export type SessionOpts = {
   systemPromptDelivered?: boolean | undefined;
   agentProfile?: string | undefined;
   toolAllowlist?: string[] | undefined;
+  /**
+   * The caller accepts a session without its tool whitelist when the backend cannot enforce
+   * one: the whitelist is dropped instead of refusing the session. A KB digest sets this —
+   * any backend is a valid choice and the caller warns that the run had no whitelist.
+   */
+  toolAllowlistOptional?: boolean | undefined;
   mcpAlwaysLoad?: boolean | undefined;
   /** Explicit ORC connection for chat. Undefined preserves the backend default. */
   orcMcp?: boolean | undefined;

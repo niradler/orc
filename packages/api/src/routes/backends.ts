@@ -14,6 +14,10 @@ const BackendSchema = z
       description:
         "How the backend reaches its agent: in-process needs no external tool, cli spawns a binary, http calls a service.",
     }),
+    tool_allowlist: z.boolean().openapi({
+      description:
+        "Whether a session here can be restricted to an explicit tool whitelist. A knowledge base digest prefers one and warns when running without it.",
+    }),
     available: z.boolean().openapi({ description: "Preflight passed — usable right now" }),
     error: z.string().nullable().openapi({ description: "Why it is unavailable" }),
     requires: z.string().openapi({ description: "What it needs, satisfied or not" }),
@@ -51,7 +55,11 @@ const listRoute = createRoute({
 app.openapi(listRoute, async (c) => {
   const backends = await probeBackends();
   return c.json({
-    backends,
+    // The probe's field names are camelCase; this contract is snake_case.
+    backends: backends.map(({ toolAllowlist, ...probe }) => ({
+      ...probe,
+      tool_allowlist: toolAllowlist,
+    })),
     default_backend: loadConfig().agent_loop.default_backend,
   });
 });

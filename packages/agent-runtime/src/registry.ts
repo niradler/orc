@@ -16,6 +16,20 @@ export function registerBackend(name: AgentBackendName, factory: () => AgentBack
 }
 
 /**
+ * A backend that cannot enforce a whitelist normally refuses the session. When the caller marked
+ * the allowlist optional (a KB digest: any backend is a valid choice), drop it and run with the
+ * backend's own tools instead; the caller is responsible for warning about it.
+ */
+function resolveToolAllowlist(name: string, opts: SessionOpts, supported: boolean): SessionOpts {
+  if (opts.toolAllowlist === undefined || supported) return opts;
+  if (!opts.toolAllowlistOptional)
+    throw new Error(
+      `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
+    );
+  return { ...opts, toolAllowlist: undefined };
+}
+
+/**
  * Create a registered backend.
  *
  * Throws on an unknown name rather than substituting acpx. Routing an unknown
@@ -50,10 +64,11 @@ export function createBackend(name: AgentBackendName): AgentBackend {
       },
       startSession: async (opts) => {
         opts = withSessionEnv(providerSessionOptions(String(name), opts));
-        if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
-          throw new Error(
-            `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
-          );
+        opts = resolveToolAllowlist(
+          String(name),
+          opts,
+          backend.profileCapabilities?.toolAllowlist === true,
+        );
         return withHumanRequests(
           withProviderRedaction(
             await backend
@@ -72,10 +87,11 @@ export function createBackend(name: AgentBackendName): AgentBackend {
       },
       resumeSession: async (id, opts) => {
         opts = withSessionEnv(providerSessionOptions(String(name), opts, true));
-        if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
-          throw new Error(
-            `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
-          );
+        opts = resolveToolAllowlist(
+          String(name),
+          opts,
+          backend.profileCapabilities?.toolAllowlist === true,
+        );
         return withHumanRequests(
           withProviderRedaction(
             await backend
@@ -96,10 +112,11 @@ export function createBackend(name: AgentBackendName): AgentBackend {
         ? {
             forkSession: async (sourceRuntimeId: string, opts: SessionOpts) => {
               opts = withSessionEnv(providerSessionOptions(String(name), opts, true));
-              if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
-                throw new Error(
-                  `Backend ${name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
-                );
+              opts = resolveToolAllowlist(
+                String(name),
+                opts,
+                backend.profileCapabilities?.toolAllowlist === true,
+              );
               return withHumanRequests(
                 withProviderRedaction(
                   await forkSession
@@ -133,4 +150,23 @@ export function hasBackend(name: AgentBackendName): boolean {
 
 export function listRegisteredBackends(): AgentBackendName[] {
   return [...registry.keys()];
+}
+
+/**
+ * Whether a registered backend can restrict a session to an explicit tool whitelist.
+ *
+ * Callers use this to warn (a KB digest) or validate (an agent package profile) up front.
+ */
+export function backendSupportsToolAllowlist(name: string): boolean {
+  const factory = registry.get(name as AgentBackendName);
+  if (!factory) return false;
+  try {
+    return factory().profileCapabilities?.toolAllowlist === true;
+  } catch {
+    return false;
+  }
+}
+
+export function toolAllowlistBackends(): string[] {
+  return listRegisteredBackends().filter((name) => backendSupportsToolAllowlist(name));
 }
