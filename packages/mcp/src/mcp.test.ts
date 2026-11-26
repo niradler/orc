@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getUserAgentsDir } from "@orc/core/agent-service";
 import { globalConfigPath, loadConfig, resetConfig } from "@orc/core/config";
-import { ConflictError, ValidationError } from "@orc/core/errors";
+import { ConflictError } from "@orc/core/errors";
 import { shortId, ulid } from "@orc/core/ids";
-import { closeDb, createTestDb } from "@orc/db/client";
+import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { toolListing } from "./server.js";
 import { executeTool, toolDefinitions } from "./tools.js";
 
@@ -243,21 +243,13 @@ describe("MCP task tools", () => {
     expect(await executeTool("task_link", { id: taskId })).toBe(`No links for task ${taskId}.`);
   });
 
-  test("ID-only task tools refuse tasks outside the selected projects", async () => {
+  test("connection defaults never block ID-only tools", async () => {
     const scoped = { projectScopes: [{ id: "other-project", name: "other" }] };
-    await expect(executeTool("task_link", { id: taskId }, scoped)).rejects.toThrow(
-      "outside the selected MCP projects",
-    );
-    await expect(executeTool("flow_status", { task: taskId }, scoped)).rejects.toThrow(
-      "outside the selected MCP projects",
-    );
+    await expect(executeTool("task_link", { id: taskId }, scoped)).resolves.toContain("No links");
+    await expect(executeTool("flow_status", { task: taskId }, scoped)).resolves.toBeString();
     await expect(
-      executeTool("flow_attach", { task: taskId, name: "default" }, scoped),
-    ).rejects.toThrow("outside the selected MCP projects");
-    await expect(
-      executeTool("flow_report", { task: taskId, outcome: "done" }, scoped),
-    ).rejects.toThrow("outside the selected MCP projects");
-    await expect(executeTool("task_update", { id: taskId, title: "x" }, scoped)).rejects.toThrow();
+      executeTool("task_update", { id: taskId, title: "x" }, scoped),
+    ).resolves.toBeString();
   });
 });
 
@@ -577,17 +569,15 @@ describe("MCP project_create tool", () => {
     expect(failure?.status === "rejected" && failure.reason).toBeInstanceOf(ConflictError);
   });
 
-  test("project-scoped connections are refused with actionable guidance", async () => {
-    const error = await executeTool(
+  test("project_create works on a connection that has default projects", async () => {
+    const name = uniqueName();
+    created.push(name);
+    const text = await executeTool(
       "project_create",
-      { name: uniqueName() },
+      { name },
       { projectScopes: [{ id: "scope-id", name: "scope" }] },
-    ).then(
-      () => null,
-      (e: unknown) => e,
     );
-    expect(error).toBeInstanceOf(ValidationError);
-    expect((error as ValidationError).message).toContain("unscoped connection");
+    expect(text).toContain(`Created project ${name}`);
   });
 
   test("creating a project clears setup_dismissed in config.json and loadConfig()", async () => {
@@ -711,5 +701,102 @@ describe("MCP tool schemas", () => {
     const schema = advertised().find((t) => t.name === "task_list")?.schema;
     expect(schema?.properties).toHaveProperty("limit");
     expect(schema?.required ?? []).not.toContain("limit");
+  });
+});
+
+// Commands run through the host shell (sh on POSIX, cmd on Windows).
+const detachedEcho = (text: string): string =>
+  process.platform === "win32"
+    ? `echo "${text}" & ping -n 21 127.0.0.1 >nul`
+    : `echo "${text}"; sleep 20`;
+
+describe("MCP detached shell tools", () => {
+  test("shell_run starts detached command, shell_status reads output, shell_list lists it, and shell_stop stops it", async () => {
+    const started = JSON.parse(
+      await executeTool("shell_run", {
+        command: detachedEcho("mcp-shell-ok"),
+        cwd: process.cwd(),
+        label: "mcp-shell-test",
+      }),
+    ) as { id: string; status: string };
+    expect(started.status).toBe("running");
+    try {
+      let statusBody: { status: string; log_tail?: string } = { status: "running" };
+      for (let i = 0; i < 40; i++) {
+        statusBody = JSON.parse(
+          await executeTool("shell_status", { job_id: started.id, logs: true, tail_lines: 20 }),
+        ) as { status: string; log_tail?: string };
+        if (statusBody.log_tail?.includes("mcp-shell-ok")) break;
+        await Bun.sleep(25);
+      }
+      expect(statusBody.log_tail).toContain("mcp-shell-ok");
+
+      const listed = JSON.parse(await executeTool("shell_list", { limit: 20 })) as {
+        jobs: { id: string }[];
+      };
+      expect(listed.jobs.some((j) => j.id === started.id)).toBe(true);
+
+      const stopped = JSON.parse(await executeTool("shell_stop", { job_id: started.id })) as {
+        status: string;
+      };
+      expect(stopped.status).toBe("stopped");
+    } finally {
+      await executeTool("shell_stop", { job_id: started.id }).catch(() => undefined);
+    }
+  });
+
+  test("shell_* tools default to the connection projects without blocking others", async () => {
+    const db = getSqlite();
+    const now = Math.floor(Date.now() / 1000);
+    db.query(
+      "INSERT OR IGNORE INTO projects (id, name, description, status, created_at, updated_at) VALUES (?, ?, '', 'active', ?, ?)",
+    ).run("proj-shell-a", "shell-proj-a", now, now);
+    db.query(
+      "INSERT OR IGNORE INTO projects (id, name, description, status, created_at, updated_at) VALUES (?, ?, '', 'active', ?, ?)",
+    ).run("proj-shell-b", "shell-proj-b", now, now);
+
+    const scopeA = { projectScopes: [{ id: "proj-shell-a", name: "shell-proj-a" }] };
+    const scopeB = { projectScopes: [{ id: "proj-shell-b", name: "shell-proj-b" }] };
+
+    const jobA = JSON.parse(
+      await executeTool(
+        "shell_run",
+        { command: detachedEcho("secret-a"), cwd: process.cwd(), label: "job-a" },
+        scopeA,
+      ),
+    ) as { id: string; project_id: string | null };
+    expect(jobA.project_id).toBe("proj-shell-a");
+
+    let jobBId: string | undefined;
+    try {
+      const jobB = JSON.parse(
+        await executeTool(
+          "shell_run",
+          { command: "echo nope", cwd: process.cwd(), project: "shell-proj-b" },
+          scopeA,
+        ),
+      ) as { id: string; project_id: string | null };
+      jobBId = jobB.id;
+      expect(jobB.project_id).toBe("proj-shell-b");
+
+      // Direct ids are reachable from any connection; only list defaults filter.
+      expect(JSON.parse(await executeTool("shell_status", { job_id: jobA.id }, scopeB)).id).toBe(
+        jobA.id,
+      );
+
+      const listB = JSON.parse(await executeTool("shell_list", { limit: 50 }, scopeB)) as {
+        jobs: { id: string }[];
+      };
+      expect(listB.jobs.some((j) => j.id === jobA.id)).toBe(false);
+
+      const listA = JSON.parse(await executeTool("shell_list", { limit: 50 }, scopeA)) as {
+        jobs: { id: string }[];
+      };
+      expect(listA.jobs.some((j) => j.id === jobA.id)).toBe(true);
+    } finally {
+      await executeTool("shell_stop", { job_id: jobA.id }, scopeA).catch(() => undefined);
+      if (jobBId)
+        await executeTool("shell_stop", { job_id: jobBId }, scopeA).catch(() => undefined);
+    }
   });
 });

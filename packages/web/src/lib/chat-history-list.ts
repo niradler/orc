@@ -14,6 +14,8 @@ type SavedChat = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   waitingChildren?: number;
   agent?: string | null;
   runtimeId?: string | null;
+  runtimeModel?: string | null;
+  model?: string | null;
   sourceId?: string | null;
   host?: string | null;
   projectId?: string | null;
@@ -61,9 +63,17 @@ export function sessionModeLabel(mode: string): string {
 }
 
 export function sessionModelName(entry: ChatHistoryEntry): string {
-  return entry.kind === "native" && entry.session.model
-    ? modelDisplayName(entry.session.model)
-    : "";
+  if (entry.kind === "native")
+    return entry.session.model ? modelDisplayName(entry.session.model) : "";
+  if (entry.kind === "local") {
+    const model = entry.tab.thread?.runtimeModel || entry.tab.config.model;
+    return model ? modelDisplayName(model) : "";
+  }
+  if (entry.kind === "saved") {
+    const model = entry.thread.runtimeModel || entry.thread.model;
+    return model ? modelDisplayName(model) : "";
+  }
+  return "";
 }
 
 export function nestedLabel(children: readonly ChatHistoryEntry[]): string {

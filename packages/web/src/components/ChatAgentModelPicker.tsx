@@ -72,10 +72,17 @@ export function ChatAgentModelPicker() {
   for (const entry of config.models.filter((entry) => entry.agent === config.agent))
     if (!choices.has(entry.id)) choices.set(entry.id, entry.id);
   if (config.model && !choices.has(config.model)) choices.set(config.model, config.model);
+  const runtimeModel = thread?.runtimeModel?.trim() || "";
+  if (runtimeModel && !choices.has(runtimeModel)) choices.set(runtimeModel, runtimeModel);
   const warning = catalog.isError
     ? "Models could not be loaded. Saved and custom models are available."
     : catalog.data?.warning;
-  const modelName = choices.get(config.model) || config.model || "Agent default";
+  const isGenericAlias =
+    !config.model || /^(default|opus|sonnet|haiku)(\[[^\]]*\])?$/i.test(config.model);
+  const modelName =
+    runtimeModel && isGenericAlias
+      ? runtimeModel
+      : choices.get(config.model) || config.model || runtimeModel || "Agent default";
   const effortValue = agentEffortValue(config);
   const capabilities = useAgentCapabilities(config.agent, thread);
   // OpenCode's effort levels are model-dependent: the session reports them live,
@@ -366,6 +373,7 @@ export function ChatAgentModelPicker() {
         </div>
       )}
       selectedModel={config.model}
+      displayModelLabel={modelName}
       profileName={activeProfile?.name}
       agents={agents}
       choices={choices}

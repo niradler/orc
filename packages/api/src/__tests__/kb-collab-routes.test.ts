@@ -124,13 +124,13 @@ describe("/api/kb collaboration", () => {
     expect((await (await call("GET", `/bases/${kbId}/digest`)).json()).digest).toBeNull();
 
     const set = await call("PUT", `/bases/${kbId}/digest`, {
-      backend: "codex",
+      backend: "claude",
       schedule: { type: "cron", cron: "0 4 * * *" },
     });
     expect(set.status).toBe(200);
     const digest = await set.json();
     expect(digest).toMatchObject({
-      backend: "codex",
+      backend: "claude",
       schedule: { cron: "0 4 * * *" },
       open_comments: 2,
     });
@@ -167,6 +167,26 @@ describe("/api/kb collaboration", () => {
       (await call("DELETE", `/bases/${kbId}/digest?confirm=Learnings`, undefined, agent)).status,
     ).toBe(204);
     expect((await req(app, "GET", jobPath)).status).toBe(404);
+  });
+
+  // Flipping `enabled` is the one digest-job change that does not go through setDigest. An
+  // incapable backend is a valid choice, so enabling must succeed (the run then warns and
+  // proceeds without the whitelist).
+  test("enabling a digest job is allowed for a backend that cannot enforce the whitelist", async () => {
+    const kbId = (
+      await (await call("POST", "/bases", { name: "Warned digest", project_id: null })).json()
+    ).id;
+    const paused = await call("PUT", `/bases/${kbId}/digest`, {
+      backend: "opencode",
+      schedule: { type: "cron", cron: "0 3 * * *" },
+      enabled: false,
+    });
+    expect(paused.status).toBe(200);
+    const { job_id: jobId } = await paused.json();
+
+    expect((await req(app, "PATCH", `/jobs/${jobId}`, { enabled: true })).status).toBe(200);
+    const digest = await (await call("GET", `/bases/${kbId}/digest`)).json();
+    expect(digest.digest).toMatchObject({ backend: "opencode", enabled: true });
   });
 
   test("KB changes are in the audit log under entity type kb", async () => {

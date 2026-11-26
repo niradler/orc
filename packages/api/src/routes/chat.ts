@@ -4,6 +4,7 @@ import { isAbsolute, join, posix, sep } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
 import {
   type AgentSession,
+  type AgentUnexpectedExit,
   chatBackendFor,
   createBackend,
   discoverAgentCommands,
@@ -28,9 +29,11 @@ import {
   type ChatAgentCommands,
   ChatAgentCommandsSchema,
   ChatAnswersSchema,
+  type ChatBackgroundTask,
   type ChatEvent,
   ChatFilesSchema,
   ChatHistoryPageSchema,
+  type ChatLostBackgroundWorkItem,
   type ChatMessage,
   ChatMessageSchema,
   ChatModelSchema,
@@ -146,6 +149,7 @@ import { isAlive, projectIdFor } from "../sessions/common.js";
 import {
   childWorkCounts,
   childWorkCountsMany,
+  lastReply,
   notifySpawner,
   requireAncestor,
   spawnChain,
@@ -195,6 +199,7 @@ interface ChatRun {
   session: AgentSession | null;
   permissions: Map<string, string>;
   questions: Map<string, ChatQuestion>;
+  backgroundTasks: Map<string, ChatBackgroundTask>;
   steering: Map<string, { input: string; result: Promise<ChatThread> }>;
   threadId: string;
   thread: ChatThread;
@@ -259,11 +264,218 @@ const turnLimits = {
   shutdownStopMs: 3_000,
   /** How long a confirmed push waits for the running turn to stop and finalize. */
   confirmBusyGraceMs: 12_000,
+  residentIdleMs: 15 * 60000,
 };
 export function setChatTurnLimits(limits: Partial<typeof turnLimits>): () => void {
   const previous = { ...turnLimits };
   Object.assign(turnLimits, limits);
   return () => Object.assign(turnLimits, previous);
+}
+
+type ResidentSessionEntry = {
+  session: AgentSession;
+  fingerprint: string;
+  model: string;
+  idleSince: number;
+  unsubExit: () => void;
+};
+
+const MAX_RESIDENT_SESSIONS = 16;
+const residentSessions = new Map<string, ResidentSessionEntry>();
+let residentReaper: ReturnType<typeof setInterval> | null = null;
+let drainingChatTurns = false;
+
+function residentFingerprint(thread: ChatThread, opts: SessionOpts): string {
+  return JSON.stringify({
+    backend: thread.backend,
+    host: thread.host ?? null,
+    cwd: thread.cwd,
+    providerId: opts.providerId ?? null,
+    permissionMode: opts.permissionMode ?? null,
+    autoApprove: opts.autoApprove ?? false,
+    toolAllowlist: opts.toolAllowlist ?? null,
+    orcMcp: opts.orcMcp ?? null,
+    orcMcpMode: opts.orcMcpMode ?? null,
+    orcMcpProject: opts.orcMcpProject ?? null,
+    agentOptions: opts.chatAgentOptions ?? null,
+    systemPromptAppend: opts.systemPromptAppend ?? null,
+    env: opts.env ?? null,
+  });
+}
+
+function ensureResidentReaper(): void {
+  if (residentReaper) return;
+  residentReaper = setInterval(() => {
+    const now = Date.now();
+    for (const [threadId, entry] of [...residentSessions]) {
+      if (!entry.session.alive()) {
+        entry.unsubExit();
+        residentSessions.delete(threadId);
+        continue;
+      }
+      if (now - entry.idleSince < turnLimits.residentIdleMs) continue;
+      if (entry.session.canStopRuntime?.() === false) continue;
+      entry.unsubExit();
+      residentSessions.delete(threadId);
+      void entry.session.close().catch(() => {});
+    }
+    if (residentSessions.size === 0 && residentReaper) {
+      clearInterval(residentReaper);
+      residentReaper = null;
+    }
+  }, 60_000);
+  residentReaper.unref();
+}
+
+function evictResidentSession(threadId: string, closeSession = true): Promise<void> {
+  const entry = residentSessions.get(threadId);
+  if (!entry) return Promise.resolve();
+  entry.unsubExit();
+  residentSessions.delete(threadId);
+  return closeSession ? entry.session.close().catch(() => {}) : Promise.resolve();
+}
+
+function handleIdleResidentExit(threadId: string, info: AgentUnexpectedExit): void {
+  const entry = residentSessions.get(threadId);
+  if (!entry) return;
+  entry.unsubExit();
+  residentSessions.delete(threadId);
+  if (threadRun(threadId)) return;
+  const thread = store().get(threadId);
+  if (!thread) return;
+  const now = Date.now();
+  if (info.lostBackgroundWork.length > 0) {
+    thread.lostBackgroundWork = {
+      at: now,
+      cause: "provider_exit",
+      items: info.lostBackgroundWork,
+    };
+  }
+  const detail = info.lostBackgroundWork.length
+    ? `Provider process exited unexpectedly while background work was running: ${info.lostBackgroundWork.map((item) => item.label).join(", ")}.`
+    : info.stderr
+      ? `Provider process exited unexpectedly: ${info.stderr.slice(-400)}`
+      : "Provider process exited unexpectedly between turns.";
+  if (info.lostBackgroundWork.length > 0 || info.stderr) {
+    const note: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: "",
+      timestamp: now,
+      agent: thread.config.agent,
+      activity: [{ type: "status", id: crypto.randomUUID(), text: detail }],
+      turn: { startedAt: now, finishedAt: now, durationMs: 0, outcome: "interrupted" },
+    };
+    thread.messages.push(note);
+    if (thread.turn) thread.turn = { ...thread.turn, status: "interrupted", lastHeartbeatAt: now };
+    thread.updatedAt = now;
+    try {
+      store().save(thread);
+    } catch (error) {
+      logger.warn("Could not save unexpected resident exit state", { threadId, error });
+    }
+    notifySpawner(thread, `exit-${now}`, "interrupted");
+    changes.publish("sessions");
+  }
+}
+
+function parkResidentSession(
+  threadId: string,
+  session: AgentSession,
+  fingerprint: string,
+  model: string,
+): void {
+  void evictResidentSession(threadId, true);
+  if (residentSessions.size >= MAX_RESIDENT_SESSIONS) {
+    let oldestKey: string | null = null;
+    let oldestIdle = Number.POSITIVE_INFINITY;
+    for (const [key, candidate] of residentSessions) {
+      if (candidate.session.canStopRuntime?.() === false) continue;
+      if (candidate.idleSince < oldestIdle) {
+        oldestIdle = candidate.idleSince;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) void evictResidentSession(oldestKey, true);
+  }
+  const unsubExit =
+    session.onUnexpectedExit?.((info) => handleIdleResidentExit(threadId, info)) ?? (() => {});
+  residentSessions.set(threadId, {
+    session,
+    fingerprint,
+    model,
+    idleSince: Date.now(),
+    unsubExit,
+  });
+  ensureResidentReaper();
+}
+
+async function takeResidentSession(
+  threadId: string,
+  fingerprint: string,
+  desiredModel: string,
+): Promise<AgentSession | null> {
+  const entry = residentSessions.get(threadId);
+  if (!entry) return null;
+  if (!entry.session.alive()) {
+    entry.unsubExit();
+    residentSessions.delete(threadId);
+    return null;
+  }
+  if (entry.fingerprint !== fingerprint) {
+    if (entry.session.canStopRuntime?.() === false) {
+      throw new ConflictError(
+        "Cannot restart this session to apply new settings while background work is still running.",
+      );
+    }
+    await evictResidentSession(threadId, true);
+    return null;
+  }
+  if (entry.model !== desiredModel && !entry.session.setModel) {
+    if (entry.session.canStopRuntime?.() === false) {
+      throw new ConflictError(
+        "Cannot restart this session to change model while background work is still running.",
+      );
+    }
+    await evictResidentSession(threadId, true);
+    return null;
+  }
+  entry.unsubExit();
+  residentSessions.delete(threadId);
+  if (entry.model !== desiredModel && entry.session.setModel) {
+    try {
+      await entry.session.setModel(desiredModel);
+    } catch (error) {
+      await entry.session.close().catch(() => {});
+      throw error;
+    }
+  }
+  return entry.session;
+}
+
+function lostBackgroundWorkPromptNote(thread: ChatThread): string | null {
+  const lost = thread.lostBackgroundWork;
+  if (!lost?.items.length) return null;
+  const causeLabel =
+    lost.cause === "server_restart"
+      ? "an ORC server restart"
+      : "an unexpected provider process exit";
+  const list = lost.items.map((item) => `- [${item.kind}] ${item.label}`).join("\n");
+  return `<orc-recovery>\nThe following background work from an earlier turn was cancelled by ${causeLabel}:\n${list}\nDo not assume any of these jobs succeeded; inspect state or re-run them (prefer shell_run for long commands that must survive daemon restarts).\n</orc-recovery>`;
+}
+
+function activeBackgroundItems(run: ChatRun): ChatLostBackgroundWorkItem[] {
+  const items: ChatLostBackgroundWorkItem[] = [];
+  for (const task of run.backgroundTasks.values()) {
+    if (task.status === "running") {
+      items.push({
+        kind: task.kind,
+        id: task.id,
+        label: (task.description || task.command || task.id).slice(0, 500),
+      });
+    }
+  }
+  return items.slice(0, 20);
 }
 
 const waitingKey = (id: string) => createHash("sha256").update(id).digest("hex");
@@ -1227,7 +1439,15 @@ async function importTranscript(thread: ChatThread, source: NativeSource): Promi
       offset: transcript.total - CHAT_HISTORY_PAGE_SIZE,
       limit: CHAT_HISTORY_PAGE_SIZE,
     });
-  thread.messages = chatHistory(transcript.turns, source.backend, thread.config.model);
+  const observedFromTranscript = [...transcript.turns]
+    .reverse()
+    .find((turn) => turn.role === "assistant" && turn.model)?.model;
+  if (observedFromTranscript) thread.runtimeModel = observedFromTranscript;
+  thread.messages = chatHistory(
+    transcript.turns,
+    source.backend,
+    thread.runtimeModel ?? thread.config.model,
+  );
   thread.importedMessages = thread.messages.length;
   thread.historyBefore = transcript.offset > 0 ? transcript.offset : null;
   if (mark) thread.transcriptMark = mark;
@@ -1456,6 +1676,8 @@ app.openapi(
                   waitingChildren: z.number().int(),
                   agent: z.string().nullable().optional(),
                   runtimeId: z.string().nullable().optional(),
+                  runtimeModel: z.string().nullable().optional(),
+                  model: z.string().nullable().optional(),
                   sourceId: z.string().nullable().optional(),
                   host: z.string().nullable().optional(),
                   projectId: z.string().nullable().optional(),
@@ -1808,7 +2030,7 @@ app.openapi(
         "The native transcript changed. Reopen the session to load its history.",
       );
     return c.json({
-      messages: chatHistory(page.turns, source.backend, thread.config.model),
+      messages: chatHistory(page.turns, source.backend, thread.runtimeModel ?? thread.config.model),
       before: offset > 0 ? offset : null,
     });
   },
@@ -1990,7 +2212,10 @@ async function forkPrefix(
       start = from;
     }
     return {
-      messages: [...chatHistory(turns, thread.config.agent, thread.config.model), ...loaded],
+      messages: [
+        ...chatHistory(turns, thread.config.agent, thread.runtimeModel ?? thread.config.model),
+        ...loaded,
+      ],
       partial: start > 0,
     };
   } catch (error) {
@@ -2773,6 +2998,7 @@ async function beginTurn(
     session: null,
     permissions: new Map(),
     questions: new Map(),
+    backgroundTasks: new Map(),
     steering: new Map(),
     threadId: thread.id,
     thread,
@@ -2856,7 +3082,11 @@ async function beginTurn(
     content: "",
     timestamp: Date.now(),
     agent: thread.config.agent,
-    ...(thread.config.model ? { model: thread.config.model } : {}),
+    ...(thread.runtimeModel
+      ? { model: thread.runtimeModel }
+      : thread.config.model
+        ? { model: thread.config.model }
+        : {}),
     activity: [],
     turn: { startedAt },
   });
@@ -2933,13 +3163,14 @@ async function beginTurn(
   let responded = false;
   let noResumableSession = false;
   let agentDurationMs: number | undefined;
-  let agentOutcome: "completed" | "stopped" | "failed" | undefined;
+  let agentOutcome: "completed" | "stopped" | "failed" | "interrupted" | undefined;
+  let sessionFingerprint: string | null = null;
   /** This turn continued on a fresh session because the old one was gone. */
   let handedOff = false;
   let agentContextWindow: number | undefined;
   const execute = async () => {
     // Activity watchdog: a quiet turn is stopped, but a turn waiting for a
-    // human answer or a running tool call is re-checked instead of killed.
+    // human answer, a running tool call, subagent, or background task is re-checked instead of killed.
     let timedOut = false;
     let receivedResult = false;
     let commandTurn = false;
@@ -2951,7 +3182,8 @@ async function beginTurn(
         run.questions.size > 0 ||
         run.permissions.size > 0 ||
         toolsPending > 0 ||
-        [...subagents.values()].some((status) => !CHAT_SUBAGENT_DONE.has(status));
+        [...subagents.values()].some((status) => !CHAT_SUBAGENT_DONE.has(status)) ||
+        [...run.backgroundTasks.values()].some((task) => task.status === "running");
       if (waiting && Date.now() - startedAt < turnLimits.hardMs) {
         timer = setTimeout(expire, turnLimits.recheckMs);
         return;
@@ -2991,7 +3223,8 @@ async function beginTurn(
         event.type !== "thread" &&
         event.type !== "turn" &&
         event.type !== "error" &&
-        event.type !== "capabilities"
+        event.type !== "capabilities" &&
+        event.type !== "model"
       )
         responded = true;
       // Prose stays in the message content even when tool calls follow it, so the
@@ -3021,6 +3254,26 @@ async function beginTurn(
       }
       assistant.activity = appendChatActivity(assistant.activity ?? [], event);
       publish(run, event);
+    };
+    const recordObservedModel = async (observed: string | undefined) => {
+      const model = observed?.trim();
+      if (!model || model === "<synthetic>") return;
+      const changed = thread.runtimeModel !== model;
+      thread.runtimeModel = model;
+      assistant.model = model;
+      for (const seg of sealedSegments) {
+        if (!seg.model || seg.model === thread.config.model) seg.model = model;
+      }
+      if (changed) {
+        if (thread.sourceId) {
+          getDb()
+            .update(gateway_sessions)
+            .set({ model })
+            .where(eq(gateway_sessions.id, thread.sourceId))
+            .catch(() => {});
+        }
+        await emit({ type: "model", model });
+      }
     };
     const spoken = new Set<string>();
     let held = "";
@@ -3112,7 +3365,9 @@ async function beginTurn(
             thread.backend === "acpx" && thread.sourceId
               ? (thread.runtimeId ?? undefined)
               : undefined,
+          resident: thread.backend === "claude",
         };
+        sessionFingerprint = residentFingerprint(thread, opts);
         if (thread.sourceId) {
           await getHandoffService().verifyResume(thread.sourceId);
           const source = await getDb().query.gateway_sessions.findFirst({
@@ -3208,47 +3463,51 @@ async function beginTurn(
             });
         }
         if (!run.session) {
-          const resumeId = thread.runtimeId;
-          if (resumeId) {
-            try {
-              run.session = await backend.resumeSession(resumeId, opts);
-            } catch (error) {
-              if (stopped) return;
-              // The provider no longer has that session (deleted state, a
-              // different account, a worktree that moved). Keeping the id would
-              // fail every future send, so continue on a fresh session with the
-              // stored transcript as context — visibly, and only once per send.
-              const reason = error instanceof Error ? error.message : String(error);
-              thread.runtimeId = null;
-              delete thread.systemPromptDelivered;
-              setup.continuation ??= continuationPrompt(thread.messages.slice(0, -1), "recovery");
-              thread.recovery = {
-                at: Date.now(),
-                mode: "transcript_handoff",
-                reason: reason.slice(0, 500),
-              };
-              handedOff = true;
-              run.handedOff = true;
-              logger.warn("Chat session could not resume; continuing from the transcript", {
-                error,
-                threadId: thread.id,
-                runtimeId: resumeId,
-              });
-              await emit({ type: "system_status", text: CHAT_RECOVERY_NOTICE });
-              run.session = await backend.startSession(opts);
-            }
-          } else run.session = await backend.startSession(opts);
+          const pooled = sessionFingerprint
+            ? await takeResidentSession(thread.id, sessionFingerprint, thread.config.model ?? "")
+            : null;
+          if (pooled) {
+            run.session = pooled;
+          } else {
+            const resumeId = thread.runtimeId;
+            if (resumeId) {
+              try {
+                run.session = await backend.resumeSession(resumeId, opts);
+              } catch (error) {
+                if (stopped) return;
+                const reason = error instanceof Error ? error.message : String(error);
+                thread.runtimeId = null;
+                delete thread.systemPromptDelivered;
+                setup.continuation ??= continuationPrompt(thread.messages.slice(0, -1), "recovery");
+                thread.recovery = {
+                  at: Date.now(),
+                  mode: "transcript_handoff",
+                  reason: reason.slice(0, 500),
+                };
+                handedOff = true;
+                run.handedOff = true;
+                logger.warn("Chat session could not resume; continuing from the transcript", {
+                  error,
+                  threadId: thread.id,
+                  runtimeId: resumeId,
+                });
+                await emit({ type: "system_status", text: CHAT_RECOVERY_NOTICE });
+                if (stopped) return;
+                run.session = await backend.startSession({
+                  ...opts,
+                  systemPromptDelivered: undefined,
+                });
+              }
+            } else run.session = await backend.startSession(opts);
+          }
         }
         if (stopped) return;
-        // Write the resumable identity through before the prompt is even sent:
-        // a crash from here on must find the native session on disk.
         writeThroughRuntimeId(
           thread,
           runId,
           run.session,
           providerRefSource(runtimeIdAtStart, handedOff),
         );
-        // The transcript keeps the typed "/name" commands; the agent receives the expanded text.
         const turn = expandChatInput(input, thread.projectId ?? null) + uploadPrompt(attachments);
         const message =
           setup.context && !AGENT_COMMAND_PATTERN.test(turn)
@@ -3257,160 +3516,231 @@ async function beginTurn(
                 voice: setup.context.voice ? VOICE_TURN_INSTRUCTION : undefined,
               })
             : turn;
+        const recoveryNote = !AGENT_COMMAND_PATTERN.test(turn)
+          ? lostBackgroundWorkPromptNote(thread)
+          : null;
+        if (recoveryNote) delete thread.lostBackgroundWork;
+        const withRecovery = recoveryNote ? `${recoveryNote}\n\n${message}` : message;
         const sent =
           setup.continuation && input.trim() !== "/compact"
-            ? `${setup.continuation}\n\n${message}`
-            : message;
-        commandTurn = AGENT_COMMAND_PATTERN.test(sent.trim());
+            ? `${setup.continuation}\n\n${withRecovery}`
+            : withRecovery;
+        commandTurn = AGENT_COMMAND_PATTERN.test(turn.trim());
         thread.capabilities = run.session.capabilities ??
           backend.capabilities ?? { ...UNKNOWN_CAPABILITIES };
         await emit({ type: "capabilities", capabilities: thread.capabilities });
-        await run.session.send(sent);
-        let outputBytes = 0;
-        for await (const event of run.session.events()) {
-          if (held && event.type !== "text") await settleHeld();
-          // Always consume the terminal result — even after a Stop — so the turn's
-          // outcome, native identity and resumability are recorded, not discarded.
-          if (event.type === "result") {
-            const duration = event.data.durationMs;
-            if (typeof duration === "number" && Number.isFinite(duration) && duration >= 0)
-              agentDurationMs = duration;
-            agentOutcome = event.data.outcome;
-            agentContextWindow = event.data.contextWindow;
-            noResumableSession = event.data.resumable === false;
-            if (agentOutcome === "stopped") stopped = true;
-            if (agentOutcome === "failed") failure ??= "The agent could not complete the response.";
-            if (
-              event.data.runtimeSessionId &&
-              !NATIVE_SESSION_ID_PATTERN.test(event.data.runtimeSessionId)
-            )
-              throw new Error("The agent returned an invalid session identity.");
-            // Compare against the identity this turn actually resumed: a fresh
-            // id pinned by the mid-turn write-through is this same session, and
-            // only a silent replacement of the RESUMED identity is a swap. A
-            // deliberate transcript handoff already cleared the old identity.
-            if (
-              runtimeIdAtStart &&
-              !handedOff &&
-              event.data.runtimeSessionId &&
-              runtimeIdAtStart !== event.data.runtimeSessionId
-            )
-              throw new Error(
-                "The agent returned a different session instead of resuming this conversation. The original session identity was kept.",
-              );
-            thread.runtimeId = event.data.runtimeSessionId ?? thread.runtimeId;
-            if (event.data.runtimeSessionId) {
-              // The result's identity is authoritative: write any correction
-              // (e.g. a compacted session roll) through at once, so a crash
-              // during finalization cannot lose it.
-              attachProviderRef(
-                thread,
-                event.data.runtimeSessionId,
-                providerRefSource(runtimeIdAtStart, handedOff),
-              );
-              persistProviderRef(thread, runId);
+        const consumeSessionEvents = async (promptToSend: string) => {
+          await run.session?.send(promptToSend);
+          let outputBytes = 0;
+          for await (const event of run.session?.events() ?? []) {
+            if (held && event.type !== "text") await settleHeld();
+            if (event.type === "result") {
+              const duration = event.data.durationMs;
+              if (typeof duration === "number" && Number.isFinite(duration) && duration >= 0)
+                agentDurationMs = duration;
+              agentOutcome = event.data.outcome;
+              agentContextWindow = event.data.contextWindow;
+              noResumableSession = event.data.resumable === false;
+              if (event.data.model) await recordObservedModel(event.data.model);
+              if (agentOutcome === "stopped") stopped = true;
+              if (agentOutcome === "failed")
+                failure ??= "The agent could not complete the response.";
+              if (
+                event.data.runtimeSessionId &&
+                !NATIVE_SESSION_ID_PATTERN.test(event.data.runtimeSessionId)
+              )
+                throw new Error("The agent returned an invalid session identity.");
+              if (
+                runtimeIdAtStart &&
+                !handedOff &&
+                event.data.runtimeSessionId &&
+                runtimeIdAtStart !== event.data.runtimeSessionId
+              )
+                throw new Error(
+                  "The agent returned a different session instead of resuming this conversation. The original session identity was kept.",
+                );
+              thread.runtimeId = event.data.runtimeSessionId ?? thread.runtimeId;
+              if (event.data.runtimeSessionId) {
+                attachProviderRef(
+                  thread,
+                  event.data.runtimeSessionId,
+                  providerRefSource(runtimeIdAtStart, handedOff),
+                );
+                persistProviderRef(thread, runId);
+              }
+              if (!thread.sourceId && event.data.runtimeSessionId) await linkNativeSource(thread);
+              if (event.data.cwd && isAbsolute(event.data.cwd) && !event.data.cwd.includes("\0"))
+                thread.cwd = event.data.cwd;
+              if (thread.sourceId) await getHandoffService().markResumed(thread.sourceId);
+              receivedResult = true;
+              break;
             }
-            if (!thread.sourceId && event.data.runtimeSessionId) await linkNativeSource(thread);
-            // A backend may have resumed the session in a folder it moved to (an
-            // OpenCode worktree); follow it so the next turn loads from there.
-            if (event.data.cwd && isAbsolute(event.data.cwd) && !event.data.cwd.includes("\0"))
-              thread.cwd = event.data.cwd;
-            if (thread.sourceId) await getHandoffService().markResumed(thread.sourceId);
-            receivedResult = true;
-            break;
-          }
-          // After a Stop, drain remaining events without emitting them; the loop ends
-          // at the result above or when the session closes (bounded by stopFallback).
-          if (stopped) continue;
-          const activityLabel =
-            event.type === "tool_use"
-              ? `tool:${event.data.name}`
-              : event.type === "permission_request"
-                ? "waiting:approval"
-                : event.type === "question_request"
-                  ? "waiting:question"
-                  : event.type === "system_status"
-                    ? "status"
-                    : event.type === "capabilities"
-                      ? undefined
-                      : event.type;
-          touch(activityLabel);
-          if (!nativeKey) {
-            const nativeId = run.session?.getRuntimeSessionId?.();
-            if (nativeId) {
-              nativeKey = turnKey(thread.host, thread.backend, nativeId);
-              if (nativeKey === key || active.has(nativeKey)) nativeKey = key;
-              else active.add(nativeKey);
-              // Backends that expose their native id only once events flow get
-              // their write-through here, still before this event is emitted.
-              writeThroughRuntimeId(
-                thread,
-                runId,
-                run.session,
-                providerRefSource(runtimeIdAtStart, handedOff),
-              );
+            if (stopped) continue;
+            const activityLabel =
+              event.type === "tool_use"
+                ? `tool:${event.data.name}`
+                : event.type === "background_task"
+                  ? `background:${event.data.description}`
+                  : event.type === "permission_request"
+                    ? "waiting:approval"
+                    : event.type === "question_request"
+                      ? "waiting:question"
+                      : event.type === "system_status"
+                        ? "status"
+                        : event.type === "capabilities" || event.type === "model"
+                          ? undefined
+                          : event.type;
+            touch(activityLabel);
+            if (!nativeKey) {
+              const nativeId = run.session?.getRuntimeSessionId?.();
+              if (nativeId) {
+                nativeKey = turnKey(thread.host, thread.backend, nativeId);
+                if (nativeKey === key || active.has(nativeKey)) nativeKey = key;
+                else active.add(nativeKey);
+                writeThroughRuntimeId(
+                  thread,
+                  runId,
+                  run.session,
+                  providerRefSource(runtimeIdAtStart, handedOff),
+                );
+              }
             }
-          }
-          if (event.type === "tool_use") toolsPending++;
-          else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
-          outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
-          if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
-          if (event.type === "text" && spoken.size) {
-            held += event.data;
-            continue;
-          }
-          if (event.type === "capabilities") {
-            thread.capabilities = event.data;
-            await emit({ type: "capabilities", capabilities: event.data });
-            continue;
-          }
-          if (event.type === "text" || event.type === "thinking" || event.type === "system_status")
-            await emit({ type: event.type, text: event.data });
-          else if (event.type === "plan") await emit({ type: "plan", data: event.data });
-          else if (event.type === "subagent") {
-            subagents.set(event.data.id, event.data.status);
-            await emit({ type: "subagent", data: event.data });
-          } else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
-          else if (event.type === "permission_request") {
-            const grant = `${event.data.tool}\0${event.data.grant ?? event.data.command}`;
-            if (event.data.allowSession !== false && sessionGrants.get(thread.id)?.has(grant)) {
-              run.session?.respondPermission(event.data.requestId, "session");
+            if (event.type === "tool_use") toolsPending++;
+            else if (event.type === "tool_result") toolsPending = Math.max(0, toolsPending - 1);
+            outputBytes += event.type === "text" ? event.data.length : JSON.stringify(event).length;
+            if (outputBytes > 2000000) throw new Error("Response exceeded the chat output limit.");
+            if (event.type === "text" && spoken.size) {
+              held += event.data;
               continue;
             }
-            recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
-            notifySpawner(thread, `${runId}:${event.data.requestId}`, "approval");
-            run.permissions.set(
-              event.data.requestId,
-              event.data.allowSession === false ? "" : grant,
-            );
-            changes.publish("human-requests");
-            await emit(event);
-            run.pending.set(event.data.requestId, event);
-            voiceNotice(thread.id);
-            notify(
-              "chat",
-              chatPush(thread, "Approval needed", "The agent is waiting for your approval."),
-            );
-          } else if (event.type === "question_request") {
-            recordChatNotification(thread, `${runId}:${event.data.requestId}`, "question");
-            notifySpawner(thread, `${runId}:${event.data.requestId}`, "question");
-            run.questions.set(event.data.requestId, event.data);
-            changes.publish("human-requests");
-            await emit(event);
-            run.pending.set(event.data.requestId, event);
-            voiceNotice(thread.id);
-            notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
-          } else if (event.type === "request_resolved") {
-            resolveChatNotification(thread.id, `${runId}:${event.data.requestId}`);
-            run.permissions.delete(event.data.requestId);
-            run.questions.delete(event.data.requestId);
-            run.pending.delete(event.data.requestId);
-            run.resolved.add(event.data.requestId);
-            changes.publish("human-requests");
-            await emit({ type: "request_resolved", requestId: event.data.requestId });
-          } else if (event.type === "error") await emit({ type: "error", message: event.data });
+            if (event.type === "model") {
+              await recordObservedModel(event.data);
+              continue;
+            }
+            if (event.type === "background_task") {
+              run.backgroundTasks.set(event.data.id, event.data);
+              if (thread.turn?.runId === runId && thread.turn.status === "running") {
+                const bgItems = activeBackgroundItems(run);
+                thread.turn.backgroundTasks = bgItems.length ? bgItems : undefined;
+                try {
+                  store().setTurnBackgroundTasks(thread.id, runId, leaseEpoch, bgItems);
+                } catch (error) {
+                  logger.warn("Could not persist active background tasks on turn lease", {
+                    threadId: thread.id,
+                    error,
+                  });
+                }
+              }
+              await emit({ type: "background_task", data: event.data });
+              continue;
+            }
+            if (event.type === "capabilities") {
+              thread.capabilities = event.data;
+              await emit({ type: "capabilities", capabilities: event.data });
+              continue;
+            }
+            if (
+              event.type === "text" ||
+              event.type === "thinking" ||
+              event.type === "system_status"
+            )
+              await emit({ type: event.type, text: event.data });
+            else if (event.type === "plan") await emit({ type: "plan", data: event.data });
+            else if (event.type === "subagent") {
+              subagents.set(event.data.id, event.data.status);
+              await emit({ type: "subagent", data: event.data });
+            } else if (event.type === "tool_use" || event.type === "tool_result") await emit(event);
+            else if (event.type === "permission_request") {
+              const grant = `${event.data.tool}\0${event.data.grant ?? event.data.command}`;
+              if (event.data.allowSession !== false && sessionGrants.get(thread.id)?.has(grant)) {
+                run.session?.respondPermission(event.data.requestId, "session");
+                continue;
+              }
+              recordChatNotification(thread, `${runId}:${event.data.requestId}`, "approval");
+              notifySpawner(thread, `${runId}:${event.data.requestId}`, "approval");
+              run.permissions.set(
+                event.data.requestId,
+                event.data.allowSession === false ? "" : grant,
+              );
+              changes.publish("human-requests");
+              await emit(event);
+              run.pending.set(event.data.requestId, event);
+              voiceNotice(thread.id);
+              notify(
+                "chat",
+                chatPush(thread, "Approval needed", "The agent is waiting for your approval."),
+              );
+            } else if (event.type === "question_request") {
+              recordChatNotification(thread, `${runId}:${event.data.requestId}`, "question");
+              notifySpawner(thread, `${runId}:${event.data.requestId}`, "question");
+              run.questions.set(event.data.requestId, event.data);
+              changes.publish("human-requests");
+              await emit(event);
+              run.pending.set(event.data.requestId, event);
+              voiceNotice(thread.id);
+              notify("chat", chatPush(thread, "Question", "The agent is waiting for your answer."));
+            } else if (event.type === "request_resolved") {
+              resolveChatNotification(thread.id, `${runId}:${event.data.requestId}`);
+              run.permissions.delete(event.data.requestId);
+              run.questions.delete(event.data.requestId);
+              run.pending.delete(event.data.requestId);
+              run.resolved.add(event.data.requestId);
+              changes.publish("human-requests");
+              await emit({ type: "request_resolved", requestId: event.data.requestId });
+            } else if (event.type === "error") await emit({ type: "error", message: event.data });
+          }
+          await settleHeld();
+        };
+
+        await consumeSessionEvents(sent);
+
+        const isEmptyTurn = () =>
+          receivedResult &&
+          !stopped &&
+          !commandTurn &&
+          failure === null &&
+          !assistant.content.trim() &&
+          !(assistant.activity ?? []).some((item) => item.type !== "status") &&
+          sealedSegments.length === 0 &&
+          run.backgroundTasks.size === 0;
+
+        if (isEmptyTurn() && runtimeIdAtStart && !handedOff) {
+          logger.warn(
+            "Resumed turn completed with empty output; retrying once via transcript handoff",
+            {
+              threadId: thread.id,
+              runtimeId: runtimeIdAtStart,
+            },
+          );
+          await run.session?.close().catch(() => {});
+          run.session = null;
+          receivedResult = false;
+          agentOutcome = undefined;
+          thread.runtimeId = null;
+          delete thread.systemPromptDelivered;
+          handedOff = true;
+          run.handedOff = true;
+          const handoffPrefix = continuationPrompt(thread.messages.slice(0, -1), "recovery");
+          thread.recovery = {
+            at: Date.now(),
+            mode: "transcript_handoff",
+            reason: "Resumed session returned an empty turn with no response.",
+          };
+          await emit({ type: "system_status", text: CHAT_RECOVERY_NOTICE });
+          if (stopped) return;
+          run.session = await backend.startSession({
+            ...opts,
+            systemPromptDelivered: undefined,
+          });
+          if (stopped) return;
+          await consumeSessionEvents(`${handoffPrefix}\n\n${withRecovery}`);
         }
-        await settleHeld();
+
+        if (isEmptyTurn() && setup.deliveries?.length) {
+          failure =
+            "The agent completed the turn with an empty response and no tool or background activity.";
+          await emit({ type: "error", message: failure });
+        }
         if (!receivedResult && !stopped && failure === null)
           await emit({
             type: "error",
@@ -3486,9 +3816,11 @@ async function beginTurn(
         ? "failed"
         : stopped || agentOutcome === "stopped"
           ? "stopped"
-          : failure || agentOutcome === "failed"
-            ? "failed"
-            : "completed";
+          : agentOutcome === "interrupted"
+            ? "interrupted"
+            : failure || agentOutcome === "failed"
+              ? "failed"
+              : "completed";
       const turnError =
         turnOutcome === "failed"
           ? (failure ?? "The agent could not complete the response.").slice(0, 2000)
@@ -3562,7 +3894,21 @@ async function beginTurn(
       }
       // A switched account has a working session again; stop replaying history.
       if (thread.providerSwitch && completed && thread.runtimeId) delete thread.providerSwitch;
-      await run.session?.close().catch(() => {});
+      const canParkResident =
+        Boolean(run.session?.reusable) &&
+        run.session?.alive() === true &&
+        Boolean(sessionFingerprint) &&
+        !stopped &&
+        !failure &&
+        !timedOut &&
+        !noResumableSession &&
+        !drainingChatTurns &&
+        turnOutcome === "completed";
+      if (canParkResident && run.session && sessionFingerprint) {
+        parkResidentSession(thread.id, run.session, sessionFingerprint, thread.config.model ?? "");
+      } else {
+        await run.session?.close().catch(() => {});
+      }
       // Messages recorded after the boundary belong below the completed reply,
       // even if the final segment has not been pushed yet.
       const lateAt = thread.messages.findIndex((entry) => run.lateMessages.includes(entry.id));
@@ -3581,7 +3927,13 @@ async function beginTurn(
         notifySpawner(
           thread,
           runId,
-          timedOut || failure ? "failed" : stopped ? "stopped" : "finished",
+          timedOut || failure
+            ? "failed"
+            : stopped
+              ? "stopped"
+              : turnOutcome === "interrupted"
+                ? "interrupted"
+                : "finished",
         );
       // A watchdog stop is not a user stop: report it so an away user learns
       // the turn died instead of finding a silently frozen conversation.
@@ -3867,15 +4219,26 @@ function startPendingChildren(): void {
  * the next boot's reconcile records the interruption exactly once.
  */
 export async function drainChatTurns(): Promise<void> {
-  if (runs.size === 0) return;
-  const quietUntil = Date.now() + turnLimits.shutdownWaitMs;
-  while (runs.size > 0 && Date.now() < quietUntil) await Bun.sleep(100);
-  if (runs.size === 0) return;
-  logger.info("Daemon shutdown stopping active chat turns", { count: runs.size });
-  for (const run of runs.values()) run.stop();
-  const stoppedUntil = Date.now() + turnLimits.shutdownStopMs;
-  while (runs.size > 0 && Date.now() < stoppedUntil) await Bun.sleep(100);
-  for (const run of runs.values()) flushTurnForShutdown(run);
+  drainingChatTurns = true;
+  try {
+    if (runs.size > 0) {
+      const quietUntil = Date.now() + turnLimits.shutdownWaitMs;
+      while (runs.size > 0 && Date.now() < quietUntil) await Bun.sleep(100);
+      if (runs.size > 0) {
+        logger.info("Daemon shutdown stopping active chat turns", { count: runs.size });
+        for (const run of runs.values()) run.stop();
+        const stoppedUntil = Date.now() + turnLimits.shutdownStopMs;
+        while (runs.size > 0 && Date.now() < stoppedUntil) await Bun.sleep(100);
+        for (const run of runs.values()) flushTurnForShutdown(run);
+      }
+    }
+    const closing = [...residentSessions.keys()].map((threadId) =>
+      evictResidentSession(threadId, true),
+    );
+    if (closing.length) await Promise.allSettled(closing);
+  } finally {
+    drainingChatTurns = false;
+  }
 }
 
 function flushTurnForShutdown(run: ChatRun): void {
@@ -3909,7 +4272,12 @@ function flushTurnForShutdown(run: ChatRun): void {
       });
       thread.runtimeId = pinned;
     }
-    thread.turn = { ...thread.turn, lastHeartbeatAt: Date.now() };
+    const bgItems = activeBackgroundItems(run);
+    thread.turn = {
+      ...thread.turn,
+      lastHeartbeatAt: Date.now(),
+      ...(bgItems.length ? { backgroundTasks: bgItems } : {}),
+    };
     store().persistTurnForShutdown(
       thread.id,
       run.runId,
@@ -3965,6 +4333,7 @@ export function stopChat(id: string, cascade: boolean, by: string | null): strin
       if (quiet || queued) quietStops.add(target);
       run.stop();
     }
+    void evictResidentSession(target, true);
     if (run || queued) stopped.push(target);
   }
   if (stopped.length) changes.publish("sessions");
@@ -4024,6 +4393,29 @@ export function chatStatus(id: string): SessionStatus {
         : !last
           ? (thread.spawnedBy?.startError ?? null)
           : null;
+    const isInterrupted =
+      !run &&
+      !thread.spawnedBy?.prompt &&
+      !queue.length &&
+      (outcome === "interrupted" || thread.turn?.status === "interrupted");
+    const interruptionReason = isInterrupted
+      ? lastReply(thread) ||
+        (thread.lostBackgroundWork?.items.length
+          ? `Interrupted by ${thread.lostBackgroundWork.cause === "server_restart" ? "server restart" : "provider exit"} (${thread.lostBackgroundWork.items.map((item) => item.label).join(", ")}).`
+          : "The previous turn was interrupted.")
+      : null;
+    const now = Date.now();
+    const backgroundTasks = run
+      ? [...run.backgroundTasks.values()].map((task) => ({
+          id: task.id,
+          kind: task.kind,
+          description: task.description,
+          ...(task.command ? { command: task.command } : {}),
+          started_at: task.startedAt,
+          elapsed_ms: Math.max(0, (task.finishedAt ?? now) - task.startedAt),
+          status: task.status,
+        }))
+      : [];
     const lastActivityAt =
       run?.lastActivityAt ??
       thread.turn?.lastHeartbeatAt ??
@@ -4043,13 +4435,15 @@ export function chatStatus(id: string): SessionStatus {
           ? "queued"
           : queue.length
             ? "running"
-            : outcome === "failed" || (thread.spawnedBy?.startError && !last)
-              ? "failed"
-              : outcome === "stopped" || (thread.spawnedBy?.cancelled && !last)
-                ? "stopped"
-                : "idle",
+            : isInterrupted
+              ? "interrupted"
+              : outcome === "failed" || (thread.spawnedBy?.startError && !last)
+                ? "failed"
+                : outcome === "stopped" || (thread.spawnedBy?.cancelled && !last)
+                  ? "stopped"
+                  : "idle",
       waiting_for: waitingFor,
-      last_message: last?.content || startError || null,
+      last_message: last?.content || startError || interruptionReason || null,
       queue,
       parent_session_id: thread.spawnedBy?.sessionId ?? null,
       children: store()
@@ -4066,6 +4460,9 @@ export function chatStatus(id: string): SessionStatus {
       last_activity: run ? (waitingFor ? `waiting:${waitingFor}` : run.lastActivity) : null,
       activity_count: run?.activityCount ?? 0,
       start_error: startError,
+      interruption_reason: interruptionReason,
+      runtime_model: thread.runtimeModel ?? (thread.config.model || null),
+      ...(backgroundTasks.length ? { background_tasks: backgroundTasks } : {}),
       native_session_id: resolved.nativeId,
       live_session_id: resolved.liveId,
     };

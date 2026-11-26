@@ -620,6 +620,8 @@ export type AgentBackendInfo = {
   capabilities: import("@orc/core/types").AgentCapabilities;
   name: string;
   kind: AgentBackendKind;
+  /** Whether sessions on this backend can enforce an explicit tool whitelist. */
+  tool_allowlist: boolean;
   available: boolean;
   error: string | null;
   requires: string;

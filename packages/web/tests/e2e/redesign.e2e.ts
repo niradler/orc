@@ -132,13 +132,16 @@ test("Codex chat streams and keeps history while switching between desktop and m
   );
   await page.getByRole("button", { name: "Close chat", exact: true }).click();
   await expect(page.getByTestId("chat-panel")).toBeHidden();
+  // Below 1280px the chat button opens the Chat page, and the side chat and the
+  // Chat page hold independent sessions: the closed side chat is not carried over.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("chat-open-button").click();
-  await expect(page.getByTestId("session-home")).toContainText(marker);
+  await expect(page.getByTestId("session-home")).toBeVisible();
   // The phone chat page has no close button: Back returns to the page that opened it.
   await page.goBack();
   await expect(page.getByTestId("session-home")).toHaveCount(0);
   await expect(page).toHaveURL(/\/tasks\?/);
+  // The desktop side chat still holds its own conversation.
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId("chat-open-button").click();
   await expect(page.getByTestId("chat-messages")).toContainText(marker);

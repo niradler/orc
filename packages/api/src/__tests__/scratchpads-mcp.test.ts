@@ -74,7 +74,7 @@ describe("scratchpad MCP tools", () => {
     await expect(executeTool("pad_get", { id }, options)).rejects.toThrow("not found");
   });
 
-  test("should hide other projects' pads from a project-scoped connection", async () => {
+  test("default projects filter pad_list but never block direct pads", async () => {
     const mine = idOf(
       await executeTool("pad_create", { kind: "doc", title: "Mine", project: "pad-mcp" }, options),
     );
@@ -90,22 +90,19 @@ describe("scratchpad MCP tools", () => {
     expect(scoped).toContain(mine);
     expect(scoped).not.toContain(theirs);
 
-    // Reaching another project's pad by id behaves as if it did not exist.
-    for (const [name, args] of [
-      ["pad_get", { id: theirs }],
-      ["pad_get", { id: theirs, via: "url" }],
-      ["pad_update", { id: theirs, content: "# Mine now" }],
-      ["pad_update", { id: theirs, via: "url" }],
-      ["pad_delete", { id: theirs }],
-    ] as const)
-      await expect(executeTool(name, args, inScope)).rejects.toThrow("not found");
-    await expect(
-      executeTool("pad_create", { kind: "doc", title: "Escape", project: "pad-other" }, inScope),
-    ).rejects.toThrow("outside the selected MCP projects");
-    await expect(
-      executeTool("pad_update", { id: mine, project: "pad-other" }, inScope),
-    ).rejects.toThrow("outside the selected MCP projects");
-    expect(await executeTool("pad_get", { id: theirs }, options)).toContain("revision: 1");
+    // Direct ids and other projects are reachable; only the default list is filtered.
+    expect(await executeTool("pad_get", { id: theirs }, inScope)).toContain("revision: 1");
+    expect(
+      await executeTool("pad_update", { id: theirs, content: "# Mine now" }, inScope),
+    ).toContain("revision 2");
+    expect(
+      await executeTool(
+        "pad_create",
+        { kind: "doc", title: "Escape", project: "pad-other" },
+        inScope,
+      ),
+    ).toContain("scratchpad");
+    expect(await executeTool("pad_get", { id: theirs }, options)).toContain("revision: 2");
   });
 
   test("should move large content through signed URLs minted by the API", async () => {

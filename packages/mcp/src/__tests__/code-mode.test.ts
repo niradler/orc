@@ -66,7 +66,8 @@ describe("MCP code mode", () => {
           alphaText: list.ok ? list.text.includes("Alpha fixture") : false,
           betaText: list.ok ? list.text.includes("Beta fixture") : false,
           notesOk: notes.ok,
-          otherCode: otherProject.ok ? null : otherProject.error.code,
+          otherOk: otherProject.ok,
+          otherBeta: otherProject.ok ? otherProject.text.includes("Beta fixture") : false,
           hiddenCode: hiddenTool.ok ? null : hiddenTool.error.code,
         };
       `,
@@ -80,7 +81,8 @@ describe("MCP code mode", () => {
           alphaText: true,
           betaText: false,
           notesOk: true,
-          otherCode: "FORBIDDEN",
+          otherOk: true,
+          otherBeta: true,
           hiddenCode: "NOT_FOUND",
         },
         logs: [],
@@ -118,7 +120,7 @@ describe("MCP code mode", () => {
         tasksOk: true,
         pickedTasks: [{ id: "alpha-task", status: "todo" }],
         projectsOk: true,
-        projectNames: ["Alpha"],
+        projectNames: ["Alpha", "Beta"],
         missingOk: false,
         missingCode: "NOT_FOUND",
       });

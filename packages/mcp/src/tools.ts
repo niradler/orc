@@ -6,6 +6,14 @@ import {
   readAgent,
   updateAgent,
 } from "@orc/core/agent-service";
+import {
+  BackgroundJobStatusSchema,
+  getBackgroundJob,
+  listBackgroundJobs,
+  readBackgroundJobLog,
+  startBackgroundJob,
+  stopBackgroundJob,
+} from "@orc/core/background-jobs";
 import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
 import { AGENT_ID_PATTERN, CODING_AGENTS } from "@orc/core/coding-agents";
 import { clearSetupDismissal, loadConfig, resolveApiBase } from "@orc/core/config";
@@ -55,6 +63,7 @@ import { registerRedactedSecrets } from "@orc/core/secret-redactor";
 import { ArchiveSearchSchema, SessionSyncInputSchema } from "@orc/core/session-archive";
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
 import {
+  SESSION_MESSAGE_MAX_BODY,
   SessionMessageCreateSchema,
   SessionMessageResultSchema,
   SessionSpawnSchema,
@@ -114,7 +123,7 @@ const projectParam = z
   .string()
   .optional()
   .describe(
-    "Project name (e.g. 'orc'). Overrides connection defaults within its selected projects; otherwise uses activeProject from config.",
+    "Project name (e.g. 'orc'). Overrides the connection's default project; otherwise uses activeProject from config.",
   );
 /** Execution backends, not agent_list's role profiles: built-in harness ids plus custom Settings agents. */
 const harnessParam = z
@@ -126,6 +135,14 @@ const harnessParam = z
   .describe(
     `Coding harness to run (${CODING_AGENTS.map((agent) => agent.id).join(", ")}, or a custom agent id from Settings). Omit for the Settings default, reported as defaults in the result.`,
   );
+const sessionSendToolSchema = SessionMessageCreateSchema.omit({ body: true }).extend({
+  prompt: z
+    .string()
+    .trim()
+    .min(1)
+    .max(SESSION_MESSAGE_MAX_BODY)
+    .describe("The note to send to the session."),
+});
 const sessionSpawnToolSchema = SessionSpawnSchema.omit({ project_id: true, notify: true }).extend({
   project: projectParam,
   agent: harnessParam,
@@ -392,7 +409,7 @@ export const toolDefinitions = [
     name: "session_send",
     description:
       "Send a short note to another live or idle ORC session. Target with the ORC live session id, a session_start id, or the agent's native session id plus backend. mode queue (default) waits for the recipient's next safe point (or starts a turn when idle; unbound connections fall back to human relay); steer explicitly injects it into a running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt require a bound calling session that started the target (or one of its ancestors). The receipt reports queued, steered, resumed, failed, or unsupported — do not poll; completion wakes you. It cannot approve tools or change configuration. Pass a stable request_id when retrying the same note.",
-    inputSchema: SessionMessageCreateSchema,
+    inputSchema: sessionSendToolSchema,
   },
   {
     name: "speak",
@@ -841,6 +858,45 @@ export const toolDefinitions = [
       logs: z.boolean().optional().default(false),
       stream: z.enum(["stdout", "stderr"]).optional(),
       log_limit: z.number().int().min(1).max(2000).optional().default(200),
+    }),
+  },
+  {
+    name: "shell_run",
+    description:
+      "Start a detached background shell command outside the agent/daemon process tree with persistent disk logs and exit metadata. Survives turn teardown and ORC daemon restarts; use for long builds, test gates (e.g. ci:pr), or training runs.",
+    inputSchema: z.object({
+      command: z.string().trim().min(1).max(16_000),
+      cwd: z.string().trim().min(1).describe("Working directory for the command"),
+      label: z.string().trim().min(1).max(200).optional(),
+      project: projectParam,
+    }),
+  },
+  {
+    name: "shell_status",
+    description:
+      "Inspect a detached background shell job started with shell_run: returns status (running, completed, failed, stopped, interrupted_by_restart), exit_code, signal, log_path, and optional log tail.",
+    inputSchema: z.object({
+      job_id: z.string().trim().min(1),
+      logs: z.boolean().optional().default(true),
+      tail_lines: z.number().int().min(1).max(2000).optional().default(100),
+      tail_bytes: z.number().int().min(256).max(256_000).optional(),
+    }),
+  },
+  {
+    name: "shell_list",
+    description:
+      "List detached background shell jobs (newest first), optionally filtered by status or session.",
+    inputSchema: z.object({
+      status: BackgroundJobStatusSchema.optional(),
+      session_id: z.string().optional(),
+      limit: z.number().int().min(1).max(200).optional().default(20),
+    }),
+  },
+  {
+    name: "shell_stop",
+    description: "Stop a running detached background shell job and its process group.",
+    inputSchema: z.object({
+      job_id: z.string().trim().min(1),
     }),
   },
   {
@@ -1304,6 +1360,7 @@ export type ToolName = (typeof toolDefinitions)[number]["name"];
 
 export type ToolOptions = {
   previewScope?: PreviewScope;
+  /** Connection default projects: autofill and list defaults, never a permission boundary. */
   projectScopes?: readonly McpProject[];
   publicApiBaseUrl?: string;
   projectsChanged?: () => void;
@@ -1386,36 +1443,19 @@ function padHeader(pad: Scratchpad, options: ToolOptions): string {
   ].join("\n");
 }
 
-/**
- * A project-scoped connection reaches its projects' pads and pads without a project, as pad_list
- * shows; any other pad is reported as missing.
- */
-function scopedPad(store: ScratchpadStore, id: string, options: ToolOptions): Scratchpad {
-  const pad = store.get(id);
-  const scopes = options.projectScopes;
-  if (scopes && pad.project_id && !scopes.some((p) => p.id === pad.project_id))
-    throw new NotFoundError("Scratchpad", id);
-  return pad;
+function padById(store: ScratchpadStore, id: string): Scratchpad {
+  return store.get(id);
 }
 
-function assertTaskInScope(projectId: string | null, options: ToolOptions): void {
-  if (options.projectScopes && !options.projectScopes.some((p) => p.id === projectId))
-    throw new ValidationError("Task is outside the selected MCP projects");
-}
-
-/** Resolves a pad's project by name; a scoped connection may only use its own projects. */
-function padProject(project: string, options: ToolOptions): string {
+function padProject(project: string): string {
   const resolved = resolveProjectId(project);
   if (!resolved) throw new NotFoundError("Project", project);
-  const { id } = resolved;
-  if (options.projectScopes && !options.projectScopes.some((p) => p.id === id))
-    throw new ValidationError(`Project ${project} is outside the selected MCP projects`);
-  return id;
+  return resolved.id;
 }
 
 /** Memories belong to a project; there is no global memory. */
-function memoryProject(project: string | undefined): string {
-  const resolved = resolveProjectId(project);
+function memoryProject(project: string | undefined, options: ToolOptions): string {
+  const resolved = resolveProjectId(project ?? options.projectScopes?.[0]?.name);
   if (!resolved)
     throw new ValidationError(
       "Memories belong to a project: pass project or set activeProject in ORC config",
@@ -1463,9 +1503,9 @@ function selectedProjectIds(
   project: string | undefined,
   options: ToolOptions,
 ): string[] | undefined {
-  if (options.projectScopes) return options.projectScopes.map((item) => item.id);
   const resolved = resolveProjectId(project);
-  return resolved ? [resolved.id] : undefined;
+  if (resolved) return [resolved.id];
+  return options.projectScopes?.map((item) => item.id);
 }
 
 function resolveSkillScope(
@@ -1473,7 +1513,9 @@ function resolveSkillScope(
   options: ToolOptions,
   name: string,
 ): string | null {
-  if (input.scope === "global" || !options.projectScopes) return resolveScope(input);
+  if (input.scope === "global") return null;
+  if (input.project !== undefined) return resolveScope(input);
+  if (!options.projectScopes) return resolveScope(input);
   return new SkillHistory(getSqlite()).preferredProject(
     name,
     options.projectScopes.map((p) => p.id),
@@ -1534,12 +1576,7 @@ async function runTool(
   setData?: (data: Record<string, unknown>) => void,
 ): Promise<string> {
   if (previewToolDefinitions.some((tool) => tool.name === name))
-    return executePreviewTool(
-      name,
-      args,
-      options.projectScopes?.map((project) => project.id),
-      options.previewScope,
-    );
+    return executePreviewTool(name, args, options.previewScope);
   if (name.startsWith("channel_")) {
     const schema =
       name === "channel_list"
@@ -1555,8 +1592,6 @@ async function runTool(
     const scope = parsed.project
       ? resolveProjectId(parsed.project)?.id
       : (parsed.project_id ?? options.projectScopes?.[0]?.id ?? resolveProjectId()?.id ?? null);
-    if (options.projectScopes && (!scope || !options.projectScopes.some((p) => p.id === scope)))
-      throw new ValidationError("Channel access is outside the selected MCP projects");
     const query = scope ? `?project_id=${encodeURIComponent(scope)}` : "";
     if (name === "channel_list") {
       const [connections, providers] = await Promise.all([
@@ -1595,11 +1630,6 @@ async function runTool(
     const scope = project
       ? resolveProjectId(project)?.id
       : (input.project_id ?? options.projectScopes?.[0]?.id ?? resolveProjectId()?.id ?? null);
-    if (
-      options.projectScopes &&
-      (!scope || !options.projectScopes.some((item) => item.id === scope))
-    )
-      throw new ValidationError("Human request is outside the selected MCP projects");
     if (!callerOwns(options.agentSessionId, input.origin.session_id))
       throw new ValidationError("Human request must belong to the calling agent session");
     return JSON.stringify(
@@ -1612,11 +1642,6 @@ async function runTool(
     const path = `/human-requests/${encodeURIComponent(input.id)}`;
     const read = async () => {
       const request = HumanRequestSchema.parse(await orcApi("GET", path));
-      if (
-        options.projectScopes &&
-        !options.projectScopes.some((item) => item.id === request.input.project_id)
-      )
-        throw new ValidationError("Human request is outside the selected MCP projects");
       if (!callerOwns(options.agentSessionId, request.input.origin.session_id))
         throw new ValidationError("Human request belongs to another agent session");
       return request;
@@ -1677,8 +1702,6 @@ async function runTool(
           ? resolveProjectId(input.project)?.id
           : (options.projectScopes?.[0]?.id ?? resolveProjectId()?.id ?? null);
     if (!scope) throw new ValidationError("Select a project to list its secrets");
-    if (options.projectScopes && !options.projectScopes.some((item) => item.id === scope))
-      throw new ValidationError("Project is outside the selected MCP projects");
     return JSON.stringify(await orcApi("GET", `/projects/${encodeURIComponent(scope)}/secrets`));
   }
   if (name === "human_request_snooze" || name === "human_request_unsnooze") {
@@ -1688,11 +1711,6 @@ async function runTool(
         : humanUnsnoozeParams.parse(args);
     const path = `/human-requests/${encodeURIComponent(input.id)}`;
     const existing = HumanRequestSchema.parse(await orcApi("GET", `${path}/view`));
-    if (
-      options.projectScopes &&
-      !options.projectScopes.some((item) => item.id === existing.input.project_id)
-    )
-      throw new ValidationError("Human request is outside the selected MCP projects");
     if (!callerOwns(options.agentSessionId, existing.input.origin.session_id))
       throw new ValidationError("Human request belongs to another agent session");
     if (name === "human_request_snooze") {
@@ -1733,10 +1751,10 @@ async function runTool(
       mode: input.mode,
       limit: String(input.limit),
       offset: String(input.offset),
-      ...(options.projectScopes
-        ? { project_ids: options.projectScopes.map((p) => p.id).join(",") }
-        : project
-          ? { project_id: project.id }
+      ...(project
+        ? { project_id: project.id }
+        : options.projectScopes
+          ? { project_ids: options.projectScopes.map((p) => p.id).join(",") }
           : {}),
       ...(input.agent ? { agent: input.agent } : {}),
     });
@@ -1761,14 +1779,6 @@ async function runTool(
         : { offset: String(input.offset), limit: String(input.limit) }),
     });
     try {
-      if (options.projectScopes) {
-        const { session } = await orcApi<{ session: { project_id: string | null } }>(
-          "GET",
-          `/sessions/archive/${input.id}`,
-        );
-        if (!options.projectScopes.some((p) => p.id === session.project_id))
-          throw new ValidationError("Session is outside the selected MCP projects");
-      }
       return JSON.stringify(
         await orcApi(
           "GET",
@@ -1779,11 +1789,6 @@ async function runTool(
       // Spawned children are live chats, not archives; read their transcript instead.
       if (!(err instanceof OrcError) || err.statusCode !== 404 || input.ordinal !== undefined)
         throw err;
-      const current = SessionStatusSchema.parse(
-        await orcApi("GET", `/sessions/live/${encodeURIComponent(input.id)}/status`),
-      );
-      if (options.projectScopes && !options.projectScopes.some((p) => p.id === current.project_id))
-        throw new ValidationError("Session is outside the selected MCP projects");
       const chat = await orcApi<{
         messages: { role: string; content: string; timestamp: number }[];
       }>("GET", `/chat/threads/${encodeURIComponent(input.id)}`);
@@ -1831,17 +1836,13 @@ async function runTool(
         : "Not delivered: this conversation is not responding.";
   }
   if (name === "session_send") {
-    const input = SessionMessageCreateSchema.parse(args);
+    const { prompt, ...rest } = sessionSendToolSchema.parse(args);
+    const input = { ...rest, body: prompt };
     const mode = input.mode ?? "queue";
     if (!options.agentSessionId && mode !== "queue")
       throw new ForbiddenError(
         `session_send with mode "${mode}" requires a bound calling session identity; reconnect MCP with ?session=<session id> or X-ORC-Session, or use mode "queue"`,
       );
-    if (options.projectScopes) {
-      const target = new SessionMessageStore(getSqlite()).target(input.session_id, input.backend);
-      if (!target.project_id || !options.projectScopes.some((p) => p.id === target.project_id))
-        throw new ForbiddenError("Session is outside the selected MCP projects");
-    }
     return JSON.stringify(
       SessionMessageResultSchema.parse(
         await orcApi("POST", "/session-messages", {
@@ -1873,7 +1874,7 @@ async function runTool(
           body: {
             ...input,
             notify: input.notify ?? !coordinator,
-            ...(project ? { project_id: padProject(project, options) } : {}),
+            ...(project ? { project_id: padProject(project) } : {}),
           },
           headers,
         }),
@@ -1906,8 +1907,6 @@ async function runTool(
       const current = SessionStatusSchema.parse(
         await orcApi("GET", `/sessions/live/${encodeURIComponent(id)}/status`, { headers }),
       );
-      if (options.projectScopes && !options.projectScopes.some((p) => p.id === current.project_id))
-        throw new ValidationError("Session is outside the selected MCP projects");
       return current;
     };
     if (name === "session_wait") {
@@ -2061,7 +2060,7 @@ async function runTool(
         limit?: number;
         project?: string;
       };
-      const projectIds = selectedProjectIds(project, options) ?? [memoryProject(project)];
+      const projectIds = selectedProjectIds(project, options) ?? [memoryProject(project, options)];
       const matched = new MemoryStore(getSqlite(db)).list(projectIds, { q, sort });
       const shown = matched.slice(0, limit ?? MEMORY_LIST_LIMIT);
       setData?.({ memories: shown, total: matched.length });
@@ -2085,7 +2084,7 @@ async function runTool(
 
     case "memory_read": {
       const { name: memoryName, project } = args as { name: string; project?: string };
-      const ids = selectedProjectIds(project, options) ?? [memoryProject(project)];
+      const ids = selectedProjectIds(project, options) ?? [memoryProject(project, options)];
       const owner = ids.find((id) =>
         getSqlite(db)
           .query("SELECT 1 FROM memories WHERE project_id=? AND name=?")
@@ -2117,7 +2116,7 @@ async function runTool(
       };
       const memory = new MemoryStore(getSqlite(db)).create({
         ...input,
-        project_id: memoryProject(input.project),
+        project_id: memoryProject(input.project, options),
         ...memoryWriter(options),
       });
       return `Created memory ${memory.name}`;
@@ -2137,7 +2136,7 @@ async function runTool(
         reason?: string;
         project?: string;
       };
-      new MemoryStore(getSqlite(db)).update(memoryProject(project), memoryName, fields, {
+      new MemoryStore(getSqlite(db)).update(memoryProject(project, options), memoryName, fields, {
         ...memoryWriter(options),
         reason,
       });
@@ -2154,7 +2153,7 @@ async function runTool(
         reason?: string;
         project?: string;
       };
-      new MemoryStore(getSqlite(db)).remove(memoryProject(project), memoryName, {
+      new MemoryStore(getSqlite(db)).remove(memoryProject(project, options), memoryName, {
         ...memoryWriter(options),
         reason,
       });
@@ -2164,7 +2163,10 @@ async function runTool(
     case "memory_history": {
       const { name: memoryName, project } = args as { name: string; project?: string };
       return JSON.stringify({
-        changes: new MemoryStore(getSqlite(db)).history(memoryProject(project), memoryName),
+        changes: new MemoryStore(getSqlite(db)).history(
+          memoryProject(project, options),
+          memoryName,
+        ),
       });
     }
 
@@ -2177,7 +2179,7 @@ async function runTool(
         project?: string;
       };
       const memory = new MemoryStore(getSqlite(db)).revert(
-        memoryProject(input.project),
+        memoryProject(input.project, options),
         input.name,
         input.change_id,
         input.expected_change_id,
@@ -2226,7 +2228,7 @@ async function runTool(
 
     case "pad_get": {
       const { id, via } = args as { id: string; via?: "inline" | "url" };
-      const pad = scopedPad(new ScratchpadStore(getSqlite(db)), id, options);
+      const pad = padById(new ScratchpadStore(getSqlite(db)), id);
       if (via === "url") return JSON.stringify(await padContentUrl(id, "download", options));
       return `${padHeader(pad, options)}\n---\n${pad.content}`;
     }
@@ -2245,7 +2247,7 @@ async function runTool(
         kind: input.kind,
         title: input.title,
         content: input.content,
-        project_id: input.project ? padProject(input.project, options) : null,
+        project_id: input.project ? padProject(input.project) : null,
         session_id: input.link_session === false ? null : writer.session_id,
         tags: input.tags,
         author: writer.author,
@@ -2264,7 +2266,7 @@ async function runTool(
         via?: "inline" | "url";
       };
       const store = new ScratchpadStore(getSqlite(db));
-      scopedPad(store, id, options);
+      padById(store, id);
       if (via === "url") {
         if (
           fields.content !== undefined ||
@@ -2281,7 +2283,7 @@ async function runTool(
         ...fields,
         ...(project === undefined
           ? {}
-          : { project_id: project === null ? null : padProject(project, options) }),
+          : { project_id: project === null ? null : padProject(project) }),
         author: memoryWriter(options).author,
       });
       return `Updated scratchpad ${pad.id} to revision ${pad.revision}: ${padLink(pad.id, options)}`;
@@ -2290,7 +2292,7 @@ async function runTool(
     case "pad_delete": {
       const { id } = args as { id: string };
       const store = new ScratchpadStore(getSqlite(db));
-      scopedPad(store, id, options);
+      padById(store, id);
       store.remove(id);
       return `Deleted scratchpad ${id}`;
     }
@@ -2355,19 +2357,7 @@ async function runTool(
     case "task_get": {
       const { ids } = args as { ids: string[] };
       const rows = await Promise.all(
-        ids.map((id) =>
-          db.query.tasks.findFirst({
-            where: and(
-              eq(tasks.id, id),
-              options.projectScopes
-                ? inArray(
-                    tasks.project_id,
-                    options.projectScopes.map((p) => p.id),
-                  )
-                : undefined,
-            ),
-          }),
-        ),
+        ids.map((id) => db.query.tasks.findFirst({ where: eq(tasks.id, id) })),
       );
       const found = rows.filter((t): t is NonNullable<typeof t> => Boolean(t));
       if (found.length === 0) {
@@ -2433,12 +2423,7 @@ async function runTool(
         run?: boolean;
       };
       const target = resolveProjectId(input.project ?? options.projectScopes?.[0]?.name);
-      if (
-        !target ||
-        (options.projectScopes &&
-          !options.projectScopes.some((project) => project.id === target.id))
-      )
-        throw new NotFoundError("Project", input.project ?? "active project");
+      if (!target) throw new NotFoundError("Project", input.project ?? "active project");
       if (input.config)
         await orcApi("PATCH", `/projects/${encodeURIComponent(target.id)}`, {
           body: { github_sync: input.config },
@@ -2483,7 +2468,7 @@ async function runTool(
         agent_model?: string;
         max_review_rounds?: number;
       };
-      const resolved = resolveProjectId(project);
+      const resolved = resolveProjectId(project ?? options.projectScopes?.[0]?.name);
       const id = ulid();
       const now = new Date();
       withTaskAudit(getSqlite(), [id], () => {
@@ -2544,8 +2529,6 @@ async function runTool(
       };
       const existing = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
       if (!existing) throw new NotFoundError("Task", id);
-      if (options.projectScopes && !options.projectScopes.some((p) => p.id === existing.project_id))
-        throw new NotFoundError("Task", id);
       validateGithubTaskEdit(existing, fields);
       if (status && status !== existing.status) {
         const result = await updateTaskStatus({
@@ -2624,6 +2607,75 @@ async function runTool(
         .join("\n");
     }
 
+    case "shell_run": {
+      const { command, cwd, label, project } = args as {
+        command: string;
+        cwd: string;
+        label?: string;
+        project?: string;
+      };
+      const projectId = project
+        ? resolveProjectId(project)?.id
+        : (options.projectScopes?.[0]?.id ?? resolveProjectId()?.id);
+      const job = startBackgroundJob({
+        command,
+        cwd,
+        ...(label ? { label } : {}),
+        ...(options.agentSessionId ? { session_id: options.agentSessionId } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
+      });
+      return JSON.stringify(job);
+    }
+
+    case "shell_status": {
+      const {
+        job_id,
+        logs = true,
+        tail_lines = 100,
+        tail_bytes,
+      } = args as {
+        job_id: string;
+        logs?: boolean;
+        tail_lines?: number;
+        tail_bytes?: number;
+      };
+      const job = getBackgroundJob(job_id);
+      if (!job) throw new NotFoundError("BackgroundJob", job_id);
+      if (!logs) return JSON.stringify(job);
+      const log = readBackgroundJobLog(job_id, { tail_lines, tail_bytes });
+      return JSON.stringify({
+        ...job,
+        log_tail: log.text,
+        log_truncated: log.truncated,
+        log_size_bytes: log.size_bytes,
+      });
+    }
+
+    case "shell_list": {
+      const { status, session_id, limit } = args as {
+        status?: "running" | "completed" | "failed" | "stopped" | "interrupted_by_restart";
+        session_id?: string;
+        limit?: number;
+      };
+      return JSON.stringify({
+        jobs: listBackgroundJobs({
+          status,
+          session_id,
+          limit,
+          ...(options.projectScopes ? { project_ids: options.projectScopes.map((p) => p.id) } : {}),
+        }),
+      });
+    }
+
+    case "shell_stop": {
+      const { job_id } = args as { job_id: string };
+      const existing = getBackgroundJob(job_id);
+      if (!existing) throw new NotFoundError("BackgroundJob", job_id);
+      const stopped = await stopBackgroundJob(job_id);
+      if (!stopped) throw new NotFoundError("BackgroundJob", job_id);
+      return JSON.stringify(stopped);
+    }
+
     case "job_run": {
       const { name, project } = args as { name: string; project?: string };
       const target = resolveProjectId(project);
@@ -2654,18 +2706,6 @@ async function runTool(
         where: eq(job_runs.id, run_id),
       });
       if (!run) return `Run not found: ${run_id}`;
-      if (options.projectScopes) {
-        const job = await db.query.jobs.findFirst({
-          where: and(
-            eq(jobs.id, run.job_id),
-            inArray(
-              jobs.project_id,
-              options.projectScopes.map((p) => p.id),
-            ),
-          ),
-        });
-        if (!job) return `Run not found: ${run_id}`;
-      }
       const lines = logs
         ? await db.query.job_run_logs.findMany({
             where: stream
@@ -2693,14 +2733,12 @@ async function runTool(
       };
       const task = await db.query.tasks.findFirst({ where: eq(tasks.id, id) });
       if (!task) throw new NotFoundError("Task", id);
-      assertTaskInScope(task.project_id, options);
       if (action === "add") {
         if (!to_task_id || !link_type)
           throw new ValidationError("Adding a link requires to_task_id and link_type");
         if (to_task_id === id) throw new ValidationError("Cannot link a task to itself");
         const target = await db.query.tasks.findFirst({ where: eq(tasks.id, to_task_id) });
         if (!target) throw new NotFoundError("Task", to_task_id);
-        assertTaskInScope(target.project_id, options);
         const existing = await db.query.task_links.findFirst({
           where: and(eq(task_links.from_task_id, id), eq(task_links.to_task_id, to_task_id)),
         });
@@ -2964,7 +3002,7 @@ async function runTool(
         project?: string;
       };
 
-      const resolved = resolveProjectId(project);
+      const resolved = resolveProjectId(project ?? options.projectScopes?.[0]?.name);
       const sid = session_id ?? process.env.ORC_SESSION_ID ?? "default";
       const jobRunId = process.env.ORC_JOB_RUN_ID;
       const sqlite = getSqlite();
@@ -3014,13 +3052,6 @@ async function runTool(
       const conditions = status
         ? [eq(projects.status, status as "active" | "archived" | "paused")]
         : [];
-      if (options.projectScopes)
-        conditions.push(
-          inArray(
-            projects.id,
-            options.projectScopes.map((p) => p.id),
-          ),
-        );
       const rows = await db.query.projects.findMany({
         where: conditions.length > 0 ? and(...conditions) : undefined,
         orderBy: (p, { asc }) => [asc(p.name)],
@@ -3045,10 +3076,6 @@ async function runTool(
     }
 
     case "project_create": {
-      if (options.projectScopes?.length)
-        throw new ValidationError(
-          "project_create needs an unscoped connection: this MCP connection is limited to selected projects. Reconnect without project scopes to create projects.",
-        );
       const { name, description, status, tags, git_remote_url, scope } = args as {
         name: string;
         description?: string;
@@ -3130,7 +3157,7 @@ async function runTool(
         project?: string;
         author?: string;
       };
-      const resolved = resolveProjectId(project);
+      const resolved = resolveProjectId(project ?? options.projectScopes?.[0]?.name);
       const now = new Date();
       const mapping: Record<string, string> = {};
 
@@ -3495,11 +3522,6 @@ async function runTool(
         summary?: string;
         vars?: Record<string, unknown>;
       };
-      if (options.projectScopes) {
-        const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId) });
-        if (!owner) return `Task not found: ${taskId}`;
-        assertTaskInScope(owner.project_id, options);
-      }
       const { reportNodeOutcome } = await import("@orc/runner/flow-runner");
       const result = await reportNodeOutcome({
         taskId,
@@ -3534,9 +3556,8 @@ async function runTool(
       if (a.task) {
         const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, a.task) });
         if (!owner) return `Task not found: ${a.task}`;
-        assertTaskInScope(owner.project_id, options);
       }
-      const resolved = resolveProjectId(a.project);
+      const resolved = resolveProjectId(a.project ?? options.projectScopes?.[0]?.name);
       const spec = GoalSpecSchema.parse({
         objective: a.objective,
         check: a.check,
@@ -3563,14 +3584,11 @@ async function runTool(
       if (id) {
         const found = await getGoal(id);
         if (!found) return `Goal not found: ${id}`;
-        const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, found.goal.task_id) });
-        assertTaskInScope(owner?.project_id ?? null, options);
         return JSON.stringify(found);
       }
       if (task) {
         const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, task) });
         if (!owner) return `Task not found: ${task}`;
-        assertTaskInScope(owner.project_id, options);
         const goal = await getTaskGoal(task);
         return goal ? JSON.stringify(goal) : `No goal on task ${task}.`;
       }
@@ -3582,8 +3600,6 @@ async function runTool(
       const { getGoal, stopGoal } = await import("@orc/runner/goal-service");
       const found = await getGoal(id);
       if (!found) return `Goal not found: ${id}`;
-      const owner = await db.query.tasks.findFirst({ where: eq(tasks.id, found.goal.task_id) });
-      assertTaskInScope(owner?.project_id ?? null, options);
       const goal = await stopGoal(id);
       return `Goal ${goal.id} stopped.`;
     }
@@ -3595,7 +3611,6 @@ async function runTool(
         setData?.({ task_id: taskId, found: false, run: null });
         return `Task not found: ${taskId}`;
       }
-      assertTaskInScope(owner.project_id, options);
       const { getLatestFlowRunForTask } = await import("@orc/runner/flow-runner");
       const run = getLatestFlowRunForTask(taskId);
       if (!run) {
@@ -3735,7 +3750,6 @@ async function runTool(
         where: eq(tasks.id, taskId),
       });
       if (!target) return `Task not found: ${taskId}`;
-      assertTaskInScope(target.project_id, options);
       if (start && ["done", "cancelled"].includes(target.status))
         return `Error: task is ${target.status}; move it back to todo before starting a flow on it.`;
 

@@ -673,6 +673,48 @@ export const CHAT_TURN_HARD_LIMIT_MS = 4 * 60 * 60 * 1000;
  * recycled OS pid, which would otherwise present a dead lease as live forever.
  */
 export const CHAT_TURN_LEASE_STALE_MS = CHAT_TURN_HARD_LIMIT_MS + 61_000;
+export const ChatBackgroundTaskKindSchema = z.enum(["shell", "monitor", "task"]);
+export type ChatBackgroundTaskKind = z.infer<typeof ChatBackgroundTaskKindSchema>;
+
+export const ChatBackgroundTaskStatusSchema = z.enum([
+  "running",
+  "completed",
+  "failed",
+  "stopped",
+  "interrupted",
+]);
+export type ChatBackgroundTaskStatus = z.infer<typeof ChatBackgroundTaskStatusSchema>;
+
+export const ChatBackgroundTaskSchema = z.object({
+  id: z.string().min(1).max(200),
+  kind: ChatBackgroundTaskKindSchema,
+  description: z.string().max(500),
+  command: z.string().max(1000).optional(),
+  startedAt: z.number().finite().nonnegative(),
+  finishedAt: z.number().finite().nonnegative().optional(),
+  status: ChatBackgroundTaskStatusSchema,
+  summary: z.string().max(2000).optional(),
+  outputFile: z.string().max(1000).optional(),
+});
+export type ChatBackgroundTask = z.infer<typeof ChatBackgroundTaskSchema>;
+
+export const ChatLostBackgroundWorkKindSchema = z.enum(["shell", "monitor", "subagent", "task"]);
+export type ChatLostBackgroundWorkKind = z.infer<typeof ChatLostBackgroundWorkKindSchema>;
+
+export const ChatLostBackgroundWorkItemSchema = z.object({
+  kind: ChatLostBackgroundWorkKindSchema,
+  id: z.string().min(1).max(200),
+  label: z.string().max(500),
+});
+export type ChatLostBackgroundWorkItem = z.infer<typeof ChatLostBackgroundWorkItemSchema>;
+
+export const ChatLostBackgroundWorkSchema = z.object({
+  at: z.number().finite().nonnegative(),
+  cause: z.enum(["server_restart", "provider_exit"]),
+  items: z.array(ChatLostBackgroundWorkItemSchema).max(20),
+});
+export type ChatLostBackgroundWork = z.infer<typeof ChatLostBackgroundWorkSchema>;
+
 export const ChatTurnLeaseSchema = z.object({
   runId: z.string().uuid(),
   startedAt: z.number().finite().nonnegative(),
@@ -689,6 +731,7 @@ export const ChatTurnLeaseSchema = z.object({
    * read as epoch 0.
    */
   epoch: z.number().int().nonnegative().optional(),
+  backgroundTasks: z.array(ChatLostBackgroundWorkItemSchema).max(20).optional(),
 });
 export type ChatTurnLease = z.infer<typeof ChatTurnLeaseSchema>;
 
@@ -727,6 +770,7 @@ export const ChatThreadSchema = z.object({
   cwd: z.string(),
   host: z.string().nullable(),
   runtimeId: z.string().nullable(),
+  runtimeModel: ChatModelSchema.optional(),
   backend: z.string(),
   capabilities: AgentCapabilitiesSchema.optional(),
   sourceId: z.string().nullable(),
@@ -764,6 +808,7 @@ export const ChatThreadSchema = z.object({
   providerRefs: z.array(ChatProviderRefSchema).max(CHAT_PROVIDER_REFS_MAX).optional(),
   // The last recovery applied to this thread (resume, discovery, transcript handoff).
   recovery: ChatRecoverySchema.optional(),
+  lostBackgroundWork: ChatLostBackgroundWorkSchema.optional(),
   spawnedBy: ChatSpawnSchema.optional(),
   updatedAt: z.number(),
 });
@@ -805,6 +850,8 @@ export const ChatEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("system_status"), text: z.string() }),
   z.object({ type: z.literal("plan"), data: ChatPlanPayloadSchema }),
   z.object({ type: z.literal("subagent"), data: ChatSubagentPayloadSchema }),
+  z.object({ type: z.literal("background_task"), data: ChatBackgroundTaskSchema }),
+  z.object({ type: z.literal("model"), model: ChatModelSchema }),
   z.object({
     type: z.literal("tool_use"),
     data: z.object({ id: z.string(), name: z.string(), input: z.string() }),

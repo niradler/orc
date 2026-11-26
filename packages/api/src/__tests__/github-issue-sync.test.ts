@@ -381,13 +381,14 @@ describe("GitHub issues as native tasks", () => {
     } finally {
       await server.stop(true);
     }
-    await expect(
-      executeTool(
+    const elsewhere = JSON.parse(
+      await executeTool(
         "github_sync",
         { project: "github-sync", run: false },
         { projectScopes: [{ id: "other", name: "other" }] },
       ),
-    ).rejects.toThrow();
+    );
+    expect(elsewhere.config.enabled).toBe(true);
     const config = JSON.parse(
       await executeTool("github_sync", { project: "github-sync", run: false }),
     );

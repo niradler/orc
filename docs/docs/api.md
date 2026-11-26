@@ -226,7 +226,7 @@ setup.
 | `POST` | `/kb/evidence` | Budgeted evidence pack with citations |
 | `GET` | `/kb/citations/{handle}` | Resolve `kb:<doc>@<rev>#<n>` |
 | `GET` `POST` | `/kb/bases/{id}/comments` | Comments |
-| `GET` `PUT` `DELETE` | `/kb/bases/{id}/digest` | Digest agent; `POST .../digest/run` starts one |
+| `GET` `PUT` `DELETE` | `/kb/bases/{id}/digest` | Digest agent (`PUT` accepts any backend; one that cannot enforce a tool whitelist runs the digest without it); `POST .../digest/run` starts one |
 | `GET` `POST` | `/kb/bases/{id}/sources` | Synced local folders |
 | `GET` `PATCH` | `/kb/settings` | Parser and embedding settings |
 | `GET` | `/kb/status` | Counts, jobs, embeddings, parsers |
@@ -258,7 +258,7 @@ setup.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` `POST` | `/jobs` | List (`enabled`, `project_id`, `limit`, `offset`) / create |
-| `GET` `PATCH` `DELETE` | `/jobs/{id}` | Read / update / delete |
+| `GET` `PATCH` `DELETE` | `/jobs/{id}` | Read / update / delete. A knowledge base digest's job takes only `enabled`, `trigger_type`, `cron_expr` and `timeout_secs`; enabling it is allowed for any backend, warning when that backend cannot enforce the digest's tool whitelist |
 | `POST` | `/jobs/{id}/trigger` | Run now; `?sync=true` waits and returns output |
 | `GET` | `/jobs/{id}/runs` | Run history |
 | `GET` | `/jobs/{id}/runs/{runId}/logs` | Run logs |
@@ -500,7 +500,7 @@ live records that have no backing chat thread.
 | `GET` `POST` `DELETE` | `/auth/session` | Web UI sign-in |
 | `GET` `PATCH` | `/settings` | Workspace preferences |
 | `GET` `PATCH` | `/settings/mcp` | MCP defaults and prompts |
-| `GET` | `/backends` | Agent backends and whether each can run |
+| `GET` | `/backends` | Agent backends and whether each can run, plus `tool_allowlist` for each: whether a session there can be restricted to an explicit tool whitelist (a knowledge base digest prefers one but runs without it) |
 | `GET` | `/setup` | First-run status: detected agents (installed / signed in / version / fix command), projects suggested from their session history, and the default agent |
 | `GET` | `/events` | Resource-change event stream |
 | `GET` `PUT` | `/ssh` | SSH execution host |

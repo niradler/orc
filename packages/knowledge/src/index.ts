@@ -11,6 +11,7 @@ export { citationOf, parseCitation, snippet } from "./search.js";
 export {
   DEFAULT_SOURCE_PATTERN,
   type DocumentReadOptions,
+  digestBackendWarning,
   KB_UPLOAD_FORMATS,
   type KbDeleteOptions,
   type KbJobHooks,

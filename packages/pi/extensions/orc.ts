@@ -17,6 +17,7 @@ import {
   type PorcOverrides,
   porcPaths,
 } from "../src/config.js";
+import { uiElicitation } from "../src/elicit.js";
 import {
   type PiLiveSession,
   removePiLiveSession,
@@ -353,7 +354,12 @@ async function initialize(
     config.timeoutMs,
     config.secretSource,
   );
-  session.client = new OrcMcpClient(config, session.sessionId, ctx.cwd);
+  session.client = new OrcMcpClient(
+    config,
+    session.sessionId,
+    ctx.cwd,
+    ctx.hasUI ? uiElicitation(ctx.ui) : undefined,
+  );
   session.health = (await session.api.health()) ? "up" : "down";
 
   await resolveProject(session, ctx, options.interactive === true);
@@ -382,6 +388,10 @@ const ACTIONS = [
   "skill_list",
   "skill_read",
   "skill_create",
+  "task_start",
+  "task_status",
+  "task_result",
+  "task_cancel",
   "project_list",
   "job_create",
   "job_list",
@@ -414,6 +424,15 @@ const OrcParams = Type.Object({
   ),
   limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100, description: "Page size" })),
   ref: Type.Optional(Type.String({ description: "Skill-relative supporting file path" })),
+  task: Type.Optional(
+    Type.String({ description: "Task id for task_status, task_result or task_cancel" }),
+  ),
+  ttl_ms: Type.Optional(
+    Type.Number({
+      minimum: 1000,
+      description: "Requested task retention in milliseconds for task_start",
+    }),
+  ),
   arguments: Type.Optional(
     Type.Record(Type.String(), Type.Unknown(), { description: "Arguments for invoke" }),
   ),
@@ -467,6 +486,8 @@ type OrcInput = {
   priority?: number;
   limit?: number;
   ref?: string;
+  task?: string;
+  ttl_ms?: number;
   arguments?: Record<string, unknown>;
   cron?: string;
   prompt?: string;
@@ -495,7 +516,11 @@ function ruleWorkspace(session: SessionState): string {
   return session.projectRoot || session.cwd;
 }
 
-async function mcpAction(session: SessionState, params: OrcInput): Promise<string> {
+async function mcpAction(
+  session: SessionState,
+  params: OrcInput,
+  signal?: AbortSignal,
+): Promise<string> {
   const client = requireClient(session);
   const project = params.project ?? session.project;
   const action = params.action;
@@ -547,14 +572,23 @@ async function mcpAction(session: SessionState, params: OrcInput): Promise<strin
         ...(params.priority === undefined ? {} : { priority: params.priority }),
       };
       break;
-    case "skill_list":
-      if (params.query) args.q = params.query;
-      args.limit = params.limit ?? 20;
-      break;
-    case "skill_read":
-      args.name = need(params.name, "skill_read requires name");
-      if (params.ref) args.ref = params.ref;
-      break;
+    case "skill_list": {
+      const result = await client.listSkills({
+        ...(params.query ? { q: params.query } : {}),
+        ...(project ? { project } : {}),
+        limit: params.limit ?? 20,
+      });
+      if (result.isError) throw new Error(result.text || "skill_list failed");
+      return result.text || "No skills.";
+    }
+    case "skill_read": {
+      const result = await client.readSkill(need(params.name, "skill_read requires name"), {
+        ...(params.ref ? { ref: params.ref } : {}),
+        ...(project ? { project } : {}),
+      });
+      if (result.isError) throw new Error(result.text || "skill_read failed");
+      return result.text || "Empty skill.";
+    }
     case "skill_create":
       args = {
         ...scope,
@@ -562,6 +596,48 @@ async function mcpAction(session: SessionState, params: OrcInput): Promise<strin
         content: need(params.content, "skill_create requires content (full SKILL.md)"),
       };
       break;
+    case "task_start": {
+      const toolName = need(params.name, "task_start requires name (the ORC tool)");
+      const inner = { ...(params.arguments ?? {}) };
+      if (project && inner.project === undefined && inner.project_id === undefined)
+        inner.project = project;
+      const handle = await client.callTask(toolName, inner, {
+        ...(params.ttl_ms === undefined ? {} : { ttlMs: params.ttl_ms }),
+        ...(signal ? { signal } : {}),
+      });
+      return `task ${handle.taskId} started (${handle.status})`;
+    }
+    case "task_status": {
+      const status = await client.taskStatus(need(params.task, "task_status requires task"), {
+        ...(signal ? { signal } : {}),
+      });
+      return [
+        `task ${status.taskId}: ${status.status}`,
+        status.statusMessage ? `message: ${status.statusMessage}` : "",
+        status.pollInterval ? `poll every ${status.pollInterval}ms` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+    case "task_result": {
+      const taskId = need(params.task, "task_result requires task");
+      const opts = signal ? { signal } : {};
+      const status = await client.taskStatus(taskId, opts);
+      if (status.status === "failed")
+        throw new Error(status.statusMessage || `ORC task ${taskId} failed`);
+      if (status.status === "cancelled")
+        throw new Error(status.statusMessage || `ORC task ${taskId} was cancelled`);
+      if (status.status !== "completed")
+        return `task ${taskId} is ${status.status}; call task_result again after polling.`;
+      const result = await client.taskResult(taskId, opts);
+      if (result.isError) throw new Error(result.text || "Task failed");
+      return result.text || "Task completed with no output.";
+    }
+    case "task_cancel": {
+      const taskId = need(params.task, "task_cancel requires task");
+      await client.cancelTask(taskId, signal ? { signal } : {});
+      return `task ${taskId} cancelled`;
+    }
     case "project_list":
       args = {};
       break;
@@ -757,14 +833,14 @@ function registerTools(pi: ExtensionAPI, state: PluginState): void {
         "Use `job_create` for recurring work and `rule_add` to block or gate agent behaviour.",
       ],
       parameters: OrcParams,
-      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
         const session = sessionOf(state);
         const config = requireConfig(session);
         const input = params as OrcInput;
         try {
           const text = REST_ACTIONS.has(input.action)
             ? await restAction(session, input, ctx)
-            : await mcpAction(session, input);
+            : await mcpAction(session, input, signal);
           return {
             content: [{ type: "text" as const, text: redact(text, config.secret) }],
             details: { action: input.action, project: input.project ?? session.project },

@@ -79,6 +79,18 @@ describe("probeBackends", () => {
     expect(byName.get("agentapi")?.kind).toBe("http");
   });
 
+  // The digest backend picker uses this to mark backends that run without a tool whitelist.
+  it("reports whether a session here can enforce a tool whitelist", async () => {
+    const probes = await probeBackends();
+    expect(probes.find((p) => p.name === "claude")?.toolAllowlist).toBe(true);
+    expect(probes.find((p) => p.name === "claude-cli")?.toolAllowlist).toBe(true);
+    for (const name of ["acpx", "codex-cli", "opencode", "a2a"])
+      expect(probes.find((p) => p.name === name)?.toolAllowlist, name).toBe(false);
+    // An unregistered backend still reports, with no capabilities claimed.
+    // biome-ignore lint/suspicious/noExplicitAny: testing invalid input
+    expect((await probeBackend("nope" as any)).toolAllowlist).toBe(false);
+  });
+
   it("says what a backend requires even when it is unavailable", async () => {
     const probe = await probeBackend("acpx");
     expect(probe.requires).toContain("acpx");

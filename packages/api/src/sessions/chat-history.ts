@@ -12,13 +12,14 @@ export function chatHistory(turns: TranscriptTurn[], agent: string, model?: stri
       .map((block) => block.text)
       .join("\n");
     const timestamp = turn.time ? Date.parse(turn.time) : Number.NaN;
+    const turnModel = turn.model ?? model;
     const message: ChatMessage = {
       id: crypto.randomUUID(),
       role: turn.role === "user" ? "user" : "assistant",
       content,
       timestamp: Number.isFinite(timestamp) ? timestamp : Date.now(),
       agent,
-      ...(model ? { model } : {}),
+      ...(turnModel ? { model: turnModel } : {}),
       activity: [],
     };
     for (const block of turn.blocks) {

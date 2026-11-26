@@ -1,6 +1,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
+  type CallToolRequest,
   CallToolRequestSchema,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
@@ -13,7 +14,9 @@ import { MCP_PROMPT_REQUEST_ARG, renderMcpPrompt } from "@orc/core/mcp-prompts";
 import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { z } from "zod";
-import { codeToolListing, runCodeMode, scriptToolInfo } from "./code-mode.js";
+import { codeToolListing, type ElicitFn, runCodeMode, scriptToolInfo } from "./code-mode.js";
+import { createHumanElicit } from "./elicit.js";
+import { maybeAugmentCallTool, registerMcpTasks, TASKS_EXTENSION_ID } from "./mcp-tasks.js";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
 export { type McpProject, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
@@ -29,6 +32,7 @@ import {
   type ToolResult,
 } from "./meta-tools.js";
 import { availablePreviewTools, previewToolContent } from "./preview-tools.js";
+import { registerSkillResources, SKILLS_EXTENSION_ID } from "./skill-resources.js";
 import { executeSpecTool, isSpecTool, specToolDefinitions } from "./spec-tools.js";
 import {
   agentSessionFromEnv,
@@ -116,7 +120,16 @@ export function createMcpServer({
   const server = new Server(
     { name: "orc", version: "0.0.1" },
     {
-      capabilities: { tools: {}, prompts: {} },
+      capabilities: {
+        tools: {},
+        prompts: {},
+        resources: {},
+        tasks: { list: {}, cancel: {}, requests: { tools: { call: {} } } },
+        extensions: {
+          [SKILLS_EXTENSION_ID]: { directoryRead: true },
+          [TASKS_EXTENSION_ID]: {},
+        },
+      },
       ...(codeEnabled
         ? {
             instructions:
@@ -146,10 +159,7 @@ export function createMcpServer({
       (input.success && input.data.session_id
         ? { sessionId: input.data.session_id, clientId: input.data.client_id }
         : undefined);
-    const available = await availablePreviewTools(
-      scope,
-      selected?.map((project) => project.id),
-    );
+    const available = await availablePreviewTools(scope);
     return exposedTools.filter(
       (tool) =>
         (!tool.name.startsWith("preview_") || available.has(tool.name)) &&
@@ -201,46 +211,20 @@ export function createMcpServer({
       }
 
       let scopedArgs = args ?? {};
-      let callProjects = selected;
       if (selected && typeof scopedArgs === "object" && !Array.isArray(scopedArgs)) {
         const input = scopedArgs as Record<string, unknown>;
+        const hasProject = "project" in toolDef.inputSchema.shape;
+        const hasProjectId = "project_id" in toolDef.inputSchema.shape;
         const explicit = input.project !== undefined || input.project_id !== undefined;
-        const chosen = selected.find(
-          (candidate) =>
-            (input.project === undefined ||
-              (typeof input.project === "string" &&
-                candidate.name.toLowerCase() === input.project.toLowerCase())) &&
-            (input.project_id === undefined || candidate.id === input.project_id),
-        );
-        if (!chosen)
-          throw new Error(
-            `This MCP connection is scoped to projects ${selected.map((p) => p.name).join(", ")}`,
-          );
-        callProjects = explicit ? [chosen] : selected;
-        scopedArgs =
-          "project" in toolDef.inputSchema.shape
-            ? { ...input, project: chosen.name }
-            : { ...input };
-        if (
-          "project_id" in toolDef.inputSchema.shape &&
-          !("project" in toolDef.inputSchema.shape) &&
-          input.project_id === undefined
-        )
-          scopedArgs = { ...scopedArgs, project_id: chosen.id };
-        if ("projects" in toolDef.inputSchema.shape) {
-          const requested = input.projects;
-          if (
-            requested !== undefined &&
-            (!Array.isArray(requested) ||
-              requested.some(
-                (value) =>
-                  typeof value !== "string" ||
-                  !selected.some((p) => p.name.toLowerCase() === value.toLowerCase()),
-              ))
-          )
-            throw new Error("Projects must be selected in this MCP connection");
-          scopedArgs = { ...scopedArgs, projects: requested ?? selected.map((p) => p.name) };
+        // The connection's projects are autofill defaults, not a permission
+        // boundary: any call may name another project. Fill one only when the
+        // call omitted it and the default is unambiguous.
+        if (!explicit && selected.length === 1) {
+          if (hasProject) scopedArgs = { ...input, project: selected[0]?.name };
+          else if (hasProjectId) scopedArgs = { ...input, project_id: selected[0]?.id };
         }
+        if ("projects" in toolDef.inputSchema.shape && input.projects === undefined)
+          scopedArgs = { ...scopedArgs, projects: selected.map((p) => p.name) };
       }
       const parsed = toolDef.inputSchema.safeParse(scopedArgs);
       if (!parsed.success) {
@@ -260,7 +244,7 @@ export function createMcpServer({
 
       const detailed = await executeToolDetailed(name as ToolName, parsed.data, {
         ...options,
-        ...(callProjects ? { projectScopes: callProjects } : {}),
+        ...(selected ? { projectScopes: selected } : {}),
       });
       const status = name.startsWith("preview_")
         ? z.object({ status: z.string() }).safeParse(JSON.parse(detailed.text))
@@ -300,15 +284,20 @@ export function createMcpServer({
   // In meta mode a CallTool naming a real tool is routed through the same
   // callTool as tool_invoke, so clients that already know a name keep working;
   // the served set still bounds what is reachable.
-  server.setRequestHandler(CallToolRequestSchema, async (request, { signal }) => {
+  async function executeCallTool(
+    request: CallToolRequest,
+    signal: AbortSignal,
+    elicit?: ElicitFn | undefined,
+  ): Promise<ToolResult> {
     const { name, arguments: args } = request.params;
     if (name === codeToolListing.name) {
       if (codeEnabled) {
         return runCodeMode(
           await servedTools(),
           args,
-          requestSignal ? AbortSignal.any([signal, requestSignal]) : signal,
+          signal,
           (tool, input) => callToolInternal(tool, input, true),
+          elicit,
         );
       }
       return {
@@ -330,7 +319,67 @@ export function createMcpServer({
       return runMetaTool(served, name, args, callTool, codeEnabled ? scriptToolInfo : undefined);
     }
     return callTool(name, args);
+  }
+
+  const taskOwner = selected
+    ? selected
+        .map((p) => p.id)
+        .sort()
+        .join(",")
+    : "global";
+  const taskEligibleTools = new Set([
+    "session_wait",
+    "session_start",
+    "job_run",
+    codeToolListing.name,
+  ]);
+  const tasksOptions = { owner: taskOwner, eligibleTools: taskEligibleTools };
+  const elicitProjectId = selected?.[0]?.id ?? null;
+  // HTTP/stateless connections ask through a durable human request (webchat,
+  // Telegram); live stdio connections use spec elicitation.
+  const humanElicit = (elicitSignal: AbortSignal): ElicitFn =>
+    createHumanElicit({
+      sessionId: options.agentSessionId,
+      projectId: elicitProjectId,
+      signal: elicitSignal,
+    });
+
+  server.setRequestHandler(CallToolRequestSchema, async (request, { signal, requestId }) => {
+    const specElicit =
+      (elicitSignal: AbortSignal, related?: string | number): ElicitFn =>
+      (params) => {
+        const combined = params.signal
+          ? AbortSignal.any([elicitSignal, params.signal])
+          : elicitSignal;
+        return server.elicitInput(
+          {
+            mode: "form",
+            message: params.message,
+            requestedSchema: params.requestedSchema,
+          } as Parameters<typeof server.elicitInput>[0],
+          {
+            signal: combined,
+            ...(related !== undefined ? { relatedRequestId: related } : {}),
+          },
+        );
+      };
+    const elicitFor = (elicitSignal: AbortSignal, related?: string | number): ElicitFn =>
+      requestSignal ? humanElicit(elicitSignal) : specElicit(elicitSignal, related);
+    // A task-augmented call returns a durable handle now and runs in the
+    // background on its own signal, so it outlives this request/transport.
+    const augmented = maybeAugmentCallTool(
+      request,
+      (taskSignal, taskCtx) =>
+        executeCallTool(request, taskSignal, taskCtx.v2Elicit ?? elicitFor(taskSignal)),
+      tasksOptions,
+    );
+    if (augmented) return augmented;
+    const liveSignal = requestSignal ? AbortSignal.any([signal, requestSignal]) : signal;
+    return executeCallTool(request, liveSignal, elicitFor(liveSignal, requestId));
   });
+
+  registerMcpTasks(server, tasksOptions);
+  registerSkillResources(server, { projectScopes: selected });
 
   server.setRequestHandler(ListPromptsRequestSchema, async () => ({
     prompts: new McpPromptStore(getSqlite()).list().map(({ name, title, description }) => ({

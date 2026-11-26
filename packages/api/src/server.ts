@@ -13,6 +13,7 @@ import { bearerAuth } from "./middleware/auth.js";
 import { auditRouter } from "./routes/audit.js";
 import { authRouter } from "./routes/auth.js";
 import { backendsRouter } from "./routes/backends.js";
+import { backgroundJobsRouter } from "./routes/background-jobs.js";
 import { channelsRouter } from "./routes/channels.js";
 import { chatRouter } from "./routes/chat.js";
 import { desktopPreviewRouter } from "./routes/desktop-preview.js";
@@ -172,6 +173,7 @@ export function createApp() {
   app.route("/api", sessionHandoffsRouter);
   app.route("/api", sessionSendRouter);
   app.route("/api", sessionMessagesRouter);
+  app.route("/api", backgroundJobsRouter);
   app.route("/api", jobsRouter);
   app.route("/api", gatewayRouter);
   app.route("/api", tagsRouter);

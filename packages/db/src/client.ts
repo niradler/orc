@@ -9,6 +9,7 @@ import { installChat } from "./chat.js";
 import { HumanRequestStore } from "./human-requests.js";
 import { installKnowledgeBases } from "./kb.js";
 import { installMcpPrompts } from "./mcp-prompts.js";
+import { installMcpTasks } from "./mcp-tasks.js";
 import { installMemories } from "./memories.js";
 import { NotificationStore } from "./notifications.js";
 import { installProjectSecrets } from "./project-secrets.js";
@@ -746,6 +747,7 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   installRules(sqlite);
   installScratchpads(sqlite);
   installMcpPrompts(sqlite);
+  installMcpTasks(sqlite);
   installWorkspaceEnvironments(sqlite);
   installProjectSecrets(sqlite);
   new HumanRequestStore(sqlite);

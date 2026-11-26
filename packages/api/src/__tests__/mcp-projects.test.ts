@@ -112,7 +112,6 @@ describe("connection-wide MCP project defaults", () => {
       "job_list",
       "memory_list",
       "context",
-      "project_list",
       "audit_list",
       "search",
     ]) {
@@ -127,6 +126,8 @@ describe("connection-wide MCP project defaults", () => {
       expect(result.text).not.toContain("needle memory beta");
     }
     expect((await rpc("?project=Alpha", "task_list")).text).toContain("needle task alpha");
+    // Discovery is never limited by the default project.
+    expect((await rpc("?project=Alpha", "project_list")).text).toContain("gamma");
   });
 
   test("should union tasks/jobs/memories and search in both full and meta modes", async () => {
@@ -136,7 +137,6 @@ describe("connection-wide MCP project defaults", () => {
         "job_list",
         "memory_list",
         "context",
-        "project_list",
         "audit_list",
         "search",
       ]) {
@@ -151,6 +151,7 @@ describe("connection-wide MCP project defaults", () => {
         expect(result.text?.toLowerCase()).toContain("beta");
         expect(result.text?.toLowerCase()).not.toContain("gamma");
       }
+      expect((await rpc(multi, "project_list", {}, meta)).text?.toLowerCase()).toContain("gamma");
       const limited = await rpc(multi, "task_list", { limit: 1 }, meta);
       expect(limited.text?.split("\n")).toHaveLength(1);
     }
@@ -185,29 +186,29 @@ describe("connection-wide MCP project defaults", () => {
     ).toContain("beta memory content");
   });
 
-  test("should default creates to the first project and allow selection inside the connection", async () => {
+  test("should default creates to the first project and allow any other project", async () => {
     for (const args of [
       { title: "default target" },
       { title: "explicit target", project: "Beta" },
+      { title: "other target", project: "Gamma" },
     ]) {
       const created = await rpc(multi, "task_create", args);
       expect(created.error).not.toBe(true);
       const row = getSqlite()
         .query<{ project_id: string }, [string]>("SELECT project_id FROM tasks WHERE title=?")
         .get(args.title);
-      expect(row?.project_id).toBe(args.project ? "beta" : "alpha");
+      expect(row?.project_id).toBe(args.project ? args.project.toLowerCase() : "alpha");
     }
-    expect(
-      (await rpc(multi, "task_create", { title: "outside target", project: "Gamma" })).error,
-    ).toBe(true);
-    expect((await rpc(multi, "context", { project_id: "gamma" })).error).toBe(true);
-    expect((await rpc(multi, "task_get", { ids: ["task-gamma"] })).text).not.toContain(
+    expect((await rpc(multi, "context", { project_id: "gamma" })).error).not.toBe(true);
+    expect((await rpc(multi, "task_get", { ids: ["task-gamma"] })).text).toContain(
       "needle task gamma",
     );
-    expect((await rpc(multi, "task_update", { id: "task-gamma", progress: 50 })).error).toBe(true);
+    expect((await rpc(multi, "task_update", { id: "task-gamma", progress: 50 })).error).not.toBe(
+      true,
+    );
   });
 
-  test("should search project knowledge plus global KBs and prevent scope-all/ID escapes", async () => {
+  test("should search project knowledge plus global KBs and let scope=all and ids reach other projects", async () => {
     for (const meta of [false, true]) {
       for (const tool of ["kb_list", "kb_search", "kb_evidence"]) {
         const result = await rpc(
@@ -220,11 +221,11 @@ describe("connection-wide MCP project defaults", () => {
         expect(result.text).toContain("alpha");
         expect(result.text).toContain("beta");
         expect(result.text).toContain("global");
-        expect(result.text).not.toContain("gamma");
+        expect(result.text).toContain("gamma");
       }
       expect((await rpc(multi, "kb_read", { id: docs.beta }, meta)).error).not.toBe(true);
-      expect((await rpc(multi, "kb_read", { id: docs.gamma }, meta)).error).toBe(true);
-      expect((await rpc(multi, "kb_documents", { kb_id: kbs.gamma }, meta)).error).toBe(true);
+      expect((await rpc(multi, "kb_read", { id: docs.gamma }, meta)).error).not.toBe(true);
+      expect((await rpc(multi, "kb_documents", { kb_id: kbs.gamma }, meta)).error).not.toBe(true);
     }
   });
 
@@ -244,11 +245,12 @@ describe("connection-wide MCP project defaults", () => {
     expect(global.text).toContain("No skills found");
   });
 
-  test("project_create is refused on a scoped connection and is retry-safe unscoped", async () => {
+  test("project_create works with default projects and is retry-safe", async () => {
     for (const meta of [false, true]) {
-      const scoped = await rpc(multi, "project_create", { name: "scoped-create" }, meta);
-      expect(scoped.error).toBe(true);
-      expect(scoped.text).toContain("unscoped connection");
+      const name = meta ? "default-meta-create" : "default-create";
+      const created = await rpc(multi, "project_create", { name }, meta);
+      expect(created.error).not.toBe(true);
+      expect(created.text).toContain(`Created project ${name} [id: `);
     }
     const created = await rpc("", "project_create", { name: "unscoped-create" });
     expect(created.error).not.toBe(true);
