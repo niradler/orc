@@ -421,7 +421,9 @@ export const SessionSpawnSchema = z
       .min(1)
       .max(200)
       .optional()
-      .describe("Branch the new worktree branches from; omitted uses the checkout's current HEAD."),
+      .describe(
+        "Branch the new worktree branches from, local (main) or remote-tracking (origin/main); omitted uses the checkout's current HEAD.",
+      ),
     title: z.string().trim().min(1).max(100).optional(),
     notify: z.boolean().default(true),
     request_id: z.string().trim().min(1).max(128).optional(),

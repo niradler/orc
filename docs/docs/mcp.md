@@ -51,7 +51,10 @@ inherit those same values even when the defaults change after the coordinator
 was created. Manual edits to a coordinator thread's own chat settings do not
 persist across MCP requests — bind with `?session=` for a fixed configuration.
 Coordinator children default `notify` to false — follow them with
-`session_wait`/`session_status`.
+`session_wait`/`session_status`. There is no push channel to an external MCP
+client: `notify: true` only makes ORC run the coordinator session's own turn to
+process the note, which is useful for a self-driving orchestrator and wasteful
+otherwise.
 The coordinator appears in Chat and Sessions like any root conversation, and
 the same ownership guardrails apply: it can steer or stop only its own
 descendants. The coordinator identity does not enable `speak` or desktop

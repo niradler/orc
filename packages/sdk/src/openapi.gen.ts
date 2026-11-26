@@ -23832,7 +23832,7 @@ export interface paths {
                          * @default false
                          */
                         worktree?: boolean;
-                        /** @description Branch the new worktree branches from; omitted uses the checkout's current HEAD. */
+                        /** @description Branch the new worktree branches from, local (main) or remote-tracking (origin/main); omitted uses the checkout's current HEAD. */
                         base?: string;
                         title?: string;
                         /** @default true */

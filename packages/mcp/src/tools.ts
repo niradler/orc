@@ -150,7 +150,7 @@ const sessionSpawnToolSchema = SessionSpawnSchema.omit({ project_id: true, notif
     .boolean()
     .optional()
     .describe(
-      "Push the child's final reply, failure, stop or human question into this session (default true; coordinator connections default to false and use session_wait/session_status instead).",
+      "Push the child's final reply, failure, stop or human question into this session (default true; coordinator connections default to false and use session_wait/session_status instead). On a coordinator connection, true makes ORC run the coordinator session's own turn to process the note.",
     ),
 });
 const memoryNameParam = z.string().min(1).max(64).describe("Memory name, e.g. 'api-port'");
