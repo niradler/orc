@@ -219,7 +219,7 @@ export const kbToolDefinitions = [
     description:
       "The digest keeps a KB current: an agent runs its instructions on a schedule (an ORC job). get: settings and " +
       "last run. template: starter instructions. set: create or change instructions, backend " +
-      "(claude or claude-cli — a digest runs with a tool whitelist, so it must be enforceable), " +
+      "(any backend; one that cannot enforce a tool whitelist runs the digest without it), " +
       "schedule {type:cron, cron} or {type:manual}, enabled. run: start now. runs: history. delete: remove the " +
       "digest and its job (confirm = the KB's exact name).",
     inputSchema: z.object({

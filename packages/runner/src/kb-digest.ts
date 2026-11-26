@@ -44,8 +44,16 @@ export type KbDigestAgentRun = {
   sessionId: string;
   timeoutMs: number;
 };
-/** error is set when the agent failed or timed out; trace keeps what it did until then. */
-export type KbDigestAgentResult = { trace: string; runtimeId: string | null; error: string | null };
+/**
+ * error is set when the agent failed or timed out; trace keeps what it did until then. warning
+ * names a backend that could not enforce the tool whitelist, so the run proceeded without it.
+ */
+export type KbDigestAgentResult = {
+  trace: string;
+  runtimeId: string | null;
+  error: string | null;
+  warning?: string | null;
+};
 export type KbDigestAgent = (run: KbDigestAgentRun) => Promise<KbDigestAgentResult>;
 
 export type KbDigestRunOptions = {
@@ -153,7 +161,10 @@ export async function runKbDigest(kbId: string, opts: KbDigestRunOptions): Promi
     ? null
     : (result.error ?? "The agent ended without digest_complete; nothing was marked as digested");
   if (failure) store.fail(claim.token, failure.slice(0, 2000));
-  const trace = result.trace.replaceAll(claim.token, "[digest claim]").slice(-8000);
+  const warning = result.warning?.trim() || null;
+  const body = result.trace.replaceAll(claim.token, "[digest claim]").slice(-8000);
+  // Keep the warning in the run's stored output even when the agent trace is long.
+  const trace = warning ? `WARNING: ${warning}\n${body}` : body;
   const note = store.row(kbId)?.last_note ?? "";
   sqlite
     .query(
@@ -169,24 +180,27 @@ export async function runKbDigest(kbId: string, opts: KbDigestRunOptions): Promi
       KB_DIGEST_AGENT,
       claim.kb.project_id,
       opts.runId,
-      `Digest of "${claim.kb.name}" ${done ? `completed: ${note}` : `failed: ${failure}`}`.slice(
-        0,
-        2000,
-      ),
+      `Digest of "${claim.kb.name}" ${done ? `completed: ${note}` : `failed: ${failure}`}${
+        warning ? ` (warning: ${warning})` : ""
+      }`.slice(0, 2000),
     );
   if (failure) throw new Error(failure);
   return note;
 }
 
-/** The refusal for a digest whose backend cannot enforce its whitelist, naming what to pick. */
-function digestBackendRefusal(requested: string, resolved: string): string {
+/**
+ * The warning for a digest whose resolved backend cannot enforce its tool whitelist. Choosing
+ * such a backend is valid: the run continues without the whitelist, and this names the backend
+ * the run actually got so the warning is actionable.
+ */
+export function digestWhitelistWarning(requested: string, resolved: string): string {
   const capable = toolAllowlistBackends();
   const via = resolved === requested ? "" : `, which runs on "${resolved}"`;
   return (
-    `Digest backend "${requested}"${via} cannot enforce this digest's tool whitelist, so the run` +
-    ` is refused instead of running unrestricted; change the digest backend${
-      capable.length ? ` to ${capable.join(" or ")}` : ""
-    } in the knowledge base's digest settings.`
+    `Digest backend "${requested}"${via} cannot enforce the digest's tool whitelist;` +
+    ` the digest runs without it.${
+      capable.length ? ` Choose ${capable.join(" or ")} to enforce it.` : ""
+    }`
   );
 }
 
@@ -201,12 +215,13 @@ export async function runKbDigestAgent(run: KbDigestAgentRun): Promise<KbDigestA
       "This is an assigned knowledge base digest. Follow the digest's instructions and rules in the prompt. Do not call startup context. MCP tool schemas are loaded for this session.",
     toolAllowlist: KB_DIGEST_TOOLS,
   };
-  // A digest stored before its backend was checked can still name one that cannot enforce the
-  // whitelist, and a backend can be rerouted by the session factory ("claude" falls back to acpx
-  // when its preflight fails). Judge the backend this run would actually get, so the refusal
-  // names the real cause instead of the generic unrestricted-session error.
+  // A backend can be rerouted by the session factory ("claude" falls back to acpx when its
+  // preflight fails). Judge the backend this run would actually get so the warning names the
+  // real backend, then continue: an incapable backend is a valid choice, just without the
+  // whitelist.
   const { allowed, resolved } = await resolveToolAllowlistSupport(run.backend, sessionOpts);
-  if (!allowed) throw new Error(digestBackendRefusal(run.backend, resolved));
+  const warning = allowed ? null : digestWhitelistWarning(run.backend, resolved);
+  if (warning) logger.warn(warning);
   const sqlite = getSqlite();
   let session: AgentSession | undefined;
   let expired = false;
@@ -260,5 +275,5 @@ export async function runKbDigestAgent(run: KbDigestAgentRun): Promise<KbDigestA
         logger.warn(`Closing digest session ${run.sessionId} failed: ${String(err)}`),
       );
   }
-  return { trace, runtimeId: runtimeId ?? session?.id ?? null, error: failure };
+  return { trace, runtimeId: runtimeId ?? session?.id ?? null, error: failure, warning };
 }

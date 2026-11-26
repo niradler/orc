@@ -462,7 +462,7 @@ export function kbCommand() {
     )
     .option(
       "-b, --backend <name>",
-      "Digest backend: claude or claude-cli (a digest runs with a tool whitelist)",
+      "Digest backend (one that cannot enforce a tool whitelist runs the digest without it)",
     )
     .option("--cron <expr>", "Run on this cron schedule")
     .option("--manual", "Run only when started")

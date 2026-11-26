@@ -9,8 +9,8 @@ export { DOCLING_FORMATS, doclingApproxBytes } from "./parsers/docling.js";
 export { PARSER_WORKER_COMMAND, runParserWorker } from "./parsers/worker.js";
 export { citationOf, parseCitation, snippet } from "./search.js";
 export {
-  assertDigestBackend,
   DEFAULT_SOURCE_PATTERN,
+  digestBackendWarning,
   type DocumentReadOptions,
   KB_UPLOAD_FORMATS,
   type KbDeleteOptions,

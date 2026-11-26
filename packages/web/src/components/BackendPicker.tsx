@@ -18,11 +18,10 @@ interface BackendPickerProps {
   onChange: (value: string) => void;
   testId?: string;
   /**
-   * List only the backends that can enforce a session tool whitelist, and drop the "Default"
-   * entry when the configured default cannot. A KB digest always runs with a whitelist, so
-   * anything else is a choice the server has to refuse.
+   * Mark backends that cannot enforce a session tool whitelist. A KB digest asks for one but
+   * still runs without it, so this is a warning, not a filter: every backend stays selectable.
    */
-  requireToolAllowlist?: boolean;
+  warnToolAllowlist?: boolean;
 }
 
 /**
@@ -31,25 +30,12 @@ interface BackendPickerProps {
  * the task fail. The list is probed server-side, so it also says which backends
  * are usable *right now* and what a missing one needs.
  */
-export function BackendPicker({
-  value,
-  onChange,
-  testId,
-  requireToolAllowlist,
-}: BackendPickerProps) {
+export function BackendPicker({ value, onChange, testId, warnToolAllowlist }: BackendPickerProps) {
   const id = useId();
   const { data, isLoading } = useBackends();
   const all = data?.backends ?? [];
   const defaultBackend = data?.default_backend;
-  // A stored backend that cannot enforce the whitelist stays listed: hiding it would show an
-  // empty picker for a digest saved before the rule existed, with no way to see what to fix.
-  const backends = requireToolAllowlist
-    ? all.filter((backend) => backend.tool_allowlist || backend.name === value)
-    : all;
-  const defaultUsable =
-    !requireToolAllowlist ||
-    all.some((backend) => backend.name === defaultBackend && backend.tool_allowlist);
-  const selected = backends.find((b) => b.name === value);
+  const selected = all.find((b) => b.name === value);
 
   return (
     <div className="space-y-1.5">
@@ -65,12 +51,10 @@ export function BackendPicker({
           <SelectValue />
         </SelectTrigger>
         <SelectContent className="bg-surface-highest border-surface-highest max-h-72">
-          {defaultUsable && (
-            <SelectItem value={USE_DEFAULT_BACKEND} className="font-label text-xs">
-              {defaultBackend ? `Default (${defaultBackend})` : "Default"}
-            </SelectItem>
-          )}
-          {backends.map((backend) => (
+          <SelectItem value={USE_DEFAULT_BACKEND} className="font-label text-xs">
+            {defaultBackend ? `Default (${defaultBackend})` : "Default"}
+          </SelectItem>
+          {all.map((backend) => (
             <SelectItem
               key={backend.name}
               value={backend.name}
@@ -82,12 +66,15 @@ export function BackendPicker({
               <span className={backend.available ? "text-secondary" : "text-error"}>
                 {backend.available ? " ● ready" : " ○ unavailable"}
               </span>
+              {warnToolAllowlist && !backend.tool_allowlist && (
+                <span className="text-warning"> · no whitelist</span>
+              )}
             </SelectItem>
           ))}
         </SelectContent>
       </Select>
       <p className="font-body text-xs text-outline" data-testid="backend-picker-hint">
-        {isLoading ? "" : hint(value, selected, defaultBackend, all, requireToolAllowlist)}
+        {isLoading ? "" : hint(value, selected, defaultBackend, all, warnToolAllowlist)}
       </p>
     </div>
   );
@@ -103,15 +90,14 @@ type Backend = {
 
 /**
  * The backend a digest should start on: the configured default when it can enforce the digest's
- * tool whitelist, otherwise the first capable backend that is usable right now. Preferring a
- * usable one matters twice: it is the choice that actually runs, and a backend that fails its
- * preflight can be rerouted to one that cannot enforce the whitelist.
+ * tool whitelist, otherwise the first capable backend that is usable right now. This is only a
+ * suggestion; any backend can be chosen, and one that cannot enforce the whitelist still runs.
  */
 export function suggestDigestBackend(
   data: { backends: Backend[]; default_backend: string } | undefined,
 ): string {
   const capable = (data?.backends ?? []).filter((backend) => backend.tool_allowlist);
-  // Nothing capable is installed: leave the default and let the save explain itself.
+  // Nothing capable is installed: leave the default. The digest runs there without a whitelist.
   if (!capable.length) return USE_DEFAULT_BACKEND;
   if (data && capable.some((backend) => backend.name === data.default_backend))
     return USE_DEFAULT_BACKEND;
@@ -123,16 +109,16 @@ function hint(
   selected: Backend | undefined,
   defaultBackend: string | undefined,
   backends: Backend[],
-  requireToolAllowlist?: boolean,
+  warnToolAllowlist?: boolean,
 ): string {
-  const capable = backends.filter((backend) => backend.tool_allowlist);
-  const choose = capable.map((backend) => backend.name).join(" or ");
+  const enforce = backends
+    .filter((backend) => backend.tool_allowlist)
+    .map((backend) => backend.name);
+  const enforceHint = enforce.length ? ` ${enforce.join(" or ")} would enforce it.` : "";
   if (value === USE_DEFAULT_BACKEND) {
     const fallback = backends.find((b) => b.name === defaultBackend);
-    if (requireToolAllowlist && fallback && !fallback.tool_allowlist) {
-      return `The default backend "${defaultBackend}" cannot enforce a digest's tool whitelist${
-        choose ? `; choose ${choose}` : ""
-      }.`;
+    if (warnToolAllowlist && fallback && !fallback.tool_allowlist) {
+      return `The default backend "${defaultBackend}" cannot enforce a digest's tool whitelist; the digest will run without it.${enforceHint}`;
     }
     if (fallback && !fallback.available) {
       return `The default backend "${defaultBackend}" is not usable: ${fallback.error ?? fallback.requires}`;
@@ -140,20 +126,15 @@ function hint(
     return defaultBackend ? `Runs on ${defaultBackend}.` : "Runs on the configured default.";
   }
   if (!selected) {
-    // A digest cannot run on a name that is not a registered backend: it reaches its agent
-    // through acpx, which ignores the digest's tool whitelist.
-    if (requireToolAllowlist)
-      return `"${value}" cannot enforce a digest's tool whitelist${
-        choose ? `; choose ${choose}` : ""
-      }.`;
     // Any other name is passed to acpx as its agent identifier - that is how
     // gemini, codex and friends are reached, so it is not an error.
-    return `"${value}" is not a registered backend; it will be passed to acpx as an agent name.`;
+    const passed = `"${value}" is not a registered backend; it will be passed to acpx as an agent name.`;
+    return warnToolAllowlist
+      ? `${passed} A digest runs it without the tool whitelist.${enforceHint}`
+      : passed;
   }
-  if (requireToolAllowlist && !selected.tool_allowlist) {
-    return `"${value}" cannot enforce a digest's tool whitelist${
-      choose ? `; choose ${choose}` : ""
-    }.`;
+  if (warnToolAllowlist && !selected.tool_allowlist) {
+    return `"${value}" cannot enforce a digest's tool whitelist; the digest will run without it.${enforceHint}`;
   }
   if (!selected.available) return selected.error ?? `Needs ${selected.requires}`;
   return selected.requires || "Ready.";

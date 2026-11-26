@@ -912,9 +912,9 @@ export function DigestDialog({
   const backends = useBackends();
   const template = useKbDigestTemplate(!digest);
   const [instructions, setInstructions] = useState<string | null>(digest?.instructions ?? null);
-  // Null until the user picks. A new digest opens on the default backend only when that backend
-  // can enforce the digest's tool whitelist; otherwise it opens on one that can, so the first
-  // Save on a codex-default install is not a guaranteed 400.
+  // Null until the user picks. A new digest prefers a backend that can enforce its tool
+  // whitelist when one is installed, but any backend may be chosen: the digest then runs
+  // without the whitelist and the picker says so.
   const [chosenBackend, setChosenBackend] = useState<string | null>(digest?.backend ?? null);
   const backend = chosenBackend ?? suggestDigestBackend(backends.data);
   const [schedule, setSchedule] = useState(() =>
@@ -956,7 +956,7 @@ export function DigestDialog({
           value={backend}
           onChange={setChosenBackend}
           testId="kb-digest-backend"
-          requireToolAllowlist
+          warnToolAllowlist
         />
         <Field label="Instructions">
           {ready ? (

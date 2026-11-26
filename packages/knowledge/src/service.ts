@@ -1,7 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { readFileSync, statSync } from "node:fs";
 import { basename, extname, sep } from "node:path";
-import { backendSupportsToolAllowlist, toolAllowlistBackends } from "@orc/agent-runtime";
+import { backendSupportsToolAllowlist } from "@orc/agent-runtime";
 import { changes } from "@orc/core/changes";
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { ulid } from "@orc/core/ids";
@@ -212,17 +212,14 @@ type DigestJoin = {
 };
 
 /**
- * A digest always runs with a tool whitelist, so reject a backend that cannot enforce one instead
- * of scheduling a job that fails on every run. Every path that turns a digest on calls this: the
- * digest settings and the job page, which may enable the job without going through `setDigest`.
+ * A digest asks its backend to restrict the agent to an explicit tool whitelist. Not every
+ * backend can enforce one; those still run the digest, just with their own tool set. Choosing
+ * one is valid, so this is a warning for display (settings, jobs page, run output), never a
+ * rejection. Null means the backend enforces the whitelist.
  */
-export function assertDigestBackend(backend: string): void {
-  if (backendSupportsToolAllowlist(backend)) return;
-  const capable = toolAllowlistBackends();
-  throw new ValidationError(
-    `Backend "${backend}" cannot enforce a digest's tool whitelist.` +
-      (capable.length ? ` Choose ${capable.join(" or ")}.` : ""),
-  );
+export function digestBackendWarning(backend: string): string | null {
+  if (backendSupportsToolAllowlist(backend)) return null;
+  return `Backend "${backend}" cannot enforce a digest's tool whitelist; the digest runs without the whitelist.`;
 }
 
 /**
@@ -1111,9 +1108,6 @@ export class KnowledgeService {
       existing?.schedule ?? { type: "cron", cron: KB_DIGEST_DEFAULT_CRON };
     const enabled = input.enabled ?? existing?.enabled ?? true;
     const backend = input.backend ?? existing?.backend ?? this.defaultBackend();
-    // The digest reads untrusted session text and comments, so it always runs with an explicit
-    // tool whitelist; a backend that cannot enforce one would run it unrestricted.
-    if (enabled) assertDigestBackend(backend);
     const timeout = input.timeout_secs ?? existing?.timeout_secs ?? DIGEST_TIMEOUT_SECS;
     const cron = schedule.type === "cron" ? schedule.cron : null;
     const now = Date.now();
@@ -1187,7 +1181,6 @@ export class KnowledgeService {
     if (!row) throw new NotFoundError("Digest", kbId);
     if (!this.jobHooks)
       throw new ValidationError("Digest runs start in the ORC daemon; call the ORC API");
-    assertDigestBackend(row.backend);
     const runId = await this.jobHooks.run(row.job_id, ctx.source);
     this.audit(ctx, "kb.digest.started", [kbId, runId], kb.project_id);
     return { run_id: runId };
@@ -1254,9 +1247,10 @@ export class KnowledgeService {
       kb.id,
       Date.now(),
     ]);
-    // A starter digest only exists when the default backend can enforce its whitelist; otherwise
-    // leave the KB digest-free so "Set up" lets the user pick a capable backend.
-    if (backendSupportsToolAllowlist(this.defaultBackend())) this.setDigest(ctx, kb.id, {});
+    // The starter digest runs on the default backend. If that backend cannot enforce the digest's
+    // tool whitelist it still runs, without the whitelist, which the settings and run output warn
+    // about; the user may switch to a capable backend at any time.
+    this.setDigest(ctx, kb.id, {});
     return kb.id;
   }
 
