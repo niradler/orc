@@ -425,7 +425,7 @@ Short project facts (ports, conventions, decisions) that agents load at session 
 
 ![Knowledge](/screens/knowledge.png)
 
-Knowledge bases: upload PDFs, Office files, HTML, CSV and Markdown, write Markdown in place, or register a folder to copy in. Search returns cited passages. Each knowledge base can have a digest agent that maintains it on a schedule; because a digest runs with a tool whitelist, its backend must be able to enforce one (`claude` or `claude-cli`).
+Knowledge bases: upload PDFs, Office files, HTML, CSV and Markdown, write Markdown in place, or register a folder to copy in. Search returns cited passages. Each knowledge base can have a digest agent that maintains it on a schedule. The digest asks for a tool whitelist; `claude` and `claude-cli` enforce it, while another backend runs the digest without it (the picker marks those and the run warns).
 
 ## Jobs
 
