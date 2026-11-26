@@ -714,11 +714,17 @@ describe("MCP tool schemas", () => {
   });
 });
 
+// Commands run through the host shell (sh on POSIX, cmd on Windows).
+const detachedEcho = (text: string): string =>
+  process.platform === "win32"
+    ? `echo "${text}" & ping -n 21 127.0.0.1 >nul`
+    : `echo "${text}"; sleep 20`;
+
 describe("MCP detached shell tools", () => {
   test("shell_run starts detached command, shell_status reads output, shell_list lists it, and shell_stop stops it", async () => {
     const started = JSON.parse(
       await executeTool("shell_run", {
-        command: 'echo "mcp-shell-ok"; sleep 20',
+        command: detachedEcho("mcp-shell-ok"),
         cwd: process.cwd(),
         label: "mcp-shell-test",
       }),
@@ -765,7 +771,7 @@ describe("MCP detached shell tools", () => {
     const jobA = JSON.parse(
       await executeTool(
         "shell_run",
-        { command: 'echo "secret-a"; sleep 20', cwd: process.cwd(), label: "job-a" },
+        { command: detachedEcho("secret-a"), cwd: process.cwd(), label: "job-a" },
         scopeA,
       ),
     ) as { id: string; project_id: string | null };

@@ -101,54 +101,17 @@ const POSIX_WRAPPER = [
   'exit "$code"',
 ].join("\n");
 
-const WIN32_PS_WRAPPER = [
-  "$cmd = $env:ORC_BG_CMD",
-  "$log = $env:ORC_BG_LOG",
-  "$exitFile = $env:ORC_BG_EXIT",
-  "Remove-Item Env:ORC_BG_CMD,Env:ORC_BG_LOG,Env:ORC_BG_EXIT -ErrorAction SilentlyContinue",
-  "$utf8 = New-Object System.Text.UTF8Encoding($false)",
-  "$code = 1",
-  "$fsOut = $null",
-  "$fsErr = $null",
-  "$proc = $null",
-  "try {",
-  "  $fsOut = New-Object System.IO.FileStream($log, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite, 1)",
-  "  $fsErr = New-Object System.IO.FileStream($log, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite, 1)",
-  "  $psi = New-Object System.Diagnostics.ProcessStartInfo",
-  "  $psi.FileName = 'cmd.exe'",
-  `  $psi.Arguments = '/d /s /c "' + $cmd + '"'`,
-  "  $psi.WorkingDirectory = (Get-Location).ProviderPath",
-  "  $psi.UseShellExecute = $false",
-  "  $psi.CreateNoWindow = $true",
-  "  $psi.RedirectStandardOutput = $true",
-  "  $psi.RedirectStandardError = $true",
-  "  $proc = New-Object System.Diagnostics.Process",
-  "  $proc.StartInfo = $psi",
-  "  [void]$proc.Start()",
-  "  $tOut = $proc.StandardOutput.BaseStream.CopyToAsync($fsOut, 4096)",
-  "  $tErr = $proc.StandardError.BaseStream.CopyToAsync($fsErr, 4096)",
-  "  $proc.WaitForExit()",
-  "  $tOut.GetAwaiter().GetResult()",
-  "  $tErr.GetAwaiter().GetResult()",
-  "  $code = [int]$proc.ExitCode",
-  "} catch {",
-  "  $errBytes = $utf8.GetBytes($_.Exception.Message + [Environment]::NewLine)",
-  "  if ($null -ne $fsErr) { $fsErr.Write($errBytes, 0, $errBytes.Length) }",
-  "  $code = 1",
-  "} finally {",
-  "  if ($null -ne $fsOut) { try { $fsOut.Flush(); $fsOut.Dispose() } catch {} }",
-  "  if ($null -ne $fsErr) { try { $fsErr.Flush(); $fsErr.Dispose() } catch {} }",
-  "  if ($null -ne $proc) { try { $proc.Dispose() } catch {} }",
-  "  $ms = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()",
-  "  $payload = @{ exit_code = $code; signal = $null; finished_at = $ms } | ConvertTo-Json -Compress",
-  '  $tmp = "$exitFile.tmp.$PID"',
-  "  [System.IO.File]::WriteAllText($tmp, $payload, $utf8)",
-  "  Move-Item -LiteralPath $tmp -Destination $exitFile -Force",
-  "}",
-  "exit $code",
-].join("\n");
-
-const WIN32_PS_ENCODED = Buffer.from(WIN32_PS_WRAPPER, "utf16le").toString("base64");
+// Windows runs the command from a batch file so it survives `exit N` in the user
+// command, and the nested cmd opens the log itself: PowerShell never starts under
+// the detached spawn, and a process started by our direct child cannot inherit its
+// stdout handle. Batch cannot format an epoch, so the exit file records 0 and the
+// reader falls back to its mtime.
+const WIN32_RUNNER = [
+  "@echo off",
+  '"%ComSpec%" /d /s /c ""%~dp0command.cmd" >> "%~dp0output.log" 2>&1"',
+  '> "%~dp0exit.tmp" echo {"exit_code":%errorlevel%,"signal":null,"finished_at":0}',
+  'move /y "%~dp0exit.tmp" "%~dp0exit.json" >nul 2>&1',
+].join("\r\n");
 
 export function backgroundJobsDir(rootDir?: string): string {
   return rootDir ? resolve(rootDir) : join(orcHome(), "background-jobs");
@@ -188,7 +151,9 @@ function readMetaRaw(id: string, rootDir?: string): BackgroundJobRecord | null {
 
 function readExitFile(id: string, rootDir?: string): z.infer<typeof ExitFileSchema> | null {
   try {
-    return ExitFileSchema.parse(JSON.parse(readFileSync(exitPath(id, rootDir), "utf8")));
+    const file = exitPath(id, rootDir);
+    const exit = ExitFileSchema.parse(JSON.parse(readFileSync(file, "utf8")));
+    return { ...exit, finished_at: exit.finished_at || Math.round(statSync(file).mtimeMs) };
   } catch {
     return null;
   }
@@ -259,6 +224,25 @@ function reconcileRecord(record: BackgroundJobRecord, rootDir?: string): Backgro
   return record;
 }
 
+function spawnWindowsRunner(
+  dir: string,
+  command: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+): ReturnType<typeof spawn> {
+  writeFileSync(join(dir, "command.cmd"), `@echo off\r\n${command}\r\n`, { mode: 0o700 });
+  const runner = join(dir, "runner.cmd");
+  writeFileSync(runner, `${WIN32_RUNNER}\r\n`, { mode: 0o700 });
+  return spawn(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `""${runner}""`], {
+    cwd,
+    env,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+    windowsVerbatimArguments: true,
+  });
+}
+
 export function startBackgroundJob(
   input: BackgroundJobStartInput,
   rootDir?: string,
@@ -291,31 +275,7 @@ export function startBackgroundJob(
   const env = parsed.env ? { ...process.env, ...parsed.env } : process.env;
   const child =
     process.platform === "win32"
-      ? spawn(
-          "powershell.exe",
-          [
-            "-NoProfile",
-            "-NonInteractive",
-            "-WindowStyle",
-            "Hidden",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-EncodedCommand",
-            WIN32_PS_ENCODED,
-          ],
-          {
-            cwd,
-            env: {
-              ...env,
-              ORC_BG_CMD: parsed.command,
-              ORC_BG_LOG: outputLog,
-              ORC_BG_EXIT: exitFile,
-            },
-            detached: true,
-            stdio: "ignore",
-            windowsHide: true,
-          },
-        )
+      ? spawnWindowsRunner(dir, parsed.command, cwd, env)
       : spawn("/bin/sh", ["-c", POSIX_WRAPPER, "--", parsed.command, outputLog, exitFile], {
           cwd,
           env,

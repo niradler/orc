@@ -434,8 +434,12 @@ describe("session stability (#565, #566, #567)", () => {
   });
 
   test("#566: /api/background-jobs starts, inspects, logs, and stops detached shell jobs", async () => {
+    const command =
+      process.platform === "win32"
+        ? 'echo "detached-ok" & ping -n 21 127.0.0.1 >nul'
+        : 'echo "detached-ok"; sleep 20';
     const startRes = await req("POST", "/background-jobs", {
-      command: 'echo "detached-ok"; sleep 20',
+      command,
       cwd: workDir,
       label: "api detached test",
     });
