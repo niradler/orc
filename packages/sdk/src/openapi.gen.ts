@@ -7675,6 +7675,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -7823,6 +7825,8 @@ export interface paths {
                                 description?: string;
                                 /** @default true */
                                 required?: boolean;
+                                /** @default false */
+                                allow_secret_ref?: boolean;
                             }[];
                             /** @default 60 */
                             timeout_seconds?: number;
@@ -7918,6 +7922,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -8088,6 +8094,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -8264,6 +8272,8 @@ export interface paths {
                                             description?: string;
                                             /** @default true */
                                             required: boolean;
+                                            /** @default false */
+                                            allow_secret_ref: boolean;
                                         }[];
                                         /** @default 60 */
                                         timeout_seconds: number;
@@ -8446,6 +8456,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -8647,6 +8659,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -8828,6 +8842,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -8988,6 +9004,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -9169,6 +9187,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -9347,6 +9367,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -9525,6 +9547,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;
@@ -15302,6 +15326,8 @@ export interface paths {
                                         description?: string;
                                         /** @default true */
                                         required: boolean;
+                                        /** @default false */
+                                        allow_secret_ref: boolean;
                                     }[];
                                     /** @default 60 */
                                     timeout_seconds: number;

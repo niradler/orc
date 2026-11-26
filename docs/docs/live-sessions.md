@@ -54,8 +54,12 @@ its own notifications and usage.
 
 The list shows only sessions that can be opened. An ended Claude, Codex, Gemini or
 Pi session leaves it when its transcript file is gone, including a session that
-ended before any prompt was sent, and returns when the file comes back. A task's
-session list keeps its linked sessions either way. A Codex
+ended before any prompt was sent, and returns when the file comes back. A Pi session
+file that exists but holds no message — the file Pi creates when it launches — is
+not listed either, so a Pi started without a prompt leaves no empty row once it ends.
+While an older `@orc/pi` still has such a Pi open, that row stays in the list as idle or
+running: the live registration, not the transcript, carries its status, and it leaves
+when Pi exits. A task's session list keeps its linked sessions either way. A Codex
 rollout compressed in place (`.jsonl.zst`) stays listed and opens as before. Codex's
 own review and approval runs are not listed. Titles skip slash-command and IDE
 wrappers and terminal color codes, and a Cursor chat whose title was never generated
@@ -198,9 +202,11 @@ envelope.
 
 The same queue is available to agents through the `session_send` MCP tool
 (ORC-managed sessions bind the connection automatically with `?session=<session id>`
-and `X-ORC-Session`, and stdio MCP reads `ORC_SESSION_ID`; an explicitly unbound
-MCP client can still `queue` via the human-relay fallback, while `steer` and
-`interrupt` require a bound ancestor session) and to chat channels with `/send <session id> <message>`.
+and `X-ORC-Session`, and stdio MCP reads `ORC_SESSION_ID`; an authenticated
+unbound HTTP connection sends as its coordinator session, and other explicitly
+unbound MCP clients can still `queue` via the human-relay fallback, while
+`steer` and `interrupt` require a bound ancestor session) and to chat channels
+with `/send <session id> <message>`.
 Agent-origin sends default to `mode: "queue"`; `steer` and `interrupt` are
 explicit choices. The delivery receipt reports `queued`, `steered`, `resumed`,
 `failed`, or `unsupported` so callers do not need to poll.
@@ -260,6 +266,18 @@ Guardrails:
   for that pair.
 - A chain of started sessions stops at three levels, and a session can start
   at most ten sessions an hour.
+
+External coordinators: an authenticated MCP HTTP client without `?session=`
+gets a lightweight coordinator session (one per `?client=<name>`, reused across
+requests) and can drive the same tools — `session_start` returns
+`coordinator_session_id` plus the Settings `defaults` (children keep inheriting
+the live defaults even after they change), children default `notify` to false,
+and `session_wait`/`session_status`/`session_read` follow them. The client name
+is attribution, not a security boundary: any holder of the shared API secret
+may claim any name, and coordinators are never garbage-collected — each name
+leaves a permanent root session, and unnamed clients share the default `mcp`
+coordinator and its hourly spawn limit. See [MCP →
+Transports](./mcp.md#transports).
 
 Chat and the session detail show the lineage: **Started by** links the parent,
 and **Started N sessions** lists the children, including the worker sessions

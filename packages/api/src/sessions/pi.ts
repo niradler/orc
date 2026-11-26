@@ -115,6 +115,7 @@ export function piAdapter(
       );
       const files = listings.flat();
       const seen = new Set<string>();
+      const empty = new Set<string>();
       for (const file of files) {
         if (seen.has(file.path)) continue;
         seen.add(file.path);
@@ -126,7 +127,14 @@ export function piAdapter(
           continue;
         }
         const parsed = parsePiSession(content);
-        if (!parsed) continue;
+        // Pi creates the session file before the first prompt and writes its header with
+        // the first turn. A file holding no session, or no message, cannot be opened, so
+        // it leaves the list the way a deleted transcript does instead of becoming an
+        // empty row for every Pi that was launched.
+        if (!parsed || parsed.messages.length === 0) {
+          empty.add(file.path);
+          continue;
+        }
         const prompt = piText(
           parsed.messages.find((item) => item.message.role === "user")?.message.content,
         );
@@ -163,6 +171,16 @@ export function piAdapter(
         records.push(record);
       }
       const listed = new Set(records.map((record) => record.externalId));
+      // Two roots can hold a file for one session id, and only one of them is empty.
+      // Nulling the stored path then would overwrite the readable copy, which keeps its
+      // row, so an empty copy only hides a session that was not listed at all.
+      for (const { session } of known.values())
+        if (
+          session?.transcriptPath &&
+          !listed.has(session.externalId) &&
+          empty.has(session.transcriptPath)
+        )
+          records.push({ ...session, transcriptPath: null });
       for (const record of await droppedTranscripts(
         known,
         seen,

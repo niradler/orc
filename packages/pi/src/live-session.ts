@@ -1,4 +1,4 @@
-import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export type PiLiveSession = {
@@ -7,6 +7,12 @@ export type PiLiveSession = {
   transcriptPath?: string | undefined;
   createdAt: number;
 };
+
+export function removePiLiveSession(dir: string, id: string): void {
+  try {
+    rmSync(join(dir, `pi-${id}.json`), { force: true });
+  } catch {}
+}
 
 export function writePiLiveSession(
   dir: string,
