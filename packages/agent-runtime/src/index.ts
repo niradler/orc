@@ -34,6 +34,7 @@ export type {
   AgentBackendName,
   AgentEvent,
   AgentSession,
+  AgentUnexpectedExit,
   BackendDescription,
   BackendKind,
   ImageAttachment,

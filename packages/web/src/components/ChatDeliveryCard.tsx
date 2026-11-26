@@ -53,6 +53,14 @@ function outcomeDisplay(delivery: SessionDelivery): {
       key: "waiting",
     };
   }
+  if (delivery.outcome === "interrupted") {
+    return {
+      label: "Interrupted",
+      tone: "text-warning font-medium",
+      borderAccent: "border-l-2 border-l-warning",
+      key: "interrupted",
+    };
+  }
   if (delivery.outcome === "stopped") {
     return {
       label: "Stopped",
@@ -72,7 +80,7 @@ function outcomeDisplay(delivery: SessionDelivery): {
 function DeliveryOutcomeIcon({ outcome }: { outcome: SessionDeliveryOutcome | "relay" }) {
   if (outcome === "failed")
     return <CircleX aria-hidden="true" size={14} className="shrink-0 text-error" />;
-  if (outcome === "waiting")
+  if (outcome === "waiting" || outcome === "interrupted")
     return <CircleAlert aria-hidden="true" size={14} className="shrink-0 text-warning" />;
   if (outcome === "finished")
     return (

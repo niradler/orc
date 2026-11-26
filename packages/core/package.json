@@ -28,6 +28,7 @@
     "./chat-lease": "./src/chat-lease.ts",
     "./chat-options": "./src/chat-options.ts",
     "./chat-ui": "./src/chat-ui.ts",
+    "./background-jobs": "./src/background-jobs.ts",
     "./mcp-prompts": "./src/mcp-prompts.ts",
     "./mcp-settings": "./src/mcp-settings.ts",
     "./process-supervisor": "./src/process-supervisor.ts",

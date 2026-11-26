@@ -469,6 +469,10 @@ function useChatStore(desktopViewport: boolean) {
         update(key, (tab) => ({
           thread: tab.thread ? { ...tab.thread, capabilities: event.capabilities } : tab.thread,
         }));
+      else if (event.type === "model")
+        update(key, (tab) => ({
+          thread: tab.thread ? { ...tab.thread, runtimeModel: event.model } : tab.thread,
+        }));
       else if (event.type === "text")
         update(key, (tab) => ({ streamText: tab.streamText + event.text }));
       else if (event.type === "narration")

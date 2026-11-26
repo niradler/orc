@@ -16,6 +16,9 @@ import {
 import {
   CHAT_SUBAGENT_DONE,
   ChatAnswersSchema,
+  type ChatBackgroundTask,
+  type ChatBackgroundTaskKind,
+  type ChatLostBackgroundWorkItem,
   type ChatQuestion,
   ChatQuestionSchema,
   type ChatSubagentPayload,
@@ -56,6 +59,7 @@ import {
   type AgentBackend,
   type AgentEvent,
   type AgentSession,
+  type AgentUnexpectedExit,
   type BackendDescription,
   type LivePermissionMode,
   type PermissionResult,
@@ -255,19 +259,77 @@ class TurnInput implements AsyncIterable<SDKUserMessage> {
   }
 }
 
+const STDERR_TAIL_MAX = 4096;
+
+function resolveObservedModel(candidate: unknown): string | undefined {
+  if (typeof candidate !== "string") return undefined;
+  const trimmed = candidate.trim();
+  if (!trimmed || trimmed === "<synthetic>") return undefined;
+  return trimmed;
+}
+
+function singleModelUsageKey(modelUsage: unknown): string | undefined {
+  if (!modelUsage || typeof modelUsage !== "object") return undefined;
+  const keys = Object.keys(modelUsage as Record<string, unknown>).filter(
+    (key) => key.trim().length > 0 && key !== "<synthetic>",
+  );
+  return keys.length === 1 ? keys[0] : undefined;
+}
+
+function extractToolInputSummary(
+  name: string,
+  input: unknown,
+): { name: string; command?: string; description?: string } {
+  if (!input || typeof input !== "object") return { name };
+  const record = input as Record<string, unknown>;
+  const command = typeof record.command === "string" ? record.command.slice(0, 1000) : undefined;
+  const description =
+    typeof record.description === "string" ? record.description.slice(0, 500) : undefined;
+  return {
+    name,
+    ...(command ? { command } : {}),
+    ...(description ? { description } : {}),
+  };
+}
+
+function backgroundTaskKind(
+  taskType: string | undefined,
+  toolName: string | undefined,
+): ChatBackgroundTaskKind {
+  if (toolName === "Monitor" || taskType === "monitor") return "monitor";
+  if (taskType === "local_bash") return "shell";
+  return "task";
+}
+
 type ClaudeTurn = {
-  readonly controller: AbortController;
-  readonly input: TurnInput;
-  query: Query | undefined;
   stopping: boolean;
   /** Final result emitted or interrupt decided; no further input is accepted. */
   closing: boolean;
+  wroteText: boolean;
+  streamedText: boolean;
+  lastResult: SDKResultMessage | undefined;
   /**
    * Steers written to the CLI but not yet answered by a result. The CLI queues
    * mid-turn input and runs it as a continuation of the same query, so the
    * turn stays open until every delivered steer has had its run.
    */
   readonly pendingSteers: Set<string>;
+};
+
+type ClaudeStream = {
+  readonly controller: AbortController;
+  readonly input: TurnInput;
+  query: Query | undefined;
+  turn: ClaudeTurn | null;
+  closed: boolean;
+  intentionalClose: boolean;
+  stderrTail: string;
+  initModel: string | undefined;
+  observedModel: string | undefined;
+  readonly subagents: Map<string, ChatSubagentPayload>;
+  readonly backgroundTasks: Map<string, ChatBackgroundTask>;
+  readonly awaitingTaskNotifications: Set<string>;
+  readonly toolInputs: Map<string, { name: string; command?: string; description?: string }>;
   finished: Promise<void>;
 };
 
@@ -275,6 +337,7 @@ class ClaudeSDKSession implements AgentSession {
   readonly capabilities = CLAUDE_CAPABILITIES;
   readonly id = ulid();
   readonly systemPromptSlot = true;
+  readonly reusable: boolean;
 
   private runtimeSessionId: string | undefined;
   /** The first query resumes the source with `forkSession`; later queries resume the new id. */
@@ -293,14 +356,17 @@ class ClaudeSDKSession implements AgentSession {
     string,
     { question: ChatQuestion; resolve: (answers: Record<string, string[]> | null) => void }
   >();
+  private readonly unexpectedExitListeners = new Set<(info: AgentUnexpectedExit) => void>();
+  private stream: ClaudeStream | null = null;
   private turn: ClaudeTurn | null = null;
   private sendChain: Promise<void> = Promise.resolve();
-  private readonly opts: SessionOpts;
+  private opts: SessionOpts;
   private readonly host: ExecHost;
 
   constructor(opts: SessionOpts, host: ExecHost) {
     this.opts = opts;
     this.host = host;
+    this.reusable = Boolean(opts.resident);
     this.runtimeSessionId = opts.runtimeSessionId;
     this.forkPending = !!opts.forkSourceRuntimeId;
   }
@@ -312,11 +378,11 @@ class ClaudeSDKSession implements AgentSession {
   }
 
   private async waitForQuestion(
-    turn: ClaudeTurn,
+    stream: ClaudeStream,
     question: ChatQuestion,
     signal: AbortSignal,
   ): Promise<Record<string, string[]> | null> {
-    const push = (event: AgentEvent) => this.pushTurn(turn, event);
+    const push = (event: AgentEvent) => this.pushStream(stream, event);
     let cancel = () => {};
     try {
       return await new Promise<Record<string, string[]> | null>((resolve) => {
@@ -338,18 +404,39 @@ class ClaudeSDKSession implements AgentSession {
 
   send(prompt: string): Promise<void> {
     // Serialize sends: two concurrent sends used to orphan the first new
-    // driveQuery, whose unwind then ended the second turn's events (R-15).
+    // driveStream, whose unwind then ended the second turn's events (R-15).
     const started = this.sendChain.then(() => this.startTurn(prompt));
     this.sendChain = started.catch(() => {});
     return started;
   }
 
   private async startTurn(prompt: string): Promise<void> {
-    const previous = this.turn;
+    if (this.reusable && this.stream && !this.stream.closed && !this.turn) {
+      const turn: ClaudeTurn = {
+        stopping: false,
+        closing: false,
+        wroteText: false,
+        streamedText: false,
+        lastResult: undefined,
+        pendingSteers: new Set(),
+      };
+      this.done = false;
+      this.eventQueue.length = 0;
+      this.turn = turn;
+      this.stream.turn = turn;
+      if (this.stream.observedModel) this.push({ type: "model", data: this.stream.observedModel });
+      this.stream.input.push(userMessage(prompt, messageUuid())).catch(() => {});
+      return;
+    }
+
+    const previous = this.stream;
     if (previous) {
-      // Detach before draining: the replaced turn's unwind must not end an
+      // Detach before draining: the replaced stream's unwind must not end an
       // events() consumer that is about to read the replacement turn.
+      this.stream = null;
       this.turn = null;
+      previous.intentionalClose = true;
+      previous.turn = null;
       previous.controller.abort();
       previous.input.end();
       await previous.finished;
@@ -357,31 +444,48 @@ class ClaudeSDKSession implements AgentSession {
     this.done = false;
     this.eventQueue.length = 0;
     const turn: ClaudeTurn = {
+      stopping: false,
+      closing: false,
+      wroteText: false,
+      streamedText: false,
+      lastResult: undefined,
+      pendingSteers: new Set(),
+    };
+    const stream: ClaudeStream = {
       controller: new AbortController(),
       input: new TurnInput(),
       query: undefined,
-      stopping: false,
-      closing: false,
-      pendingSteers: new Set(),
+      turn,
+      closed: false,
+      intentionalClose: false,
+      stderrTail: "",
+      initModel: undefined,
+      observedModel: undefined,
+      subagents: new Map(),
+      backgroundTasks: new Map(),
+      awaitingTaskNotifications: new Set(),
+      toolInputs: new Map(),
       finished: Promise.resolve(),
     };
+    this.stream = stream;
     this.turn = turn;
     // The initial prompt rides the same streaming input as steers; nobody
     // awaits its delivery ack, but a teardown rejection must not be unhandled.
-    turn.input.push(userMessage(prompt, messageUuid())).catch(() => {});
-    turn.finished = this.driveQuery(turn);
+    stream.input.push(userMessage(prompt, messageUuid())).catch(() => {});
+    stream.finished = this.driveStream(stream);
   }
 
   async steer(prompt: string): Promise<void> {
+    const stream = this.stream;
     const turn = this.turn;
-    if (!turn || this.done || turn.stopping || turn.closing)
+    if (!stream || !turn || this.done || turn.stopping || turn.closing)
       throw new Error("No active Claude turn to steer.");
     if (!prompt.trim() || prompt.length > 100000)
       throw new Error("Enter a steering message up to 100000 characters.");
     const uuid = messageUuid();
     turn.pendingSteers.add(uuid);
     try {
-      await turn.input.push(userMessage(prompt, uuid));
+      await stream.input.push(userMessage(prompt, uuid));
     } catch (error) {
       turn.pendingSteers.delete(uuid);
       throw error;
@@ -389,27 +493,29 @@ class ClaudeSDKSession implements AgentSession {
   }
 
   async interrupt(): Promise<void> {
+    const stream = this.stream;
     const turn = this.turn;
-    if (!turn || this.done || turn.stopping) return;
+    if (!stream || !turn || this.done || turn.stopping) return;
     turn.stopping = true;
+    stream.intentionalClose = true;
     // Release anything the CLI is blocked on so the turn can actually end.
     for (const [requestId, pending] of [...this.questionResolvers]) {
       this.questionResolvers.delete(requestId);
       pending.resolve(null);
-      this.pushTurn(turn, { type: "request_resolved", data: { requestId } });
+      this.pushStream(stream, { type: "request_resolved", data: { requestId } });
     }
     for (const [requestId, pending] of [...this.permissionResolvers]) {
       this.permissionResolvers.delete(requestId);
       pending.resolve("denied");
-      this.pushTurn(turn, { type: "request_resolved", data: { requestId } });
+      this.pushStream(stream, { type: "request_resolved", data: { requestId } });
     }
-    if (turn.query) {
+    if (stream.query) {
       // cancelQueued stops delivered-but-unrun steers from executing after the
       // interrupt; without it the CLI runs them after the stopped turn. The
       // installed SDK implements the option ahead of its .d.ts signature, and
       // older CLIs ignore it (interrupt_cancel_queued_v1) — the receipt's
       // still_queued then lists survivors that may yet run.
-      const interrupt = turn.query.interrupt as (options?: {
+      const interrupt = stream.query.interrupt as (options?: {
         cancelQueued?: boolean;
       }) => Promise<SDKControlInterruptResponse | undefined>;
       const receipt = await interrupt({ cancelQueued: true });
@@ -418,18 +524,18 @@ class ClaudeSDKSession implements AgentSession {
           count: receipt.still_queued.length,
         });
       }
-    } else turn.controller.abort();
+    } else stream.controller.abort();
   }
 
-  /** Events from an unwinding turn must never reach the next turn's queue. */
-  private pushTurn(turn: ClaudeTurn, event: AgentEvent): void {
-    if (this.turn === turn) this.push(event);
+  /** Events from an unwinding stream must never reach the next stream's queue. */
+  private pushStream(stream: ClaudeStream, event: AgentEvent): void {
+    if (this.stream === stream) this.push(event);
   }
 
-  private async driveQuery(turn: ClaudeTurn): Promise<void> {
-    const abortController = turn.controller;
-    const push = (event: AgentEvent) => this.pushTurn(turn, event);
-    const subagents = new Map<string, ChatSubagentPayload>();
+  private async driveStream(stream: ClaudeStream): Promise<void> {
+    const abortController = stream.controller;
+    const push = (event: AgentEvent) => this.pushStream(stream, event);
+    const { subagents, backgroundTasks, awaitingTaskNotifications, toolInputs } = stream;
     const updateSubagent = (id: string | undefined, patch: Partial<ChatSubagentPayload>) => {
       const current = id ? subagents.get(id) : undefined;
       if (!current) return;
@@ -437,11 +543,48 @@ class ClaudeSDKSession implements AgentSession {
       subagents.set(current.id, next);
       push({ type: "subagent", data: next });
     };
+    const updateBackgroundTask = (id: string | undefined, patch: Partial<ChatBackgroundTask>) => {
+      const current = id ? backgroundTasks.get(id) : undefined;
+      if (!current) return;
+      const next = { ...current, ...patch };
+      backgroundTasks.set(current.id, next);
+      push({ type: "background_task", data: next });
+    };
     const subagentsRunning = () =>
       [...subagents.values()].some((item) => !CHAT_SUBAGENT_DONE.has(item.status));
-    const stopSubagents = () => {
+    const backgroundTasksRunning = () =>
+      [...backgroundTasks.values()].some((item) => item.status === "running");
+    const hasPendingBackgroundWork = () =>
+      subagentsRunning() || backgroundTasksRunning() || awaitingTaskNotifications.size > 0;
+    const collectActiveBackgroundWork = (): ChatLostBackgroundWorkItem[] => {
+      const items: ChatLostBackgroundWorkItem[] = [];
+      for (const task of backgroundTasks.values()) {
+        if (task.status === "running") {
+          items.push({
+            kind: task.kind,
+            id: task.id,
+            label: (task.description || task.command || task.id).slice(0, 500),
+          });
+        }
+      }
+      for (const sub of subagents.values()) {
+        if (!CHAT_SUBAGENT_DONE.has(sub.status)) {
+          items.push({
+            kind: "subagent",
+            id: sub.id,
+            label: (sub.title ?? sub.id).slice(0, 500),
+          });
+        }
+      }
+      return items.slice(0, 20);
+    };
+    const stopSubagents = (finalStatus: "stopped" | "interrupted" = "stopped") => {
       for (const item of subagents.values())
         if (!CHAT_SUBAGENT_DONE.has(item.status)) updateSubagent(item.id, { status: "stopped" });
+      for (const task of backgroundTasks.values())
+        if (task.status === "running")
+          updateBackgroundTask(task.id, { status: finalStatus, finishedAt: Date.now() });
+      awaitingTaskNotifications.clear();
     };
     let nativeQuery: Query | undefined;
     let continuationGrace: ReturnType<typeof setTimeout> | undefined;
@@ -534,10 +677,14 @@ class ClaudeSDKSession implements AgentSession {
               )
             : resolveClaudeSdkLaunch();
       const q = query({
-        prompt: turn.input,
+        prompt: stream.input,
         options: {
           ...sdkChatOverrides(options),
           ...launch,
+          stderr: (chunk: string) => {
+            if (!chunk) return;
+            stream.stderrTail = (stream.stderrTail + chunk).slice(-STDERR_TAIL_MAX);
+          },
           env: { ...process.env, ...this.opts.env },
           cwd: this.opts.cwd,
           ...(rulesHook
@@ -623,7 +770,7 @@ class ClaudeSDKSession implements AgentSession {
             const requestId = ulid();
             try {
               const form = elicitationForm(requestId, request);
-              const result = await this.waitForQuestion(turn, form.question, signal);
+              const result = await this.waitForQuestion(stream, form.question, signal);
               if (!result) return { action: "cancel" };
               const content = form.content(result);
               return content ? { action: "accept", content } : { action: "decline" };
@@ -655,7 +802,8 @@ class ClaudeSDKSession implements AgentSession {
             }
             const requestId = ulid();
             if (signal.aborted) return { behavior: "deny", message: "Request cancelled" };
-            if (turn.stopping) return { behavior: "deny", message: "The turn was interrupted." };
+            if (stream.turn?.stopping)
+              return { behavior: "deny", message: "The turn was interrupted." };
             if (toolName === "AskUserQuestion") {
               const source = input.questions;
               if (!Array.isArray(source))
@@ -681,7 +829,7 @@ class ClaudeSDKSession implements AgentSession {
                   behavior: "deny",
                   message: "Duplicate question text cannot be answered unambiguously",
                 };
-              const result = await this.waitForQuestion(turn, question, signal);
+              const result = await this.waitForQuestion(stream, question, signal);
               if (!result) return { behavior: "deny", message: "Question cancelled" };
               return {
                 behavior: "allow",
@@ -796,17 +944,17 @@ class ClaudeSDKSession implements AgentSession {
         },
       });
       nativeQuery = q;
-      turn.query = q;
+      stream.query = q;
 
-      // Each text block is its own paragraph; joined bare, text before and after a tool
-      // call runs together and breaks markdown such as a code fence opening mid-line.
-      let wroteText = false;
-      let streamedText = false;
-      let lastResult: SDKResultMessage | undefined;
-      let turnModel: string | undefined;
-      const emitResult = (msg: SDKResultMessage) => {
+      const emitResult = (turn: ClaudeTurn, msg: SDKResultMessage, closeAfter: boolean) => {
         if (turn.closing) return;
-        stopSubagents();
+        const effectiveModel =
+          stream.observedModel ?? stream.initModel ?? singleModelUsageKey(msg.modelUsage);
+        if (effectiveModel && effectiveModel !== stream.observedModel) {
+          stream.observedModel = effectiveModel;
+          push({ type: "model", data: effectiveModel });
+        }
+        if (closeAfter || turn.stopping || msg.is_error) stopSubagents("stopped");
         turn.closing = true;
         clearContinuationGrace();
         if (msg.is_error && !turn.stopping) {
@@ -835,56 +983,65 @@ class ClaudeSDKSession implements AgentSession {
         } else {
           if (
             !turn.stopping &&
-            !wroteText &&
+            !turn.wroteText &&
             "result" in msg &&
-            msg.result &&
-            msg.usage.output_tokens === 0
-          )
+            typeof msg.result === "string" &&
+            msg.result.trim().length > 0 &&
+            msg.usage?.output_tokens === 0
+          ) {
             push({ type: "text", data: msg.result });
+            turn.wroteText = true;
+          }
           push({
             type: "result",
             data: {
               runtimeSessionId: msg.session_id,
+              ...(effectiveModel ? { model: effectiveModel } : {}),
               usage: msg.usage,
-              contextWindow: claudeContextWindow(msg.modelUsage, turnModel),
+              contextWindow: claudeContextWindow(msg.modelUsage, effectiveModel),
               durationMs: msg.duration_ms,
               ...(turn.stopping ? { outcome: "stopped" as const } : {}),
             },
           });
         }
-        // Streaming input keeps the subprocess alive waiting for more
-        // messages; closing the channel lets the SDK end stdin and exit.
-        turn.input.end();
+        if (closeAfter || !this.reusable || turn.stopping || msg.is_error) {
+          stream.intentionalClose = true;
+          stream.input.end();
+        } else if (this.stream === stream && this.turn === turn) {
+          stream.turn = null;
+          this.turn = null;
+          this.done = true;
+          this.resolveNext?.();
+          this.resolveNext = null;
+        }
       };
-      // A steer the CLI never answers (lost/refused uuid) must not hold the
-      // turn open forever: end with the last result after a quiet period.
-      const armContinuationGrace = () => {
+
+      const armContinuationGrace = (turn: ClaudeTurn) => {
         clearContinuationGrace();
         continuationGrace = setTimeout(() => {
-          if (!turn.closing && lastResult) {
-            // During Stop the outcome is already "stopped"; the unanswered-steer
-            // note would be misleading there.
+          if (stream.turn === turn && !turn.closing && turn.lastResult) {
             if (!turn.stopping) {
               push({
                 type: "system_status",
                 data: "A steering message was not answered before the response ended.",
               });
             }
-            emitResult(lastResult);
+            emitResult(turn, turn.lastResult, false);
           }
         }, steerContinuationGraceMs);
       };
+
       for await (const msg of q) {
-        // After the final result, keep draining so the subprocess exits, but
-        // ignore anything a surviving queued command may still emit.
-        if (turn.closing) continue;
+        const turn = stream.turn;
+        if (turn?.closing && stream.intentionalClose) continue;
         clearContinuationGrace();
         if (msg.type === "stream_event") {
+          if (!turn || turn.closing) continue;
           const event = msg.event;
           if (event.type === "content_block_start" && event.content_block.type === "text") {
-            if (wroteText) push({ type: "text", data: "\n\n" });
-            wroteText = true;
-            streamedText = true;
+            if (turn.wroteText) push({ type: "text", data: "\n\n" });
+            turn.wroteText = true;
+            turn.streamedText = true;
           } else if (event.type === "content_block_delta" && event.delta.type === "text_delta")
             push({ type: "text", data: event.delta.text });
           continue;
@@ -895,54 +1052,177 @@ class ClaudeSDKSession implements AgentSession {
           continue;
         }
         if (msg.type === "system" && msg.subtype === "task_started") {
-          if (msg.ambient || (msg.task_type ? msg.task_type !== "local_agent" : !msg.subagent_type))
+          if (msg.ambient) continue;
+          const isSubagent = msg.task_type
+            ? msg.task_type === "local_agent"
+            : Boolean(msg.subagent_type);
+          if (isSubagent) {
+            const parentId =
+              msg.parent_task_id && subagents.has(msg.parent_task_id)
+                ? msg.parent_task_id
+                : undefined;
+            const started: ChatSubagentPayload = {
+              id: msg.task_id,
+              ...(parentId ? { parentId } : {}),
+              title: (msg.description || msg.subagent_type || "Subagent").slice(0, 200),
+              status: "running",
+              startedAt: Date.now(),
+              activity: [],
+            };
+            subagents.set(msg.task_id, started);
+            push({ type: "subagent", data: started });
             continue;
-          const parentId =
-            msg.parent_task_id && subagents.has(msg.parent_task_id)
-              ? msg.parent_task_id
-              : undefined;
-          const started: ChatSubagentPayload = {
+          }
+          if (!msg.task_type) continue;
+          const toolInfo = msg.tool_use_id ? toolInputs.get(msg.tool_use_id) : undefined;
+          const kind = backgroundTaskKind(msg.task_type, toolInfo?.name);
+          const task: ChatBackgroundTask = {
             id: msg.task_id,
-            ...(parentId ? { parentId } : {}),
-            title: (msg.description || msg.subagent_type || "Subagent").slice(0, 200),
-            status: "running",
+            kind,
+            description: (
+              msg.description ||
+              toolInfo?.description ||
+              toolInfo?.command ||
+              msg.task_type
+            ).slice(0, 500),
+            ...(toolInfo?.command ? { command: toolInfo.command } : {}),
             startedAt: Date.now(),
-            activity: [],
+            status: "running",
           };
-          subagents.set(msg.task_id, started);
-          push({ type: "subagent", data: started });
+          backgroundTasks.set(msg.task_id, task);
+          push({ type: "background_task", data: task });
+          continue;
+        }
+        if (
+          msg.type === "system" &&
+          (msg as { subtype?: string }).subtype === "background_tasks_changed"
+        ) {
+          const record = msg as unknown as {
+            tasks?: Array<{
+              task_id?: string;
+              id?: string;
+              task_type?: string;
+              description?: string;
+              command?: string;
+              status?: string;
+            }>;
+            awaiting_notifications?: string[];
+          };
+          if (Array.isArray(record.awaiting_notifications)) {
+            awaitingTaskNotifications.clear();
+            for (const id of record.awaiting_notifications) {
+              if (typeof id === "string" && id) awaitingTaskNotifications.add(id);
+            }
+          }
+          if (Array.isArray(record.tasks)) {
+            const seen = new Set<string>();
+            for (const entry of record.tasks) {
+              const id = entry.task_id ?? entry.id;
+              if (!id || subagents.has(id) || entry.task_type === "local_agent") continue;
+              seen.add(id);
+              const existing = backgroundTasks.get(id);
+              const nextStatus =
+                entry.status === "completed" ||
+                entry.status === "failed" ||
+                entry.status === "stopped"
+                  ? entry.status
+                  : entry.status === "killed"
+                    ? "stopped"
+                    : "running";
+              const next: ChatBackgroundTask = existing
+                ? {
+                    ...existing,
+                    status: nextStatus,
+                    ...(nextStatus !== "running" && !existing.finishedAt
+                      ? { finishedAt: Date.now() }
+                      : {}),
+                  }
+                : {
+                    id,
+                    kind: backgroundTaskKind(entry.task_type, undefined),
+                    description: (entry.description || entry.command || id).slice(0, 500),
+                    ...(entry.command ? { command: entry.command.slice(0, 1000) } : {}),
+                    startedAt: Date.now(),
+                    status: nextStatus,
+                  };
+              backgroundTasks.set(id, next);
+              push({ type: "background_task", data: next });
+            }
+            for (const [id, existing] of backgroundTasks) {
+              if (!seen.has(id) && existing.status === "running") {
+                updateBackgroundTask(id, { status: "completed", finishedAt: Date.now() });
+              }
+            }
+          }
+          if (turn && !turn.closing && turn.lastResult && !hasPendingBackgroundWork()) {
+            armContinuationGrace(turn);
+          }
           continue;
         }
         if (msg.type === "system" && msg.subtype === "task_progress") {
           const line = (msg.summary || msg.description).slice(0, 2000);
-          updateSubagent(msg.task_id, {
-            tokens: msg.usage.total_tokens,
-            durationMs: msg.usage.duration_ms,
-            activity: line ? [{ type: "status", id: `${msg.task_id}:progress`, text: line }] : [],
-          });
+          if (subagents.has(msg.task_id)) {
+            updateSubagent(msg.task_id, {
+              tokens: msg.usage.total_tokens,
+              durationMs: msg.usage.duration_ms,
+              activity: line ? [{ type: "status", id: `${msg.task_id}:progress`, text: line }] : [],
+            });
+          } else if (backgroundTasks.has(msg.task_id)) {
+            updateBackgroundTask(msg.task_id, {
+              ...(line ? { summary: line } : {}),
+            });
+          }
           continue;
         }
         if (msg.type === "system" && msg.subtype === "task_updated") {
           const status = msg.patch.status;
-          if (status === "completed" || status === "failed" || status === "killed")
-            updateSubagent(msg.task_id, { status: status === "killed" ? "stopped" : status });
+          if (status === "completed" || status === "failed" || status === "killed") {
+            const mapped = status === "killed" ? "stopped" : status;
+            if (subagents.has(msg.task_id)) {
+              updateSubagent(msg.task_id, { status: mapped });
+            } else if (backgroundTasks.has(msg.task_id)) {
+              updateBackgroundTask(msg.task_id, { status: mapped, finishedAt: Date.now() });
+            }
+            if (turn && !turn.closing && turn.lastResult && !hasPendingBackgroundWork()) {
+              armContinuationGrace(turn);
+            }
+          }
           continue;
         }
         if (msg.type === "system" && msg.subtype === "task_notification") {
+          awaitingTaskNotifications.delete(msg.task_id);
           const status: ChatSubagentStatus = msg.status;
-          updateSubagent(msg.task_id, {
-            status,
-            ...(msg.usage
-              ? { tokens: msg.usage.total_tokens, durationMs: msg.usage.duration_ms }
-              : {}),
-          });
-          if (lastResult && !subagentsRunning()) armContinuationGrace();
+          if (subagents.has(msg.task_id)) {
+            updateSubagent(msg.task_id, {
+              status,
+              ...(msg.usage
+                ? { tokens: msg.usage.total_tokens, durationMs: msg.usage.duration_ms }
+                : {}),
+            });
+          } else if (backgroundTasks.has(msg.task_id)) {
+            updateBackgroundTask(msg.task_id, {
+              status,
+              finishedAt: Date.now(),
+              ...(msg.summary ? { summary: msg.summary.slice(0, 2000) } : {}),
+              ...(msg.output_file ? { outputFile: msg.output_file.slice(0, 1000) } : {}),
+            });
+          }
+          if (turn && !turn.closing && turn.lastResult && !hasPendingBackgroundWork()) {
+            armContinuationGrace(turn);
+          }
           continue;
         }
         if (msg.type === "system" && msg.subtype === "init") {
           this.runtimeSessionId = msg.session_id;
           this.forkPending = false;
-          turnModel = msg.model;
+          const initModel = resolveObservedModel(msg.model);
+          if (initModel) {
+            stream.initModel = initModel;
+            if (!stream.observedModel) {
+              stream.observedModel = initModel;
+              push({ type: "model", data: initModel });
+            }
+          }
           continue;
         }
 
@@ -961,14 +1241,21 @@ class ClaudeSDKSession implements AgentSession {
 
         if (msg.type === "assistant") {
           if (msg.error && msg.message.model === "<synthetic>") continue;
+          const assistantModel = resolveObservedModel(msg.message.model);
+          if (assistantModel && assistantModel !== stream.observedModel) {
+            stream.observedModel = assistantModel;
+            push({ type: "model", data: assistantModel });
+          }
+          if (!turn || turn.closing) continue;
           for (const block of msg.message.content) {
             if (block.type === "text" && block.text) {
-              if (!streamedText)
-                push({ type: "text", data: wroteText ? `\n\n${block.text}` : block.text });
-              wroteText = true;
+              if (!turn.streamedText)
+                push({ type: "text", data: turn.wroteText ? `\n\n${block.text}` : block.text });
+              turn.wroteText = true;
             } else if (block.type === "thinking" && "thinking" in block && block.thinking) {
               push({ type: "thinking", data: block.thinking as string });
             } else if (block.type === "tool_use") {
+              toolInputs.set(block.id, extractToolInputSummary(block.name, block.input));
               const input = JSON.stringify(block.input);
               push({
                 type: "tool_use",
@@ -983,7 +1270,7 @@ class ClaudeSDKSession implements AgentSession {
               if (plan) push(plan);
             }
           }
-          if (!msg.parent_tool_use_id) streamedText = false;
+          if (!msg.parent_tool_use_id) turn.streamedText = false;
           continue;
         }
 
@@ -1016,13 +1303,10 @@ class ClaudeSDKSession implements AgentSession {
           }
         }
 
-        // Keep reading after the result so the subprocess releases its working folder.
         if (msg.type === "result") {
           this.runtimeSessionId = msg.session_id;
-          lastResult = msg;
-          // A turn can answer several steers at once: coalesced sends share one
-          // result whose user_message_uuid is only the last member's, so consume
-          // every echoed uuid, not just the trigger.
+          if (!turn || turn.closing) continue;
+          turn.lastResult = msg;
           const answered =
             "user_message_uuids" in msg && Array.isArray(msg.user_message_uuids)
               ? msg.user_message_uuids
@@ -1030,50 +1314,42 @@ class ClaudeSDKSession implements AgentSession {
           for (const id of answered) turn.pendingSteers.delete(id);
           const trigger = "user_message_uuid" in msg ? msg.user_message_uuid : undefined;
           if (typeof trigger === "string") turn.pendingSteers.delete(trigger);
-          // A delivered steer may still be in flight to the CLI: results can
-          // report queued_turn_count 0 and yet run the steer as a continuation
-          // (verified live), so pending steers remain the primary wait signal.
-          // queued_turn_count > 0 is an extra keep-waiting hint. Older CLIs
-          // echo no uuids at all; without an echo, runs cannot be attributed,
-          // so end the turn instead of paying the grace on every steer. The
-          // grace timer backstops a uuid the CLI never answers.
           const queued = "queued_turn_count" in msg ? msg.queued_turn_count : undefined;
           const trackable = typeof trigger === "string" || answered.length > 0;
           const moreRuns =
             (typeof queued === "number" && queued > 0) ||
             (trackable && turn.pendingSteers.size > 0);
-          if (!turn.stopping && subagentsRunning()) continue;
+          if (!turn.stopping && hasPendingBackgroundWork()) continue;
           if (!turn.stopping && moreRuns) {
-            armContinuationGrace();
+            armContinuationGrace(turn);
             continue;
           }
-          emitResult(msg);
+          emitResult(turn, msg, false);
         }
       }
-      // The stream can end without a final result: an interrupt may produce
-      // none, or the CLI may exit while steers were still queued.
-      if (!turn.closing) {
-        if (turn.stopping) {
-          stopSubagents();
-          turn.closing = true;
+
+      const activeTurn = stream.turn;
+      if (activeTurn && !activeTurn.closing) {
+        if (activeTurn.stopping) {
+          stopSubagents("stopped");
+          activeTurn.closing = true;
           push(stoppedResult(this.runtimeSessionId));
-        } else if (lastResult) {
-          emitResult(lastResult);
+        } else if (activeTurn.lastResult) {
+          emitResult(activeTurn, activeTurn.lastResult, true);
         }
       }
     } catch (err) {
-      if (turn.stopping && !turn.closing) {
-        stopSubagents();
-        turn.closing = true;
+      const activeTurn = stream.turn;
+      if (activeTurn?.stopping && !activeTurn.closing) {
+        stopSubagents("stopped");
+        activeTurn.closing = true;
         push(stoppedResult(this.runtimeSessionId));
       } else if (
-        turn.closing ||
-        turn.controller.signal.aborted ||
+        stream.intentionalClose ||
+        activeTurn?.closing ||
+        stream.controller.signal.aborted ||
         (err as Error).name === "AbortError"
       ) {
-        // The SDK raises a plain Error ("Operation aborted") while the
-        // subprocess releases stdin after the final result or an abort;
-        // neither is a turn failure.
         logger.debug("Claude SDK stream closed", {
           message:
             this.opts.redactOutput?.(err instanceof Error ? err.message : String(err)) ??
@@ -1085,15 +1361,22 @@ class ClaudeSDKSession implements AgentSession {
             this.opts.redactOutput?.(err instanceof Error ? err.message : String(err)) ??
             (err instanceof Error ? err.message : String(err)),
         });
-        stopSubagents();
+        const detail = err instanceof Error ? err.message : String(err);
+        const stderrNote = stream.stderrTail.trim()
+          ? `\n${stream.stderrTail.trim().slice(-600)}`
+          : "";
+        stopSubagents("interrupted");
         push({
           type: "error",
-          data: err instanceof Error ? err.message : String(err),
+          data: `${detail}${stderrNote}`,
         });
       }
     } finally {
       clearContinuationGrace();
-      turn.input.end();
+      const lostBackgroundWork = stream.intentionalClose ? [] : collectActiveBackgroundWork();
+      if (lostBackgroundWork.length > 0) stopSubagents("interrupted");
+      stream.closed = true;
+      stream.input.end();
       try {
         await nativeQuery?.return();
       } catch (error) {
@@ -1102,11 +1385,24 @@ class ClaudeSDKSession implements AgentSession {
         });
         push({ type: "error", data: "Claude connection could not be closed cleanly." });
       }
-      // A stale turn unwinding after a replacement must not end the new
-      // turn's events (R-15); only the current turn owns the done flag. The
-      // finished turn stays attached: SDK callbacks still in flight (a pending
-      // question or approval) push their resolution through the same guard.
-      if (this.turn === turn) {
+      if (!stream.intentionalClose && this.unexpectedExitListeners.size > 0) {
+        const info: AgentUnexpectedExit = {
+          code: null,
+          signal: null,
+          stderr: stream.stderrTail.trim(),
+          lostBackgroundWork,
+        };
+        for (const listener of [...this.unexpectedExitListeners]) {
+          try {
+            listener(info);
+          } catch (error) {
+            logger.warn("Unexpected exit listener threw", { error });
+          }
+        }
+      }
+      if (this.stream === stream) {
+        stream.turn = null;
+        this.turn = null;
         this.done = true;
         this.resolveNext?.();
         this.resolveNext = null;
@@ -1124,11 +1420,41 @@ class ClaudeSDKSession implements AgentSession {
 
   setPermissionMode(mode: LivePermissionMode): void {
     this.liveMode = mode;
-    this.turn?.query
+    this.stream?.query
       ?.setPermissionMode(mode === "bypassPermissions" ? "acceptEdits" : mode)
       .catch((error) => logger.warn("Claude permission mode change failed", { mode, error }));
     for (const [requestId, pending] of this.permissionResolvers)
       if (permissionModeAllows(mode, pending.tool)) this.respondPermission(requestId, "approved");
+  }
+
+  async setModel(model: string): Promise<void> {
+    this.opts = { ...this.opts, model };
+    const setter = (
+      this.stream?.query as { setModel?: (model?: string) => Promise<void> } | undefined
+    )?.setModel;
+    if (setter) await setter.call(this.stream?.query, model || undefined);
+  }
+
+  canStopRuntime(): boolean {
+    if (this.turn && !this.turn.closing) return false;
+    if (this.permissionResolvers.size > 0 || this.questionResolvers.size > 0) return false;
+    const stream = this.stream;
+    if (!stream || stream.closed) return true;
+    for (const task of stream.backgroundTasks.values()) {
+      if (task.status === "running") return false;
+    }
+    for (const sub of stream.subagents.values()) {
+      if (!CHAT_SUBAGENT_DONE.has(sub.status)) return false;
+    }
+    if (stream.awaitingTaskNotifications.size > 0) return false;
+    return true;
+  }
+
+  onUnexpectedExit(listener: (info: AgentUnexpectedExit) => void): () => void {
+    this.unexpectedExitListeners.add(listener);
+    return () => {
+      this.unexpectedExitListeners.delete(listener);
+    };
   }
 
   respondQuestion(requestId: string, answers: Record<string, string[]>): void {
@@ -1161,6 +1487,7 @@ class ClaudeSDKSession implements AgentSession {
   }
 
   alive(): boolean {
+    if (this.reusable) return Boolean(this.stream && !this.stream.closed);
     return !this.done;
   }
 
@@ -1182,12 +1509,14 @@ class ClaudeSDKSession implements AgentSession {
     for (const pending of this.permissionResolvers.values()) pending.resolve("denied");
     this.permissionResolvers.clear();
     await this.sendChain;
-    const turn = this.turn;
-    if (turn) {
-      turn.controller.abort();
-      turn.input.end();
-      await turn.finished;
+    const stream = this.stream;
+    if (stream) {
+      stream.intentionalClose = true;
+      stream.controller.abort();
+      stream.input.end();
+      await stream.finished;
     }
+    this.turn = null;
     this.done = true;
     this.resolveNext?.();
     this.resolveNext = null;

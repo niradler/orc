@@ -278,4 +278,53 @@ describe("native model discovery", () => {
       ),
     ).rejects.toThrow("could not list its models");
   }, 20_000);
+
+  test("custom Anthropic endpoint strips Opus marketing labels and surfaces ANTHROPIC_MODEL", () => {
+    const rawCatalog = [
+      {
+        value: "default",
+        displayName: "Default (recommended)",
+        description: "Opus 4.7 · Most capable for complex work",
+      },
+      {
+        value: "opus",
+        displayName: "Opus",
+        description: "Opus 4.7 · Most capable for complex work",
+      },
+      {
+        value: "sonnet",
+        displayName: "Sonnet",
+        description: "Sonnet 4.6 · Best for everyday tasks",
+      },
+      {
+        value: "haiku",
+        displayName: "Haiku",
+        description: "Haiku 4.5 · Fastest for quick answers",
+      },
+    ];
+    const models = parseAgentModels(rawCatalog, "claude", {
+      ANTHROPIC_BASE_URL: "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic",
+      ANTHROPIC_MODEL: "qwen4-max",
+    });
+    expect(models.some((m) => m.id === "qwen4-max" && m.label === "qwen4-max")).toBe(true);
+    const defaultEntry = models.find((m) => m.id === "default");
+    expect(defaultEntry?.label).toBe("Default (qwen4-max)");
+    expect(defaultEntry?.description).not.toContain("Opus");
+    expect(models.some((m) => /opus|sonnet|haiku/i.test(m.label))).toBe(false);
+  });
+
+  test("custom Anthropic endpoint preserves explicitly mapped tier overrides honestly", () => {
+    const rawCatalog = [
+      { value: "default", displayName: "Default", description: "Opus 4.7" },
+      { value: "opus", displayName: "Opus", description: "Opus 4.7" },
+      { value: "haiku", displayName: "Haiku", description: "Haiku 4.5" },
+    ];
+    const models = parseAgentModels(rawCatalog, "claude", {
+      ANTHROPIC_BASE_URL: "https://proxy.example.com/anthropic",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5",
+    });
+    expect(models.find((m) => m.id === "glm-5")).toBeDefined();
+    expect(models.find((m) => m.id === "opus")?.label).toBe("glm-5 (opus)");
+    expect(models.find((m) => m.id === "haiku")).toBeUndefined();
+  });
 });

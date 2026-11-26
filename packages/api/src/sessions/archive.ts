@@ -323,15 +323,17 @@ export class SessionArchive {
         .finally(() => {
           this.job = null;
           this.kickEmbeddings();
-          if (
-            !this.stopped &&
-            this.db
-              .query(
-                "SELECT 1 FROM session_archives WHERE revision != index_revision AND (embedding_error IS NULL OR embedding_error NOT LIKE 'Session indexing failed%') LIMIT 1",
-              )
-              .get()
-          )
-            this.kick();
+          if (this.stopped) return;
+          try {
+            if (
+              this.db
+                .query(
+                  "SELECT 1 FROM session_archives WHERE revision != index_revision AND (embedding_error IS NULL OR embedding_error NOT LIKE 'Session indexing failed%') LIMIT 1",
+                )
+                .get()
+            )
+              this.kick();
+          } catch {}
         });
     this.kickEmbeddings();
   }

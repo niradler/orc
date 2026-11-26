@@ -12,6 +12,8 @@ type ChatSummary = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   agent: string | null;
   backend: string | null;
   runtimeId: string | null;
+  runtimeModel: string | null;
+  model: string | null;
   sourceId: string | null;
   host: string | null;
   projectId: string | null;
@@ -49,6 +51,14 @@ export class ChatStore {
             CASE WHEN json_type(data, '$.runtimeId') = 'text'
               THEN json_extract(data, '$.runtimeId') END
           END AS runtimeId,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.runtimeModel') = 'text'
+              THEN json_extract(data, '$.runtimeModel') END
+          END AS runtimeModel,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.config.model') = 'text'
+              THEN json_extract(data, '$.config.model') END
+          END AS model,
           CASE WHEN json_valid(data) THEN
             CASE WHEN json_type(data, '$.sourceId') = 'text'
               THEN json_extract(data, '$.sourceId') END

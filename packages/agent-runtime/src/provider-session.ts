@@ -98,6 +98,16 @@ export function redactProviderEvent(
           : {}),
       },
     };
+  if (event.type === "background_task")
+    return {
+      ...event,
+      data: {
+        ...event.data,
+        description: redact(event.data.description),
+        ...(event.data.command ? { command: redact(event.data.command) } : {}),
+        ...(event.data.summary ? { summary: redact(event.data.summary) } : {}),
+      },
+    };
   if (event.type === "question_request")
     return {
       ...event,
@@ -132,6 +142,7 @@ export function withProviderRedaction(session: AgentSession, opts: SessionOpts):
     id: session.id,
     systemPromptOnce: session.systemPromptOnce,
     systemPromptSlot: session.systemPromptSlot,
+    reusable: session.reusable,
     get capabilities() {
       return session.capabilities;
     },
@@ -143,6 +154,23 @@ export function withProviderRedaction(session: AgentSession, opts: SessionOpts):
     ...(session.steer ? { steer: session.steer.bind(session) } : {}),
     ...(session.setPermissionMode
       ? { setPermissionMode: session.setPermissionMode.bind(session) }
+      : {}),
+    ...(session.setModel ? { setModel: protect(session.setModel) } : {}),
+    ...(session.canStopRuntime ? { canStopRuntime: session.canStopRuntime.bind(session) } : {}),
+    ...(session.onUnexpectedExit
+      ? {
+          onUnexpectedExit: (listener) =>
+            session.onUnexpectedExit?.((info) =>
+              listener({
+                ...info,
+                stderr: redact(info.stderr),
+                lostBackgroundWork: info.lostBackgroundWork.map((item) => ({
+                  ...item,
+                  label: redact(item.label),
+                })),
+              }),
+            ) ?? (() => {}),
+        }
       : {}),
     ...(session.respondQuestion ? { respondQuestion: session.respondQuestion.bind(session) } : {}),
     ...(session.getRuntimeSessionId

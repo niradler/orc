@@ -531,3 +531,20 @@ test("a live session shows a short model name and a readable permission mode", (
   expect(sessionModeLabel("never/read-only")).toBe("Read only");
   expect(sessionModeLabel("custom")).toBe("custom");
 });
+
+test("saved and local chat sessions prefer observed runtimeModel over configured alias", () => {
+  const savedEntry = {
+    kind: "saved",
+    thread: { ...saved, model: "opus", runtimeModel: "qwen4-max" },
+  } as Parameters<typeof sessionModelName>[0];
+  expect(sessionModelName(savedEntry)).toBe("Qwen4 Max");
+
+  const localEntry = {
+    kind: "local",
+    tab: {
+      config: { model: "default" },
+      thread: { runtimeModel: "qwen4-max" },
+    },
+  } as unknown as Parameters<typeof sessionModelName>[0];
+  expect(sessionModelName(localEntry)).toBe("Qwen4 Max");
+});

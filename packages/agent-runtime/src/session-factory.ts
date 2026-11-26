@@ -158,6 +158,16 @@ export async function openAgentSession(
           }
         : {}),
       waitingForHuman: () => session.waitingForHuman?.() === true,
+      reusable: session.reusable,
+      ...(session.canStopRuntime
+        ? { canStopRuntime: () => session.canStopRuntime?.() ?? true }
+        : {}),
+      ...(session.setModel
+        ? { setModel: (model: string) => session.setModel?.(model) ?? Promise.resolve() }
+        : {}),
+      ...(session.onUnexpectedExit
+        ? { onUnexpectedExit: (listener) => session.onUnexpectedExit?.(listener) ?? (() => {}) }
+        : {}),
       events: () => session.events(),
       alive: () => session.alive(),
       close: () => session.close(),

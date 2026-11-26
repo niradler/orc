@@ -713,3 +713,39 @@ describe("MCP tool schemas", () => {
     expect(schema?.required ?? []).not.toContain("limit");
   });
 });
+
+describe("MCP detached shell tools", () => {
+  test("shell_run starts detached command, shell_status reads output, shell_list lists it, and shell_stop stops it", async () => {
+    const started = JSON.parse(
+      await executeTool("shell_run", {
+        command: 'echo "mcp-shell-ok"; sleep 20',
+        cwd: process.cwd(),
+        label: "mcp-shell-test",
+      }),
+    ) as { id: string; status: string };
+    expect(started.status).toBe("running");
+    try {
+      let statusBody: { status: string; log_tail?: string } = { status: "running" };
+      for (let i = 0; i < 40; i++) {
+        statusBody = JSON.parse(
+          await executeTool("shell_status", { job_id: started.id, logs: true, tail_lines: 20 }),
+        ) as { status: string; log_tail?: string };
+        if (statusBody.log_tail?.includes("mcp-shell-ok")) break;
+        await Bun.sleep(25);
+      }
+      expect(statusBody.log_tail).toContain("mcp-shell-ok");
+
+      const listed = JSON.parse(await executeTool("shell_list", { limit: 20 })) as {
+        jobs: { id: string }[];
+      };
+      expect(listed.jobs.some((j) => j.id === started.id)).toBe(true);
+
+      const stopped = JSON.parse(await executeTool("shell_stop", { job_id: started.id })) as {
+        status: string;
+      };
+      expect(stopped.status).toBe("stopped");
+    } finally {
+      await executeTool("shell_stop", { job_id: started.id }).catch(() => undefined);
+    }
+  });
+});

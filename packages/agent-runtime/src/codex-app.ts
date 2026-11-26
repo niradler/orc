@@ -520,6 +520,7 @@ export class CodexAppSession implements AgentSession {
           type: "result",
           data: {
             runtimeSessionId: this.runtimeId,
+            ...(this.nativeModel ? { model: this.nativeModel } : {}),
             usage: this.usage,
             outcome:
               turn.status === "interrupted"
@@ -728,6 +729,7 @@ export class CodexAppSession implements AgentSession {
       const nativeMode = object(result.collaborationMode).mode;
       this.nativeMode = typeof nativeMode === "string" ? nativeMode : undefined;
       this.nativeModel = typeof result.model === "string" ? result.model : undefined;
+      if (this.nativeModel) this.push({ type: "model", data: this.nativeModel });
     }
     this.activeTurnId = undefined;
     this.startedTurns.clear();

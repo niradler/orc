@@ -29,7 +29,13 @@ import { chatControl } from "./turns.js";
 const logger = createLogger("session-control");
 const LINEAGE_DEPTH = 8;
 
-export type ChildOutcome = "finished" | "failed" | "stopped" | "question" | "approval";
+export type ChildOutcome =
+  | "finished"
+  | "failed"
+  | "stopped"
+  | "interrupted"
+  | "question"
+  | "approval";
 
 export function spawnChain(threadId: string): string[] {
   const chats = new ChatStore(getSqlite());
@@ -145,9 +151,15 @@ export async function deliverSessionMessageNow(id: string): Promise<SessionMessa
 }
 
 export function lastReply(thread: ChatThread): string {
-  return (
-    [...thread.messages].reverse().find((message) => message.role === "assistant")?.content ?? ""
-  );
+  const last = [...thread.messages].reverse().find((message) => message.role === "assistant");
+  if (!last) return "";
+  if (last.content.trim()) return last.content;
+  if (last.turn?.error) return last.turn.error;
+  const statusNote = [...(last.activity ?? [])]
+    .reverse()
+    .find((item) => item.type === "status" && item.text.trim());
+  if (statusNote && statusNote.type === "status") return statusNote.text;
+  return "";
 }
 
 export type ChildWorkCounts = { working: number; waiting: number };
@@ -315,6 +327,7 @@ function threadWorkFields(
 function outcomeText(outcome: ChildOutcome): string {
   if (outcome === "question" || outcome === "approval")
     return `is waiting for a human ${outcome}; you cannot answer it, a human must`;
+  if (outcome === "interrupted") return "was interrupted";
   return outcome;
 }
 

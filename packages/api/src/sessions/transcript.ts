@@ -19,6 +19,7 @@ export type TranscriptTurn = {
   index: number;
   role: "user" | "assistant" | "tool" | "system";
   time: string | null;
+  model?: string;
   blocks: TranscriptBlock[];
 };
 
@@ -115,6 +116,7 @@ const isSystemText = (text: string) =>
 type Draft = {
   role: TranscriptTurn["role"];
   time: string | null;
+  model?: string;
   blocks: TranscriptBlock[];
   key?: string;
 };
@@ -123,14 +125,17 @@ async function* claudeTurns(content: string): AsyncGenerator<Draft> {
   for await (const line of jsonLines(content)) {
     const type = line.type;
     if ((type !== "user" && type !== "assistant") || line.isMeta) continue;
-    const message = line.message as { id?: string; content?: unknown } | undefined;
+    const message = line.message as { id?: string; model?: unknown; content?: unknown } | undefined;
     const blocks = anthropicBlocks(message?.content);
     if (blocks.length === 0) continue;
     const time = (line.timestamp as string | undefined) ?? null;
     if (type === "assistant") {
+      const rawModel = typeof message?.model === "string" ? message.model.trim() : "";
+      const model = rawModel && rawModel !== "<synthetic>" ? rawModel : undefined;
       yield {
         role: "assistant",
         time,
+        ...(model ? { model } : {}),
         blocks,
         ...(message?.id ? { key: message.id } : {}),
       };
@@ -424,11 +429,13 @@ export async function parseTranscriptContent(
     const prev = turns[turns.length - 1];
     if (draft.key && prev && lastKey === draft.key && prev.role === "assistant") {
       prev.blocks.push(...draft.blocks);
+      if (draft.model && !prev.model) prev.model = draft.model;
     } else {
       turns.push({
         index: turns.length,
         role: draft.role,
         time: draft.time,
+        ...(draft.model ? { model: draft.model } : {}),
         blocks: [...draft.blocks],
       });
       lastKey = draft.key;

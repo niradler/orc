@@ -70,10 +70,13 @@ export function ChatConversationInfo({
             <dl data-testid="chat-session-info" className="space-y-3 text-sm wrap-break-word">
               <SettingsRow label="Agent">
                 <span data-testid="chat-settings-agent">{agentDisplayName(config.agent)}</span>
-                {config.model && (
+                {(thread?.runtimeModel || config.model) && (
                   <span data-testid="chat-settings-model" className="text-muted-foreground">
                     {" "}
-                    · {config.model}
+                    · {thread?.runtimeModel || config.model}
+                    {thread?.runtimeModel && config.model && thread.runtimeModel !== config.model
+                      ? ` (requested: ${config.model})`
+                      : ""}
                   </span>
                 )}
               </SettingsRow>

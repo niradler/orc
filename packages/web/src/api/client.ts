@@ -947,6 +947,8 @@ export const api = {
           waitingChildren: number;
           agent?: string | null;
           runtimeId?: string | null;
+          runtimeModel?: string | null;
+          model?: string | null;
           sourceId?: string | null;
           host?: string | null;
           projectId?: string | null;

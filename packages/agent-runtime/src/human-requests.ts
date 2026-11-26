@@ -533,6 +533,16 @@ export function withHumanRequests(
         }
       : {}),
     alive: () => session.alive(),
+    reusable: session.reusable,
+    ...(session.canStopRuntime
+      ? { canStopRuntime: () => waits.size === 0 && (session.canStopRuntime?.() ?? true) }
+      : {}),
+    ...(session.setModel
+      ? { setModel: (model: string) => session.setModel?.(model) ?? Promise.resolve() }
+      : {}),
+    ...(session.onUnexpectedExit
+      ? { onUnexpectedExit: (listener) => session.onUnexpectedExit?.(listener) ?? (() => {}) }
+      : {}),
     ...(session.setPermissionMode
       ? {
           setPermissionMode: (mode) => {

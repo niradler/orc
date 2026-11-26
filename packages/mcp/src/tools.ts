@@ -6,6 +6,14 @@ import {
   readAgent,
   updateAgent,
 } from "@orc/core/agent-service";
+import {
+  BackgroundJobStatusSchema,
+  getBackgroundJob,
+  listBackgroundJobs,
+  readBackgroundJobLog,
+  startBackgroundJob,
+  stopBackgroundJob,
+} from "@orc/core/background-jobs";
 import { ChannelSendSchema, ChannelUpdateSchema } from "@orc/core/channels";
 import { AGENT_ID_PATTERN, CODING_AGENTS } from "@orc/core/coding-agents";
 import { clearSetupDismissal, loadConfig, resolveApiBase } from "@orc/core/config";
@@ -841,6 +849,45 @@ export const toolDefinitions = [
       logs: z.boolean().optional().default(false),
       stream: z.enum(["stdout", "stderr"]).optional(),
       log_limit: z.number().int().min(1).max(2000).optional().default(200),
+    }),
+  },
+  {
+    name: "shell_run",
+    description:
+      "Start a detached background shell command outside the agent/daemon process tree with persistent disk logs and exit metadata. Survives turn teardown and ORC daemon restarts; use for long builds, test gates (e.g. ci:pr), or training runs.",
+    inputSchema: z.object({
+      command: z.string().trim().min(1).max(16_000),
+      cwd: z.string().trim().min(1).describe("Working directory for the command"),
+      label: z.string().trim().min(1).max(200).optional(),
+      project: projectParam,
+    }),
+  },
+  {
+    name: "shell_status",
+    description:
+      "Inspect a detached background shell job started with shell_run: returns status (running, completed, failed, stopped, interrupted_by_restart), exit_code, signal, log_path, and optional log tail.",
+    inputSchema: z.object({
+      job_id: z.string().trim().min(1),
+      logs: z.boolean().optional().default(true),
+      tail_lines: z.number().int().min(1).max(2000).optional().default(100),
+      tail_bytes: z.number().int().min(256).max(256_000).optional(),
+    }),
+  },
+  {
+    name: "shell_list",
+    description:
+      "List detached background shell jobs (newest first), optionally filtered by status or session.",
+    inputSchema: z.object({
+      status: BackgroundJobStatusSchema.optional(),
+      session_id: z.string().optional(),
+      limit: z.number().int().min(1).max(200).optional().default(20),
+    }),
+  },
+  {
+    name: "shell_stop",
+    description: "Stop a running detached background shell job and its process group.",
+    inputSchema: z.object({
+      job_id: z.string().trim().min(1),
     }),
   },
   {
@@ -2622,6 +2669,66 @@ async function runTool(
               : ""),
         )
         .join("\n");
+    }
+
+    case "shell_run": {
+      const { command, cwd, label, project } = args as {
+        command: string;
+        cwd: string;
+        label?: string;
+        project?: string;
+      };
+      const target = resolveProjectId(project);
+      const job = startBackgroundJob({
+        command,
+        cwd,
+        ...(label ? { label } : {}),
+        ...(options.agentSessionId ? { session_id: options.agentSessionId } : {}),
+        ...(target ? { project_id: target.id } : {}),
+      });
+      return JSON.stringify(job);
+    }
+
+    case "shell_status": {
+      const {
+        job_id,
+        logs = true,
+        tail_lines = 100,
+        tail_bytes,
+      } = args as {
+        job_id: string;
+        logs?: boolean;
+        tail_lines?: number;
+        tail_bytes?: number;
+      };
+      const job = getBackgroundJob(job_id);
+      if (!job) throw new NotFoundError("BackgroundJob", job_id);
+      if (!logs) return JSON.stringify(job);
+      const log = readBackgroundJobLog(job_id, { tail_lines, tail_bytes });
+      return JSON.stringify({
+        ...job,
+        log_tail: log.text,
+        log_truncated: log.truncated,
+        log_size_bytes: log.size_bytes,
+      });
+    }
+
+    case "shell_list": {
+      const { status, session_id, limit } = args as {
+        status?: "running" | "completed" | "failed" | "stopped" | "interrupted_by_restart";
+        session_id?: string;
+        limit?: number;
+      };
+      return JSON.stringify({
+        jobs: listBackgroundJobs({ status, session_id, limit }),
+      });
+    }
+
+    case "shell_stop": {
+      const { job_id } = args as { job_id: string };
+      const stopped = await stopBackgroundJob(job_id);
+      if (!stopped) throw new NotFoundError("BackgroundJob", job_id);
+      return JSON.stringify(stopped);
     }
 
     case "job_run": {

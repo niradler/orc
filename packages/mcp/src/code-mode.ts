@@ -32,6 +32,8 @@ const readable: ReadonlySet<ToolName> = new Set<ToolName>([
   "pad_get",
   "job_list",
   "job_status",
+  "shell_list",
+  "shell_status",
   "session_list",
   "session_status",
   "session_search",

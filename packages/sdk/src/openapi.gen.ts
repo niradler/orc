@@ -1032,6 +1032,7 @@ export interface paths {
                             cwd: string;
                             host: string | null;
                             runtimeId: string | null;
+                            runtimeModel?: string;
                             backend: string;
                             capabilities?: {
                                 /** @enum {number} */
@@ -1193,7 +1194,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -1251,6 +1252,12 @@ export interface paths {
                                 host?: string;
                                 pid?: number;
                                 epoch?: number;
+                                backgroundTasks?: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             providerRefs?: {
                                 backend: string;
@@ -1266,6 +1273,17 @@ export interface paths {
                                 /** @enum {string} */
                                 mode: "transcript_handoff";
                                 reason: string;
+                            };
+                            lostBackgroundWork?: {
+                                at: number;
+                                /** @enum {string} */
+                                cause: "server_restart" | "provider_exit";
+                                items: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             spawnedBy?: {
                                 sessionId: string;
@@ -1324,6 +1342,8 @@ export interface paths {
                                 waitingChildren: number;
                                 agent?: string | null;
                                 runtimeId?: string | null;
+                                runtimeModel?: string | null;
+                                model?: string | null;
                                 sourceId?: string | null;
                                 host?: string | null;
                                 projectId?: string | null;
@@ -1475,6 +1495,7 @@ export interface paths {
                             cwd: string;
                             host: string | null;
                             runtimeId: string | null;
+                            runtimeModel?: string;
                             backend: string;
                             capabilities?: {
                                 /** @enum {number} */
@@ -1636,7 +1657,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -1694,6 +1715,12 @@ export interface paths {
                                 host?: string;
                                 pid?: number;
                                 epoch?: number;
+                                backgroundTasks?: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             providerRefs?: {
                                 backend: string;
@@ -1709,6 +1736,17 @@ export interface paths {
                                 /** @enum {string} */
                                 mode: "transcript_handoff";
                                 reason: string;
+                            };
+                            lostBackgroundWork?: {
+                                at: number;
+                                /** @enum {string} */
+                                cause: "server_restart" | "provider_exit";
+                                items: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             spawnedBy?: {
                                 sessionId: string;
@@ -1854,6 +1892,7 @@ export interface paths {
                             cwd: string;
                             host: string | null;
                             runtimeId: string | null;
+                            runtimeModel?: string;
                             backend: string;
                             capabilities?: {
                                 /** @enum {number} */
@@ -2015,7 +2054,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -2073,6 +2112,12 @@ export interface paths {
                                 host?: string;
                                 pid?: number;
                                 epoch?: number;
+                                backgroundTasks?: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             providerRefs?: {
                                 backend: string;
@@ -2088,6 +2133,17 @@ export interface paths {
                                 /** @enum {string} */
                                 mode: "transcript_handoff";
                                 reason: string;
+                            };
+                            lostBackgroundWork?: {
+                                at: number;
+                                /** @enum {string} */
+                                cause: "server_restart" | "provider_exit";
+                                items: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             spawnedBy?: {
                                 sessionId: string;
@@ -2236,6 +2292,7 @@ export interface paths {
                             cwd: string;
                             host: string | null;
                             runtimeId: string | null;
+                            runtimeModel?: string;
                             backend: string;
                             capabilities?: {
                                 /** @enum {number} */
@@ -2397,7 +2454,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -2455,6 +2512,12 @@ export interface paths {
                                 host?: string;
                                 pid?: number;
                                 epoch?: number;
+                                backgroundTasks?: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             providerRefs?: {
                                 backend: string;
@@ -2470,6 +2533,17 @@ export interface paths {
                                 /** @enum {string} */
                                 mode: "transcript_handoff";
                                 reason: string;
+                            };
+                            lostBackgroundWork?: {
+                                at: number;
+                                /** @enum {string} */
+                                cause: "server_restart" | "provider_exit";
+                                items: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             spawnedBy?: {
                                 sessionId: string;
@@ -2906,6 +2980,7 @@ export interface paths {
                             cwd: string;
                             host: string | null;
                             runtimeId: string | null;
+                            runtimeModel?: string;
                             backend: string;
                             capabilities?: {
                                 /** @enum {number} */
@@ -3067,7 +3142,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -3125,6 +3200,12 @@ export interface paths {
                                 host?: string;
                                 pid?: number;
                                 epoch?: number;
+                                backgroundTasks?: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             providerRefs?: {
                                 backend: string;
@@ -3140,6 +3221,17 @@ export interface paths {
                                 /** @enum {string} */
                                 mode: "transcript_handoff";
                                 reason: string;
+                            };
+                            lostBackgroundWork?: {
+                                at: number;
+                                /** @enum {string} */
+                                cause: "server_restart" | "provider_exit";
+                                items: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             spawnedBy?: {
                                 sessionId: string;
@@ -3354,6 +3446,7 @@ export interface paths {
                             cwd: string;
                             host: string | null;
                             runtimeId: string | null;
+                            runtimeModel?: string;
                             backend: string;
                             capabilities?: {
                                 /** @enum {number} */
@@ -3515,7 +3608,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -3573,6 +3666,12 @@ export interface paths {
                                 host?: string;
                                 pid?: number;
                                 epoch?: number;
+                                backgroundTasks?: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             providerRefs?: {
                                 backend: string;
@@ -3588,6 +3687,17 @@ export interface paths {
                                 /** @enum {string} */
                                 mode: "transcript_handoff";
                                 reason: string;
+                            };
+                            lostBackgroundWork?: {
+                                at: number;
+                                /** @enum {string} */
+                                cause: "server_restart" | "provider_exit";
+                                items: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             spawnedBy?: {
                                 sessionId: string;
@@ -3744,7 +3854,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -3901,6 +4011,7 @@ export interface paths {
                             cwd: string;
                             host: string | null;
                             runtimeId: string | null;
+                            runtimeModel?: string;
                             backend: string;
                             capabilities?: {
                                 /** @enum {number} */
@@ -4062,7 +4173,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -4120,6 +4231,12 @@ export interface paths {
                                 host?: string;
                                 pid?: number;
                                 epoch?: number;
+                                backgroundTasks?: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             providerRefs?: {
                                 backend: string;
@@ -4135,6 +4252,17 @@ export interface paths {
                                 /** @enum {string} */
                                 mode: "transcript_handoff";
                                 reason: string;
+                            };
+                            lostBackgroundWork?: {
+                                at: number;
+                                /** @enum {string} */
+                                cause: "server_restart" | "provider_exit";
+                                items: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             spawnedBy?: {
                                 sessionId: string;
@@ -4338,6 +4466,7 @@ export interface paths {
                             cwd: string;
                             host: string | null;
                             runtimeId: string | null;
+                            runtimeModel?: string;
                             backend: string;
                             capabilities?: {
                                 /** @enum {number} */
@@ -4499,7 +4628,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -4557,6 +4686,12 @@ export interface paths {
                                 host?: string;
                                 pid?: number;
                                 epoch?: number;
+                                backgroundTasks?: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             providerRefs?: {
                                 backend: string;
@@ -4572,6 +4707,17 @@ export interface paths {
                                 /** @enum {string} */
                                 mode: "transcript_handoff";
                                 reason: string;
+                            };
+                            lostBackgroundWork?: {
+                                at: number;
+                                /** @enum {string} */
+                                cause: "server_restart" | "provider_exit";
+                                items: {
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "subagent" | "task";
+                                    id: string;
+                                    label: string;
+                                }[];
                             };
                             spawnedBy?: {
                                 sessionId: string;
@@ -4742,7 +4888,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -23069,7 +23215,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -23152,7 +23298,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -23275,7 +23421,7 @@ export interface paths {
                                     session_id?: string | null;
                                     title: string;
                                     /** @enum {string} */
-                                    outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                    outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                     /** @enum {string} */
                                     waiting_for?: "question" | "approval";
                                     summary: string;
@@ -23388,7 +23534,7 @@ export interface paths {
                                 session_id?: string | null;
                                 title: string;
                                 /** @enum {string} */
-                                outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                 /** @enum {string} */
                                 waiting_for?: "question" | "approval";
                                 summary: string;
@@ -23488,7 +23634,7 @@ export interface paths {
                                 session_id?: string | null;
                                 title: string;
                                 /** @enum {string} */
-                                outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                 /** @enum {string} */
                                 waiting_for?: "question" | "approval";
                                 summary: string;
@@ -23581,7 +23727,7 @@ export interface paths {
                                 session_id?: string | null;
                                 title: string;
                                 /** @enum {string} */
-                                outcome?: "finished" | "failed" | "stopped" | "waiting";
+                                outcome?: "finished" | "failed" | "stopped" | "waiting" | "interrupted";
                                 /** @enum {string} */
                                 waiting_for?: "question" | "approval";
                                 summary: string;
@@ -23675,7 +23821,7 @@ export interface paths {
                             title: string;
                             agent: string;
                             /** @enum {string} */
-                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                            status: "queued" | "running" | "waiting" | "idle" | "interrupted" | "failed" | "stopped";
                             /** @enum {string|null} */
                             waiting_for: "question" | "approval" | null;
                             last_message: string | null;
@@ -23701,6 +23847,19 @@ export interface paths {
                             last_activity?: string | null;
                             activity_count?: number;
                             start_error?: string | null;
+                            interruption_reason?: string | null;
+                            runtime_model?: string | null;
+                            background_tasks?: {
+                                id: string;
+                                /** @enum {string} */
+                                kind: "shell" | "monitor" | "task";
+                                description: string;
+                                command?: string;
+                                started_at: number;
+                                elapsed_ms: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                            }[];
                             native_session_id?: string | null;
                             live_session_id?: string | null;
                         };
@@ -23765,7 +23924,7 @@ export interface paths {
                             title: string;
                             agent: string;
                             /** @enum {string} */
-                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                            status: "queued" | "running" | "waiting" | "idle" | "interrupted" | "failed" | "stopped";
                             /** @enum {string|null} */
                             waiting_for: "question" | "approval" | null;
                             last_message: string | null;
@@ -23791,6 +23950,19 @@ export interface paths {
                             last_activity?: string | null;
                             activity_count?: number;
                             start_error?: string | null;
+                            interruption_reason?: string | null;
+                            runtime_model?: string | null;
+                            background_tasks?: {
+                                id: string;
+                                /** @enum {string} */
+                                kind: "shell" | "monitor" | "task";
+                                description: string;
+                                command?: string;
+                                started_at: number;
+                                elapsed_ms: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                            }[];
                             native_session_id?: string | null;
                             live_session_id?: string | null;
                         };
@@ -23844,7 +24016,7 @@ export interface paths {
                                 title: string;
                                 agent: string;
                                 /** @enum {string} */
-                                status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                                status: "queued" | "running" | "waiting" | "idle" | "interrupted" | "failed" | "stopped";
                                 /** @enum {string|null} */
                                 waiting_for: "question" | "approval" | null;
                                 last_message: string | null;
@@ -23870,6 +24042,19 @@ export interface paths {
                                 last_activity?: string | null;
                                 activity_count?: number;
                                 start_error?: string | null;
+                                interruption_reason?: string | null;
+                                runtime_model?: string | null;
+                                background_tasks?: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "task";
+                                    description: string;
+                                    command?: string;
+                                    started_at: number;
+                                    elapsed_ms: number;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                }[];
                                 native_session_id?: string | null;
                                 live_session_id?: string | null;
                             }[];
@@ -24033,7 +24218,7 @@ export interface paths {
                             title: string;
                             agent: string;
                             /** @enum {string} */
-                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                            status: "queued" | "running" | "waiting" | "idle" | "interrupted" | "failed" | "stopped";
                             /** @enum {string|null} */
                             waiting_for: "question" | "approval" | null;
                             last_message: string | null;
@@ -24059,6 +24244,19 @@ export interface paths {
                             last_activity?: string | null;
                             activity_count?: number;
                             start_error?: string | null;
+                            interruption_reason?: string | null;
+                            runtime_model?: string | null;
+                            background_tasks?: {
+                                id: string;
+                                /** @enum {string} */
+                                kind: "shell" | "monitor" | "task";
+                                description: string;
+                                command?: string;
+                                started_at: number;
+                                elapsed_ms: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                            }[];
                             native_session_id?: string | null;
                             live_session_id?: string | null;
                             timed_out: boolean;
@@ -24129,7 +24327,7 @@ export interface paths {
                                 title: string;
                                 agent: string;
                                 /** @enum {string} */
-                                status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                                status: "queued" | "running" | "waiting" | "idle" | "interrupted" | "failed" | "stopped";
                                 /** @enum {string|null} */
                                 waiting_for: "question" | "approval" | null;
                                 last_message: string | null;
@@ -24155,6 +24353,19 @@ export interface paths {
                                 last_activity?: string | null;
                                 activity_count?: number;
                                 start_error?: string | null;
+                                interruption_reason?: string | null;
+                                runtime_model?: string | null;
+                                background_tasks?: {
+                                    id: string;
+                                    /** @enum {string} */
+                                    kind: "shell" | "monitor" | "task";
+                                    description: string;
+                                    command?: string;
+                                    started_at: number;
+                                    elapsed_ms: number;
+                                    /** @enum {string} */
+                                    status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                                }[];
                                 native_session_id?: string | null;
                                 live_session_id?: string | null;
                             }[];
@@ -24211,7 +24422,7 @@ export interface paths {
                             title: string;
                             agent: string;
                             /** @enum {string} */
-                            status: "queued" | "running" | "waiting" | "idle" | "failed" | "stopped";
+                            status: "queued" | "running" | "waiting" | "idle" | "interrupted" | "failed" | "stopped";
                             /** @enum {string|null} */
                             waiting_for: "question" | "approval" | null;
                             last_message: string | null;
@@ -24237,6 +24448,19 @@ export interface paths {
                             last_activity?: string | null;
                             activity_count?: number;
                             start_error?: string | null;
+                            interruption_reason?: string | null;
+                            runtime_model?: string | null;
+                            background_tasks?: {
+                                id: string;
+                                /** @enum {string} */
+                                kind: "shell" | "monitor" | "task";
+                                description: string;
+                                command?: string;
+                                started_at: number;
+                                elapsed_ms: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted";
+                            }[];
                             native_session_id?: string | null;
                             live_session_id?: string | null;
                         };
@@ -24255,6 +24479,253 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/background-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    session_id?: string;
+                    project_id?: string;
+                    status?: "running" | "completed" | "failed" | "stopped" | "interrupted_by_restart";
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Detached background jobs */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            jobs: {
+                                id: string;
+                                /** @default null */
+                                label: string | null;
+                                command: string;
+                                cwd: string;
+                                /** @default null */
+                                session_id: string | null;
+                                /** @default null */
+                                project_id: string | null;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed" | "stopped" | "interrupted_by_restart";
+                                pid: number | null;
+                                started_at: number;
+                                /** @default null */
+                                finished_at: number | null;
+                                /** @default null */
+                                exit_code: number | null;
+                                /** @default null */
+                                signal: string | null;
+                                /** @default null */
+                                error: string | null;
+                                log_path: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        command: string;
+                        cwd: string;
+                        label?: string;
+                        session_id?: string;
+                        project_id?: string;
+                        env?: {
+                            [key: string]: string;
+                        };
+                    };
+                };
+            };
+            responses: {
+                /** @description Detached background command started */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            /** @default null */
+                            label: string | null;
+                            command: string;
+                            cwd: string;
+                            /** @default null */
+                            session_id: string | null;
+                            /** @default null */
+                            project_id: string | null;
+                            /** @enum {string} */
+                            status: "running" | "completed" | "failed" | "stopped" | "interrupted_by_restart";
+                            pid: number | null;
+                            started_at: number;
+                            /** @default null */
+                            finished_at: number | null;
+                            /** @default null */
+                            exit_code: number | null;
+                            /** @default null */
+                            signal: string | null;
+                            /** @default null */
+                            error: string | null;
+                            log_path: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/background-jobs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    logs?: "true" | "false";
+                    tail_lines?: number;
+                    tail_bytes?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Detached background job status and optional log tail */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            /** @default null */
+                            label: string | null;
+                            command: string;
+                            cwd: string;
+                            /** @default null */
+                            session_id: string | null;
+                            /** @default null */
+                            project_id: string | null;
+                            /** @enum {string} */
+                            status: "running" | "completed" | "failed" | "stopped" | "interrupted_by_restart";
+                            pid: number | null;
+                            started_at: number;
+                            /** @default null */
+                            finished_at: number | null;
+                            /** @default null */
+                            exit_code: number | null;
+                            /** @default null */
+                            signal: string | null;
+                            /** @default null */
+                            error: string | null;
+                            log_path: string;
+                            log_tail?: string;
+                            log_truncated?: boolean;
+                            log_size_bytes?: number;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/background-jobs/{id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Stopped detached background job */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            /** @default null */
+                            label: string | null;
+                            command: string;
+                            cwd: string;
+                            /** @default null */
+                            session_id: string | null;
+                            /** @default null */
+                            project_id: string | null;
+                            /** @enum {string} */
+                            status: "running" | "completed" | "failed" | "stopped" | "interrupted_by_restart";
+                            pid: number | null;
+                            started_at: number;
+                            /** @default null */
+                            finished_at: number | null;
+                            /** @default null */
+                            exit_code: number | null;
+                            /** @default null */
+                            signal: string | null;
+                            /** @default null */
+                            error: string | null;
+                            log_path: string;
+                        };
+                    };
                 };
             };
         };

@@ -222,13 +222,13 @@ explicit choices. The delivery receipt reports `queued`, `steered`, `resumed`,
 An agent can start and drive other sessions, the way Claude Code drives its
 subagents:
 
-| MCP tool                          | Does                                                                                               |
-| --------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `session_start`                   | Starts a headless ORC chat with a prompt and returns its `session_id` immediately                  |
-| `session_send`                    | Messages it: `queue` (default), or explicit `steer` / `interrupt`                                  |
-| `session_status` / `session_list` | Status (`queued`, `running`, `waiting`, `idle`, `failed`, `stopped`), live mid-turn activity (`last_activity_at`, `last_activity`, `activity_count`), explicit `start_error` on spawn/launch failures, last reply, queue, parent and children |
-| `session_wait` | Blocks until it stops running, waits for a human, or replies (`until: message`); `session_ids` with `mode: all` or `any` waits on several children |
-| `session_stop` | Stops its current turn (or reconciles a discovery-only live record) and, by default (`cascade`), every session it started; queued children are cancelled; messages still queued for a stopped session are cancelled, and messages sent after the stop deliver normally; sessions stay resumable |
+| MCP tool                          | Does                                                                                                                                                                                                                                                                                                           |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_start`                   | Starts a headless ORC chat with a prompt and returns its `session_id` immediately                                                                                                                                                                                                                              |
+| `session_send`                    | Messages it: `queue` (default), or explicit `steer` / `interrupt`                                                                                                                                                                                                                                              |
+| `session_status` / `session_list` | Status (`queued`, `running`, `waiting`, `idle`, `interrupted`, `failed`, `stopped`), live mid-turn activity (`last_activity_at`, `last_activity`, `activity_count`), live `background_tasks`, observed `runtime_model`, explicit `start_error` / `interruption_reason`, last reply, queue, parent and children |
+| `session_wait`                    | Blocks until it stops running, waits for a human, or replies (`until: message`); `session_ids` with `mode: all` or `any` waits on several children                                                                                                                                                             |
+| `session_stop`                    | Stops its current turn (or reconciles a discovery-only live record) and, by default (`cascade`), every session it started; queued children are cancelled; messages still queued for a stopped session are cancelled, and messages sent after the stop deliver normally; sessions stay resumable                |
 
 While a headless turn is running, `GET /api/sessions/live/{id}/status` (and MCP `session_status`) advances `last_activity_at`, `updated_at`, `last_activity` (such as `tool:bash`, `thinking`, `text`, `plan`, or `waiting:approval`), and `activity_count` on every streamed event before the turn completes, so callers can distinguish active workers from hung turns. If launch, preflight, or the turn fails, `start_error` exposes the failure reason explicitly (and `last_message` falls back to it when no assistant prose was emitted). `session_start` also normalizes canonical backend aliases (`codex-cli` to `codex`, `claude-cli`/`claude-code` to `claude`, `cursor-agent` to `cursor`), and provider/adapter mismatches report both the mismatched provider and the valid provider IDs for the requested agent.
 
@@ -236,11 +236,11 @@ Live session routes (`GET /api/sessions/live/{id}`, `/status`, `/transcript`, `/
 
 `session_start` takes `workspace`:
 
-| `workspace`      | Same project                                                                   | Another project (`project`)               |
-| ---------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
-| `same` (default) | The caller's folder, sharing uncommitted edits                                 | Refused                                   |
-| `worktree` | A new git worktree under `.orc/worktrees/` on a new branch cut from the caller's committed HEAD (uncommitted edits stay behind) | A new worktree of that project's checkout |
-| `project`        | The project's main checkout                                                    | That project's main checkout              |
+| `workspace`      | Same project                                                                                                                    | Another project (`project`)               |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `same` (default) | The caller's folder, sharing uncommitted edits                                                                                  | Refused                                   |
+| `worktree`       | A new git worktree under `.orc/worktrees/` on a new branch cut from the caller's committed HEAD (uncommitted edits stay behind) | A new worktree of that project's checkout |
+| `project`        | The project's main checkout                                                                                                     | That project's main checkout              |
 
 Another project must be inside the caller's MCP project scope.
 
@@ -319,8 +319,19 @@ a stuck one:
   when the agent streams them, nested by `parentID`). A subagent waiting on a
   permission prompt reads **Needs you**, and so does the chat while a subagent in
   its latest turn failed or waits. Running subagents also show over the composer.
-- A Claude turn stays open while a subagent it started in the background still
-  runs, because ending the turn would stop it; the agent's follow-up reply lands
-  in the same turn. Pi and the ACPX agents report no subagents, so nothing is
+- A Claude turn stays open while any subagent or background command (`local_bash`,
+  `Monitor`, or other non-ambient background task) still runs, deferring the idle
+  watchdog and surfacing live `background_tasks` on `session_status`; the agent's
+  follow-up reply lands in the same turn. Claude sessions stay resident across
+  turns while idle so process-local background work is not torn down between turns.
+  If a daemon restart or unexpected provider exit kills in-flight background work,
+  the session reports `interrupted` (with `interruption_reason`) and notifies the
+  agent on the next turn so it never assumes lost jobs succeeded. For long commands
+  that must survive a full ORC daemon restart, use the detached `shell_run` /
+  `shell_status` / `shell_stop` MCP tools (or `/api/background-jobs`).
+- Observed runtime model names (including custom `ANTHROPIC_BASE_URL` /
+  `ANTHROPIC_MODEL` endpoints) are tracked separately from configured aliases in
+  `runtimeModel` / `runtime_model` and shown across chat headers, session settings,
+  and session lists. Pi and the ACPX agents report no subagents, so nothing is
   shown, and **Capabilities** in the conversation details lists **Subagents** only
   for agents that report them.

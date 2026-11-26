@@ -97,9 +97,22 @@ function interruptStaleLease(db: Database, threadId: string, runId: string, now:
       if (thread?.turn?.status !== "running" || thread.turn.runId !== runId) return;
       const lease = thread.turn;
       thread.turn = { ...lease, status: "interrupted" };
+      if (lease.backgroundTasks?.length) {
+        thread.lostBackgroundWork = {
+          at: now,
+          cause: "server_restart",
+          items: lease.backgroundTasks,
+        };
+      }
       // The turn died somewhere between its last heartbeat and this boot; the
       // note is recorded now, below anything the dead turn persisted itself.
       const finishedAt = Math.min(now, Math.max(lease.startedAt, lease.lastHeartbeatAt ?? now));
+      const baseNotice = thread.runtimeId
+        ? TURN_INTERRUPTED_NOTICE
+        : TURN_INTERRUPTED_NOTICE_NO_SESSION;
+      const lostNotice = lease.backgroundTasks?.length
+        ? ` Background work cancelled by restart: ${lease.backgroundTasks.map((item) => item.label).join(", ")}.`
+        : "";
       const note: ChatMessage = {
         id: crypto.randomUUID(),
         role: "assistant",
@@ -110,7 +123,7 @@ function interruptStaleLease(db: Database, threadId: string, runId: string, now:
           {
             type: "status",
             id: crypto.randomUUID(),
-            text: thread.runtimeId ? TURN_INTERRUPTED_NOTICE : TURN_INTERRUPTED_NOTICE_NO_SESSION,
+            text: `${baseNotice}${lostNotice}`,
           },
         ],
         turn: {
