@@ -51,7 +51,7 @@ for (const width of [1440, 390])
       await panel.getByTestId("inspector-changes-help").focus();
       await expect(page.getByTestId("inspector-changes-help-content")).toBeVisible();
       await expect(page.getByTestId("inspector-changes-help-content")).toContainText(
-        "working-tree changes",
+        "Working-tree changes",
       );
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("inspector-changes-help-content")).toHaveCount(0);

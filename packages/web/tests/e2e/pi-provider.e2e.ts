@@ -55,7 +55,9 @@ for (const width of [390, 1440]) {
       await page.keyboard.press("Escape");
       await expect(page.getByTestId("provider-options-help-content")).toHaveCount(0);
       await help.click();
-      await expect(page.getByTestId("provider-options-help-content")).toContainText("Pi options");
+      await expect(page.getByTestId("provider-options-help-content")).toContainText(
+        "Pi's host settings",
+      );
       await page.keyboard.press("Escape");
       await page.getByTestId("agent-settings-save").click();
       await expect(page.getByTestId("agent-settings-saved")).toBeVisible();
