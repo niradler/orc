@@ -181,27 +181,39 @@ export class McpTaskStore {
       .run(requests === null ? null : JSON.stringify(requests), now, taskId);
   }
 
-  applyInputResponses(taskId: string, responses: Record<string, unknown>): void {
-    this.sqlite
+  applyInputResponses(
+    taskId: string,
+    responses: Record<string, unknown>,
+  ): Record<string, unknown> | null {
+    return this.sqlite
       .transaction(() => {
         const row = this.sqlite
           .query<{ input_responses: string | null }, [string]>(
             "SELECT input_responses FROM mcp_tasks WHERE task_id=? AND status='input_required' AND terminal_at IS NULL",
           )
           .get(taskId);
-        if (!row) return;
-        const merged = { ...(JSON.parse(row.input_responses ?? "{}") as object), ...responses };
+        if (!row) return null;
+        const merged = {
+          ...(JSON.parse(row.input_responses ?? "{}") as Record<string, unknown>),
+          ...responses,
+        };
         this.sqlite
           .query(
             "UPDATE mcp_tasks SET input_responses=?, updated_at=? WHERE task_id=? AND status='input_required' AND terminal_at IS NULL",
           )
           .run(JSON.stringify(merged), Date.now(), taskId);
+        return merged;
       })
       .immediate();
   }
 
   resumeWorking(taskId: string): void {
-    this.transition(taskId, "working");
+    const now = Date.now();
+    this.sqlite
+      .query(
+        "UPDATE mcp_tasks SET status='working', input_requests=NULL, updated_at=? WHERE task_id=? AND terminal_at IS NULL",
+      )
+      .run(now, taskId);
   }
 
   list(owner: string, cursor?: string): { tasks: McpTaskRow[]; nextCursor?: string | undefined } {

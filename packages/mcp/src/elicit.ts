@@ -27,10 +27,17 @@ function notifyChannels(): NotifyChannel[] {
   const configured = process.env.ORC_MCP_ELICIT_NOTIFY?.split(",")
     .map((value) => value.trim())
     .filter((value): value is NotifyChannel => (ALL_CHANNELS as readonly string[]).includes(value));
-  return configured?.length ? configured.slice(0, 2) : [...DEFAULT_CHANNELS];
+  const unique = configured ? [...new Set(configured)] : [];
+  return unique.length ? unique.slice(0, 2) : [...DEFAULT_CHANNELS];
 }
 
-type OptionEntry = { const?: unknown; title?: unknown; description?: unknown };
+type OptionEntry = {
+  const?: unknown;
+  title?: unknown;
+  description?: unknown;
+  format?: unknown;
+  writeOnly?: unknown;
+};
 type PropertySchema = {
   type?: string;
   title?: string;
@@ -39,6 +46,10 @@ type PropertySchema = {
   writeOnly?: boolean;
   enum?: unknown[];
   oneOf?: OptionEntry[];
+  anyOf?: OptionEntry[];
+  items?: PropertySchema;
+  minItems?: number;
+  maxItems?: number;
   minimum?: number;
   maximum?: number;
   minLength?: number;
@@ -56,29 +67,55 @@ export type HumanElicitTarget = {
   waitMs?: number | undefined;
 };
 
+function objectEntries(entries: OptionEntry[] | undefined): OptionEntry[] {
+  if (!Array.isArray(entries)) return [];
+  return entries.filter(
+    (option): option is OptionEntry =>
+      Boolean(option) && typeof option === "object" && !Array.isArray(option),
+  );
+}
+
+function optionTexts(entries: OptionEntry[] | undefined): string[] {
+  return objectEntries(entries).flatMap((option) => [
+    option.const !== undefined ? String(option.const) : "",
+    typeof option.title === "string" ? option.title : "",
+    typeof option.description === "string" ? option.description : "",
+  ]);
+}
+
+function optionsHaveSecretAttr(entries: OptionEntry[] | undefined): boolean {
+  return objectEntries(entries).some(
+    (option) => option.format === "password" || option.writeOnly === true,
+  );
+}
+
+function fieldHasSecret(key: string, field: PropertySchema): boolean {
+  if (field.format === "password" || field.writeOnly === true) return true;
+  if (optionsHaveSecretAttr(field.oneOf) || optionsHaveSecretAttr(field.anyOf)) return true;
+  const optionText = [
+    ...(Array.isArray(field.enum) ? field.enum.map(String) : []),
+    ...optionTexts(field.oneOf),
+    ...optionTexts(field.anyOf),
+  ].join(" ");
+  const haystack = [
+    key,
+    typeof field.title === "string" ? field.title : "",
+    typeof field.description === "string" ? field.description : "",
+    optionText,
+  ].join(" ");
+  if (SECRET_FIELD.test(haystack)) return true;
+  if (field.items && typeof field.items === "object" && !Array.isArray(field.items)) {
+    return fieldHasSecret(key, field.items);
+  }
+  return false;
+}
+
 export function assertNonSecretElicitSchema(requestedSchema: Record<string, unknown>): void {
   const properties = (requestedSchema as FormSchema).properties;
   if (!properties || typeof properties !== "object" || Array.isArray(properties)) return;
   for (const [key, raw] of Object.entries(properties)) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
-    const field = raw as PropertySchema;
-    const optionText = [
-      ...(Array.isArray(field.enum) ? field.enum.map(String) : []),
-      ...(Array.isArray(field.oneOf)
-        ? field.oneOf.flatMap((option) => [
-            option.const !== undefined ? String(option.const) : "",
-            typeof option.title === "string" ? option.title : "",
-            typeof option.description === "string" ? option.description : "",
-          ])
-        : []),
-    ].join(" ");
-    const haystack = [
-      key,
-      typeof field.title === "string" ? field.title : "",
-      typeof field.description === "string" ? field.description : "",
-      optionText,
-    ].join(" ");
-    if (field.format === "password" || field.writeOnly === true || SECRET_FIELD.test(haystack)) {
+    if (fieldHasSecret(key, raw as PropertySchema)) {
       throw new Error(
         "Form elicitation cannot collect secrets; use human_request with kind 'secret' instead.",
       );
@@ -89,8 +126,9 @@ export function assertNonSecretElicitSchema(requestedSchema: Record<string, unkn
 function allowedConstants(schema: PropertySchema | undefined): unknown[] | undefined {
   if (!schema) return undefined;
   if (Array.isArray(schema.enum)) return schema.enum;
-  if (Array.isArray(schema.oneOf)) {
-    const values = schema.oneOf.map((option) => option.const).filter((v) => v !== undefined);
+  for (const union of [schema.oneOf, schema.anyOf]) {
+    const entries = objectEntries(union);
+    const values = entries.map((option) => option.const).filter((v) => v !== undefined);
     if (values.length) return values;
   }
   return undefined;
@@ -240,6 +278,67 @@ function combineSignals(
   return a ?? b;
 }
 
+function sanitizeChoices(rawChoices: string[] | undefined): string[] {
+  if (!rawChoices || rawChoices.length === 0 || rawChoices.length > MAX_HUMAN_CHOICES) return [];
+  const trimmed = rawChoices.map((choice) => choice.trim());
+  if (trimmed.some((choice) => choice.length === 0 || choice.length > 1000)) return [];
+  if (new Set(trimmed).size !== trimmed.length) return [];
+  return trimmed;
+}
+
+function parseFieldValue(
+  raw: unknown,
+  schema: PropertySchema | undefined,
+): { ok: true; value: string | number | boolean | (string | number | boolean)[] } | { ok: false } {
+  if (schema?.type === "array") {
+    if (!Array.isArray(raw)) return { ok: false };
+    if (typeof schema.minItems === "number" && raw.length < schema.minItems) return { ok: false };
+    if (typeof schema.maxItems === "number" && raw.length > schema.maxItems) return { ok: false };
+    const out: (string | number | boolean)[] = [];
+    for (const entry of raw) {
+      const parsed = parseScalar(entry, schema.items);
+      if (!parsed.ok) return { ok: false };
+      out.push(parsed.value);
+    }
+    return { ok: true, value: out };
+  }
+  return parseScalar(raw, schema);
+}
+
+export function validateElicitResponse(
+  raw: unknown,
+  requestedSchema: Record<string, unknown>,
+): { action: "accept" | "decline" | "cancel"; content?: Record<string, unknown> | undefined } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { action: "decline" };
+  const record = raw as Record<string, unknown>;
+  if (record.action === "cancel") return { action: "cancel" };
+  if (record.action === "decline") return { action: "decline" };
+  if (record.action !== "accept") return { action: "decline" };
+  const schema = (requestedSchema ?? {}) as FormSchema;
+  const properties = schema.properties ?? {};
+  const keys = Object.keys(properties);
+  if (keys.length === 0) return { action: "accept", content: {} };
+  const rawContent = record.content;
+  if (!rawContent || typeof rawContent !== "object" || Array.isArray(rawContent)) {
+    return { action: "decline" };
+  }
+  const input = rawContent as Record<string, unknown>;
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  const content: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (!Object.hasOwn(input, key) || input[key] === undefined) {
+      if (required.includes(key)) return { action: "decline" };
+      continue;
+    }
+    const coerced = parseFieldValue(input[key], properties[key]);
+    if (!coerced.ok) return { action: "decline" };
+    content[key] = coerced.value;
+  }
+  return { action: "accept", content };
+}
+
 export function createHumanElicit(target: HumanElicitTarget): ElicitFn {
   const store = new HumanRequestStore(getSqlite());
   return async ({ message, requestedSchema, signal: callSignal }) => {
@@ -252,19 +351,21 @@ export function createHumanElicit(target: HumanElicitTarget): ElicitFn {
     const keys = Object.keys(properties);
     const single = keys.length === 1 ? (keys[0] as string) : undefined;
     const singleSchema = single ? properties[single] : undefined;
-    const rawChoices = single ? enumValues(singleSchema) : undefined;
-    const choices = rawChoices && rawChoices.length <= MAX_HUMAN_CHOICES ? rawChoices : undefined;
+    const choices = sanitizeChoices(single ? enumValues(singleSchema) : undefined);
+    const sessionId = target.sessionId?.trim().slice(0, 128) || `mcp-elicitation:${process.pid}`;
+    const backend = process.env.ORC_AGENT?.trim().slice(0, 128) || "mcp";
+    const prompt = describe(schema, message).trim() || "Input needed";
     const created = store.create({
       origin: {
-        session_id: target.sessionId ?? `mcp-elicitation:${process.pid}`,
-        backend: process.env.ORC_AGENT || "mcp",
+        session_id: sessionId,
+        backend,
         request_id: `elicit-${ulid()}`,
       },
       project_id: target.projectId ?? null,
       kind: "question",
       title: "Input needed",
-      prompt: describe(schema, message),
-      choices: choices ?? [],
+      prompt,
+      choices,
       multi_select: false,
       notify: notifyChannels(),
       deliver_to_session: false,

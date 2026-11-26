@@ -6,7 +6,11 @@ import { resetConfig } from "@orc/core/config";
 import type { HumanRequest } from "@orc/core/human-requests";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
-import { createHumanElicit } from "../elicit.js";
+import {
+  assertNonSecretElicitSchema,
+  createHumanElicit,
+  validateElicitResponse,
+} from "../elicit.js";
 import { createMcpServer } from "../server.js";
 
 beforeAll(() => {
@@ -275,6 +279,91 @@ describe("HTTP elicitation via durable human requests", () => {
     controller.abort();
     expect(await waiting).toEqual({ action: "cancel" });
     expect(Date.now() - started).toBeLessThan(400);
+
+    await client.close();
+    await server.close();
+  });
+
+  test("handles long session IDs, duplicate/blank enum choices, whitespace prompts, and nested secret schemas", async () => {
+    const longSession = "s".repeat(180);
+    const { client, server } = await connectHttp(longSession);
+
+    const dupChoice = await runScript(client, {
+      marker: "Dup enum",
+      code: `const r = await tools.elicit("Dup enum", {
+         type: "object",
+         properties: { choice: { type: "string", enum: ["a", "a", "b"] } },
+       });
+       return r;`,
+      answer: "b",
+    });
+    expect(dupChoice.isError).toBeFalsy();
+    expect(dupChoice.structuredContent?.result).toEqual({
+      action: "accept",
+      content: { choice: "b" },
+    });
+
+    const nestedSecret = await client.callTool({
+      name: "tool_execute",
+      arguments: {
+        code: `await tools.elicit("Nested secret", {
+           type: "object",
+           properties: {
+             tags: { type: "array", items: { type: "string", title: "API key" } },
+           },
+         });
+         return 1;`,
+      },
+    });
+    const parsedNested = CallToolResultSchema.parse(nestedSecret);
+    expect(parsedNested.isError).toBe(true);
+    expect((parsedNested.content[0] as { text?: string })?.text ?? "").toContain("secrets");
+
+    const wsElicit = createHumanElicit({ sessionId: longSession, waitMs: 1 });
+    expect(
+      await wsElicit({
+        message: "   ",
+        requestedSchema: { type: "object", properties: {} },
+      }),
+    ).toEqual({ action: "cancel" });
+
+    expect(() =>
+      assertNonSecretElicitSchema({
+        type: "object",
+        properties: {
+          mode: { oneOf: [null, { const: "fast" }] },
+        },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertNonSecretElicitSchema({
+        type: "object",
+        properties: {
+          mode: { anyOf: [null, { writeOnly: true }] },
+        },
+      }),
+    ).toThrow("secrets");
+
+    expect(
+      validateElicitResponse(
+        { action: "accept", content: { tags: ["a", "b"] } },
+        {
+          type: "object",
+          properties: {
+            tags: {
+              type: "array",
+              items: {
+                anyOf: [
+                  { const: "a", title: "A" },
+                  { const: "b", title: "B" },
+                ],
+              },
+            },
+          },
+          required: ["tags"],
+        },
+      ),
+    ).toEqual({ action: "accept", content: { tags: ["a", "b"] } });
 
     await client.close();
     await server.close();

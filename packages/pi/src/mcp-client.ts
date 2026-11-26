@@ -275,19 +275,39 @@ export class OrcMcpClient {
     );
   }
 
-  async cancelTask(taskId: string): Promise<void> {
+  async cancelTask(taskId: string, options: OrcTaskOptions = {}): Promise<void> {
     const client = await this.connect();
     await timeout(
-      client.request({ method: "tasks/cancel", params: { taskId } }, CancelTaskResultSchema, {
-        timeout: this.config.timeoutMs,
-      }),
+      client.request(
+        { method: "tasks/cancel", params: { taskId } },
+        CancelTaskResultSchema,
+        requestOptions(this.config.timeoutMs, options.signal),
+      ),
       this.config.timeoutMs,
       `ORC task cancel ${taskId}`,
     );
   }
 
-  async waitForTask(taskId: string, options: OrcTaskOptions = {}): Promise<OrcToolResult> {
+  async taskResult(taskId: string, options: OrcTaskOptions = {}): Promise<OrcToolResult> {
     const client = await this.connect();
+    const result = await timeout(
+      client.request(
+        { method: "tasks/result", params: { taskId } },
+        CallToolResultSchema,
+        requestOptions(this.config.timeoutMs, options.signal),
+      ),
+      this.config.timeoutMs,
+      `ORC task result ${taskId}`,
+    );
+    return {
+      text: textOf(result.content),
+      isError: result.isError === true,
+      raw: result,
+    };
+  }
+
+  async waitForTask(taskId: string, options: OrcTaskOptions = {}): Promise<OrcToolResult> {
+    await this.connect();
     const deadline = Date.now() + (options.timeoutMs ?? 10 * 60_000);
     if (options.signal?.aborted) throw new OrcMcpError(`ORC task ${taskId} wait aborted`);
     let status = await this.taskStatus(taskId, options);
@@ -310,20 +330,7 @@ export class OrcMcpClient {
       throw new OrcMcpError(status.statusMessage || `ORC task ${taskId} failed`);
     if (status.status === "cancelled")
       throw new OrcMcpError(status.statusMessage || `ORC task ${taskId} was cancelled`);
-    const result = await timeout(
-      client.request(
-        { method: "tasks/result", params: { taskId } },
-        CallToolResultSchema,
-        requestOptions(this.config.timeoutMs, options.signal),
-      ),
-      this.config.timeoutMs,
-      `ORC task result ${taskId}`,
-    );
-    return {
-      text: textOf(result.content),
-      isError: result.isError === true,
-      raw: result,
-    };
+    return this.taskResult(taskId, options);
   }
 
   /** Start a task and wait for it, for consumers that do not manage handles. */
@@ -345,18 +352,24 @@ export class OrcMcpClient {
   }
 
   async listSkills(
-    options: { q?: string | undefined; limit?: number | undefined } = {},
+    options: {
+      q?: string | undefined;
+      limit?: number | undefined;
+      project?: string | undefined;
+    } = {},
   ): Promise<OrcToolResult> {
-    if (!(await this.hasSkillsExtension())) {
+    if (options.project || !(await this.hasSkillsExtension())) {
       return this.call("skill_list", {
+        ...(options.project ? { project: options.project } : { scope: "global" }),
         ...(options.q ? { q: options.q } : {}),
         limit: options.limit ?? 20,
       });
     }
     const client = await this.connect();
-    const limit = options.limit ?? 20;
+    const limit = Math.max(1, options.limit ?? 20);
     const query = options.q?.trim().toLowerCase();
     const skills: { name: string; description: string; uri: string }[] = [];
+    const seenCursors = new Set<string>();
     let cursor: string | undefined;
     do {
       const page: z.infer<typeof SKILLS_LIST_SCHEMA> = await timeout(
@@ -378,6 +391,8 @@ export class OrcMcpClient {
         skills.push({ name, description, uri: skill.uri });
         if (skills.length >= limit) break;
       }
+      if (!page.nextCursor || seenCursors.has(page.nextCursor)) break;
+      seenCursors.add(page.nextCursor);
       cursor = page.nextCursor;
     } while (cursor && skills.length < limit);
     return {
@@ -392,10 +407,11 @@ export class OrcMcpClient {
 
   async readSkill(
     name: string,
-    options: { ref?: string | undefined } = {},
+    options: { ref?: string | undefined; project?: string | undefined } = {},
   ): Promise<OrcToolResult> {
-    if (!(await this.hasSkillsExtension()))
+    if (options.project || !(await this.hasSkillsExtension()))
       return this.call("skill_read", {
+        ...(options.project ? { project: options.project } : { scope: "global" }),
         name,
         ...(options.ref ? { ref: options.ref } : {}),
       });
@@ -421,21 +437,19 @@ export class OrcMcpClient {
       `ORC skill ${name}`,
     );
     const item = result.contents[0];
-    if (!item) throw new OrcMcpError(`Empty skill resource response: ${uri}`);
-    const bytes =
-      "blob" in item && typeof item.blob === "string"
-        ? Buffer.from(item.blob, "base64")
-        : Buffer.from("text" in item && typeof item.text === "string" ? item.text : "", "utf8");
+    if (!item || result.contents.length !== 1) {
+      throw new OrcMcpError(`Unexpected skill resource response shape: ${uri}`);
+    }
+    const isBlob = "blob" in item && typeof item.blob === "string";
+    const textContent = "text" in item && typeof item.text === "string" ? item.text : "";
+    const bytes = isBlob ? Buffer.from(item.blob, "base64") : Buffer.from(textContent, "utf8");
     const digest = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
     if (bytes.length !== manifest.size || digest !== manifest.digest) {
       throw new OrcMcpError(`Skill resource failed integrity check: ${uri}`);
     }
-    const text = result.contents
-      .map((entryItem) =>
-        "text" in entryItem && typeof entryItem.text === "string" ? entryItem.text : "",
-      )
-      .filter(Boolean)
-      .join("\n");
+    const text = isBlob
+      ? `[binary resource ${uri}, ${bytes.length} bytes, ${item.mimeType ?? "application/octet-stream"}]`
+      : textContent;
     return { text, isError: false, raw: result };
   }
 

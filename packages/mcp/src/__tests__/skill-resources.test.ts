@@ -409,4 +409,51 @@ describe("Skills over MCP: project scoping and overlays", () => {
     await client.close();
     await server.close();
   });
+
+  test("root file is not shadowed by references/<same-name> in manifest or resources/read", async () => {
+    const dualSkill = `mcp-spec-dual-${process.pid}`;
+    const rootContent = "ROOT_CHECKLIST\n";
+    const refContent = "REFERENCES_CHECKLIST\n";
+    createSkill(
+      dualSkill,
+      `---\nname: ${dualSkill}\ndescription: Dual path fixture\n---\n\nBody.\n`,
+      [
+        { path: "checklist.md", content: rootContent },
+        { path: "references/checklist.md", content: refContent },
+      ],
+    );
+    reloadCache();
+    try {
+      const { client, server } = await connectClient();
+      const got = (await request(client, "skills/get", {
+        uri: `skill://${dualSkill}/SKILL.md`,
+      })) as { skill: { resources: { uri: string; digest: string; size: number }[] } };
+      const rootEntry = got.skill.resources.find(
+        (r) => r.uri === `skill://${dualSkill}/checklist.md`,
+      );
+      const refEntry = got.skill.resources.find(
+        (r) => r.uri === `skill://${dualSkill}/references/checklist.md`,
+      );
+      expect(rootEntry).toBeDefined();
+      expect(refEntry).toBeDefined();
+      expect(rootEntry?.digest).not.toBe(refEntry?.digest);
+
+      const rootRead = (await request(client, "resources/read", {
+        uri: `skill://${dualSkill}/checklist.md`,
+      })) as { contents: { text: string }[] };
+      const refRead = (await request(client, "resources/read", {
+        uri: `skill://${dualSkill}/references/checklist.md`,
+      })) as { contents: { text: string }[] };
+      expect(rootRead.contents[0]?.text).toBe(rootContent);
+      expect(refRead.contents[0]?.text).toBe(refContent);
+      expect(rootEntry?.digest).toBe(
+        `sha256:${createHash("sha256").update(Buffer.from(rootContent, "utf8")).digest("hex")}`,
+      );
+      await client.close();
+      await server.close();
+    } finally {
+      rmSync(join(getUserSkillsDir(), dualSkill), { recursive: true, force: true });
+      reloadCache();
+    }
+  });
 });

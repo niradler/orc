@@ -388,7 +388,7 @@ export function createMcpServer({
           } as Parameters<typeof server.elicitInput>[0],
           {
             signal: combined,
-            ...(related ? { relatedRequestId: related } : {}),
+            ...(related !== undefined ? { relatedRequestId: related } : {}),
           },
         );
       };
@@ -398,7 +398,8 @@ export function createMcpServer({
     // background on its own signal, so it outlives this request/transport.
     const augmented = maybeAugmentCallTool(
       request,
-      (taskSignal) => executeCallTool(request, taskSignal, elicitFor(taskSignal)),
+      (taskSignal, taskCtx) =>
+        executeCallTool(request, taskSignal, taskCtx.v2Elicit ?? elicitFor(taskSignal)),
       tasksOptions,
     );
     if (augmented) return augmented;

@@ -9,7 +9,13 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { parseMarkdownFrontmatter } from "@orc/core/markdown-frontmatter";
-import { listSkillFiles, MAX_SKILL_BUNDLE_BYTES, validateSkillPath } from "@orc/core/skill-files";
+import {
+  listSkillFiles,
+  MAX_SKILL_BUNDLE_BYTES,
+  MAX_SKILL_FILES,
+  readSkillFile,
+  validateSkillPath,
+} from "@orc/core/skill-files";
 import type { SkillRefContent } from "@orc/core/skill-service";
 import { getSqlite } from "@orc/db/client";
 import { SkillHistory, type SkillListItem } from "@orc/db/skill-history";
@@ -143,10 +149,16 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  function servedFile(name: string, ref: string): ServedBytes | null {
+  function servedFile(meta: SkillListItem, ref: string): ServedBytes | null {
+    const scope = scopeFor(meta.name);
     let result: SkillRefContent | null;
     try {
-      result = history.read(name, scopeFor(name), ref) as SkillRefContent | null;
+      if (ref === "SKILL.md") {
+        result = history.read(meta.name, scope, "SKILL.md") as SkillRefContent | null;
+      } else {
+        if (!history.visible(meta.name, scope)) return null;
+        result = readSkillFile(dirname(meta.path), ref, false);
+      }
     } catch {
       return null;
     }
@@ -172,12 +184,13 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
     } catch {
       return null;
     }
+    if (files.length > MAX_SKILL_FILES) return null;
     const cacheKey = `${meta.path}:${scopeFor(meta.name) ?? "global"}:${meta.name}`;
     const fp = fingerprint(meta, files);
     const cached = manifestCache.get(cacheKey);
     if (cached && cached.fingerprint === fp) return cached.entry;
 
-    const entrySkill = servedFile(meta.name, "SKILL.md");
+    const entrySkill = servedFile(meta, "SKILL.md");
     if (!entrySkill) return null;
     let frontmatter: Record<string, unknown>;
     try {
@@ -191,7 +204,7 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
     ];
     let total = entrySkill.bytes.length;
     for (const file of files) {
-      const served = servedFile(meta.name, file.name);
+      const served = servedFile(meta, file.name);
       if (!served) return null;
       total += served.bytes.length;
       if (total > MAX_SKILL_BUNDLE_BYTES) return null;
@@ -294,7 +307,7 @@ export function registerSkillResources(server: Server, options: SkillResourcesOp
         throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
       }
     }
-    const served = servedFile(resolved.name, resolved.ref);
+    const served = servedFile(resolved.meta, resolved.ref);
     if (!served) throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
     history.recordRead(
       resolved.name,

@@ -119,5 +119,75 @@ describe("uiElicitation", () => {
         },
       }),
     ).toEqual({ action: "decline" });
+
+    const boundedHandler = uiElicitation(ui({ input: ["0"] }));
+    expect(
+      await boundedHandler({
+        message: "Count",
+        requestedSchema: {
+          type: "object",
+          properties: { count: { type: "integer", minimum: 1 } },
+          required: ["count"],
+        },
+      }),
+    ).toEqual({ action: "decline" });
+
+    const optionalBlankHandler = uiElicitation(ui({ input: ["Ada", ""] }));
+    expect(
+      await optionalBlankHandler({
+        message: "Profile",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", minLength: 1 },
+            age: { type: "integer" },
+          },
+          required: ["name"],
+        },
+      }),
+    ).toEqual({ action: "accept", content: { name: "Ada" } });
+
+    const nestedSecretUi = ui({ input: ["nope"] });
+    const nestedSecretHandler = uiElicitation(nestedSecretUi);
+    expect(
+      await nestedSecretHandler({
+        message: "Nested",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            items: { type: "array", items: { type: "string", format: "password" } },
+          },
+        },
+      }),
+    ).toEqual({ action: "decline" });
+    expect(nestedSecretUi.prompts).toEqual([]);
+
+    const unionSecretUi = ui({ input: ["nope"] });
+    const unionSecretHandler = uiElicitation(unionSecretUi);
+    expect(
+      await unionSecretHandler({
+        message: "Union secret",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            field: { anyOf: [null as unknown as Record<string, unknown>, { writeOnly: true }] },
+          },
+        },
+      }),
+    ).toEqual({ action: "decline" });
+    expect(unionSecretUi.prompts).toEqual([]);
+
+    const nullUnionHandler = uiElicitation(ui({ select: ["b"] }));
+    expect(
+      await nullUnionHandler({
+        message: "Malformed union",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            env: { oneOf: [null as unknown as Record<string, unknown>, { const: "b" }] },
+          },
+        },
+      }),
+    ).toEqual({ action: "accept", content: { env: "b" } });
   });
 });

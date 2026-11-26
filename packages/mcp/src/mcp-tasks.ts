@@ -1,9 +1,12 @@
 import type { Database } from "bun:sqlite";
 import type { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { type CallToolRequest, ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
+import { ulid } from "@orc/core/ids";
 import { getSqlite } from "@orc/db/client";
-import { type McpTaskRow, McpTaskStore } from "@orc/db/mcp-tasks";
+import { type McpTaskFlavor, type McpTaskRow, McpTaskStore } from "@orc/db/mcp-tasks";
 import { z } from "zod";
+import type { ElicitFn } from "./code-mode.js";
+import { assertNonSecretElicitSchema, validateElicitResponse } from "./elicit.js";
 import type { ToolResult } from "./meta-tools.js";
 
 /**
@@ -23,6 +26,7 @@ const CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities
 // Cancellation must reach a running execution even when the cancel arrives on a
 // different (stateless HTTP) server instance, so controllers live per process.
 const running = new Map<string, AbortController>();
+const inputWaiters = new Map<string, { key: string; resolve: (response: unknown) => void }>();
 const orphansFailedFor = new WeakSet<Database>();
 
 const TaskIdParams = z.object({ taskId: z.string().min(1) });
@@ -104,20 +108,69 @@ export interface McpTasksOptions {
   store?: McpTaskStore | undefined;
 }
 
+export type TaskRunContext = {
+  taskId: string;
+  flavor: McpTaskFlavor;
+  v2Elicit?: ElicitFn | undefined;
+};
+
+function createV2TaskElicit(
+  taskId: string,
+  store: McpTaskStore,
+  taskSignal: AbortSignal,
+): ElicitFn {
+  return async ({ message, requestedSchema, signal: callSignal }) => {
+    assertNonSecretElicitSchema(requestedSchema);
+    const signal = callSignal ? AbortSignal.any([taskSignal, callSignal]) : taskSignal;
+    if (signal.aborted) return { action: "cancel" };
+    const key = ulid();
+    store.setInputRequests(taskId, {
+      [key]: {
+        method: "elicitation/create",
+        params: { mode: "form", message, requestedSchema },
+      },
+    });
+    const raw = await new Promise<unknown>((resolve) => {
+      const onAbort = () => {
+        if (inputWaiters.get(taskId)?.key === key) inputWaiters.delete(taskId);
+        resolve({ action: "cancel" });
+      };
+      inputWaiters.set(taskId, {
+        key,
+        resolve: (value) => {
+          signal.removeEventListener("abort", onAbort);
+          resolve(value);
+        },
+      });
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    return validateElicitResponse(raw, requestedSchema);
+  };
+}
+
 /**
  * Decide whether a tools/call should become a task and, if so, durably create it
  * and start the work in the background. Returns the CreateTaskResult to send
  * immediately, or null to run the call synchronously.
  */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function supportsFormElicitation(elicitation: unknown): boolean {
+  if (!isPlainObject(elicitation)) return false;
+  return Object.keys(elicitation).length === 0 || isPlainObject(elicitation.form);
+}
+
 export function maybeAugmentCallTool(
   request: CallToolRequest,
-  run: (signal: AbortSignal) => Promise<ToolResult>,
+  run: (signal: AbortSignal, context: TaskRunContext) => Promise<ToolResult>,
   options: McpTasksOptions,
 ): { task: ReturnType<typeof v1Task> } | ReturnType<typeof v2Create> | null {
   const store = options.store ?? new McpTaskStore(getSqlite());
   const params = request.params;
   const clientCaps = params._meta?.[CLIENT_CAPABILITIES_META_KEY] as
-    | { extensions?: Record<string, unknown> }
+    | { extensions?: Record<string, unknown>; elicitation?: unknown }
     | undefined;
   const v2OptIn = clientCaps?.extensions?.[TASKS_EXTENSION_ID] !== undefined;
 
@@ -142,17 +195,30 @@ export function maybeAugmentCallTool(
   });
   const controller = new AbortController();
   running.set(row.task_id, controller);
+  const v2Elicit =
+    flavor === "v2" && supportsFormElicitation(clientCaps?.elicitation)
+      ? createV2TaskElicit(row.task_id, store, controller.signal)
+      : undefined;
   void (async () => {
     try {
-      const result = await run(controller.signal);
-      if (store.get(row.task_id, options.owner)?.status === "cancelled") return;
-      store.complete(row.task_id, result);
-    } catch (err) {
-      store.fail(row.task_id, {
-        code: err instanceof McpError ? err.code : ErrorCode.InternalError,
-        message: err instanceof Error ? err.message : "Unknown error",
+      const result = await run(controller.signal, {
+        taskId: row.task_id,
+        flavor,
+        v2Elicit,
       });
+      try {
+        if (store.get(row.task_id, options.owner)?.status === "cancelled") return;
+        store.complete(row.task_id, result);
+      } catch {}
+    } catch (err) {
+      try {
+        store.fail(row.task_id, {
+          code: err instanceof McpError ? err.code : ErrorCode.InternalError,
+          message: err instanceof Error ? err.message : "Unknown error",
+        });
+      } catch {}
     } finally {
+      inputWaiters.delete(row.task_id);
       running.delete(row.task_id);
     }
   })();
@@ -244,7 +310,13 @@ export function registerMcpTasks(server: Server, options: McpTasksOptions): void
       for (const [key, value] of Object.entries(request.params.inputResponses)) {
         if (Object.hasOwn(outstanding, key)) responses[key] = value;
       }
-      store.applyInputResponses(row.task_id, responses);
+      const applied = store.applyInputResponses(row.task_id, responses);
+      const waiter = inputWaiters.get(row.task_id);
+      if (applied && waiter && Object.hasOwn(responses, waiter.key)) {
+        inputWaiters.delete(row.task_id);
+        store.resumeWorking(row.task_id);
+        waiter.resolve(responses[waiter.key]);
+      }
     }
     return { resultType: "complete" as const };
   });

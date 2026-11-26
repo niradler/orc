@@ -29,17 +29,22 @@ const SKILLS_EXTENSION_ID = "io.modelcontextprotocol/skills";
 type FakeOptions = {
   skills?: boolean;
   tamperSkillBody?: boolean;
+  multiPartSkillBody?: boolean;
   taskPollsToComplete?: number;
 };
 
 const SKILL_BODY = "# orc-tasks body";
 const SKILL_BYTES = Buffer.from(SKILL_BODY, "utf8");
 const SKILL_DIGEST = `sha256:${createHash("sha256").update(SKILL_BYTES).digest("hex")}`;
+const BIN_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+const BIN_BASE64 = BIN_BYTES.toString("base64");
+const BIN_DIGEST = `sha256:${createHash("sha256").update(BIN_BYTES).digest("hex")}`;
 
 async function fakeServer(options: FakeOptions = {}) {
   const polls = new Map<string, number>();
   const cancelled: string[] = [];
   const requests: string[] = [];
+  const invokedArgs: unknown[] = [];
   const capabilities = {
     tools: {},
     resources: {},
@@ -51,12 +56,17 @@ async function fakeServer(options: FakeOptions = {}) {
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     requests.push(`tools/call:${request.params.name}`);
     if (!request.params.task) {
-      const inner = request.params.arguments as { name?: string; arguments?: unknown };
+      const inner = request.params.arguments as {
+        name?: string;
+        arguments?: Record<string, unknown>;
+      };
+      invokedArgs.push(inner);
+      const projectSuffix = inner.arguments?.project ? ` (${String(inner.arguments.project)})` : "";
       const text =
         inner.name === "skill_list"
-          ? "- legacy-skill: from tool"
+          ? `- legacy-skill: from tool${projectSuffix}`
           : inner.name === "skill_read"
-            ? "# Legacy skill body"
+            ? `# Legacy skill body${projectSuffix}`
             : "sync result";
       return { content: [{ type: "text", text }] };
     }
@@ -87,6 +97,11 @@ async function fakeServer(options: FakeOptions = {}) {
           digest: SKILL_DIGEST,
           size: SKILL_BYTES.length,
         },
+        {
+          uri: "skill://orc-tasks/assets/icon.png",
+          digest: BIN_DIGEST,
+          size: BIN_BYTES.length,
+        },
       ],
     };
     server.setRequestHandler(
@@ -104,21 +119,37 @@ async function fakeServer(options: FakeOptions = {}) {
       async () => ({ skill: skillEntry }),
     );
     server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [] }));
-    server.setRequestHandler(ReadResourceRequestSchema, async (request) => ({
-      contents: [
-        {
-          uri: request.params.uri,
-          mimeType: "text/markdown",
-          text: options.tamperSkillBody ? "# tampered body" : SKILL_BODY,
-        },
-      ],
-    }));
+    server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+      if (request.params.uri.endsWith("icon.png")) {
+        return {
+          contents: [
+            {
+              uri: request.params.uri,
+              mimeType: "application/octet-stream",
+              blob: BIN_BASE64,
+            },
+          ],
+        };
+      }
+      return {
+        contents: [
+          {
+            uri: request.params.uri,
+            mimeType: "text/markdown",
+            text: options.tamperSkillBody ? "# tampered body" : SKILL_BODY,
+          },
+          ...(options.multiPartSkillBody
+            ? [{ uri: request.params.uri, mimeType: "text/markdown", text: "# injected" }]
+            : []),
+        ],
+      };
+    });
   }
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: "test", version: "0.0.1" }, { capabilities: {} });
   await client.connect(clientTransport);
-  return { client, server, requests, cancelled };
+  return { client, server, requests, cancelled, invokedArgs };
 }
 
 function orcClient(client: Client): OrcMcpClient {
@@ -193,7 +224,23 @@ describe("OrcMcpClient skills", () => {
 
     const read = await orc.readSkill("orc-tasks");
     expect(read.text).toBe("# orc-tasks body");
+    const bin = await orc.readSkill("orc-tasks", { ref: "assets/icon.png" });
+    expect(bin.text).toContain("binary resource");
+    expect(bin.text).toContain("4 bytes");
     expect(fake.requests).not.toContain("tools/call:tool_invoke");
+
+    const projectList = await orc.listSkills({ project: "alpha" });
+    expect(projectList.text).toContain("(alpha)");
+    const projectRead = await orc.readSkill("proj-skill", { project: "alpha" });
+    expect(projectRead.text).toContain("(alpha)");
+    expect(fake.invokedArgs).toContainEqual({
+      name: "skill_list",
+      arguments: { project: "alpha", limit: 20 },
+    });
+    expect(fake.invokedArgs).toContainEqual({
+      name: "skill_read",
+      arguments: { project: "alpha", name: "proj-skill" },
+    });
     await fake.client.close();
     await fake.server.close();
   });
@@ -202,6 +249,14 @@ describe("OrcMcpClient skills", () => {
     const fake = await fakeServer({ skills: true, tamperSkillBody: true });
     const orc = orcClient(fake.client);
     await expect(orc.readSkill("orc-tasks")).rejects.toThrow("integrity check");
+    await fake.client.close();
+    await fake.server.close();
+  });
+
+  test("readSkill fails closed when resources/read returns multiple content parts", async () => {
+    const fake = await fakeServer({ skills: true, multiPartSkillBody: true });
+    const orc = orcClient(fake.client);
+    await expect(orc.readSkill("orc-tasks")).rejects.toThrow("Unexpected skill resource response");
     await fake.client.close();
     await fake.server.close();
   });

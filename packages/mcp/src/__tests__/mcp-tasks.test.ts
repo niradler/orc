@@ -356,7 +356,142 @@ describe("MCP Tasks: protocol (v2, io.modelcontextprotocol/tasks)", () => {
     const responses = JSON.parse(row?.input_responses ?? "{}");
     expect(responses.q1.action).toBe("accept");
     expect(responses.unknown).toBeUndefined();
+    store.resumeWorking(taskId);
+    const resumed = store.get(taskId, "global");
+    expect(resumed?.status).toBe("working");
+    expect(resumed?.input_requests).toBeNull();
     d.resolve(okResult);
+    await client.close();
+    await server.close();
+  });
+
+  test("v2 task with elicitation capability transitions to input_required and resumes on tasks/update", async () => {
+    const { client, server } = await connectClient({ mode: "meta" });
+    const created = (await request(client, "tools/call", {
+      name: "tool_execute",
+      arguments: {
+        code: `const r = await tools.elicit("Pick color", {
+          type: "object",
+          properties: { color: { type: "string", enum: ["red", "blue"] } },
+          required: ["color"],
+        });
+        return r;`,
+      },
+      _meta: {
+        [CLIENT_CAPABILITIES_META_KEY]: {
+          extensions: { [TASKS_EXTENSION_ID]: {} },
+          elicitation: { form: {} },
+        },
+      },
+    })) as { resultType: string; taskId: string };
+    expect(created.resultType).toBe("task");
+    const taskId = created.taskId;
+
+    let pending: { status: string; inputRequests?: Record<string, unknown> } | undefined;
+    const waitStart = Date.now();
+    while (Date.now() - waitStart < 5000) {
+      pending = (await request(client, "tasks/get", { taskId })) as typeof pending;
+      if (pending?.status === "input_required") break;
+      await Bun.sleep(20);
+    }
+    expect(pending?.status).toBe("input_required");
+    const reqKey = Object.keys(pending?.inputRequests ?? {})[0];
+    expect(reqKey).toBeTruthy();
+
+    await request(client, "tasks/update", {
+      taskId,
+      inputResponses: {
+        [reqKey as string]: { action: "accept", content: { color: "blue" } },
+      },
+    });
+
+    let done: { status: string; result?: { structuredContent?: { result?: unknown } } } | undefined;
+    const doneStart = Date.now();
+    while (Date.now() - doneStart < 5000) {
+      done = (await request(client, "tasks/get", { taskId })) as typeof done;
+      if (done?.status === "completed" || done?.status === "failed") break;
+      await Bun.sleep(20);
+    }
+    expect(done?.status).toBe("completed");
+    expect(done?.result?.structuredContent?.result).toEqual({
+      action: "accept",
+      content: { color: "blue" },
+    });
+    await client.close();
+    await server.close();
+  });
+
+  test("cancelling a v2 task waiting in input_required aborts cleanly", async () => {
+    const { client, server } = await connectClient({ mode: "meta" });
+    const created = (await request(client, "tools/call", {
+      name: "tool_execute",
+      arguments: {
+        code: `return await tools.elicit("Wait", { type: "object", properties: { x: { type: "string" } } });`,
+      },
+      _meta: {
+        [CLIENT_CAPABILITIES_META_KEY]: {
+          extensions: { [TASKS_EXTENSION_ID]: {} },
+          elicitation: { form: {} },
+        },
+      },
+    })) as { taskId: string };
+
+    const waitStart = Date.now();
+    let status = "";
+    while (Date.now() - waitStart < 5000) {
+      const got = (await request(client, "tasks/get", { taskId: created.taskId })) as {
+        status: string;
+      };
+      status = got.status;
+      if (status === "input_required") break;
+      await Bun.sleep(20);
+    }
+    expect(status).toBe("input_required");
+
+    const cancelled = (await request(client, "tasks/cancel", { taskId: created.taskId })) as {
+      resultType: string;
+    };
+    expect(cancelled.resultType).toBe("complete");
+    const after = (await request(client, "tasks/get", { taskId: created.taskId })) as {
+      status: string;
+    };
+    expect(after.status).toBe("cancelled");
+    await client.close();
+    await server.close();
+  });
+
+  test("v2 task does not enter input_required when client declares URL-only elicitation", async () => {
+    const { client, server } = await connectClient({ mode: "meta" });
+    const created = (await request(client, "tools/call", {
+      name: "tool_execute",
+      arguments: {
+        code: `return await tools.elicit("Wait", { type: "object", properties: { x: { type: "string" } } });`,
+      },
+      _meta: {
+        [CLIENT_CAPABILITIES_META_KEY]: {
+          extensions: { [TASKS_EXTENSION_ID]: {} },
+          elicitation: { url: {} },
+        },
+      },
+    })) as { taskId: string };
+
+    const waitStart = Date.now();
+    let status = "";
+    while (Date.now() - waitStart < 5000) {
+      const got = (await request(client, "tasks/get", { taskId: created.taskId })) as {
+        status: string;
+      };
+      status = got.status;
+      if (status !== "working") break;
+      await Bun.sleep(20);
+    }
+    expect(status).toBe("completed");
+    const result = (await request(client, "tasks/result", { taskId: created.taskId })) as {
+      isError?: boolean;
+      content: { text?: string }[];
+    };
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text ?? "").toContain("does not support form elicitation");
     await client.close();
     await server.close();
   });
