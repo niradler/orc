@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
 import { hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import type { HumanRequest } from "@orc/core/human-requests";
+import { resetRedactedSecrets } from "@orc/core/secret-redactor";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
@@ -21,7 +22,12 @@ const tempDir = (prefix: string) => {
 beforeAll(() => {
   app = setupTestApp();
 });
-afterAll(teardownTestApp);
+afterAll(() => {
+  teardownTestApp();
+  // Command secret tests resolve values into the process-global redactor; clear it
+  // so later files in the shared bun-test process see production-like state.
+  resetRedactedSecrets();
+});
 afterEach(async () => {
   for (const dir of tempDirs.splice(0)) await removeTempTree(dir);
 }, 20_000);
