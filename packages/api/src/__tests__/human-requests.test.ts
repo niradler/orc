@@ -5,9 +5,11 @@ import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
 import { hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import type { HumanRequest } from "@orc/core/human-requests";
+import { resetRedactedSecrets } from "@orc/core/secret-redactor";
 import { getSqlite } from "@orc/db/client";
 import { HumanRequestStore } from "@orc/db/human-requests";
 import { RuleStore } from "@orc/db/rules";
+import { prepareCommand } from "../lib/command-request.js";
 import { removeTempTree, req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
@@ -20,7 +22,12 @@ const tempDir = (prefix: string) => {
 beforeAll(() => {
   app = setupTestApp();
 });
-afterAll(teardownTestApp);
+afterAll(() => {
+  teardownTestApp();
+  // Command secret tests resolve values into the process-global redactor; clear it
+  // so later files in the shared bun-test process see production-like state.
+  resetRedactedSecrets();
+});
 afterEach(async () => {
   for (const dir of tempDirs.splice(0)) await removeTempTree(dir);
 }, 20_000);
@@ -529,4 +536,186 @@ test("should snooze and unsnooze pending requests, exclude them from unread coun
     after_seconds: 600,
   });
   expect(rejectNonPending.status).toBe(409);
+});
+
+test("should resolve a saved project secret for a command argument, inject and redact it, and fail closed without a project", async () => {
+  const cwd = tempDir("orc-command-ref-");
+  const project = await (await req(app, "POST", "/projects", { name: "command-ref-proj" })).json<{
+    id: string;
+  }>();
+  const secretValue = "sk-command-ref-secret-3131";
+  expect(
+    (
+      await req(app, "POST", `/projects/${project.id}/secrets`, {
+        name: "deploy-token",
+        value: secretValue,
+      })
+    ).status,
+  ).toBe(201);
+
+  const entry = await (
+    await req(app, "POST", "/human-requests", {
+      kind: "command",
+      project_id: project.id,
+      prompt: "Run with a saved secret",
+      origin: { backend: "test", session_id: "command-ref", request_id: "command-ref-1" },
+      command: {
+        host: null,
+        cwd,
+        script: "true",
+        arguments: [{ name: "TOKEN", label: "Deploy token", allow_secret_ref: true }],
+      },
+    })
+  ).json<HumanRequest>();
+
+  const script =
+    process.platform === "win32"
+      ? '[Console]::Out.Write("LEN=" + ($env:ORC_INPUT_TOKEN).Length + " RAW=" + $env:ORC_INPUT_TOKEN)'
+      : 'printf "LEN=%s RAW=%s" "$(printf %s "$ORC_INPUT_TOKEN" | wc -c | tr -d " ")" "$ORC_INPUT_TOKEN"';
+  const runRes = await req(app, "POST", `/human-requests/${entry.id}/run`, {
+    version: entry.version,
+    script,
+    values: { TOKEN: "project/deploy-token" },
+  });
+  expect(runRes.status).toBe(200);
+  const completed = await runRes.json<HumanRequest>();
+  expect(completed.response).toMatchObject({ kind: "command", exit_code: 0 });
+  if (completed.response?.kind === "command") {
+    expect(completed.response.stdout).toContain(`LEN=${secretValue.length}`);
+    expect(completed.response.stdout).toContain("RAW=[REDACTED]");
+    expect(completed.response.stdout).not.toContain(secretValue);
+  }
+  const stored = getSqlite().query("SELECT * FROM human_requests WHERE id=?").get(entry.id);
+  expect(JSON.stringify(stored)).not.toContain(secretValue);
+  const listed = await (await req(app, "GET", `/projects/${project.id}/secrets`)).json<{
+    secrets: { last_used_at: string | null }[];
+  }>();
+  expect(listed.secrets[0]?.last_used_at).not.toBeNull();
+
+  // A command request without a project cannot resolve a reference: fail closed.
+  const noProject = await (
+    await req(app, "POST", "/human-requests", {
+      kind: "command",
+      prompt: "No project",
+      origin: { backend: "test", session_id: "command-ref", request_id: "command-ref-2" },
+      command: {
+        host: null,
+        cwd,
+        script: "true",
+        arguments: [{ name: "TOKEN", label: "Token", allow_secret_ref: true }],
+      },
+    })
+  ).json<HumanRequest>();
+  const failRes = await req(app, "POST", `/human-requests/${noProject.id}/run`, {
+    version: noProject.version,
+    script: "true",
+    values: { TOKEN: "project/deploy-token" },
+  });
+  expect(failRes.status).toBe(400);
+});
+
+test("should keep non-opted-in command arguments literal and reject an unknown project_id", async () => {
+  const cwd = tempDir("orc-command-literal-");
+  const project = await (
+    await req(app, "POST", "/projects", { name: "command-literal-proj" })
+  ).json<{ id: string }>();
+  const secretValue = "sk-literal-collision-secret-7272";
+  await req(app, "POST", `/projects/${project.id}/secrets`, {
+    name: "config",
+    value: secretValue,
+  });
+
+  // PATH is not opted in, so the literal project/config must pass through untouched
+  // even though a secret named config exists.
+  const entry = await (
+    await req(app, "POST", "/human-requests", {
+      kind: "command",
+      project_id: project.id,
+      prompt: "Literal path argument",
+      origin: { backend: "test", session_id: "command-literal", request_id: "command-literal-1" },
+      command: {
+        host: null,
+        cwd,
+        script: "true",
+        arguments: [{ name: "PATH_ARG", label: "Path" }],
+      },
+    })
+  ).json<HumanRequest>();
+  // The literal value is itself redacted from output (all inputs are), so prove it
+  // passed through by its length: project/config (14), not the stored secret.
+  const script =
+    process.platform === "win32"
+      ? '[Console]::Out.Write("LEN=" + ($env:ORC_INPUT_PATH_ARG).Length)'
+      : 'printf "LEN=%s" "$(printf %s "$ORC_INPUT_PATH_ARG" | wc -c | tr -d " ")"';
+  const runRes = await req(app, "POST", `/human-requests/${entry.id}/run`, {
+    version: entry.version,
+    script,
+    values: { PATH_ARG: "project/config" },
+  });
+  expect(runRes.status).toBe(200);
+  const completed = await runRes.json<HumanRequest>();
+  if (completed.response?.kind === "command") {
+    expect(completed.response.stdout).toContain(`LEN=${"project/config".length}`);
+    expect(completed.response.stdout).not.toContain(`LEN=${secretValue.length}`);
+    expect(completed.response.stdout).not.toContain(secretValue);
+  }
+
+  // A non-existent project_id is rejected at creation now that it selects a secret namespace.
+  const badProject = await req(app, "POST", "/human-requests", {
+    kind: "command",
+    project_id: "does-not-exist",
+    prompt: "Unknown project",
+    origin: { backend: "test", session_id: "command-literal", request_id: "command-literal-2" },
+    command: { host: null, cwd, script: "true" },
+  });
+  expect(badProject.status).toBe(400);
+});
+
+test("should record a secret use only after the run claim succeeds", async () => {
+  const cwd = tempDir("orc-command-claim-");
+  const project = await (await req(app, "POST", "/projects", { name: "claim-bump-proj" })).json<{
+    id: string;
+  }>();
+  expect(
+    (
+      await req(app, "POST", `/projects/${project.id}/secrets`, {
+        name: "bump-token",
+        value: "sk-claim-bump-7788",
+      })
+    ).status,
+  ).toBe(201);
+  const entry = await (
+    await req(app, "POST", "/human-requests", {
+      kind: "command",
+      project_id: project.id,
+      prompt: "Deferred use recording",
+      origin: { backend: "test", session_id: "claim-bump", request_id: "claim-bump-1" },
+      command: {
+        host: null,
+        cwd,
+        script: "true",
+        arguments: [{ name: "TOKEN", label: "Token", allow_secret_ref: true }],
+      },
+    })
+  ).json<HumanRequest>();
+  const lastUsed = () =>
+    getSqlite()
+      .query<{ last_used_at: number | null }, [string]>(
+        "SELECT last_used_at FROM project_secrets WHERE project_id = ? AND name = 'bump-token'",
+      )
+      .get(project.id)?.last_used_at ?? null;
+  const store = new HumanRequestStore(getSqlite());
+  const prepared = await prepareCommand(store.get(entry.id), {
+    version: entry.version,
+    script: "true",
+    values: { TOKEN: "project/bump-token" },
+  });
+  // Resolution alone must not record the use, and a losing claim stays silent.
+  expect(lastUsed()).toBeNull();
+  expect(() => store.claimCommand(entry.id, entry.version + 5)).toThrow();
+  expect(lastUsed()).toBeNull();
+  const claimed = store.claimCommand(entry.id, entry.version);
+  expect(claimed.status).toBe("running");
+  prepared.markUsed();
+  expect(lastUsed()).not.toBeNull();
 });

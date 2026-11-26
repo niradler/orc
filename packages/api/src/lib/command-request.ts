@@ -3,6 +3,8 @@ import { ConflictError, ValidationError } from "@orc/core/errors";
 import { expandHostPath, hostBinary, hostExec, hostIsDirectory } from "@orc/core/exec-host";
 import { CommandRunSchema, type HumanRequest } from "@orc/core/human-requests";
 import { getRegisteredSecrets } from "@orc/core/secret-redactor";
+import { getSqlite } from "@orc/db/client";
+import { ProjectSecretStore, resolveProjectSecretEnv } from "@orc/db/project-secrets";
 import { selectedTerminalHost } from "../terminals/host.js";
 import { launchDeps } from "../terminals/service.js";
 import { commandShell } from "./command-shell.js";
@@ -67,7 +69,31 @@ export async function prepareCommand(request: HumanRequest, raw: unknown) {
   const bun = await hostBinary(host, "bun");
   if (!bun) throw new ValidationError("Command execution requires Bun on the selected host");
   const shell = commandShell(await launchDeps(config, host));
+  // Only arguments the agent opted in with allow_secret_ref resolve a project/<name>
+  // reference; every other value stays literal so a path like project/foo can never
+  // silently inject a credential. Resolution happens here so a missing project or
+  // secret fails the Run with a clear error, and the real value only ever travels on
+  // stdin to the redacted exec.
+  const refNames = new Set(
+    spec.arguments.filter((arg) => arg.allow_secret_ref).map((arg) => arg.name),
+  );
+  const refValues: Record<string, string> = {};
+  const literalValues: Record<string, string> = {};
+  for (const [name, value] of Object.entries(run.values)) {
+    if (refNames.has(name)) refValues[name] = value;
+    else literalValues[name] = value;
+  }
+  // Resolution does not bump last_used_at: the route calls markUsed() only after
+  // the claim CAS wins, so a Run that loses the race records no use.
+  const projectId = request.input.project_id;
+  const resolved = resolveProjectSecretEnv(getSqlite(), projectId, refValues, { touch: false });
+  const values = { ...literalValues, ...resolved.env };
   return {
+    markUsed: () => {
+      if (!projectId) return;
+      const secrets = new ProjectSecretStore(getSqlite());
+      for (const name of resolved.resolvedNames) secrets.markUsed(projectId, name);
+    },
     execute: async () => {
       try {
         const result = await hostExec(host, [bun, "--eval", EXECUTE], {
@@ -75,8 +101,8 @@ export async function prepareCommand(request: HumanRequest, raw: unknown) {
             script: run.script,
             cwd,
             shell,
-            values: run.values,
-            extraSecrets: getRegisteredSecrets(),
+            values,
+            extraSecrets: [...getRegisteredSecrets(), ...resolved.secrets],
             timeout: spec.timeout_seconds,
           }),
           timeoutMs: (spec.timeout_seconds + 10) * 1000,

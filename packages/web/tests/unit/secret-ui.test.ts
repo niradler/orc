@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+  COMMAND_ARGUMENT_MANUAL,
+  commandArgumentFromPicker,
+  commandArgumentPickerValue,
   formatSecretLastUsed,
   initialSecretReferenceNames,
   secretAutocompleteHint,
@@ -50,5 +53,26 @@ describe("secret UI helpers", () => {
     expect(formatSecretLastUsed(null)).toBe("Never used");
     expect(formatSecretLastUsed("not-a-date")).toBe("Never used");
     expect(formatSecretLastUsed("2026-11-24T12:00:00.000Z")).toContain("Last used");
+  });
+});
+
+describe("command argument saved-secret picker", () => {
+  test("maps a project reference to itself and anything else to manual entry", () => {
+    expect(commandArgumentPickerValue("project/deploy-token")).toBe("project/deploy-token");
+    expect(commandArgumentPickerValue("")).toBe(COMMAND_ARGUMENT_MANUAL);
+    expect(commandArgumentPickerValue("typed-secret")).toBe(COMMAND_ARGUMENT_MANUAL);
+    expect(commandArgumentPickerValue("project/")).toBe(COMMAND_ARGUMENT_MANUAL);
+    expect(commandArgumentPickerValue("project/has space")).toBe(COMMAND_ARGUMENT_MANUAL);
+  });
+
+  test("manual selection clears the value while a reference selection keeps it", () => {
+    expect(commandArgumentFromPicker(COMMAND_ARGUMENT_MANUAL)).toBe("");
+    expect(commandArgumentFromPicker("project/deploy-token")).toBe("project/deploy-token");
+  });
+
+  test("round-trips between typed and saved modes without losing the reference", () => {
+    const reference = "project/openai-key";
+    expect(commandArgumentFromPicker(commandArgumentPickerValue(reference))).toBe(reference);
+    expect(commandArgumentFromPicker(commandArgumentPickerValue("literal"))).toBe("");
   });
 });

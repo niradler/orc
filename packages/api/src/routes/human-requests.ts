@@ -1,6 +1,7 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { changes } from "@orc/core/changes";
 import { loadConfig } from "@orc/core/config";
+import { ValidationError } from "@orc/core/errors";
 import { hostAlias, resolveExecHost } from "@orc/core/exec-host";
 import {
   CommandRunSchema,
@@ -71,6 +72,15 @@ app.openapi(
   }),
   (c) => {
     const input = c.req.valid("json");
+    // project_id selects a secret namespace and the Run-form picker source, so it
+    // must name a real project; a projectless request stays null and fails closed
+    // if a secret reference is later supplied.
+    if (input.project_id !== null) {
+      const project = getSqlite()
+        .query<{ id: string }, [string]>("SELECT id FROM projects WHERE id=?")
+        .get(input.project_id);
+      if (!project) throw new ValidationError(`Project "${input.project_id}" does not exist`);
+    }
     const command = input.command;
     // Pin the host at creation: omitted means the global default, and unknown aliases never queue.
     if (input.kind === "command" && command) {
@@ -234,6 +244,9 @@ app.openapi(
     const id = c.req.valid("param").id;
     const prepared = await prepareCommand(current(id), input);
     const claimed = store().claimCommand(id, input.version);
+    // Record secret uses only after the claim CAS won: a Run that loses the
+    // race never executed and must not bump last_used_at.
+    prepared.markUsed();
     changes.publish("human-requests", "notifications");
     const result = await prepared.execute();
     const completed = store().completeCommand(id, claimed.version, result);

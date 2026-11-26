@@ -289,7 +289,13 @@ export class ProjectSecretStore {
       .immediate();
   }
 
-  resolveValue(projectId: string, rawName: string): string | null {
+  // touch=false resolves without recording the use, for callers that must only
+  // count uses that actually executed (e.g. after a claim CAS wins the race).
+  resolveValue(
+    projectId: string,
+    rawName: string,
+    options: { touch?: boolean } = {},
+  ): string | null {
     const parsed = ProjectSecretNameSchema.safeParse(rawName);
     if (!parsed.success) return null;
     const row = this.db
@@ -299,11 +305,24 @@ export class ProjectSecretStore {
       .get(projectId, parsed.data);
     if (!row) return null;
     const plain = decryptSecret(row.encrypted_value);
-    this.db
-      .query("UPDATE project_secrets SET last_used_at = ? WHERE id = ?")
-      .run(this.now(), row.id);
+    if (options.touch ?? true) this.touch(row.id);
     registerRedactedSecrets([plain]);
     return plain;
+  }
+
+  markUsed(projectId: string, rawName: string): void {
+    const parsed = ProjectSecretNameSchema.safeParse(rawName);
+    if (!parsed.success) return;
+    const row = this.db
+      .query<{ id: string }, [string, string]>(
+        "SELECT id FROM project_secrets WHERE project_id = ? AND name = ?",
+      )
+      .get(projectId, parsed.data);
+    if (row) this.touch(row.id);
+  }
+
+  private touch(id: string): void {
+    this.db.query("UPDATE project_secrets SET last_used_at = ? WHERE id = ?").run(this.now(), id);
   }
 
   getCheckConfig(projectId: string, rawName: string): ProjectSecretCheck | null {
@@ -353,13 +372,18 @@ export function deleteProjectSecrets(sqlite: Database, projectId: string): void 
   sqlite.query("DELETE FROM project_secrets WHERE project_id = ?").run(projectId);
 }
 
+// touch=false resolves references without bumping last_used_at and returns the
+// resolved secret names so the caller can record the use once it is certain the
+// work actually started.
 export function resolveProjectSecretEnv(
   sqlite: Database,
   projectId: string | null | undefined,
   env: Record<string, string>,
-): { env: Record<string, string>; secrets: string[] } {
+  options: { touch?: boolean } = {},
+): { env: Record<string, string>; secrets: string[]; resolvedNames: string[] } {
   const out: Record<string, string> = {};
   const secrets: string[] = [];
+  const resolvedNames: string[] = [];
   let store: ProjectSecretStore | null = null;
   for (const [key, value] of Object.entries(env)) {
     const secretName = parseProjectSecretRef(value);
@@ -373,14 +397,15 @@ export function resolveProjectSecretEnv(
       );
     }
     store ??= new ProjectSecretStore(sqlite);
-    const resolved = store.resolveValue(projectId, secretName);
+    const resolved = store.resolveValue(projectId, secretName, options);
     if (resolved === null) {
       throw new ValidationError(`Project secret "${value}" was not found`);
     }
     out[key] = resolved;
     secrets.push(resolved);
+    resolvedNames.push(secretName);
   }
-  return { env: out, secrets };
+  return { env: out, secrets, resolvedNames };
 }
 
 export function resolveExplicitSecretRefs(
