@@ -1,4 +1,9 @@
-import type { ChatQuestion, ChatSubagentPayload } from "@orc/core/chat";
+import type {
+  ChatBackgroundTask,
+  ChatLostBackgroundWorkItem,
+  ChatQuestion,
+  ChatSubagentPayload,
+} from "@orc/core/chat";
 import type { ChatAgentOptions } from "@orc/core/chat-options";
 import type { AgentCapabilities } from "@orc/core/types";
 import type { OrcMcpMode } from "./orc-mcp.js";
@@ -83,6 +88,8 @@ export type SessionOpts = {
   orcPreviewSessionId?: string | undefined;
   /** Tool surface of that connection; `meta` serves three search/describe/invoke tools. */
   orcMcpMode?: OrcMcpMode | undefined;
+  /** Keep the underlying streaming session process alive across turns when supported. */
+  resident?: boolean | undefined;
 };
 
 export type ImageAttachment = {
@@ -103,6 +110,8 @@ export type AgentEvent =
   | { type: "thinking"; data: string }
   | { type: "plan"; data: { id: string; title?: string; entries: AgentPlanEntry[] } }
   | { type: "subagent"; data: ChatSubagentPayload }
+  | { type: "background_task"; data: ChatBackgroundTask }
+  | { type: "model"; data: string }
   | { type: "tool_use"; data: { id: string; name: string; input: string } }
   | {
       type: "tool_result";
@@ -132,14 +141,22 @@ export type AgentEvent =
         resumable?: boolean | undefined;
         /** The folder the backend actually resumed in, when it differs from the request. */
         cwd?: string | undefined;
+        model?: string | undefined;
         usage?: unknown;
         contextWindow?: number | undefined;
         durationMs?: number | undefined;
-        outcome?: "completed" | "stopped" | "failed" | undefined;
+        outcome?: "completed" | "stopped" | "failed" | "interrupted" | undefined;
       };
     }
   | { type: "error"; data: string }
   | { type: "system_status"; data: string };
+
+export type AgentUnexpectedExit = {
+  code: number | null;
+  signal: string | null;
+  stderr: string;
+  lostBackgroundWork: ChatLostBackgroundWorkItem[];
+};
 
 export type LivePermissionMode = "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
 
@@ -186,6 +203,10 @@ export interface AgentSession {
    * for, including ones already pending, are approved. Tightening takes effect next turn.
    */
   setPermissionMode?(mode: LivePermissionMode): void;
+  setModel?(model: string): Promise<void>;
+  readonly reusable?: boolean | undefined;
+  canStopRuntime?(): boolean;
+  onUnexpectedExit?(listener: (info: AgentUnexpectedExit) => void): () => void;
   events(): AsyncIterable<AgentEvent>;
   alive(): boolean;
   waitingForHuman?(): boolean;

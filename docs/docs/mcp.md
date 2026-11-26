@@ -179,7 +179,7 @@ With no secret configured, requests are accepted unauthenticated. To avoid handi
 | `project`  | `/mcp?project=my-app`      | Scope the connection to one project                                     |
 | `projects` | `/mcp?projects=my-app,api` | Scope to several projects (max 50)                                      |
 | `session`  | `/mcp?session=<id>`        | Bind caller session identity (also accepted via `X-ORC-Session` header) |
-| `client`   | `/mcp?client=grok-bot`     | Name the coordinator for an unbound authenticated connection |
+| `client`   | `/mcp?client=grok-bot`     | Name the coordinator for an unbound authenticated connection            |
 
 Project names are case-insensitive; unknown names are rejected. Use `project` or `projects`, not both. On a scoped connection, tool calls default to the selected project(s); a call naming a project outside the selection fails.
 
@@ -444,48 +444,52 @@ See [Skills](./skills.md). Spec-compliant clients can also use the standard [Ski
 
 See [Reusable agent packages](./agent-packages.md).
 
-| Tool                   | Description                                                          |
-| ---------------------- | -------------------------------------------------------------------- |
+| Tool                   | Description                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `agent_list`           | Discover shared APM `.agent.md` role profiles (not execution harnesses; see `session_start`'s `agent` for harness ids) |
-| `agent_read`           | Read a profile: original YAML/Markdown, role, model, tools, handoffs |
-| `agent_create`         | Create a shared, validated `.agent.md` definition                    |
-| `agent_update`         | Replace an agent definition                                          |
-| `agent_delete`         | Delete an agent definition                                           |
-| `agent_package_list`   | List shared OpenAPM and Agent Plugins packages                       |
-| `agent_package_read`   | Read a package manifest and file inventory, or one file with `ref`   |
-| `agent_package_import` | Import an intact package                                             |
-| `agent_package_update` | Replace a package's manifest and file set                            |
-| `agent_package_delete` | Remove a package from the shared catalog                             |
+| `agent_read`           | Read a profile: original YAML/Markdown, role, model, tools, handoffs                                                   |
+| `agent_create`         | Create a shared, validated `.agent.md` definition                                                                      |
+| `agent_update`         | Replace an agent definition                                                                                            |
+| `agent_delete`         | Delete an agent definition                                                                                             |
+| `agent_package_list`   | List shared OpenAPM and Agent Plugins packages                                                                         |
+| `agent_package_read`   | Read a package manifest and file inventory, or one file with `ref`                                                     |
+| `agent_package_import` | Import an intact package                                                                                               |
+| `agent_package_update` | Replace a package's manifest and file set                                                                              |
+| `agent_package_delete` | Remove a package from the shared catalog                                                                               |
 
 ### Jobs
 
-| Tool         | Description                                               |
-| ------------ | --------------------------------------------------------- |
-| `job_list`   | List jobs with enabled state, trigger, run count and ID   |
-| `job_run`    | Trigger a job by name                                     |
-| `job_status` | Run status, exit code and error; `logs: true` adds output |
+| Tool           | Description                                                                                                     |
+| -------------- | --------------------------------------------------------------------------------------------------------------- |
+| `job_list`     | List jobs with enabled state, trigger, run count and ID                                                         |
+| `job_run`      | Trigger a job by name                                                                                           |
+| `job_status`   | Run status, exit code and error; `logs: true` adds output                                                       |
+| `shell_run`    | Start a detached background shell command outside the daemon process tree with disk logs and exit metadata      |
+| `shell_status` | Read detached shell job status (`running`, `completed`, `failed`, `stopped`, `interrupted_by_restart`) and logs |
+| `shell_list`   | List detached background shell jobs filtered by status or session                                               |
+| `shell_stop`   | Stop a running detached background shell job and its process group                                              |
 
 ### Sessions
 
 See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.md).
 
-| Tool               | Description                                                                                                                             |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_event`    | Record a session event (file edit, decision, error, git op)                                                                             |
-| `session_snapshot` | Build a ≤2KB XML snapshot of current session state                                                                                      |
-| `session_restore`  | Restore session state after compaction or restart                                                                                       |
-| `session_log`      | Log a session summary after a unit of work                                                                                              |
-| `session_handoff`  | Move a Claude Code or Codex session to ORC                                                                                              |
-| `session_send`     | Send a note to another session: `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next) |
-| `speak`            | Say a short line to the user: posted to the chat and spoken when voice mode is on. Needs a conversation-bound connection; auto-approved |
-| `session_start`    | Start a headless child session with a prompt; returns its id at once                                                                    |
-| `session_status`   | A started session's status, last reply, queue, parent and children                                                                      |
-| `session_wait`     | Block until one or several started sessions stop running, wait for a human, or reply                                                    |
-| `session_list`     | List the sessions this session started                                                                                                  |
-| `session_stop`     | Stop a started session's turn and, by default, the sessions it started                                                                  |
-| `session_search`   | Search archived and indexed session passages                                                                                            |
+| Tool               | Description                                                                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_event`    | Record a session event (file edit, decision, error, git op)                                                                                              |
+| `session_snapshot` | Build a ≤2KB XML snapshot of current session state                                                                                                       |
+| `session_restore`  | Restore session state after compaction or restart                                                                                                        |
+| `session_log`      | Log a session summary after a unit of work                                                                                                               |
+| `session_handoff`  | Move a Claude Code or Codex session to ORC                                                                                                               |
+| `session_send`     | Send a note to another session: `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next)                  |
+| `speak`            | Say a short line to the user: posted to the chat and spoken when voice mode is on. Needs a conversation-bound connection; auto-approved                  |
+| `session_start`    | Start a headless child session with a prompt; returns its id at once                                                                                     |
+| `session_status`   | A started session's status, last reply, queue, parent and children                                                                                       |
+| `session_wait`     | Block until one or several started sessions stop running, wait for a human, or reply                                                                     |
+| `session_list`     | List the sessions this session started                                                                                                                   |
+| `session_stop`     | Stop a started session's turn and, by default, the sessions it started                                                                                   |
+| `session_search`   | Search archived and indexed session passages                                                                                                             |
 | `session_read`     | Read a cited archived-session passage or a page of turns; unarchived sessions (such as `session_start` children) fall back to their live chat transcript |
-| `session_sync`     | Request a one-hour upload capability for local session sync                                                                             |
+| `session_sync`     | Request a one-hour upload capability for local session sync                                                                                              |
 
 On a coordinator connection, `session_start` and `session_list` also return
 `coordinator_session_id`, and `session_start` adds the effective Settings

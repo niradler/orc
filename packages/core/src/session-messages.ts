@@ -23,7 +23,13 @@ export type SessionMessageMode = z.infer<typeof SessionMessageModeSchema>;
 export const SessionDeliveryKindSchema = z.enum(["child_outcome", "relay"]);
 export type SessionDeliveryKind = z.infer<typeof SessionDeliveryKindSchema>;
 
-export const SessionDeliveryOutcomeSchema = z.enum(["finished", "failed", "stopped", "waiting"]);
+export const SessionDeliveryOutcomeSchema = z.enum([
+  "finished",
+  "failed",
+  "stopped",
+  "waiting",
+  "interrupted",
+]);
 export type SessionDeliveryOutcome = z.infer<typeof SessionDeliveryOutcomeSchema>;
 
 export const SessionMessageReceiptStatusSchema = z.enum([
@@ -213,15 +219,21 @@ type ParsedChildNotice = {
 };
 
 const CHILD_NOTICE_HEAD =
-  /^\[orc child-session id=(\S+) outcome=(finished|failed|stopped|question|approval)\](?:\r?\n|$)/;
+  /^\[orc child-session id=(\S+) outcome=(finished|failed|stopped|interrupted|question|approval)\](?:\r?\n|$)/;
 const CHILD_NOTICE_TITLE =
-  /^Child session "(.+)" (?:finished|failed|stopped|is waiting for a human (?:question|approval); you cannot answer it, a human must)\.$/;
+  /^Child session "(.+)" (?:finished|failed|stopped|was interrupted|is waiting for a human (?:question|approval); you cannot answer it, a human must)\.$/;
 
 export function parseChildNotice(body: string): ParsedChildNotice | null {
   const match = CHILD_NOTICE_HEAD.exec(body);
   if (!match) return null;
   const sessionId = match[1] as string;
-  const rawOutcome = match[2] as "finished" | "failed" | "stopped" | "question" | "approval";
+  const rawOutcome = match[2] as
+    | "finished"
+    | "failed"
+    | "stopped"
+    | "interrupted"
+    | "question"
+    | "approval";
   const outcome: SessionDeliveryOutcome =
     rawOutcome === "question" || rawOutcome === "approval" ? "waiting" : rawOutcome;
   const waitingFor =
@@ -262,6 +274,7 @@ export function childOutcomeSummary(
   if (gist) return gist;
   if (outcome === "failed") return "Failed before replying";
   if (outcome === "stopped") return "Stopped";
+  if (outcome === "interrupted") return "Interrupted before finishing";
   return "Finished with no reply";
 }
 
@@ -387,11 +400,22 @@ export const SessionSpawnSchema = z
   .strict();
 export type SessionSpawn = z.infer<typeof SessionSpawnSchema>;
 
+export const SessionBackgroundTaskSchema = z.object({
+  id: identity,
+  kind: z.enum(["shell", "monitor", "task"]),
+  description: z.string().max(500),
+  command: z.string().max(1000).optional(),
+  started_at: timestamp,
+  elapsed_ms: z.number().int().nonnegative(),
+  status: z.enum(["running", "completed", "failed", "stopped", "interrupted"]),
+});
+export type SessionBackgroundTask = z.infer<typeof SessionBackgroundTaskSchema>;
+
 export const SessionStatusSchema = z.object({
   session_id: identity,
   title: z.string(),
   agent: z.string(),
-  status: z.enum(["queued", "running", "waiting", "idle", "failed", "stopped"]),
+  status: z.enum(["queued", "running", "waiting", "idle", "interrupted", "failed", "stopped"]),
   waiting_for: z.enum(["question", "approval"]).nullable(),
   last_message: z.string().nullable(),
   queue: z.array(
@@ -414,6 +438,9 @@ export const SessionStatusSchema = z.object({
   last_activity: z.string().max(200).nullable().optional(),
   activity_count: z.number().int().min(0).optional(),
   start_error: z.string().max(2000).nullable().optional(),
+  interruption_reason: z.string().max(2000).nullable().optional(),
+  runtime_model: z.string().max(200).nullable().optional(),
+  background_tasks: z.array(SessionBackgroundTaskSchema).optional(),
   native_session_id: z.string().max(200).nullable().optional(),
   live_session_id: identity.nullable().optional(),
 });

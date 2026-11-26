@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import {
+  type ChatLostBackgroundWorkItem,
   type ChatMessage,
   type ChatProviderRef,
   type ChatThread,
@@ -12,6 +13,8 @@ type ChatSummary = Pick<ChatThread, "id" | "title" | "updatedAt"> & {
   agent: string | null;
   backend: string | null;
   runtimeId: string | null;
+  runtimeModel: string | null;
+  model: string | null;
   sourceId: string | null;
   host: string | null;
   projectId: string | null;
@@ -49,6 +52,14 @@ export class ChatStore {
             CASE WHEN json_type(data, '$.runtimeId') = 'text'
               THEN json_extract(data, '$.runtimeId') END
           END AS runtimeId,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.runtimeModel') = 'text'
+              THEN json_extract(data, '$.runtimeModel') END
+          END AS runtimeModel,
+          CASE WHEN json_valid(data) THEN
+            CASE WHEN json_type(data, '$.config.model') = 'text'
+              THEN json_extract(data, '$.config.model') END
+          END AS model,
           CASE WHEN json_valid(data) THEN
             CASE WHEN json_type(data, '$.sourceId') = 'text'
               THEN json_extract(data, '$.sourceId') END
@@ -163,6 +174,35 @@ export class ChatStore {
             AND json_extract(data, '$.turn.status') = 'running'`,
       )
       .run(at, id, runId, epoch);
+  }
+  /** Write-through of active background work on a running lease so abrupt crashes preserve it for boot reconciliation. */
+  setTurnBackgroundTasks(
+    id: string,
+    runId: string,
+    epoch: number,
+    tasks: ChatLostBackgroundWorkItem[],
+  ): void {
+    if (tasks.length > 0) {
+      this.db
+        .query(
+          `UPDATE chat_threads SET data = json_set(data, '$.turn.backgroundTasks', json(?))
+            WHERE id = ? AND json_valid(data)
+              AND json_extract(data, '$.turn.runId') = ?
+              AND json_extract(data, '$.turn.epoch') = ?
+              AND json_extract(data, '$.turn.status') = 'running'`,
+        )
+        .run(JSON.stringify(tasks), id, runId, epoch);
+      return;
+    }
+    this.db
+      .query(
+        `UPDATE chat_threads SET data = json_remove(data, '$.turn.backgroundTasks')
+          WHERE id = ? AND json_valid(data)
+            AND json_extract(data, '$.turn.runId') = ?
+            AND json_extract(data, '$.turn.epoch') = ?
+            AND json_extract(data, '$.turn.status') = 'running'`,
+      )
+      .run(id, runId, epoch);
   }
   /** Daemon-exit flush for a turn that would not finish: persist the resumable
     identity, the prose recorded so far and the lease as-is. The lease stays

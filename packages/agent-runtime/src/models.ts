@@ -60,9 +60,74 @@ export function informativeDescription(description: string, label: string, agent
   return !found.length || found.some((word) => !known.has(word)) ? description : "";
 }
 
-export function parseAgentModels(value: unknown, agent: string): AgentModel[] {
+export function isCustomAnthropicEndpoint(env?: Record<string, string | undefined>): boolean {
+  const raw = env?.ANTHROPIC_BASE_URL?.trim();
+  if (!raw) return false;
+  try {
+    const host = new URL(raw).hostname.toLowerCase();
+    return host !== "api.anthropic.com" && !host.endsWith(".anthropic.com");
+  } catch {
+    return true;
+  }
+}
+
+export function configuredClaudeEnvModel(
+  env?: Record<string, string | undefined>,
+): string | undefined {
+  const raw = env?.ANTHROPIC_MODEL?.trim();
+  if (!raw) return undefined;
+  const parsed = ChatModelSchema.safeParse(raw);
+  return parsed.success && parsed.data ? parsed.data : undefined;
+}
+
+function claudeEnvTierOverrides(env?: Record<string, string | undefined>): Record<string, string> {
+  const map: Record<string, string> = {};
+  const pairs: [string, string | undefined][] = [
+    ["opus", env?.ANTHROPIC_DEFAULT_OPUS_MODEL],
+    ["sonnet", env?.ANTHROPIC_DEFAULT_SONNET_MODEL],
+    ["haiku", env?.ANTHROPIC_DEFAULT_HAIKU_MODEL],
+  ];
+  for (const [tier, raw] of pairs) {
+    const trimmed = raw?.trim();
+    if (!trimmed) continue;
+    const parsed = ChatModelSchema.safeParse(trimmed);
+    if (parsed.success && parsed.data) map[tier] = parsed.data;
+  }
+  return map;
+}
+
+export function parseAgentModels(
+  value: unknown,
+  agent: string,
+  env?: Record<string, string | undefined>,
+): AgentModel[] {
   if (!Array.isArray(value)) throw new Error("The agent returned no model catalog.");
+  const customAnthropic = agent === "claude" && isCustomAnthropicEndpoint(env);
+  const envClaudeModel = agent === "claude" ? configuredClaudeEnvModel(env) : undefined;
+  const tierOverrides = agent === "claude" ? claudeEnvTierOverrides(env) : {};
   const models = new Map<string, AgentModel>();
+
+  if (agent === "claude" && envClaudeModel) {
+    models.set(envClaudeModel, {
+      id: envClaudeModel,
+      label: envClaudeModel,
+      description: customAnthropic
+        ? "Configured via ANTHROPIC_MODEL for custom endpoint"
+        : "Configured via ANTHROPIC_MODEL",
+    });
+  }
+  for (const overrideModel of Object.values(tierOverrides)) {
+    if (!models.has(overrideModel)) {
+      models.set(overrideModel, {
+        id: overrideModel,
+        label: overrideModel,
+        description: customAnthropic
+          ? "Configured custom endpoint model"
+          : "Configured in environment",
+      });
+    }
+  }
+
   for (const item of value.slice(0, 500)) {
     const row = object(item);
     if (!row || row.hidden === true) continue;
@@ -76,7 +141,43 @@ export function parseAgentModels(value: unknown, agent: string): AgentModel[] {
           : (row.model ?? row.id),
     );
     if (!parsed.success || !parsed.data) continue;
-    const label = printable(row.displayName ?? row.name, 120) || parsed.data;
+    const id = parsed.data;
+    if (agent === "claude" && customAnthropic) {
+      if (id === "default") {
+        models.set(id, {
+          id,
+          label: envClaudeModel ? `Default (${envClaudeModel})` : "Default",
+          description: envClaudeModel
+            ? `Uses ${envClaudeModel} on custom endpoint`
+            : "Custom endpoint default",
+        });
+        continue;
+      }
+      const lower = id.toLowerCase();
+      const matchedTier = (["opus", "sonnet", "haiku"] as const).find(
+        (tier) => lower === tier || lower.startsWith(`${tier}[`),
+      );
+      if (matchedTier) {
+        const mapped = tierOverrides[matchedTier];
+        if (mapped) {
+          models.set(id, {
+            id,
+            label: `${mapped} (${id})`,
+            description: "Mapped via environment on custom endpoint",
+          });
+        }
+        continue;
+      }
+    }
+    if (agent === "claude" && !customAnthropic && id === "default" && envClaudeModel) {
+      models.set(id, {
+        id,
+        label: `Default (${envClaudeModel})`,
+        description: "Configured via ANTHROPIC_MODEL",
+      });
+      continue;
+    }
+    const label = printable(row.displayName ?? row.name, 120) || id;
     const description = informativeDescription(printable(row.description, 300), label, agent);
     const efforts = (
       Array.isArray(row.supportedEffortLevels)
@@ -90,8 +191,8 @@ export function parseAgentModels(value: unknown, agent: string): AgentModel[] {
           typeof effort === "string" && /^[a-z][a-z0-9_-]{0,63}$/i.test(effort),
       )
       .slice(0, 16);
-    models.set(parsed.data, {
-      id: parsed.data,
+    models.set(id, {
+      id,
       label,
       ...(description ? { description } : {}),
       ...(efforts.length ? { efforts } : {}),
@@ -406,11 +507,12 @@ export async function readAgentCatalog(
   cwd: string,
   environment: Record<string, string> = {},
 ): Promise<AgentModel[] | ChatAgentCommand[]> {
+  const effectiveEnv = providerProcessEnvironment(environment);
   const child = await hostSpawn(host, command, {
     cwd,
     stdin: "pipe",
     stderr: "ignore",
-    env: providerProcessEnvironment(environment),
+    env: effectiveEnv,
     passEnv: Object.keys(environment),
   });
   const send = (value: unknown) =>
@@ -464,7 +566,7 @@ export async function readAgentCatalog(
               throw new Error(`The agent could not list its ${kind}.`);
             const catalog = object(response.response);
             return kind === "models"
-              ? parseAgentModels(catalog?.models, agent)
+              ? parseAgentModels(catalog?.models, agent, effectiveEnv)
               : parseAgentCommands(catalog?.commands, agent);
           }
           if (message.id !== 1 && message.id !== requestId) continue;

@@ -176,6 +176,7 @@ export function AgentModelPicker({
   onProvider,
   agentName,
   profileName,
+  displayModelLabel,
   accessibleSummary,
   favorites,
   onFavorite,
@@ -213,6 +214,7 @@ export function AgentModelPicker({
   /** Name of the saved composer profile the current settings match; the chip
    *  shows it instead of the model while the profile is still exact. */
   profileName?: string | undefined;
+  displayModelLabel?: string;
   accessibleSummary?: string;
   favorites?: ReadonlySet<string>;
   onFavorite?: (model: string) => void;
@@ -230,7 +232,8 @@ export function AgentModelPicker({
   const modelList = useRef<HTMLDivElement>(null);
   const effortList = useRef<HTMLDivElement>(null);
   const name = agentName ?? agentLabel(agent);
-  const modelName = choices.get(selectedModel) || selectedModel || "Agent default";
+  const modelName =
+    displayModelLabel || choices.get(selectedModel) || selectedModel || "Agent default";
   const effortChoices = efforts ?? [];
   const shown = tab === "effort" && !effortChoices.length ? "model" : tab;
   const effortLabel = effortChoices.find((choice) => choice.value === (effort ?? ""))?.label;
