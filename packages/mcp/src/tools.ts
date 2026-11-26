@@ -3343,7 +3343,8 @@ async function runTool(
         source,
         sort,
         reload,
-        ...(scope !== "global" && options.projectScopes
+        // An explicit project wins over the connection defaults.
+        ...(project === undefined && scope !== "global" && options.projectScopes
           ? { projectIds: options.projectScopes.map((p) => p.id) }
           : {}),
       });
