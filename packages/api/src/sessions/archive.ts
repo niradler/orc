@@ -322,16 +322,21 @@ export class SessionArchive {
         .catch(() => {})
         .finally(() => {
           this.job = null;
+          if (this.stopped) return;
           this.kickEmbeddings();
-          if (
-            !this.stopped &&
-            this.db
-              .query(
-                "SELECT 1 FROM session_archives WHERE revision != index_revision AND (embedding_error IS NULL OR embedding_error NOT LIKE 'Session indexing failed%') LIMIT 1",
-              )
-              .get()
-          )
-            this.kick();
+          try {
+            if (
+              this.db
+                .query(
+                  "SELECT 1 FROM session_archives WHERE revision != index_revision AND (embedding_error IS NULL OR embedding_error NOT LIKE 'Session indexing failed%') LIMIT 1",
+                )
+                .get()
+            )
+              this.kick();
+          } catch {
+            this.stopped = true;
+            clearInterval(this.timer);
+          }
         });
     this.kickEmbeddings();
   }
@@ -555,30 +560,48 @@ export class SessionArchive {
     };
   }
 
-  async close() {
+  stopBackground() {
     this.stopped = true;
     clearInterval(this.timer);
+  }
+
+  async close() {
+    this.stopBackground();
     await Promise.all([this.job, this.embeddingJob]);
     this.index.close();
   }
 }
 
-let instance: { db: Database; service: Promise<SessionArchive> } | undefined;
+let instance:
+  | { db: Database; service: Promise<SessionArchive>; resolved?: SessionArchive }
+  | undefined;
 export function getSessionArchive(): Promise<SessionArchive> {
   const db = getSqlite();
   if (!instance || instance.db !== db) {
     const previous = instance;
-    if (previous) void previous.service.then((service) => service.close()).catch(() => {});
+    if (previous) {
+      previous.resolved?.stopBackground();
+      void previous.service.then((service) => service.close()).catch(() => {});
+    }
     const config = loadConfig();
     const root = join(
       config.knowledge.root || join(dirname(config.db.path.replace(/^~/, homedir())), "knowledge"),
       "sessions",
     );
-    instance = { db, service: SessionArchive.open({ db, root }) };
-    const current = instance;
-    void current.service.catch(() => {
-      if (instance === current) instance = undefined;
-    });
+    const current: NonNullable<typeof instance> = {
+      db,
+      service: SessionArchive.open({ db, root }),
+    };
+    instance = current;
+    void current.service.then(
+      (service) => {
+        current.resolved = service;
+        if (instance !== current) void service.close().catch(() => {});
+      },
+      () => {
+        if (instance === current) instance = undefined;
+      },
+    );
   }
   return instance.service;
 }
@@ -586,5 +609,6 @@ export function getSessionArchive(): Promise<SessionArchive> {
 export async function closeSessionArchive() {
   const old = instance;
   instance = undefined;
+  old?.resolved?.stopBackground();
   if (old) await (await old.service).close();
 }
