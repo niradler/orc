@@ -16,7 +16,7 @@ Start Pi in a repository and run `/orc`. ORC must be running, and `orc` must be 
 
 | Piece      | Behavior                                                                                                      |
 | ---------- | ------------------------------------------------------------------------------------------------------------- |
-| `orc` tool | Context, memories, skills, projects, jobs, rules, and any ORC tool through `search` → `describe` → `invoke`   |
+| `orc` tool | Context, memories, skills, projects, jobs, rules, durable tasks, and any ORC tool through `search` → `describe` → `invoke` |
 | Recall     | A small hidden hint of relevant ORC memories and skills per prompt; nothing is preloaded                      |
 | Rules      | ORC rules for the workspace run on Pi `tool_call`, `tool_result` and `input` through `orc rules hook pi`      |
 | Projects   | Detects the ORC project for `cwd`, including nested folders, or asks you to pick one: existing, new or global |
@@ -30,8 +30,21 @@ database, exactly like the Claude and Codex adapters. The plan refreshes at leas
 Memories and skills you create from Pi are written to ORC, so other agents and the UI see
 them. Pi still loads local skills from `.agents/skills`, `.pi/skills` and
 `~/.pi/agent/skills`, and local skills win on name clashes. ORC skills are fetched on
-demand and never copied to disk, so there is nothing to sync. Pi sessions are already read
+demand and never copied to disk, so there is nothing to sync. When ORC advertises
+[Skills over MCP](./mcp.md#skills-over-mcp-resources), porc reads skill text through
+`skills/list` and `skill://` resources and verifies the manifest; otherwise it falls back
+to the `skill_list` and `skill_read` tools. Pi sessions are already read
 by ORC's session archive.
+
+Long ORC tools can outlive Pi's turn. `task_start` starts a [durable task](./mcp.md#tasks-long-running-tool-calls)
+and returns its id, `task_status` polls it, `task_result` returns the payload once it is
+terminal, and `task_cancel` cancels a running task. Use them for `job_run`, `session_wait`
+and other long calls instead of blocking the conversation.
+
+Live MCP elicitations, when an ORC tool needs input mid-call, appear as Pi prompts (a
+selector for choices, a text input for free values, or a confirmation when there is no
+form schema). Over HTTP, ORC routes the same questions to Notifications and your chat
+channels instead.
 
 While Pi is open, porc registers the session in `~/.orc/live-sessions` with Pi's process id,
 so ORC shows it as running or idle, refuses session messages while it is open, and refuses

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CODE_LIMITS, hasBoundedJsonShape } from "./code-protocol.js";
 import { runCodeWorker } from "./code-runner.js";
+import { assertNonSecretElicitSchema } from "./elicit.js";
 import {
   type CallToolOutcome,
   closeNames,
@@ -111,6 +112,8 @@ export const codeToolListing = {
     "External tools are not ORC built-ins and may have external side effects. " +
     "Independent reads overlap; writes are serialized. " +
     "Executions are fresh and can commit writes before failing. Avoid automatic retries of writes. " +
+    "await tools.elicit(message, requestedSchema) asks the user a non-secret form question and " +
+    "returns { action, content } where action is accept, decline or cancel; handle decline/cancel explicitly. " +
     "Only the JSON return value and bounded console logs are returned.",
   inputSchema: z.toJSONSchema(inputSchema, { target: "draft-7", io: "input" }),
   outputSchema: z.toJSONSchema(outputSchema, { target: "draft-7" }),
@@ -147,7 +150,22 @@ const requestSchema = z.discriminatedUnion("operation", [
     args: z.record(z.string(), z.json()),
     timeout_ms: callTimeoutSchema,
   }),
+  z.object({
+    operation: z.literal("elicit"),
+    connection: connectionSchema,
+    name: z.string().min(1).max(2000),
+    args: z.record(z.string(), z.json()),
+  }),
 ]);
+
+export type ElicitFn = (params: {
+  message: string;
+  requestedSchema: Record<string, unknown>;
+  signal?: AbortSignal | undefined;
+}) => Promise<{
+  action: "accept" | "decline" | "cancel";
+  content?: Record<string, unknown> | undefined;
+}>;
 
 export function toolEffect(name: ToolName): "read" | "write" | undefined {
   if (readable.has(name)) return "read";
@@ -297,6 +315,7 @@ export async function runCodeMode(
   input: unknown,
   signal: AbortSignal,
   callTool: (name: string, args: unknown) => Promise<CallToolOutcome>,
+  elicit?: ElicitFn | undefined,
 ): Promise<ToolResult> {
   const parsed = inputSchema.safeParse(input);
   if (!parsed.success || Buffer.byteLength(parsed.data.code) > CODE_LIMITS.sourceBytes) {
@@ -311,6 +330,31 @@ export async function runCodeMode(
       if (payload.length > CODE_LIMITS.requestChars || !hasBoundedJsonShape(payload))
         throw new Error("Tool request exceeded its size or complexity limit");
       const request = requestSchema.parse(JSON.parse(payload));
+      if (request.operation === "elicit") {
+        return {
+          serial: true,
+          pause: true,
+          async dispatch(dispatchSignal) {
+            if (!elicit)
+              return encodeReply({
+                error: "Elicitation is unavailable on this call.",
+              });
+            try {
+              assertNonSecretElicitSchema(request.args);
+              const result = await elicit({
+                message: request.name,
+                requestedSchema: request.args,
+                signal: dispatchSignal,
+              });
+              return encodeReply({ value: result });
+            } catch (err) {
+              return encodeReply({
+                error: err instanceof Error ? err.message : "Elicitation failed",
+              });
+            }
+          },
+        };
+      }
       const connection = request.connection;
       if (connection) {
         if (!tools.some((tool) => tool.name === "spec_invoke")) {

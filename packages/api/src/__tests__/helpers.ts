@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb } from "@orc/db/client";
 import { createApp } from "../server.js";
+import { closeSessionArchive } from "../sessions/archive.js";
 
 const originalActiveProject = process.env.ORC_ACTIVE_PROJECT;
 const originalOrcHome = process.env.ORC_HOME;
@@ -30,6 +31,7 @@ export function setupTestApp() {
 }
 
 export function teardownTestApp() {
+  void closeSessionArchive().catch(() => {});
   closeDb();
   delete process.env.ORC_API_SECRET;
   delete process.env.ORC_DB_PATH;

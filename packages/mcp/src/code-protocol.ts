@@ -14,6 +14,7 @@ export const CODE_LIMITS = {
   requests: 64,
   parallelCalls: 4,
   executions: 4,
+  maxPauseMs: 300_000,
 } as const;
 
 export interface CodeOutput {
@@ -24,6 +25,7 @@ export interface CodeOutput {
 
 export type WorkerInput =
   | { type: "start"; code: string; deadline: number; wasm?: ArrayBuffer }
+  | { type: "deadline"; deadline: number }
   | { type: "reply"; id: number; payload: string };
 
 export type WorkerOutput =

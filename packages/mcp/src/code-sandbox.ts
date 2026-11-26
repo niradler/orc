@@ -152,6 +152,7 @@ const bootstrap = `
           return Promise.all(calls.map((entry) => settleEntry(entry, defaults)));
         },
         pick,
+        elicit: (message, requestedSchema = {}) => request("elicit", message, requestedSchema),
       }),
       console: freeze({ log: print, info: print, warn: print, error: print, debug: print }),
       errorMessage: error => slice(typeof error === "string" ? error : Text(error?.message ?? ""), 0, 512),
@@ -186,7 +187,7 @@ function readErrorMessage(context: QuickJSContext, result: VmCallResult<QuickJSH
 
 export async function executeCode(
   code: string,
-  deadline: number,
+  deadline: () => number,
   request: (payload: string) => Promise<string>,
   wasm?: ArrayBuffer,
 ): Promise<CodeOutput> {
@@ -199,7 +200,7 @@ export async function executeCode(
   using runtime = module.newRuntime();
   runtime.setMemoryLimit(CODE_LIMITS.memoryBytes);
   runtime.setMaxStackSize(512 * 1024);
-  runtime.setInterruptHandler(() => Date.now() >= deadline);
+  runtime.setInterruptHandler(() => Date.now() >= deadline());
   using context = runtime.newContext();
   const logs: string[] = [];
   let logsTruncated = false;
@@ -249,7 +250,7 @@ export async function executeCode(
       context.callFunction(run, context.undefined, guestTools, guestConsole),
       "Script could not start",
     );
-    while (Date.now() < deadline) {
+    while (Date.now() < deadline()) {
       if (deliveryFailed) throw new Error("Could not deliver a tool result within sandbox limits");
       const pumped = runtime.executePendingJobs(32);
       if (pumped.error) {
