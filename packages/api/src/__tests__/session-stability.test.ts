@@ -261,6 +261,11 @@ describe("session stability (#565, #566, #567)", () => {
       expect(found.status.status).toBe("running");
       expect(found.status.background_tasks?.[0]?.description).toBe("bun run ci:pr");
 
+      const midTurnRow = new ChatStore(getSqlite()).get(threadId);
+      expect(midTurnRow?.turn?.backgroundTasks).toEqual([
+        { kind: "shell", id: "bg-ci", label: "bun run ci:pr" },
+      ]);
+
       // Wait longer than idleMs (120ms) while background task is running — watchdog must NOT kill it!
       await Bun.sleep(220);
       expect(chatStatus(threadId).status).toBe("running");

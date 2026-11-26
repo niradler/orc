@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import {
   closeSync,
   existsSync,
@@ -66,6 +66,15 @@ const JOB_ID_RE = /^[0-9A-Za-z_-]{4,64}$/;
 const DEFAULT_TAIL_BYTES = 16_384;
 const MAX_TAIL_BYTES = 256_000;
 const MAX_TAIL_LINES = 2000;
+const BLOCKED_ENV_KEYS = new Set([
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "DYLD_INSERT_LIBRARIES",
+  "DYLD_LIBRARY_PATH",
+  "DYLD_FRAMEWORK_PATH",
+  "NODE_OPTIONS",
+  "BUN_OPTIONS",
+]);
 
 const POSIX_WRAPPER = [
   "cmd=$1",
@@ -80,36 +89,39 @@ const POSIX_WRAPPER = [
   'wait "$child"',
   "code=$?",
   'if [ -n "$sig" ]; then wait "$child" 2>/dev/null || true; fi',
-  "ts=$(date +%s 2>/dev/null || echo 0)",
+  "ts=$(date +%s 2>/dev/null || true)",
+  'case "$ts" in ""|*[!0-9]*) ms=0 ;; *) ms="$ts"000 ;; esac',
   'tmp="$exit_file.tmp.$$"',
   'if [ -n "$sig" ]; then',
-  '  printf \'{"exit_code":%d,"signal":"%s","finished_at":%s000}\\n\' "$code" "$sig" "$ts" >"$tmp"',
+  '  printf \'{"exit_code":%d,"signal":"%s","finished_at":%s}\\n\' "$code" "$sig" "$ms" >"$tmp"',
   "else",
-  '  printf \'{"exit_code":%d,"signal":null,"finished_at":%s000}\\n\' "$code" "$ts" >"$tmp"',
+  '  printf \'{"exit_code":%d,"signal":null,"finished_at":%s}\\n\' "$code" "$ms" >"$tmp"',
   "fi",
   'mv -f "$tmp" "$exit_file"',
   'exit "$code"',
 ].join("\n");
 
-const WIN32_WRAPPER = `
-const { spawn } = require("node:child_process");
-const { createWriteStream, renameSync, writeFileSync } = require("node:fs");
-const [command, logPath, exitPath] = process.argv.slice(1);
-const out = createWriteStream(logPath, { flags: "a" });
-const child = spawn("cmd.exe", ["/d", "/s", "/c", command], { stdio: ["ignore", "pipe", "pipe"] });
-child.stdout.pipe(out);
-child.stderr.pipe(out);
-const finish = (code, signal) => {
-  out.end(() => {
-    const tmp = exitPath + ".tmp." + process.pid;
-    writeFileSync(tmp, JSON.stringify({ exit_code: code, signal: signal ?? null, finished_at: Date.now() }));
-    renameSync(tmp, exitPath);
-    process.exit(code ?? 1);
-  });
-};
-child.on("exit", finish);
-child.on("error", () => finish(1, null));
-`;
+const WIN32_PS_WRAPPER = [
+  "$cmd = $env:ORC_BG_CMD",
+  "$log = $env:ORC_BG_LOG",
+  "$exitFile = $env:ORC_BG_EXIT",
+  "Remove-Item Env:ORC_BG_CMD,Env:ORC_BG_LOG,Env:ORC_BG_EXIT -ErrorAction SilentlyContinue",
+  "$code = 1",
+  "try {",
+  "  & cmd.exe /d /s /c $cmd *>> $log",
+  "  if ($null -ne $LASTEXITCODE) { $code = [int]$LASTEXITCODE } else { $code = 0 }",
+  "} catch {",
+  "  $_ | Out-File -FilePath $log -Append -Encoding utf8",
+  "  $code = 1",
+  "} finally {",
+  "  $ms = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()",
+  "  $payload = @{ exit_code = $code; signal = $null; finished_at = $ms } | ConvertTo-Json -Compress",
+  '  $tmp = "$exitFile.tmp.$PID"',
+  "  [System.IO.File]::WriteAllText($tmp, $payload, [System.Text.UTF8Encoding]::new($false))",
+  "  Move-Item -LiteralPath $tmp -Destination $exitFile -Force",
+  "}",
+  "exit $code",
+].join("; ");
 
 export function backgroundJobsDir(rootDir?: string): string {
   return rootDir ? resolve(rootDir) : join(orcHome(), "background-jobs");
@@ -134,7 +146,7 @@ function logPath(id: string, rootDir?: string): string {
 
 function writeMetaAtomic(record: BackgroundJobRecord, rootDir?: string): void {
   const target = metaPath(record.id, rootDir);
-  const tmp = `${target}.tmp.${process.pid}.${Date.now()}`;
+  const tmp = `${target}.tmp.${process.pid}.${ulid()}`;
   writeFileSync(tmp, `${JSON.stringify(record, null, 2)}\n`, { mode: 0o600 });
   renameSync(tmp, target);
 }
@@ -155,45 +167,52 @@ function readExitFile(id: string, rootDir?: string): z.infer<typeof ExitFileSche
   }
 }
 
+function applyExitFile(
+  record: BackgroundJobRecord,
+  exit: z.infer<typeof ExitFileSchema>,
+  rootDir?: string,
+): BackgroundJobRecord {
+  const nextStatus: BackgroundJobStatus =
+    record.status === "stopped"
+      ? "stopped"
+      : exit.exit_code === 0 && !exit.signal
+        ? "completed"
+        : "failed";
+  const updated: BackgroundJobRecord = {
+    ...record,
+    status: nextStatus,
+    exit_code: exit.exit_code,
+    signal: exit.signal ?? null,
+    finished_at: record.finished_at ?? Math.max(record.started_at, exit.finished_at ?? Date.now()),
+    error:
+      nextStatus === "failed" && !record.error
+        ? exit.signal
+          ? `Command terminated by ${exit.signal} (exit code ${exit.exit_code ?? "unknown"}).`
+          : `Command exited with code ${exit.exit_code ?? "unknown"}.`
+        : record.error,
+  };
+  if (
+    updated.status !== record.status ||
+    updated.exit_code !== record.exit_code ||
+    updated.signal !== record.signal ||
+    updated.finished_at !== record.finished_at
+  ) {
+    try {
+      writeMetaAtomic(updated, rootDir);
+    } catch {
+      // Best-effort persistence on read.
+    }
+  }
+  return updated;
+}
+
 function reconcileRecord(record: BackgroundJobRecord, rootDir?: string): BackgroundJobRecord {
   const exit = readExitFile(record.id, rootDir);
-  if (exit) {
-    const nextStatus: BackgroundJobStatus =
-      record.status === "stopped"
-        ? "stopped"
-        : exit.exit_code === 0 && !exit.signal
-          ? "completed"
-          : "failed";
-    const updated: BackgroundJobRecord = {
-      ...record,
-      status: nextStatus,
-      exit_code: exit.exit_code,
-      signal: exit.signal ?? null,
-      finished_at:
-        record.finished_at ?? Math.max(record.started_at, exit.finished_at ?? Date.now()),
-      error:
-        nextStatus === "failed" && !record.error
-          ? exit.signal
-            ? `Command terminated by ${exit.signal} (exit code ${exit.exit_code ?? "unknown"}).`
-            : `Command exited with code ${exit.exit_code ?? "unknown"}.`
-          : record.error,
-    };
-    if (
-      updated.status !== record.status ||
-      updated.exit_code !== record.exit_code ||
-      updated.signal !== record.signal ||
-      updated.finished_at !== record.finished_at
-    ) {
-      try {
-        writeMetaAtomic(updated, rootDir);
-      } catch {
-        // Best-effort persistence on read.
-      }
-    }
-    return updated;
-  }
+  if (exit) return applyExitFile(record, exit, rootDir);
 
   if (record.status === "running" && record.pid !== null && !isProcessAlive(record.pid)) {
+    const lateExit = readExitFile(record.id, rootDir);
+    if (lateExit) return applyExitFile(record, lateExit, rootDir);
     const updated: BackgroundJobRecord = {
       ...record,
       status: "interrupted_by_restart",
@@ -219,8 +238,21 @@ export function startBackgroundJob(
 ): BackgroundJobRecord {
   const parsed = BackgroundJobStartSchema.parse(input);
   const cwd = resolve(parsed.cwd);
-  if (!existsSync(cwd)) {
+  let cwdStat: ReturnType<typeof statSync>;
+  try {
+    cwdStat = statSync(cwd);
+  } catch {
     throw new Error(`Working directory does not exist: ${cwd}`);
+  }
+  if (!cwdStat.isDirectory()) {
+    throw new Error(`Working directory is not a directory: ${cwd}`);
+  }
+  if (parsed.env) {
+    for (const key of Object.keys(parsed.env)) {
+      if (BLOCKED_ENV_KEYS.has(key.toUpperCase())) {
+        throw new Error(`Environment variable ${key} cannot be overridden for background jobs.`);
+      }
+    }
   }
   const id = ulid();
   const dir = jobDir(id, rootDir);
@@ -232,13 +264,31 @@ export function startBackgroundJob(
   const env = parsed.env ? { ...process.env, ...parsed.env } : process.env;
   const child =
     process.platform === "win32"
-      ? spawn(process.execPath, ["-e", WIN32_WRAPPER, parsed.command, outputLog, exitFile], {
-          cwd,
-          env,
-          detached: true,
-          stdio: "ignore",
-          windowsHide: true,
-        })
+      ? spawn(
+          "powershell.exe",
+          [
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            WIN32_PS_WRAPPER,
+          ],
+          {
+            cwd,
+            env: {
+              ...env,
+              ORC_BG_CMD: parsed.command,
+              ORC_BG_LOG: outputLog,
+              ORC_BG_EXIT: exitFile,
+            },
+            detached: true,
+            stdio: "ignore",
+            windowsHide: true,
+          },
+        )
       : spawn("/bin/sh", ["-c", POSIX_WRAPPER, "--", parsed.command, outputLog, exitFile], {
           cwd,
           env,
@@ -246,8 +296,11 @@ export function startBackgroundJob(
           stdio: "ignore",
         });
 
+  child.on("error", () => {});
   child.unref();
 
+  const spawned = typeof child.pid === "number" && child.pid > 0;
+  const now = Date.now();
   const record: BackgroundJobRecord = {
     id,
     label: parsed.label ?? null,
@@ -255,13 +308,13 @@ export function startBackgroundJob(
     cwd,
     session_id: parsed.session_id ?? null,
     project_id: parsed.project_id ?? null,
-    status: "running",
-    pid: child.pid ?? null,
-    started_at: Date.now(),
-    finished_at: null,
-    exit_code: null,
+    status: spawned ? "running" : "failed",
+    pid: spawned ? (child.pid ?? null) : null,
+    started_at: now,
+    finished_at: spawned ? null : now,
+    exit_code: spawned ? null : 1,
     signal: null,
-    error: null,
+    error: spawned ? null : "Failed to spawn detached background shell process.",
     log_path: outputLog,
   };
   writeMetaAtomic(record, rootDir);
@@ -278,6 +331,7 @@ export function listBackgroundJobs(
   filter?: {
     session_id?: string | undefined;
     project_id?: string | undefined;
+    project_ids?: string[] | undefined;
     status?: BackgroundJobStatus | undefined;
     limit?: number | undefined;
   },
@@ -285,6 +339,7 @@ export function listBackgroundJobs(
 ): BackgroundJobRecord[] {
   const base = backgroundJobsDir(rootDir);
   if (!existsSync(base)) return [];
+  const allowedProjects = filter?.project_ids ? new Set(filter.project_ids) : null;
   const entries = readdirSync(base, { withFileTypes: true });
   const jobs: BackgroundJobRecord[] = [];
   for (const entry of entries) {
@@ -293,6 +348,8 @@ export function listBackgroundJobs(
     if (!record) continue;
     if (filter?.session_id && record.session_id !== filter.session_id) continue;
     if (filter?.project_id && record.project_id !== filter.project_id) continue;
+    if (allowedProjects && (!record.project_id || !allowedProjects.has(record.project_id)))
+      continue;
     if (filter?.status && record.status !== filter.status) continue;
     jobs.push(record);
   }
@@ -313,14 +370,15 @@ export function readBackgroundJobLog(
   const maxBytes = Math.max(256, Math.min(opts?.tail_bytes ?? DEFAULT_TAIL_BYTES, MAX_TAIL_BYTES));
   const readBytes = Math.min(size, maxBytes);
   const start = size - readBytes;
-  const buffer = Buffer.allocUnsafe(readBytes);
+  const buffer = Buffer.alloc(readBytes);
   const fd = openSync(file, "r");
+  let bytesRead = 0;
   try {
-    readSync(fd, buffer, 0, readBytes, start);
+    bytesRead = readSync(fd, buffer, 0, readBytes, start);
   } finally {
     closeSync(fd);
   }
-  let text = buffer.toString("utf8");
+  let text = buffer.subarray(0, bytesRead).toString("utf8");
   let truncated = start > 0;
   if (opts?.tail_lines !== undefined) {
     const limit = Math.max(1, Math.min(opts.tail_lines, MAX_TAIL_LINES));
@@ -338,7 +396,11 @@ function signalProcessGroup(pid: number, signal: NodeJS.Signals): void {
     if (process.platform !== "win32") {
       process.kill(-pid, signal);
     } else {
-      process.kill(pid, signal);
+      const res = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      if (res.error || res.status !== 0) process.kill(pid, signal);
     }
   } catch {
     try {

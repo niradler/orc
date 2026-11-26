@@ -133,4 +133,24 @@ describe("background-jobs detached runner", () => {
     expect(listed).toHaveLength(1);
     expect(listed[0]?.status).toBe("interrupted_by_restart");
   });
+
+  test("rejects non-directory cwd and blocked dynamic-loader env overrides", () => {
+    const filePath = join(workDir, "not-a-dir.txt");
+    writeFileSync(filePath, "hello");
+    expect(() => startBackgroundJob({ command: "echo hi", cwd: filePath }, root)).toThrow(
+      "not a directory",
+    );
+    expect(() =>
+      startBackgroundJob(
+        { command: "echo hi", cwd: workDir, env: { LD_PRELOAD: "/tmp/evil.so" } },
+        root,
+      ),
+    ).toThrow("cannot be overridden");
+    expect(() =>
+      startBackgroundJob(
+        { command: "echo hi", cwd: workDir, env: { node_options: "--require /tmp/x" } },
+        root,
+      ),
+    ).toThrow("cannot be overridden");
+  });
 });

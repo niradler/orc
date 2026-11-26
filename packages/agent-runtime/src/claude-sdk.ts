@@ -1020,7 +1020,7 @@ class ClaudeSDKSession implements AgentSession {
         clearContinuationGrace();
         continuationGrace = setTimeout(() => {
           if (stream.turn === turn && !turn.closing && turn.lastResult) {
-            if (!turn.stopping) {
+            if (!turn.stopping && turn.pendingSteers.size > 0) {
               push({
                 type: "system_status",
                 data: "A steering message was not answered before the response ended.",
@@ -1034,7 +1034,14 @@ class ClaudeSDKSession implements AgentSession {
       for await (const msg of q) {
         const turn = stream.turn;
         if (turn?.closing && stream.intentionalClose) continue;
-        clearContinuationGrace();
+        if (
+          msg.type === "stream_event" ||
+          msg.type === "assistant" ||
+          msg.type === "result" ||
+          (msg.type === "system" && msg.subtype === "task_started")
+        ) {
+          clearContinuationGrace();
+        }
         if (msg.type === "stream_event") {
           if (!turn || turn.closing) continue;
           const event = msg.event;
@@ -1255,6 +1262,10 @@ class ClaudeSDKSession implements AgentSession {
             } else if (block.type === "thinking" && "thinking" in block && block.thinking) {
               push({ type: "thinking", data: block.thinking as string });
             } else if (block.type === "tool_use") {
+              if (toolInputs.size >= 500) {
+                const oldest = toolInputs.keys().next().value;
+                if (oldest !== undefined) toolInputs.delete(oldest);
+              }
               toolInputs.set(block.id, extractToolInputSummary(block.name, block.input));
               const input = JSON.stringify(block.input);
               push({
@@ -1277,6 +1288,7 @@ class ClaudeSDKSession implements AgentSession {
         if (msg.type === "user" && Array.isArray(msg.message.content)) {
           for (const block of msg.message.content) {
             if (block.type === "tool_result") {
+              toolInputs.delete(block.tool_use_id);
               const receipts = this.humanReceipts.get(block.tool_use_id);
               if (receipts) {
                 const store = new HumanRequestStore(getSqlite());

@@ -2678,13 +2678,30 @@ async function runTool(
         label?: string;
         project?: string;
       };
-      const target = resolveProjectId(project);
+      let projectId: string | undefined;
+      if (options.projectScopes) {
+        if (project) {
+          const target = resolveProjectId(project);
+          if (!target || !options.projectScopes.some((p) => p.id === target.id)) {
+            throw new ValidationError(`Project ${project} is outside the selected MCP projects`);
+          }
+          projectId = target.id;
+        } else if (options.projectScopes.length === 1) {
+          projectId = options.projectScopes[0]?.id;
+        } else {
+          throw new ValidationError(
+            "Multiple MCP projects are selected; pass project to shell_run",
+          );
+        }
+      } else {
+        projectId = resolveProjectId(project)?.id;
+      }
       const job = startBackgroundJob({
         command,
         cwd,
         ...(label ? { label } : {}),
         ...(options.agentSessionId ? { session_id: options.agentSessionId } : {}),
-        ...(target ? { project_id: target.id } : {}),
+        ...(projectId ? { project_id: projectId } : {}),
       });
       return JSON.stringify(job);
     }
@@ -2702,7 +2719,13 @@ async function runTool(
         tail_bytes?: number;
       };
       const job = getBackgroundJob(job_id);
-      if (!job) throw new NotFoundError("BackgroundJob", job_id);
+      if (
+        !job ||
+        (options.projectScopes &&
+          (!job.project_id || !options.projectScopes.some((p) => p.id === job.project_id)))
+      ) {
+        throw new NotFoundError("BackgroundJob", job_id);
+      }
       if (!logs) return JSON.stringify(job);
       const log = readBackgroundJobLog(job_id, { tail_lines, tail_bytes });
       return JSON.stringify({
@@ -2720,12 +2743,26 @@ async function runTool(
         limit?: number;
       };
       return JSON.stringify({
-        jobs: listBackgroundJobs({ status, session_id, limit }),
+        jobs: listBackgroundJobs({
+          status,
+          session_id,
+          limit,
+          ...(options.projectScopes ? { project_ids: options.projectScopes.map((p) => p.id) } : {}),
+        }),
       });
     }
 
     case "shell_stop": {
       const { job_id } = args as { job_id: string };
+      const existing = getBackgroundJob(job_id);
+      if (
+        !existing ||
+        (options.projectScopes &&
+          (!existing.project_id ||
+            !options.projectScopes.some((p) => p.id === existing.project_id)))
+      ) {
+        throw new NotFoundError("BackgroundJob", job_id);
+      }
       const stopped = await stopBackgroundJob(job_id);
       if (!stopped) throw new NotFoundError("BackgroundJob", job_id);
       return JSON.stringify(stopped);

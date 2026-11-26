@@ -279,6 +279,7 @@ type ResidentSessionEntry = {
   unsubExit: () => void;
 };
 
+const MAX_RESIDENT_SESSIONS = 16;
 const residentSessions = new Map<string, ResidentSessionEntry>();
 let residentReaper: ReturnType<typeof setInterval> | null = null;
 let drainingChatTurns = false;
@@ -384,6 +385,18 @@ function parkResidentSession(
   model: string,
 ): void {
   void evictResidentSession(threadId, true);
+  if (residentSessions.size >= MAX_RESIDENT_SESSIONS) {
+    let oldestKey: string | null = null;
+    let oldestIdle = Number.POSITIVE_INFINITY;
+    for (const [key, candidate] of residentSessions) {
+      if (candidate.session.canStopRuntime?.() === false) continue;
+      if (candidate.idleSince < oldestIdle) {
+        oldestIdle = candidate.idleSince;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) void evictResidentSession(oldestKey, true);
+  }
   const unsubExit =
     session.onUnexpectedExit?.((info) => handleIdleResidentExit(threadId, info)) ?? (() => {});
   residentSessions.set(threadId, {
@@ -417,21 +430,25 @@ async function takeResidentSession(
     await evictResidentSession(threadId, true);
     return null;
   }
-  if (entry.model !== desiredModel) {
-    if (entry.session.setModel) {
-      await entry.session.setModel(desiredModel);
-    } else {
-      if (entry.session.canStopRuntime?.() === false) {
-        throw new ConflictError(
-          "Cannot restart this session to change model while background work is still running.",
-        );
-      }
-      await evictResidentSession(threadId, true);
-      return null;
+  if (entry.model !== desiredModel && !entry.session.setModel) {
+    if (entry.session.canStopRuntime?.() === false) {
+      throw new ConflictError(
+        "Cannot restart this session to change model while background work is still running.",
+      );
     }
+    await evictResidentSession(threadId, true);
+    return null;
   }
   entry.unsubExit();
   residentSessions.delete(threadId);
+  if (entry.model !== desiredModel && entry.session.setModel) {
+    try {
+      await entry.session.setModel(desiredModel);
+    } catch (error) {
+      await entry.session.close().catch(() => {});
+      throw error;
+    }
+  }
   return entry.session;
 }
 
@@ -3474,7 +3491,11 @@ async function beginTurn(
                   runtimeId: resumeId,
                 });
                 await emit({ type: "system_status", text: CHAT_RECOVERY_NOTICE });
-                run.session = await backend.startSession(opts);
+                if (stopped) return;
+                run.session = await backend.startSession({
+                  ...opts,
+                  systemPromptDelivered: undefined,
+                });
               }
             } else run.session = await backend.startSession(opts);
           }
@@ -3600,6 +3621,14 @@ async function beginTurn(
               if (thread.turn?.runId === runId && thread.turn.status === "running") {
                 const bgItems = activeBackgroundItems(run);
                 thread.turn.backgroundTasks = bgItems.length ? bgItems : undefined;
+                try {
+                  store().setTurnBackgroundTasks(thread.id, runId, leaseEpoch, bgItems);
+                } catch (error) {
+                  logger.warn("Could not persist active background tasks on turn lease", {
+                    threadId: thread.id,
+                    error,
+                  });
+                }
               }
               await emit({ type: "background_task", data: event.data });
               continue;
@@ -3697,7 +3726,12 @@ async function beginTurn(
             reason: "Resumed session returned an empty turn with no response.",
           };
           await emit({ type: "system_status", text: CHAT_RECOVERY_NOTICE });
-          run.session = await backend.startSession(opts);
+          if (stopped) return;
+          run.session = await backend.startSession({
+            ...opts,
+            systemPromptDelivered: undefined,
+          });
+          if (stopped) return;
           await consumeSessionEvents(`${handoffPrefix}\n\n${withRecovery}`);
         }
 

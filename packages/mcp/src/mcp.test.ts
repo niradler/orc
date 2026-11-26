@@ -6,7 +6,7 @@ import { getUserAgentsDir } from "@orc/core/agent-service";
 import { globalConfigPath, loadConfig, resetConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
 import { shortId, ulid } from "@orc/core/ids";
-import { closeDb, createTestDb } from "@orc/db/client";
+import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { toolListing } from "./server.js";
 import { executeTool, toolDefinitions } from "./tools.js";
 
@@ -746,6 +746,58 @@ describe("MCP detached shell tools", () => {
       expect(stopped.status).toBe("stopped");
     } finally {
       await executeTool("shell_stop", { job_id: started.id }).catch(() => undefined);
+    }
+  });
+
+  test("shell_* tools enforce MCP projectScopes isolation", async () => {
+    const db = getSqlite();
+    const now = Math.floor(Date.now() / 1000);
+    db.query(
+      "INSERT OR IGNORE INTO projects (id, name, description, status, created_at, updated_at) VALUES (?, ?, '', 'active', ?, ?)",
+    ).run("proj-shell-a", "shell-proj-a", now, now);
+    db.query(
+      "INSERT OR IGNORE INTO projects (id, name, description, status, created_at, updated_at) VALUES (?, ?, '', 'active', ?, ?)",
+    ).run("proj-shell-b", "shell-proj-b", now, now);
+
+    const scopeA = { projectScopes: [{ id: "proj-shell-a", name: "shell-proj-a" }] };
+    const scopeB = { projectScopes: [{ id: "proj-shell-b", name: "shell-proj-b" }] };
+
+    const jobA = JSON.parse(
+      await executeTool(
+        "shell_run",
+        { command: 'echo "secret-a"; sleep 20', cwd: process.cwd(), label: "job-a" },
+        scopeA,
+      ),
+    ) as { id: string; project_id: string | null };
+    expect(jobA.project_id).toBe("proj-shell-a");
+
+    try {
+      await expect(
+        executeTool(
+          "shell_run",
+          { command: "echo nope", cwd: process.cwd(), project: "shell-proj-b" },
+          scopeA,
+        ),
+      ).rejects.toThrow("outside the selected MCP projects");
+
+      await expect(executeTool("shell_status", { job_id: jobA.id }, scopeB)).rejects.toThrow(
+        "BackgroundJob",
+      );
+      await expect(executeTool("shell_stop", { job_id: jobA.id }, scopeB)).rejects.toThrow(
+        "BackgroundJob",
+      );
+
+      const listB = JSON.parse(await executeTool("shell_list", { limit: 50 }, scopeB)) as {
+        jobs: { id: string }[];
+      };
+      expect(listB.jobs.some((j) => j.id === jobA.id)).toBe(false);
+
+      const listA = JSON.parse(await executeTool("shell_list", { limit: 50 }, scopeA)) as {
+        jobs: { id: string }[];
+      };
+      expect(listA.jobs.some((j) => j.id === jobA.id)).toBe(true);
+    } finally {
+      await executeTool("shell_stop", { job_id: jobA.id }, scopeA).catch(() => undefined);
     }
   });
 });

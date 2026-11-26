@@ -234,3 +234,47 @@ try {
     { kind: "shell", id: "bg-live", label: "long gate" },
   ]);
 });
+
+test("background completion grace settles without false steering warning even if rate_limit_event arrives", () => {
+  const script = `
+import { mock } from "bun:test";
+mock.module("@anthropic-ai/claude-agent-sdk", () => ({
+  HOOK_EVENTS: [],
+  query: () => {
+    const stream = (async function* () {
+      yield { type: "system", subtype: "init", session_id: "bg-grace-1", model: "claude-sonnet-4-6" };
+      yield { type: "system", subtype: "task_started", task_id: "bg-g1", description: "quick check", task_type: "local_bash" };
+      yield { type: "result", subtype: "success", session_id: "bg-grace-1", is_error: false, usage: { output_tokens: 4 }, duration_ms: 10 };
+      await Bun.sleep(20);
+      yield { type: "system", subtype: "task_notification", task_id: "bg-g1", status: "completed", summary: "ok" };
+      await Bun.sleep(15);
+      yield { type: "rate_limit_event", rate_limit_info: { status: "allowed" } };
+      await Bun.sleep(500);
+    })();
+    return { [Symbol.asyncIterator]: () => stream, close: () => {}, return: async () => stream.return() };
+  },
+}));
+const { loadConfig } = await import(${JSON.stringify(new URL("../../../core/src/config.ts", import.meta.url).href)});
+const config = loadConfig();
+loadConfig({ rules: { ...config.rules, enabled: false }, preferences: {} });
+const sdk = await import(${JSON.stringify(new URL("../claude-sdk.ts", import.meta.url).href)});
+sdk.setClaudeSteerContinuationGraceMs(80);
+const { createBackend } = await import(${JSON.stringify(new URL("../registry.ts", import.meta.url).href)});
+const session = await createBackend("claude").startSession({ cwd: process.cwd(), orcMcp: false, executionHost: null, resident: true });
+try {
+  await session.send("run quick check");
+  const events = [];
+  for await (const event of session.events()) events.push(event);
+  console.log("OUT:" + JSON.stringify(events));
+} finally { await session.close(); }
+`;
+  const res = runScript(script);
+  expect({ exitCode: res.exitCode, stderr: res.stderr }).toMatchObject({ exitCode: 0 });
+  const line = res.stdout.split("\n").find((l) => l.startsWith("OUT:"));
+  const events = JSON.parse((line ?? "OUT:[]").slice(4)) as { type: string; data: unknown }[];
+  expect(events.some((e) => e.type === "result")).toBe(true);
+  const statuses = events
+    .filter((e) => e.type === "system_status")
+    .map((e) => String(e.data ?? ""));
+  expect(statuses.some((s) => s.includes("steering message was not answered"))).toBe(false);
+});
