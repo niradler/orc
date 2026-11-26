@@ -1,7 +1,15 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { ElicitRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  CallToolResultSchema,
+  CancelTaskResultSchema,
+  CreateTaskResultSchema,
+  ElicitRequestSchema,
+  GetTaskResultSchema,
+  ReadResourceResultSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import { z } from "zod";
 import type { PorcConfig } from "./config.js";
 import { buildMcpUrl } from "./mcp.js";
 
@@ -15,6 +23,40 @@ export type OrcToolInfo = {
   name: string;
   description: string;
 };
+
+/** Durable MCP task handle returned by a task-augmented tool call. */
+export type OrcTask = {
+  taskId: string;
+  status: string;
+  ttl?: number | null | undefined;
+  createdAt?: string | undefined;
+  lastUpdatedAt?: string | undefined;
+  pollInterval?: number | undefined;
+  statusMessage?: string | undefined;
+};
+
+export type OrcTaskOptions = {
+  /** Requested retention in milliseconds; the server may clamp it. */
+  ttlMs?: number | undefined;
+  /** Poll cadence while waiting (default: server pollInterval or 1000ms). */
+  pollMs?: number | undefined;
+  /** Overall wait budget for callAndWait (default 10 minutes). */
+  timeoutMs?: number | undefined;
+  signal?: AbortSignal | undefined;
+};
+
+const TERMINAL_TASK = new Set(["completed", "failed", "cancelled"]);
+const SKILLS_EXTENSION_ID = "io.modelcontextprotocol/skills";
+const SKILLS_LIST_SCHEMA = z.object({
+  skills: z.array(
+    z.object({
+      uri: z.string(),
+      frontmatter: z.record(z.string(), z.unknown()).default({}),
+      resources: z.array(z.object({ uri: z.string(), digest: z.string(), size: z.number() })),
+    }),
+  ),
+  nextCursor: z.string().optional(),
+});
 
 /** Answer a server elicitation; omit content for decline/cancel. */
 export type OrcElicitationHandler = (params: {
@@ -33,6 +75,11 @@ export class OrcMcpError extends Error {
     this.name = "OrcMcpError";
   }
 }
+
+export type OrcMcpClientOptions = {
+  /** Test/embedding seam: resolve an already-connected client instead of a transport. */
+  client?: (() => Promise<Client>) | undefined;
+};
 
 function timeout<T>(value: Promise<T>, ms: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -63,6 +110,10 @@ function inheritedEnv(): Record<string, string> {
   );
 }
 
+function requestOptions(timeoutMs: number, signal?: AbortSignal) {
+  return { timeout: timeoutMs, ...(signal ? { signal } : {}) };
+}
+
 export class OrcMcpClient {
   private client: Client | undefined;
   private connecting: Promise<Client> | undefined;
@@ -76,9 +127,11 @@ export class OrcMcpClient {
     private readonly sessionId: string | undefined,
     private readonly cwd: string,
     private readonly onElicitation?: OrcElicitationHandler | undefined,
+    private readonly options: OrcMcpClientOptions = {},
   ) {}
 
   private async open(): Promise<Client> {
+    if (this.options.client) return this.options.client();
     const headers: Record<string, string> = {};
     if (this.config.secret) headers.Authorization = `Bearer ${this.config.secret}`;
     if (this.sessionId) headers["X-ORC-Session"] = this.sessionId;
@@ -162,6 +215,183 @@ export class OrcMcpClient {
       isError: result.isError === true,
       raw: result,
     };
+  }
+
+  /** Task-augmented tool call: returns a durable handle instead of blocking. */
+  async callTask(
+    name: string,
+    args: Record<string, unknown> = {},
+    options: OrcTaskOptions = {},
+  ): Promise<OrcTask> {
+    const client = await this.connect();
+    const forwarded = META_TOOLS.has(name)
+      ? { name, arguments: args }
+      : { name: "tool_invoke", arguments: { name, arguments: args } };
+    const result = await timeout(
+      client.request(
+        {
+          method: "tools/call",
+          params: {
+            ...forwarded,
+            task: options.ttlMs === undefined ? {} : { ttl: options.ttlMs },
+          },
+        },
+        CreateTaskResultSchema,
+        requestOptions(this.config.timeoutMs, options.signal),
+      ),
+      this.config.timeoutMs,
+      `ORC task ${name}`,
+    );
+    return result.task;
+  }
+
+  async taskStatus(taskId: string, options: OrcTaskOptions = {}): Promise<OrcTask> {
+    const client = await this.connect();
+    return timeout(
+      client.request(
+        { method: "tasks/get", params: { taskId } },
+        GetTaskResultSchema,
+        requestOptions(this.config.timeoutMs, options.signal),
+      ),
+      this.config.timeoutMs,
+      `ORC task ${taskId}`,
+    );
+  }
+
+  async cancelTask(taskId: string): Promise<void> {
+    const client = await this.connect();
+    await timeout(
+      client.request({ method: "tasks/cancel", params: { taskId } }, CancelTaskResultSchema, {
+        timeout: this.config.timeoutMs,
+      }),
+      this.config.timeoutMs,
+      `ORC task cancel ${taskId}`,
+    );
+  }
+
+  /**
+   * Poll a task to a terminal state and return its tool result. `tasks/get`
+   * carries status only; the payload comes from `tasks/result` once completed.
+   */
+  async waitForTask(taskId: string, options: OrcTaskOptions = {}): Promise<OrcToolResult> {
+    const client = await this.connect();
+    const deadline = Date.now() + (options.timeoutMs ?? 10 * 60_000);
+    let status = await this.taskStatus(taskId, options);
+    while (!TERMINAL_TASK.has(status.status)) {
+      if (Date.now() >= deadline) {
+        throw new OrcMcpError(
+          `ORC task ${taskId} is still ${status.status} after ${options.timeoutMs ?? 600_000}ms`,
+        );
+      }
+      await Bun.sleep(options.pollMs ?? status.pollInterval ?? 1000);
+      status = await this.taskStatus(taskId, options);
+    }
+    if (status.status === "failed")
+      throw new OrcMcpError(status.statusMessage || `ORC task ${taskId} failed`);
+    if (status.status === "cancelled")
+      throw new OrcMcpError(status.statusMessage || `ORC task ${taskId} was cancelled`);
+    const result = await timeout(
+      client.request(
+        { method: "tasks/result", params: { taskId } },
+        CallToolResultSchema,
+        requestOptions(this.config.timeoutMs, options.signal),
+      ),
+      this.config.timeoutMs,
+      `ORC task result ${taskId}`,
+    );
+    return {
+      text: textOf(result.content),
+      isError: result.isError === true,
+      raw: result,
+    };
+  }
+
+  /** Start a task and wait for it, for consumers that do not manage handles. */
+  async callAndWait(
+    name: string,
+    args: Record<string, unknown> = {},
+    options: OrcTaskOptions = {},
+  ): Promise<OrcToolResult> {
+    const task = await this.callTask(name, args, options);
+    return this.waitForTask(task.taskId, options);
+  }
+
+  /** Whether the server advertises Skills over MCP (io.modelcontextprotocol/skills). */
+  async hasSkillsExtension(): Promise<boolean> {
+    const capabilities = (await this.connect()).getServerCapabilities() as
+      | { extensions?: Record<string, unknown> }
+      | undefined;
+    return Boolean(capabilities?.extensions?.[SKILLS_EXTENSION_ID]);
+  }
+
+  async listSkills(
+    options: { q?: string | undefined; limit?: number | undefined } = {},
+  ): Promise<OrcToolResult> {
+    if (!(await this.hasSkillsExtension())) {
+      return this.call("skill_list", {
+        ...(options.q ? { q: options.q } : {}),
+        limit: options.limit ?? 20,
+      });
+    }
+    const client = await this.connect();
+    const limit = options.limit ?? 20;
+    const query = options.q?.trim().toLowerCase();
+    const skills: { name: string; description: string; uri: string }[] = [];
+    let cursor: string | undefined;
+    do {
+      const page: z.infer<typeof SKILLS_LIST_SCHEMA> = await timeout(
+        client.request(
+          { method: "skills/list", params: cursor ? { cursor } : {} },
+          SKILLS_LIST_SCHEMA,
+          { timeout: this.config.timeoutMs },
+        ),
+        this.config.timeoutMs,
+        "ORC skills/list",
+      );
+      for (const skill of page.skills) {
+        const name = String(
+          skill.frontmatter.name ?? skill.uri.replace(/^skill:\/\//, "").split("/")[0],
+        );
+        const description = String(skill.frontmatter.description ?? "");
+        if (query && !`${name} ${description}`.toLowerCase().includes(query)) continue;
+        skills.push({ name, description, uri: skill.uri });
+        if (skills.length >= limit) break;
+      }
+      cursor = page.nextCursor;
+    } while (cursor && skills.length < limit);
+    return {
+      text:
+        skills
+          .map((skill) => `- ${skill.name}${skill.description ? `: ${skill.description}` : ""}`)
+          .join("\n") || "No skills.",
+      isError: false,
+      raw: skills,
+    };
+  }
+
+  async readSkill(
+    name: string,
+    options: { ref?: string | undefined } = {},
+  ): Promise<OrcToolResult> {
+    if (!(await this.hasSkillsExtension()))
+      return this.call("skill_read", {
+        name,
+        ...(options.ref ? { ref: options.ref } : {}),
+      });
+    const client = await this.connect();
+    const uri = `skill://${name.replace(/^\/+/, "")}/${(options.ref ?? "SKILL.md").replace(/^\/+/, "")}`;
+    const result = await timeout(
+      client.request({ method: "resources/read", params: { uri } }, ReadResourceResultSchema, {
+        timeout: this.config.timeoutMs,
+      }),
+      this.config.timeoutMs,
+      `ORC skill ${name}`,
+    );
+    const text = result.contents
+      .map((item) => ("text" in item && typeof item.text === "string" ? item.text : ""))
+      .filter(Boolean)
+      .join("\n");
+    return { text, isError: false, raw: result };
   }
 
   async close(): Promise<void> {

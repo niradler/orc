@@ -378,6 +378,10 @@ const ACTIONS = [
   "skill_list",
   "skill_read",
   "skill_create",
+  "task_start",
+  "task_status",
+  "task_result",
+  "task_cancel",
   "project_list",
   "job_create",
   "job_list",
@@ -410,6 +414,15 @@ const OrcParams = Type.Object({
   ),
   limit: Type.Optional(Type.Number({ minimum: 1, maximum: 100, description: "Page size" })),
   ref: Type.Optional(Type.String({ description: "Skill-relative supporting file path" })),
+  task: Type.Optional(
+    Type.String({ description: "Task id for task_status, task_result or task_cancel" }),
+  ),
+  ttl_ms: Type.Optional(
+    Type.Number({
+      minimum: 1000,
+      description: "Requested task retention in milliseconds for task_start",
+    }),
+  ),
   arguments: Type.Optional(
     Type.Record(Type.String(), Type.Unknown(), { description: "Arguments for invoke" }),
   ),
@@ -463,6 +476,8 @@ type OrcInput = {
   priority?: number;
   limit?: number;
   ref?: string;
+  task?: string;
+  ttl_ms?: number;
   arguments?: Record<string, unknown>;
   cron?: string;
   prompt?: string;
@@ -543,14 +558,21 @@ async function mcpAction(session: SessionState, params: OrcInput): Promise<strin
         ...(params.priority === undefined ? {} : { priority: params.priority }),
       };
       break;
-    case "skill_list":
-      if (params.query) args.q = params.query;
-      args.limit = params.limit ?? 20;
-      break;
-    case "skill_read":
-      args.name = need(params.name, "skill_read requires name");
-      if (params.ref) args.ref = params.ref;
-      break;
+    case "skill_list": {
+      const result = await client.listSkills({
+        ...(params.query ? { q: params.query } : {}),
+        limit: params.limit ?? 20,
+      });
+      if (result.isError) throw new Error(result.text || "skill_list failed");
+      return result.text || "No skills.";
+    }
+    case "skill_read": {
+      const result = await client.readSkill(need(params.name, "skill_read requires name"), {
+        ...(params.ref ? { ref: params.ref } : {}),
+      });
+      if (result.isError) throw new Error(result.text || "skill_read failed");
+      return result.text || "Empty skill.";
+    }
     case "skill_create":
       args = {
         ...scope,
@@ -558,6 +580,39 @@ async function mcpAction(session: SessionState, params: OrcInput): Promise<strin
         content: need(params.content, "skill_create requires content (full SKILL.md)"),
       };
       break;
+    case "task_start": {
+      const toolName = need(params.name, "task_start requires name (the ORC tool)");
+      const inner = { ...(params.arguments ?? {}) };
+      if (project && inner.project === undefined && inner.project_id === undefined)
+        inner.project = project;
+      const handle = await client.callTask(toolName, inner, {
+        ...(params.ttl_ms === undefined ? {} : { ttlMs: params.ttl_ms }),
+      });
+      return `task ${handle.taskId} started (${handle.status})`;
+    }
+    case "task_status": {
+      const status = await client.taskStatus(need(params.task, "task_status requires task"));
+      return [
+        `task ${status.taskId}: ${status.status}`,
+        status.statusMessage ? `message: ${status.statusMessage}` : "",
+        status.pollInterval ? `poll every ${status.pollInterval}ms` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
+    case "task_result": {
+      const taskId = need(params.task, "task_result requires task");
+      const status = await client.taskStatus(taskId);
+      if (!["completed", "failed", "cancelled"].includes(status.status))
+        return `task ${taskId} is ${status.status}; call task_result again after polling.`;
+      const result = await client.waitForTask(taskId);
+      return result.text || "Task completed with no output.";
+    }
+    case "task_cancel": {
+      const taskId = need(params.task, "task_cancel requires task");
+      await client.cancelTask(taskId);
+      return `task ${taskId} cancelled`;
+    }
     case "project_list":
       args = {};
       break;
