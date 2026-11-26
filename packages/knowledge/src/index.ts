@@ -10,8 +10,8 @@ export { PARSER_WORKER_COMMAND, runParserWorker } from "./parsers/worker.js";
 export { citationOf, parseCitation, snippet } from "./search.js";
 export {
   DEFAULT_SOURCE_PATTERN,
-  digestBackendWarning,
   type DocumentReadOptions,
+  digestBackendWarning,
   KB_UPLOAD_FORMATS,
   type KbDeleteOptions,
   type KbJobHooks,
