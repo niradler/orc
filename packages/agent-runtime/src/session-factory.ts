@@ -214,7 +214,11 @@ export function validateProfileCapabilities(
 ): void {
   if (profile?.fields.model && !backend.profileCapabilities?.model)
     throw new Error(`Backend ${backend.name} cannot honor profile model ${profile.fields.model}`);
-  if (opts.toolAllowlist !== undefined && !backend.profileCapabilities?.toolAllowlist)
+  if (
+    opts.toolAllowlist !== undefined &&
+    !backend.profileCapabilities?.toolAllowlist &&
+    !opts.toolAllowlistOptional
+  )
     throw new Error(
       `Backend ${backend.name} cannot enforce this session's tool whitelist; refusing to run unrestricted`,
     );

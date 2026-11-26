@@ -214,6 +214,9 @@ export async function runKbDigestAgent(run: KbDigestAgentRun): Promise<KbDigestA
     systemPromptAppend:
       "This is an assigned knowledge base digest. Follow the digest's instructions and rules in the prompt. Do not call startup context. MCP tool schemas are loaded for this session.",
     toolAllowlist: KB_DIGEST_TOOLS,
+    // Any backend is a valid digest choice. If it cannot enforce the whitelist the session runs
+    // without it; the warning below says so and the run proceeds.
+    toolAllowlistOptional: true,
   };
   // A backend can be rerouted by the session factory ("claude" falls back to acpx when its
   // preflight fails). Judge the backend this run would actually get so the warning names the

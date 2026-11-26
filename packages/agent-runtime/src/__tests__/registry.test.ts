@@ -69,8 +69,8 @@ describe("backend registry", () => {
     }
   });
 
-  // A KB digest always runs with a tool whitelist, so this is the set it may be pointed at, and
-  // the set the digest backend picker filters to.
+  // A KB digest prefers a tool whitelist, so this is the set that enforces one; its picker
+  // suggests these but allows any backend.
   it("reports which backends can enforce a session tool whitelist", () => {
     expect(backendSupportsToolAllowlist("claude")).toBe(true);
     expect(backendSupportsToolAllowlist("claude-cli")).toBe(true);

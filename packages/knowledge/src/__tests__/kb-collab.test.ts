@@ -9,7 +9,7 @@ import { KB_DIGEST_TEMPLATE, type KbCallContext } from "@orc/core/kb";
 import { createTestDb, getSqlite } from "@orc/db";
 import { KbDigestStore, kbDigestCommand } from "@orc/db/kb-digest";
 import type { KnowledgeConfig } from "../engine.js";
-import { KnowledgeService } from "../service.js";
+import { digestBackendWarning, KnowledgeService } from "../service.js";
 
 const human: KbCallContext = { source: "ui", actor: { name: "nir" } };
 const agent: KbCallContext = {
@@ -183,19 +183,15 @@ describe("digests", () => {
     ]);
   });
 
-  test("an enabled digest needs a backend that can enforce its tool whitelist", () => {
-    const kb = svc.createKb(human, { name: "Whitelisted", project_id: null });
-    expect(() => svc.setDigest(human, kb.id, { backend: "opencode" })).toThrow(
-      /cannot enforce a digest's tool whitelist/,
-    );
-    // Pausing never needs a capable backend, so a digest can be stored disabled.
-    expect(svc.setDigest(human, kb.id, { backend: "opencode", enabled: false })).toMatchObject({
+  test("an incapable backend is allowed and reported as a warning", () => {
+    const kb = svc.createKb(human, { name: "Warned", project_id: null });
+    // Choosing a backend that cannot enforce the whitelist is valid; the digest runs without it.
+    expect(svc.setDigest(human, kb.id, { backend: "opencode" })).toMatchObject({
       backend: "opencode",
-      enabled: false,
+      enabled: true,
     });
-    expect(() => svc.setDigest(human, kb.id, { enabled: true })).toThrow(
-      /cannot enforce a digest's tool whitelist/,
-    );
+    expect(digestBackendWarning("opencode")).toContain("runs without the whitelist");
+    expect(digestBackendWarning("claude")).toBeNull();
   });
 
   test("a digest needs mcp in editable_by; runs need the daemon hooks", async () => {
@@ -300,7 +296,7 @@ describe("starter Learnings KBs", () => {
     expect(svc.listKbs(human, "all").map((k) => k.name)).toEqual(["learnings"]);
   });
 
-  test("a starter KB stays digest-free when the default backend cannot enforce the whitelist", async () => {
+  test("a starter KB gets its digest on a default backend that cannot enforce the whitelist", async () => {
     db.exec("INSERT INTO projects(id, name) VALUES ('p7', 'codex-default')");
     const config: KnowledgeConfig = { ...OrcConfigSchema.parse({}).knowledge, root };
     const codexSvc = await KnowledgeService.open({
@@ -313,15 +309,17 @@ describe("starter Learnings KBs", () => {
     try {
       const created = codexSvc.ensureLearningsKbs();
       expect(created).toHaveLength(1);
-      // The KB is still there to set up by hand; only the unconditional digest is skipped, so no
-      // digest row and no scheduled job exist for it.
-      expect(codexSvc.getDigest(created[0] as string)).toBeNull();
+      // Warning semantics: the starter digest exists on the default backend even when that
+      // backend cannot enforce the whitelist; the settings and run output show the warning.
+      expect(codexSvc.getDigest(created[0] as string)).toMatchObject({
+        backend: "codex",
+        enabled: true,
+        schedule: { type: "cron", cron: "0 3 * * *" },
+      });
       expect(
         db.query("SELECT 1 FROM jobs WHERE command = ?").get(kbDigestCommand(created[0] as string)),
-      ).toBeNull();
-      expect(actions()).toContain("kb.created");
-      expect(actions()).not.toContain("kb.digest.set");
-      // The next sweep does not retry the digest: the starter is recorded either way.
+      ).not.toBeNull();
+      expect(actions()).toContain("kb.digest.set");
       expect(codexSvc.ensureLearningsKbs()).toEqual([]);
     } finally {
       codexSvc.close();

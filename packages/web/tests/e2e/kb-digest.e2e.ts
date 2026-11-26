@@ -29,10 +29,15 @@ async function noHorizontalOverflow(page: Page): Promise<void> {
 
 type Backend = { name: string; available: boolean; tool_allowlist: boolean };
 
-/** The backends a digest can run on: they must enforce its tool whitelist. */
-async function digestBackends(request: Parameters<typeof apiGet>[0]): Promise<Backend[]> {
+/** Every backend the picker offers; a digest can run on any of them. */
+async function allBackends(request: Parameters<typeof apiGet>[0]): Promise<Backend[]> {
   const { backends } = await apiGet<{ backends: Backend[] }>(request, "/backends");
-  return backends.filter((b) => b.tool_allowlist);
+  return backends;
+}
+
+/** Backends that enforce the digest's tool whitelist; the picker suggests one of these. */
+async function digestBackends(request: Parameters<typeof apiGet>[0]): Promise<Backend[]> {
+  return (await allBackends(request)).filter((b) => b.tool_allowlist);
 }
 
 test.describe("Knowledge base digest", () => {
@@ -69,14 +74,18 @@ test.describe("Knowledge base digest", () => {
       await expect(preview).toHaveAttribute("data-valid", "false");
       await expect(preview).toContainText('The hour field "25" is not valid');
       await expect(dialog.getByTestId("kb-digest-save")).toBeDisabled();
-      // A digest always runs with a tool whitelist, so the picker lists only backends that can
-      // enforce one: an incapable backend would be a schedule that fails on every run.
+      // Any backend can run a digest. Ones that cannot enforce its tool whitelist are marked,
+      // not hidden; the digest then runs without the whitelist.
+      const all = await allBackends(request);
       await dialog.getByTestId("kb-digest-backend").click();
       for (const { name } of capable)
         await expect(page.getByRole("option", { name: new RegExp(`^${name} `) })).toBeVisible();
-      await expect(page.getByRole("option", { name: /^a2a / })).toHaveCount(0);
-      await expect(page.getByRole("option", { name: /^codex-cli / })).toHaveCount(0);
-      await expect(page.getByRole("option", { name: /^opencode / })).toHaveCount(0);
+      for (const { name } of all.filter((b) => !b.tool_allowlist))
+        await expect(page.getByRole("option", { name: new RegExp(`^${name} `) })).toHaveAttribute(
+          "data-backend-tool-allowlist",
+          "false",
+        );
+      await expect(page.getByRole("option", { name: /^a2a / })).toBeVisible();
       const chosen = (capable.find((b) => b.available) ?? capable[0]).name;
       await page.getByRole("option", { name: new RegExp(`^${chosen} `) }).click();
       await dialog.getByTestId("kb-digest-schedule").click();
@@ -160,15 +169,14 @@ test.describe("Knowledge base digest", () => {
     }
   });
 
-  test("a stored backend that cannot enforce the whitelist is marked, and turning it on is refused", async ({
+  test("a backend that cannot enforce the whitelist is marked, and the digest still runs there", async ({
     page,
     request,
   }) => {
     const kb = await createKb(request, tid("pw-kb-digest-stale"));
     try {
       const capable = await digestBackends(request);
-      // A paused digest may keep an incapable backend - nothing runs, so nothing can fail. The
-      // guard bites the moment the schedule or a run would start.
+      // Any backend is a valid digest choice; start paused only to exercise enabling it.
       const paused = await request.put(`${API_BASE}/kb/bases/${kb.id}/digest`, {
         headers: AUTH_HEADERS,
         data: { backend: "a2a", schedule: { type: "cron", cron: "0 3 * * *" }, enabled: false },
@@ -182,14 +190,13 @@ test.describe("Knowledge base digest", () => {
       await section.getByTestId("kb-digest-edit").click();
 
       const dialog = page.getByRole("dialog");
-      // The stored value stays visible in the picker with what to change it to, rather than the
-      // dialog showing a blank field for a digest that exists.
+      // The stored value stays visible and the picker says what choosing it means.
       await expect(dialog.getByTestId("kb-digest-backend")).toContainText("a2a");
       await expect(dialog.getByTestId("backend-picker-hint")).toContainText(
         "cannot enforce a digest's tool whitelist",
       );
+      await expect(dialog.getByTestId("backend-picker-hint")).toContainText("without it");
       await dialog.getByTestId("kb-digest-backend").click();
-      // Kept in the list because it is the stored value, and marked as the reason it cannot run.
       await expect(page.getByRole("option", { name: /^a2a / })).toHaveAttribute(
         "data-backend-tool-allowlist",
         "false",
@@ -202,28 +209,20 @@ test.describe("Knowledge base digest", () => {
       await dialog.getByTestId("kb-digest-cancel").click();
       await expect(dialog).toHaveCount(0);
 
+      // Enabling is not refused: the digest is valid and runs without the whitelist.
       await section.getByTestId("kb-digest-toggle").click();
-      await expect(section.getByTestId("kb-digest-error")).toContainText(
-        "cannot enforce a digest's tool whitelist",
-      );
-      await expect(section.getByTestId("kb-digest-enabled")).toHaveText("Paused");
-      const run = await request.post(`${API_BASE}/kb/bases/${kb.id}/digest/run`, {
-        headers: AUTH_HEADERS,
-      });
-      expect(run.status()).toBe(400);
-      expect(((await run.json()) as { error: string }).error).toContain(
-        "cannot enforce a digest's tool whitelist",
-      );
+      await expect(section.getByTestId("kb-digest-enabled")).toHaveText("On");
+      const enabled = await apiGet<{ digest: Digest }>(request, `/kb/bases/${kb.id}/digest`);
+      expect(enabled.digest).toMatchObject({ backend: "a2a", enabled: true });
 
-      // Picking a capable backend makes the digest runnable again.
+      // A capable backend can still be chosen, and the warning goes away.
       await section.getByTestId("kb-digest-edit").click();
       await dialog.getByTestId("kb-digest-backend").click();
       const fix = (capable.find((b) => b.available) ?? capable[0]).name;
       await page.getByRole("option", { name: new RegExp(`^${fix} `) }).click();
+      await expect(dialog.getByTestId("backend-picker-hint")).not.toContainText("without it");
       await dialog.getByTestId("kb-digest-save").click();
       await expect(dialog).toHaveCount(0);
-      await section.getByTestId("kb-digest-toggle").click();
-      await expect(section.getByTestId("kb-digest-enabled")).toHaveText("On");
       const healed = await apiGet<{ digest: Digest }>(request, `/kb/bases/${kb.id}/digest`);
       expect(healed.digest.backend).toBe(fix);
       expect(healed.digest.enabled).toBe(true);

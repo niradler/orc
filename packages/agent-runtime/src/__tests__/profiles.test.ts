@@ -150,6 +150,21 @@ describe("portable shared profiles", () => {
     ).toThrow("cannot enforce");
   });
 
+  // A KB digest marks its whitelist optional: any backend is a valid choice, so the session
+  // opens with the backend's own tools instead of refusing and the caller warns.
+  test("should open without a whitelist when the caller marks it optional", async () => {
+    const name = `profile-optional-${process.pid}`;
+    const backend = recordingBackend(name, {});
+    const session = await openAgentSession(name, {
+      cwd: process.cwd(),
+      toolAllowlist: ["Read"],
+      toolAllowlistOptional: true,
+    });
+    await session.send("Hello");
+    expect(backend.startOpts[0]?.toolAllowlist).toBeUndefined();
+    expect(backend.prompts).toEqual(["Hello"]);
+  });
+
   test("should retain pinned model and enforce tools or refuse an incapable backend", async () => {
     const profile = createAgent(
       restrictedId,

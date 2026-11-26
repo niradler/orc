@@ -5,7 +5,7 @@ import { KbDigestStore, kbDigestCommand } from "@orc/db/kb-digest";
 import { job_runs, jobs } from "@orc/db/schema";
 import { eq } from "drizzle-orm";
 import { executeJob } from "./executor.js";
-import { type KbDigestAgentRun, runKbDigest } from "./kb-digest.js";
+import { digestWhitelistWarning, type KbDigestAgentRun, runKbDigest } from "./kb-digest.js";
 
 const kbId = "kb1";
 const jobId = "job-digest";
@@ -157,38 +157,58 @@ describe("KB digest runner", () => {
     expect(digest()?.last_status).toBe("skipped");
   });
 
-  test("a backend that cannot enforce the whitelist fails with how to fix it", async () => {
+  test("a backend that cannot enforce the whitelist runs anyway and records a warning", async () => {
     getSqlite().query("UPDATE kb_digests SET backend = 'opencode' WHERE kb_id = ?").run(kbId);
     try {
-      await expect(
-        runKbDigest(kbId, { runId: newRun(), triggerBy: "manual", timeoutMs: 60_000 }),
-      ).rejects.toThrow(/cannot enforce this digest's tool whitelist/);
-      expect(digest()?.last_note).toContain("change the digest backend to");
-      // Refusing before the session opens means no unrestricted digest agent ever runs.
-      expect(digest()?.last_status).toBe("failed");
+      const runId = newRun();
+      const warning = digestWhitelistWarning("opencode", "opencode");
+      const note = await runKbDigest(kbId, {
+        runId,
+        triggerBy: "manual",
+        timeoutMs: 60_000,
+        runAgent: async (run) => {
+          prompts.push(run);
+          new KbDigestStore(getSqlite()).complete(
+            tokenOf(run.prompt),
+            "no_change",
+            "nothing new",
+            "opencode",
+          );
+          return { trace: "done", runtimeId: null, error: null, warning };
+        },
+      });
+      // The run is not refused: it completes and keeps the warning with its output.
+      expect(note).toBe("no_change: nothing new");
+      expect(digest()?.last_status).toBe("completed");
+      expect(runSession(runId)?.summary).toContain("warning:");
+      const live = getSqlite()
+        .query<{ status: string; summary: string }, [string]>(
+          "SELECT status, summary FROM gateway_sessions WHERE id = ?",
+        )
+        .get(prompts[0]?.sessionId ?? "");
+      expect(live?.summary).toContain("WARNING:");
+      expect(live?.summary).toContain("runs without it");
     } finally {
       getSqlite().query("UPDATE kb_digests SET backend = 'codex' WHERE kb_id = ?").run(kbId);
     }
   });
 
-  // "claude" is a capable backend that often is not: its preflight can fail and the session
-  // factory then runs the turn on acpx, which ignores the whitelist. The guard judges the backend
-  // the run would get, so the note names it instead of the generic refusal. An unregistered name
-  // reaches acpx the same way and is deterministic here.
-  test("the refusal names the backend the run resolves to", async () => {
-    getSqlite().query("UPDATE kb_digests SET backend = 'gemini' WHERE kb_id = ?").run(kbId);
-    try {
-      await expect(
-        runKbDigest(kbId, { runId: newRun(), triggerBy: "manual", timeoutMs: 60_000 }),
-      ).rejects.toThrow(/cannot enforce this digest's tool whitelist/);
-      expect(digest()?.last_note).toContain('Digest backend "gemini", which runs on "acpx"');
-      expect(digest()?.last_note).toContain("change the digest backend to");
-    } finally {
-      getSqlite().query("UPDATE kb_digests SET backend = 'codex' WHERE kb_id = ?").run(kbId);
-    }
+  // "claude" can resolve to acpx when its preflight fails, and an unregistered name reaches acpx
+  // the same way. The warning names the backend the run actually got.
+  test("the warning names the backend the run resolves to", () => {
+    const resolved = digestWhitelistWarning("gemini", "acpx");
+    expect(resolved).toContain('Digest backend "gemini", which runs on "acpx"');
+    expect(resolved).toContain("runs without it");
+    expect(digestWhitelistWarning("opencode", "opencode")).not.toContain("which runs on");
   });
 
   test("the executor runs a digest job as a digest, not a shell command", async () => {
+    // Make the cron run deterministically skip, so this test covers the executor routing
+    // without starting an agent, regardless of what earlier tests recorded.
+    getSqlite().query("UPDATE kb_comments SET status = 'resolved'").run();
+    getSqlite()
+      .query("UPDATE kb_digests SET last_success_at = ? WHERE kb_id = ?")
+      .run(Date.now() + 1000, kbId);
     const runId = await executeJob({ jobId, triggerBy: "cron" });
     const run = getDb().select().from(job_runs).where(eq(job_runs.id, runId)).get();
     expect(run).toMatchObject({
