@@ -562,7 +562,6 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
 
       const otherProjectGateway = await callMcp("?mode=meta&project=ScopeAlpha", "session_send", {
         session_id: "native-gw-beta",
-        backend: "claude",
         prompt: "Cross-project gateway",
       });
       expect(otherProjectGateway.isError).toBeUndefined();
@@ -576,7 +575,6 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
 
       const directInScopeGateway = await callMcp("?mode=meta&project=ScopeAlpha", "session_send", {
         session_id: "native-gw-alpha",
-        backend: "claude",
         prompt: "In-scope gateway",
       });
       expect(directInScopeGateway.isError).toBeUndefined();
@@ -588,8 +586,8 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
           code: `
             const [betaChat, betaGw, alphaGw] = await tools.allSettled([
               { name: "session_send", args: { session_id: ${JSON.stringify(betaChatId)}, prompt: "blocked" } },
-              { name: "session_send", args: { session_id: "native-gw-beta", backend: "claude", prompt: "blocked" } },
-              { name: "session_send", args: { session_id: "native-gw-alpha", backend: "claude", prompt: "allowed" } },
+              { name: "session_send", args: { session_id: "native-gw-beta", prompt: "blocked" } },
+              { name: "session_send", args: { session_id: "native-gw-alpha", prompt: "allowed" } },
             ]);
             return {
               betaChat: betaChat.ok ? "ok" : betaChat.error.code,

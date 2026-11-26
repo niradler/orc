@@ -64,7 +64,7 @@ import { ArchiveSearchSchema, SessionSyncInputSchema } from "@orc/core/session-a
 import { SessionHandoffInputSchema, SessionHandoffUploadSchema } from "@orc/core/session-handoff";
 import {
   SESSION_MESSAGE_MAX_BODY,
-  SessionMessageCreateSchema,
+  SessionMessageModeSchema,
   SessionMessageResultSchema,
   SessionSpawnSchema,
   SessionStatusSchema,
@@ -135,14 +135,26 @@ const harnessParam = z
   .describe(
     `Coding harness to run (${CODING_AGENTS.map((agent) => agent.id).join(", ")}, or a custom agent id from Settings). Omit for the Settings default, reported as defaults in the result.`,
   );
-const sessionSendToolSchema = SessionMessageCreateSchema.omit({ body: true }).extend({
-  prompt: z
-    .string()
-    .trim()
-    .min(1)
-    .max(SESSION_MESSAGE_MAX_BODY)
-    .describe("The note to send to the session."),
-});
+const sessionSendToolSchema = z
+  .object({
+    session_id: z
+      .string()
+      .min(1)
+      .max(200)
+      .describe(
+        "Target: an ORC session id from session_start/session_list/session_status, a live id, or a unique native agent session id.",
+      ),
+    prompt: z
+      .string()
+      .trim()
+      .min(1)
+      .max(SESSION_MESSAGE_MAX_BODY)
+      .describe("The note to send to the session."),
+    mode: SessionMessageModeSchema.optional().describe(
+      "queue (default) waits for its next safe point; steer injects into its running turn; interrupt stops the turn and delivers next.",
+    ),
+  })
+  .strict();
 const sessionSpawnToolSchema = SessionSpawnSchema.omit({ project_id: true, notify: true }).extend({
   project: projectParam,
   agent: harnessParam,
@@ -408,7 +420,7 @@ export const toolDefinitions = [
   {
     name: "session_send",
     description:
-      "Send a short note to another live or idle ORC session. Target with the ORC live session id, a session_start id, or the agent's native session id plus backend. mode queue (default) waits for the recipient's next safe point (or starts a turn when idle; unbound connections fall back to human relay); steer explicitly injects it into a running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt require a bound calling session that started the target (or one of its ancestors). The receipt reports queued, steered, resumed, failed, or unsupported — do not poll; completion wakes you. It cannot approve tools or change configuration. Pass a stable request_id when retrying the same note.",
+      "Send a short note to another live or idle ORC session. Target with an ORC session id (session_start, session_list, session_status) or a unique native session id. mode queue (default) waits for the recipient's next safe point (or starts a turn when idle; unbound connections fall back to human relay); steer explicitly injects it into a running turn when the agent supports it, else queues; interrupt stops the running turn and delivers it as the next turn. Steer and interrupt require a bound calling session that started the target (or one of its ancestors). The receipt reports queued, steered, resumed, failed, or unsupported — do not poll; completion wakes you. It cannot approve tools or change configuration.",
     inputSchema: sessionSendToolSchema,
   },
   {
@@ -1836,12 +1848,12 @@ async function runTool(
         : "Not delivered: this conversation is not responding.";
   }
   if (name === "session_send") {
-    const { prompt, ...rest } = sessionSendToolSchema.parse(args);
-    const input = { ...rest, body: prompt };
-    const mode = input.mode ?? "queue";
-    if (!options.agentSessionId && mode !== "queue")
+    const { prompt, mode, session_id } = sessionSendToolSchema.parse(args);
+    const input = { session_id, body: prompt, ...(mode ? { mode } : {}) };
+    const mode_ = input.mode ?? "queue";
+    if (!options.agentSessionId && mode_ !== "queue")
       throw new ForbiddenError(
-        `session_send with mode "${mode}" requires a bound calling session identity; reconnect MCP with ?session=<session id> or X-ORC-Session, or use mode "queue"`,
+        `session_send with mode "${mode_}" requires a bound calling session identity; reconnect MCP with ?session=<session id> or X-ORC-Session, or use mode "queue"`,
       );
     return JSON.stringify(
       SessionMessageResultSchema.parse(
