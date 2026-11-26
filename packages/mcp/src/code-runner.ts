@@ -42,6 +42,8 @@ export interface CodeRequest {
   toolName?: string | undefined;
   timeoutMs?: number | undefined;
   envelope?: boolean | undefined;
+  /** Elicitation: pause the execution clock until the user answers. */
+  pause?: boolean | undefined;
   dispatch(): Promise<string>;
 }
 
@@ -73,6 +75,9 @@ export function runCodeWorker(
   }
   const started = Date.now();
   const deadline = started + timeoutMs;
+  let effectiveDeadline = deadline;
+  let pausedMs = 0;
+  let pauseStartedAt: number | undefined;
   let worker: Worker;
   try {
     worker = startWorker();
@@ -91,6 +96,7 @@ export function runCodeWorker(
     let replyBytes = 0;
     const dispatchedTools: string[] = [];
     let closed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
 
     function finish(result: CodeOutput | Error): void {
       if (closed) return;
@@ -121,19 +127,42 @@ export function runCodeWorker(
       if (!closed) worker.postMessage(message);
     }
 
+    // Extend the worker's wall-clock budget after an elicitation pause. Sent
+    // before the reply so the resumed script does not see a stale deadline.
+    function resumeClock(): void {
+      if (pauseStartedAt === undefined) return;
+      pausedMs += Date.now() - pauseStartedAt;
+      pauseStartedAt = undefined;
+      if (pausedMs > CODE_LIMITS.maxPauseMs) {
+        finish(new Error("Code execution waited too long for user input"));
+        return;
+      }
+      effectiveDeadline = deadline + pausedMs;
+      post({ type: "deadline", deadline: effectiveDeadline });
+      timer = setTimeout(
+        () => finish(new Error("Code execution timed out")),
+        Math.max(1, timeoutMs - (Date.now() - started - pausedMs)),
+      );
+    }
+
     function drain(): void {
-      while (!closed && !signal.aborted && Date.now() < deadline) {
+      while (!closed && !signal.aborted && Date.now() < effectiveDeadline) {
         const request = queue[0];
         if (!request || serialRunning || running >= CODE_LIMITS.parallelCalls) return;
         if (request.serial && running > 0) return;
         queue.shift();
         running++;
         serialRunning = request.serial;
+        if (request.pause) {
+          // Rule the sandbox clock out while a human answers.
+          pauseStartedAt = Date.now();
+          if (timer) clearTimeout(timer);
+        }
         if (request.toolName) dispatchedTools.push(request.toolName);
         let replied = false;
         let callTimer: ReturnType<typeof setTimeout> | undefined;
         if (request.timeoutMs !== undefined) {
-          const remaining = Math.max(1, deadline - Date.now());
+          const remaining = Math.max(1, effectiveDeadline - Date.now());
           const limitMs = Math.max(1, Math.min(request.timeoutMs, remaining));
           callTimer = setTimeout(() => {
             if (callTimer) callTimers.delete(callTimer);
@@ -161,6 +190,7 @@ export function runCodeWorker(
           .dispatch()
           .then(
             (payload) => {
+              if (request.pause) resumeClock();
               clearCallTimer();
               if (closed || replied) return;
               replied = true;
@@ -172,6 +202,7 @@ export function runCodeWorker(
               post({ type: "reply", id: request.id, payload });
             },
             () => {
+              if (request.pause) resumeClock();
               clearCallTimer();
               if (closed || replied) return;
               replied = true;
@@ -194,12 +225,12 @@ export function runCodeWorker(
       }
     }
 
-    const timer = setTimeout(() => finish(new Error("Code execution timed out")), timeoutMs);
+    timer = setTimeout(() => finish(new Error("Code execution timed out")), timeoutMs);
     signal.addEventListener("abort", cancel, { once: true });
     worker.addEventListener("error", () => finish(new Error("Code worker failed to start or run")));
     worker.addEventListener("message", ({ data }: MessageEvent<WorkerOutput>) => {
       if (closed) return;
-      if (Date.now() >= deadline) return finish(new Error("Code execution timed out"));
+      if (Date.now() >= effectiveDeadline) return finish(new Error("Code execution timed out"));
       switch (data.type) {
         case "ready":
           post({

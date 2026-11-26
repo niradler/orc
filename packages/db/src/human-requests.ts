@@ -416,6 +416,7 @@ export class HumanRequestStore {
   // Runtime-owned, native tool-call, and unstored secret requests have their own delivery paths.
   private static readonly PUSHABLE = `status='answered' AND owner_id IS NULL AND seen_at IS NULL
     AND push_state IS NULL AND answered_at IS NOT NULL
+    AND IFNULL(json_extract(payload,'$.deliver_to_session'),1)=1
     AND json_extract(payload,'$.origin.tool_call_id') IS NULL
     AND NOT (json_extract(payload,'$.kind')='secret' AND IFNULL(json_extract(response,'$.stored'),0)=0)`;
 

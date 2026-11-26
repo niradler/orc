@@ -163,7 +163,7 @@ export type ElicitFn = (params: {
   requestedSchema: Record<string, unknown>;
 }) => Promise<{
   action: "accept" | "decline" | "cancel";
-  content?: Record<string, string | number | boolean | string[]> | undefined;
+  content?: Record<string, unknown> | undefined;
 }>;
 
 export function toolEffect(name: ToolName): "read" | "write" | undefined {
@@ -332,6 +332,7 @@ export async function runCodeMode(
       if (request.operation === "elicit") {
         return {
           serial: true,
+          pause: true,
           async dispatch() {
             if (!elicit)
               return encodeReply({

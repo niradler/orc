@@ -128,7 +128,7 @@ describe("Elicitation inside tool_execute", () => {
     await server.close();
   });
 
-  test("a background task cannot elicit and reports it instead of hanging", async () => {
+  test("a background task elicits over the live connection", async () => {
     const { client, server } = await connect({
       handler: () => ({ action: "accept", content: { color: "red" } }),
     });
@@ -163,8 +163,8 @@ describe("Elicitation inside tool_execute", () => {
       }
       await Bun.sleep(20);
     }
-    expect(payload?.isError).toBe(true);
-    expect(payload?.content[0]?.text ?? "").toContain("live MCP connection");
+    expect(payload?.isError).toBeFalsy();
+    expect(JSON.stringify(payload)).toContain("red");
     await client.close();
     await server.close();
   });

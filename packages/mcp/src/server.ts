@@ -15,6 +15,7 @@ import { getSqlite } from "@orc/db/client";
 import { McpPromptStore } from "@orc/db/mcp-prompts";
 import { z } from "zod";
 import { codeToolListing, type ElicitFn, runCodeMode, scriptToolInfo } from "./code-mode.js";
+import { createHumanElicit } from "./elicit.js";
 import { maybeAugmentCallTool, registerMcpTasks, TASKS_EXTENSION_ID } from "./mcp-tasks.js";
 import { normalizeMcpProjects, parseMcpProjects, resolveMcpProjects } from "./project-scope.js";
 
@@ -361,28 +362,43 @@ export function createMcpServer({
     codeToolListing.name,
   ]);
   const tasksOptions = { owner: taskOwner, eligibleTools: taskEligibleTools };
+  const elicitProjectId = selected?.[0]?.id ?? null;
+  // HTTP/stateless connections ask through a durable human request (webchat,
+  // Telegram); live stdio connections use spec elicitation.
+  const humanElicit = (elicitSignal: AbortSignal): ElicitFn =>
+    createHumanElicit({
+      sessionId: options.agentSessionId,
+      projectId: elicitProjectId,
+      signal: elicitSignal,
+    });
 
   server.setRequestHandler(CallToolRequestSchema, async (request, { signal, requestId }) => {
+    const specElicit =
+      (elicitSignal: AbortSignal, related?: string | number): ElicitFn =>
+      (params) =>
+        server.elicitInput(
+          {
+            mode: "form",
+            message: params.message,
+            requestedSchema: params.requestedSchema,
+          } as Parameters<typeof server.elicitInput>[0],
+          {
+            signal: elicitSignal,
+            ...(related ? { relatedRequestId: related } : {}),
+          },
+        );
+    const elicitFor = (elicitSignal: AbortSignal, related?: string | number): ElicitFn =>
+      requestSignal ? humanElicit(elicitSignal) : specElicit(elicitSignal, related);
     // A task-augmented call returns a durable handle now and runs in the
     // background on its own signal, so it outlives this request/transport.
     const augmented = maybeAugmentCallTool(
       request,
-      (taskSignal) => executeCallTool(request, taskSignal),
+      (taskSignal) => executeCallTool(request, taskSignal, elicitFor(taskSignal, requestId)),
       tasksOptions,
     );
     if (augmented) return augmented;
     const liveSignal = requestSignal ? AbortSignal.any([signal, requestSignal]) : signal;
-    // Form elicitation needs the live connection; a background task cannot ask.
-    const elicit: ElicitFn = (params) =>
-      server.elicitInput(
-        {
-          mode: "form",
-          message: params.message,
-          requestedSchema: params.requestedSchema,
-        } as Parameters<typeof server.elicitInput>[0],
-        { signal: liveSignal, relatedRequestId: requestId },
-      );
-    return executeCallTool(request, liveSignal, elicit);
+    return executeCallTool(request, liveSignal, elicitFor(liveSignal, requestId));
   });
 
   registerMcpTasks(server, tasksOptions);

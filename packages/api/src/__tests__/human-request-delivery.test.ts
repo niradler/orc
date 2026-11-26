@@ -295,6 +295,7 @@ test("should describe question and approval answers for the agent", () => {
     choice_descriptions: {},
     multi_select: false,
     notify: [],
+    deliver_to_session: true,
     expires_in_seconds: 60,
   };
   const message = deliveryMessage([

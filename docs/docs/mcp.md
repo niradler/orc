@@ -224,7 +224,7 @@ Send `tool_execute` an object with `code` and an optional `timeout_ms`. The code
 | `await tools.call(name, args, { connection?, timeout_ms? })`  | Never throws: `{ ok: true, data, text }` on success (`data` is structured data for typed/JSON tools such as `task_list`, `flow_status`, `project_list`, `session_list`, `session_send`, plus raw `text`) or `{ ok: false, error: { code, message } }` on failure or per-call timeout. |
 | `await tools.allSettled(calls, { connection?, timeout_ms? })` | Runs a batch of `{ name, args?, connection?, timeout_ms? }` descriptors or `tools.call(...)` promises concurrently and returns one `{ ok, ... }` envelope per item so a failure or timeout never discards successful results.                                                         |
 | `tools.pick(objOrArray, keys)`                                | Projects an object or array of objects to only the listed keys before returning.                                                                                                                                                                                                      |
-| `await tools.elicit(message, requestedSchema)`                | Asks the connected client a form question and returns `{ action, content }` (`action` is `accept`, `decline` or `cancel`). Requires a live connection and a client that declared the `elicitation` capability; otherwise it rejects. See [Elicitation](#elicitation).                 |
+| `await tools.elicit(message, requestedSchema)`                | Ask for input with a form schema and return `{ action, content }` (`action` is `accept`, `decline` or `cancel`). Live connections use spec elicitation; stateless HTTP and background tasks route the question to ORC Notifications and configured chat channels. See [Elicitation](#elicitation). |
 
 ```js
 const [tasks, jobs, missing] = await tools.allSettled([
@@ -278,11 +278,18 @@ The server can return a durable **task handle** instead of blocking, so a client
 
 Statuses are `working`, `input_required`, `completed`, `failed`, `cancelled`. Cancellation is cooperative. Tasks are bound to the connection's [project scope](#query-parameters); a scoped connection cannot read another scope's tasks. Unknown or expired task IDs fail with `-32602`. A restart marks in-flight tasks `failed` with a clear status message rather than leaving them hanging.
 
+porc's `OrcMcpClient` wraps both flavors: `callTask` returns a handle, `waitForTask` polls to a terminal state and fetches the payload, and `cancelTask` stops one. The Pi extension exposes the same operations as `task_start`, `task_status`, `task_result` and `task_cancel` ([Pi and porc](./pi.md)).
+
 ## Elicitation
 
-The server can ask the user for input mid-call using standard MCP [elicitation](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation) (form mode). Inside `tool_execute`, a script calls `await tools.elicit(message, requestedSchema)`; ORC sends `elicitation/create` to the connected client, waits for the answer, and resumes the script with `{ action, content }`. The script should handle `decline` and `cancel` explicitly. Responses are validated against the requested schema, and form mode never collects secrets.
+The server can ask the user for input mid-call using standard MCP [elicitation](https://modelcontextprotocol.io/specification/2026-07-28/client/elicitation) (form mode). Inside `tool_execute`, a script calls `await tools.elicit(message, requestedSchema)` and resumes with `{ action, content }` after the user answers. The script should handle `decline` and `cancel` explicitly. Responses are coerced to the requested schema types (string, number, integer, boolean), and form mode never collects secrets.
 
-Elicitation needs a **live connection** (local stdio, or a client that keeps the request open) and a client that declared the `elicitation` capability. It is not available inside a background [task](#tasks-long-running-tool-calls) or on a stateless per-request HTTP call; there `tools.elicit` rejects with a clear message instead of hanging. ORC's own `porc` client ([`OrcMcpClient`](./pi.md)) can answer elicitations when given an `onElicitation` handler.
+ORC picks the transport that can actually reach the user:
+
+- **Live connections** (local stdio, or a client that keeps the request open and declared the `elicitation` capability) receive a standard `elicitation/create` request. ORC's own `porc` client ([`OrcMcpClient`](./pi.md)) answers it when given an `onElicitation` handler.
+- **Stateless HTTP calls and background tasks** cannot round-trip a server-initiated request. ORC creates a durable [human request](./human-requests.md) instead and delivers it to ORC Notifications, the web UI and configured Telegram/Slack channels. The `tool_execute` sandbox pauses its wall-clock budget while waiting (up to 5 minutes) and the answer resumes the same script. A single-choice schema becomes chat buttons; several fields ask for one JSON reply. Unanswered requests expire; the script receives `cancel`.
+
+The durable request is bound to the calling agent session and project scope, so it appears with that session's notifications and expires with it. Set `ORC_MCP_ELICIT_WAIT_MS` to change the wait budget (1s–300s) and `ORC_MCP_ELICIT_NOTIFY` to choose channels (`telegram`, `slack`, `slack-user`; at most two).
 
 ## Calling tools over REST
 

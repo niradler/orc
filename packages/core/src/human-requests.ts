@@ -153,6 +153,8 @@ export const HumanRequestInputSchema = z
       })
       .strict()
       .optional(),
+    /** Inline callers (MCP elicitation) consume the answer without a session turn. */
+    deliver_to_session: z.boolean().default(true),
     expires_in_seconds: z.number().int().min(1).max(604800).default(86400),
   })
   .strict()

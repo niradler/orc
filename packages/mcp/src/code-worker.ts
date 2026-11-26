@@ -8,6 +8,8 @@ declare const self: {
 
 const pending = new Map<number, (payload: string) => void>();
 let nextId = 0;
+// Elicitation pauses the wall clock; the runner extends this before resuming.
+let activeDeadline = 0;
 
 function send(message: WorkerOutput): void {
   self.postMessage(message);
@@ -21,9 +23,14 @@ self.addEventListener("message", (event: MessageEvent<WorkerInput>) => {
     resolve?.(message.payload);
     return;
   }
+  if (message.type === "deadline") {
+    activeDeadline = message.deadline;
+    return;
+  }
+  activeDeadline = message.deadline;
   void executeCode(
     message.code,
-    message.deadline,
+    () => activeDeadline,
     (payload) => {
       const id = ++nextId;
       return new Promise<string>((resolve) => {
