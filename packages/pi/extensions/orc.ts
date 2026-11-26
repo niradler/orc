@@ -354,7 +354,12 @@ async function initialize(
     config.timeoutMs,
     config.secretSource,
   );
-  session.client = new OrcMcpClient(config, session.sessionId, ctx.cwd, uiElicitation(ctx.ui));
+  session.client = new OrcMcpClient(
+    config,
+    session.sessionId,
+    ctx.cwd,
+    ctx.hasUI ? uiElicitation(ctx.ui) : undefined,
+  );
   session.health = (await session.api.health()) ? "up" : "down";
 
   await resolveProject(session, ctx, options.interactive === true);
@@ -511,7 +516,11 @@ function ruleWorkspace(session: SessionState): string {
   return session.projectRoot || session.cwd;
 }
 
-async function mcpAction(session: SessionState, params: OrcInput): Promise<string> {
+async function mcpAction(
+  session: SessionState,
+  params: OrcInput,
+  signal?: AbortSignal,
+): Promise<string> {
   const client = requireClient(session);
   const project = params.project ?? session.project;
   const action = params.action;
@@ -566,6 +575,7 @@ async function mcpAction(session: SessionState, params: OrcInput): Promise<strin
     case "skill_list": {
       const result = await client.listSkills({
         ...(params.query ? { q: params.query } : {}),
+        ...(project ? { project } : {}),
         limit: params.limit ?? 20,
       });
       if (result.isError) throw new Error(result.text || "skill_list failed");
@@ -574,6 +584,7 @@ async function mcpAction(session: SessionState, params: OrcInput): Promise<strin
     case "skill_read": {
       const result = await client.readSkill(need(params.name, "skill_read requires name"), {
         ...(params.ref ? { ref: params.ref } : {}),
+        ...(project ? { project } : {}),
       });
       if (result.isError) throw new Error(result.text || "skill_read failed");
       return result.text || "Empty skill.";
@@ -592,11 +603,14 @@ async function mcpAction(session: SessionState, params: OrcInput): Promise<strin
         inner.project = project;
       const handle = await client.callTask(toolName, inner, {
         ...(params.ttl_ms === undefined ? {} : { ttlMs: params.ttl_ms }),
+        ...(signal ? { signal } : {}),
       });
       return `task ${handle.taskId} started (${handle.status})`;
     }
     case "task_status": {
-      const status = await client.taskStatus(need(params.task, "task_status requires task"));
+      const status = await client.taskStatus(need(params.task, "task_status requires task"), {
+        ...(signal ? { signal } : {}),
+      });
       return [
         `task ${status.taskId}: ${status.status}`,
         status.statusMessage ? `message: ${status.statusMessage}` : "",
@@ -607,16 +621,21 @@ async function mcpAction(session: SessionState, params: OrcInput): Promise<strin
     }
     case "task_result": {
       const taskId = need(params.task, "task_result requires task");
-      const status = await client.taskStatus(taskId);
-      if (!["completed", "failed", "cancelled"].includes(status.status))
+      const opts = signal ? { signal } : {};
+      const status = await client.taskStatus(taskId, opts);
+      if (status.status === "failed")
+        throw new Error(status.statusMessage || `ORC task ${taskId} failed`);
+      if (status.status === "cancelled")
+        throw new Error(status.statusMessage || `ORC task ${taskId} was cancelled`);
+      if (status.status !== "completed")
         return `task ${taskId} is ${status.status}; call task_result again after polling.`;
-      const result = await client.waitForTask(taskId);
+      const result = await client.taskResult(taskId, opts);
       if (result.isError) throw new Error(result.text || "Task failed");
       return result.text || "Task completed with no output.";
     }
     case "task_cancel": {
       const taskId = need(params.task, "task_cancel requires task");
-      await client.cancelTask(taskId);
+      await client.cancelTask(taskId, signal ? { signal } : {});
       return `task ${taskId} cancelled`;
     }
     case "project_list":
@@ -814,14 +833,14 @@ function registerTools(pi: ExtensionAPI, state: PluginState): void {
         "Use `job_create` for recurring work and `rule_add` to block or gate agent behaviour.",
       ],
       parameters: OrcParams,
-      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
         const session = sessionOf(state);
         const config = requireConfig(session);
         const input = params as OrcInput;
         try {
           const text = REST_ACTIONS.has(input.action)
             ? await restAction(session, input, ctx)
-            : await mcpAction(session, input);
+            : await mcpAction(session, input, signal);
           return {
             content: [{ type: "text" as const, text: redact(text, config.secret) }],
             details: { action: input.action, project: input.project ?? session.project },

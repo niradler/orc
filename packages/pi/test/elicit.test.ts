@@ -119,5 +119,47 @@ describe("uiElicitation", () => {
         },
       }),
     ).toEqual({ action: "decline" });
+
+    const boundedHandler = uiElicitation(ui({ input: ["0"] }));
+    expect(
+      await boundedHandler({
+        message: "Count",
+        requestedSchema: {
+          type: "object",
+          properties: { count: { type: "integer", minimum: 1 } },
+          required: ["count"],
+        },
+      }),
+    ).toEqual({ action: "decline" });
+
+    const optionalBlankHandler = uiElicitation(ui({ input: ["Ada", ""] }));
+    expect(
+      await optionalBlankHandler({
+        message: "Profile",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            name: { type: "string", minLength: 1 },
+            age: { type: "integer" },
+          },
+          required: ["name"],
+        },
+      }),
+    ).toEqual({ action: "accept", content: { name: "Ada" } });
+
+    const nestedSecretUi = ui({ input: ["nope"] });
+    const nestedSecretHandler = uiElicitation(nestedSecretUi);
+    expect(
+      await nestedSecretHandler({
+        message: "Nested",
+        requestedSchema: {
+          type: "object",
+          properties: {
+            items: { type: "array", items: { type: "string", format: "password" } },
+          },
+        },
+      }),
+    ).toEqual({ action: "decline" });
+    expect(nestedSecretUi.prompts).toEqual([]);
   });
 });

@@ -131,7 +131,7 @@ export function runCodeWorker(
     // Extend the worker's wall-clock budget after an elicitation pause. Sent
     // before the reply so the resumed script does not see a stale deadline.
     function resumeClock(): void {
-      if (pauseStartedAt === undefined) return;
+      if (closed || pauseStartedAt === undefined) return;
       clearTimeout(timer);
       pausedMs += Date.now() - pauseStartedAt;
       pauseStartedAt = undefined;

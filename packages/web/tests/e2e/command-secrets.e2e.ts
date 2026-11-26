@@ -122,10 +122,12 @@ test("@sanity should run a command with a picked saved project secret without ec
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
       ),
     ).toBe(true);
-    const pickerBox = await picker.boundingBox();
-    expect(pickerBox?.height ?? 0).toBeGreaterThanOrEqual(44);
-    const runBox = await card.getByTestId("attention-run").boundingBox();
-    expect(runBox?.height ?? 0).toBeGreaterThanOrEqual(44);
+    await expect
+      .poll(async () => (await picker.boundingBox())?.height ?? 0)
+      .toBeGreaterThanOrEqual(44);
+    await expect
+      .poll(async () => (await card.getByTestId("attention-run").boundingBox())?.height ?? 0)
+      .toBeGreaterThanOrEqual(44);
     await snap(page, "command-secret-picker-phone");
 
     // Switching back to manual entry restores the masked input.
