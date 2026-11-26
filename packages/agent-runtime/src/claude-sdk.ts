@@ -1019,7 +1019,12 @@ class ClaudeSDKSession implements AgentSession {
       const armContinuationGrace = (turn: ClaudeTurn) => {
         clearContinuationGrace();
         continuationGrace = setTimeout(() => {
-          if (stream.turn === turn && !turn.closing && turn.lastResult) {
+          if (
+            stream.turn === turn &&
+            !turn.closing &&
+            turn.lastResult &&
+            !hasPendingBackgroundWork()
+          ) {
             if (!turn.stopping && turn.pendingSteers.size > 0) {
               push({
                 type: "system_status",
