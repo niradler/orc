@@ -368,8 +368,6 @@ export function parseSessionDeliveryEnvelope(content: string): SessionDelivery[]
 
 export const SESSION_SPAWN_HOURLY_LIMIT = 10;
 
-export const SessionWorkspaceSchema = z.enum(["same", "worktree", "project"]);
-
 export const SessionSpawnSchema = z
   .object({
     prompt: z.string().trim().min(1).max(100000),
@@ -379,7 +377,38 @@ export const SessionSpawnSchema = z
       .optional(),
     model: z.string().trim().min(1).max(200).optional(),
     project_id: identity.optional(),
-    workspace: SessionWorkspaceSchema.default("same"),
+    host: z
+      .string()
+      .trim()
+      .min(1)
+      .max(255)
+      .nullable()
+      .optional()
+      .describe(
+        "Execution host: an SSH alias configured in Settings. Omit to inherit the calling session's host, or the Settings default when selecting a project; null runs on this ORC server.",
+      ),
+    cwd: z
+      .string()
+      .trim()
+      .min(1)
+      .max(4096)
+      .optional()
+      .describe(
+        "Folder to run in. Overrides the project's main checkout and the calling session's folder.",
+      ),
+    worktree: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Create a new git worktree from the resolved folder instead of working in it as it is.",
+      ),
+    base: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe("Branch the new worktree branches from; omitted uses the checkout's current HEAD."),
     title: z.string().trim().min(1).max(100).optional(),
     notify: z.boolean().default(true),
     request_id: z.string().trim().min(1).max(128).optional(),

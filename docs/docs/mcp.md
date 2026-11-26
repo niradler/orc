@@ -59,11 +59,13 @@ preview tools; those follow the explicit session/preview binding. With no API
 secret configured, unbound connections keep the explicit-identity requirement.
 Coordinator creation is recorded in `audit_list` (entity `session`) with the
 client name. A connection scoped to a single project roots its coordinator in
-that project's folder, so `workspace: same` children start there. Without a
+that project's folder, so children that inherit it start there. Without a
 project scope the coordinator is rooted on the installation's default execution
 host (`ssh.host` in Settings) in that host's home folder, so children run where
 the agent CLIs are installed and signed in rather than inside the ORC container;
 changing the default host re-anchors existing coordinators on their next use.
+Per-call `project`, `cwd` and `host` still choose the folder and machine for each
+child, so one connection can drive projects dynamically.
 Coordinators are not garbage-collected: each distinct client name permanently
 leaves one root session and one audit entry, and unnamed connections share the
 single `mcp` coordinator — including its ten-spawns-per-hour budget.
@@ -448,7 +450,7 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 | `session_handoff`  | Move a Claude Code or Codex session to ORC                                                                                              |
 | `session_send`     | Send a note to another session: `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next) |
 | `speak`            | Say a short line to the user: posted to the chat and spoken when voice mode is on. Needs a conversation-bound connection; auto-approved |
-| `session_start`    | Start a headless child session with a prompt; returns its id at once                                                                    |
+| `session_start`    | Start a headless child session with a prompt; `project`, `cwd`, `host` and `worktree` pick where it runs; returns its id at once         |
 | `session_status`   | A started session's status, last reply, queue, parent and children                                                                      |
 | `session_wait`     | Block until one or several started sessions stop running, wait for a human, or reply                                                    |
 | `session_list`     | List the sessions this session started                                                                                                  |

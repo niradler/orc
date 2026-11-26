@@ -105,7 +105,6 @@ describe("MCP coordinator identity", () => {
     const client = await connect({ client: "grok-bot" });
     const start = await call(client, "session_start", {
       prompt: "Reply with exactly: coordinator child ok",
-      workspace: "same",
     });
     expect(start.isError).toBe(false);
     const childId = start.data.session_id as string;
@@ -282,12 +281,23 @@ describe("MCP coordinator identity", () => {
     expect(coordinator?.cwd).toBe(repo);
     const start = await call(client, "session_start", {
       prompt: "Reply with exactly: scoped child",
-      workspace: "same",
     });
     expect(start.isError).toBe(false);
     expect(start.data.project_id).toBe("proj-coord");
     expect(thread(start.data.session_id as string)?.cwd).toBe(repo);
     await call(client, "session_wait", { session_id: start.data.session_id, timeout_s: 15 });
+
+    // The tool picks the folder and host per call instead of relying on the
+    // connection scope: cwd overrides the project folder, host null stays local.
+    const explicit = await call(client, "session_start", {
+      prompt: "Reply with exactly: explicit folder",
+      cwd: repo,
+      host: null,
+    });
+    expect(explicit.isError).toBe(false);
+    expect(thread(explicit.data.session_id as string)?.cwd).toBe(repo);
+    expect(thread(explicit.data.session_id as string)?.host).toBeNull();
+    await call(client, "session_wait", { session_id: explicit.data.session_id, timeout_s: 15 });
   });
 
   test("coordinator creation is audited with the client name", async () => {

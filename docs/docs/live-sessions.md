@@ -234,15 +234,18 @@ While a headless turn is running, `GET /api/sessions/live/{id}/status` (and MCP 
 
 Live session routes (`GET /api/sessions/live/{id}`, `/status`, `/transcript`, `/stop`, `/cache`, `/analytics`, `/children`) and `orc session show <id>` resolve any session identifier form interchangeably: chat thread UUIDs returned by `session_start`, live record IDs from `GET /api/sessions/live`, or native runtime IDs such as `ses_...`. Calling `POST /api/sessions/live/{id}/stop` on a discovery-only live record without a chat thread signals its local process when still alive and settles the row to `stopped`.
 
-`session_start` takes `workspace`:
+`session_start` takes `project`, `cwd`, `host` and `worktree`:
 
-| `workspace`      | Same project                                                                   | Another project (`project`)               |
-| ---------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
-| `same` (default) | The caller's folder, sharing uncommitted edits                                 | Refused                                   |
-| `worktree` | A new git worktree under `.orc/worktrees/` on a new branch cut from the caller's committed HEAD (uncommitted edits stay behind) | A new worktree of that project's checkout |
-| `project`        | The project's main checkout                                                    | That project's main checkout              |
+| Input            | Behavior                                                                                                                                                     |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| _(none)_         | The caller's folder and host, sharing uncommitted edits                                                                                                      |
+| `project`        | That project's main checkout becomes the folder; still inside the caller's MCP project scope                                                                 |
+| `cwd`            | That folder on the resolved host; overrides the project folder                                                                                               |
+| `host`           | A configured execution host (SSH alias); `null` runs on the ORC server; omitted inherits the caller's host, or the Settings default when `project` is passed |
+| `worktree: true` | A new git worktree under `.orc/worktrees/` on a new branch cut from the resolved folder's committed HEAD (uncommitted edits stay behind)                     |
+| `base`           | With `worktree`, the branch it branches from; omitted uses the checkout's current HEAD                                                                       |
 
-Another project must be inside the caller's MCP project scope.
+The resolved folder must exist on the resolved host.
 
 When all four chat workers are busy, `session_start` still returns at once: the child is `queued` and starts when a worker frees, even across an ORC restart.
 

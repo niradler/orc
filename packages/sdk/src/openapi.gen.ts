@@ -23651,11 +23651,17 @@ export interface paths {
                         agent?: string;
                         model?: string;
                         project_id?: string;
+                        /** @description Execution host: an SSH alias configured in Settings. Omit to inherit the calling session's host, or the Settings default when selecting a project; null runs on this ORC server. */
+                        host?: string | null;
+                        /** @description Folder to run in. Overrides the project's main checkout and the calling session's folder. */
+                        cwd?: string;
                         /**
-                         * @default same
-                         * @enum {string}
+                         * @description Create a new git worktree from the resolved folder instead of working in it as it is.
+                         * @default false
                          */
-                        workspace?: "same" | "worktree" | "project";
+                        worktree?: boolean;
+                        /** @description Branch the new worktree branches from; omitted uses the checkout's current HEAD. */
+                        base?: string;
                         title?: string;
                         /** @default true */
                         notify?: boolean;

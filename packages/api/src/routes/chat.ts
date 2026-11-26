@@ -72,6 +72,7 @@ import {
 } from "@orc/core/errors";
 import {
   execHostFor,
+  hostAlias,
   hostHome,
   hostRuntime,
   listHostEntries,
@@ -3720,19 +3721,17 @@ async function startChild(
     throw new ConflictError(
       `Hourly spawn limit (${SESSION_SPAWN_HOURLY_LIMIT}) reached for this session`,
     );
+  const config = loadConfig();
   const projectId = input.project_id ?? parent.projectId;
-  const crossProject = !!input.project_id && input.project_id !== parent.projectId;
-  if (input.workspace === "same" && crossProject)
-    throw new ValidationError(
-      "A session in another project cannot share this folder; use workspace worktree or project",
-    );
-  const base =
-    input.workspace === "same" || (input.workspace === "worktree" && !crossProject)
-      ? parent.cwd
-      : projectId
-        ? projectRoot(projectId)
-        : null;
-  if (!base) throw new ValidationError("The calling session has no folder to start from");
+  const crossProject = input.project_id !== undefined && input.project_id !== parent.projectId;
+  const projectFolder = input.project_id !== undefined ? projectRoot(input.project_id) : null;
+  const requestedHost =
+    input.host !== undefined ? hostAlias(selectedTerminalHost(config, input.host)) : undefined;
+  // An omitted host inherits the caller's host; a project checkout instead
+  // lives on the Settings default host, like a new chat in that project.
+  const host = input.host !== undefined ? requestedHost : crossProject ? undefined : parent.host;
+  const hostChanged = input.host !== undefined && requestedHost !== parent.host;
+  const cwd = input.cwd ?? projectFolder ?? (hostChanged ? undefined : (parent.cwd ?? undefined));
   const source = store().get(parentId);
   const rawAgent = input.agent ?? parent.agent ?? undefined;
   const agent = rawAgent ? canonicalAgentId(rawAgent) : undefined;
@@ -3756,9 +3755,10 @@ async function startChild(
         }
       : {}),
     workspace: {
-      host: crossProject ? undefined : parent.host,
-      cwd: base,
-      worktree: input.workspace === "worktree",
+      host,
+      cwd,
+      worktree: input.worktree,
+      ...(input.worktree && input.base ? { base: input.base } : {}),
     },
   };
   const spawnedBy: ChatSpawn = {
@@ -3808,7 +3808,7 @@ async function queueChild(
   if (body.workspace?.worktree) {
     const host = selectedTerminalHost(loadConfig(), thread.host);
     const cwd = await prepareSessionDirectory(
-      { cwd: thread.cwd, worktree: true },
+      { cwd: thread.cwd, worktree: true, base: body.workspace.base },
       {
         ...sessionDirDeps(await launchDeps(loadConfig(), host), host),
       },
