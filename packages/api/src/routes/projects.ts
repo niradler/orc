@@ -476,6 +476,7 @@ app.openapi(updateRoute, async (c) => {
     (body.scope !== undefined && body.scope !== existing.scope) ||
     (body.host !== undefined && body.host !== existing.host) ||
     (body.name !== undefined && body.name !== existing.name) ||
+    (body.status !== undefined && body.status !== existing.status) ||
     (body.git_remote_url !== undefined && body.git_remote_url !== existing.git_remote_url);
   await db
     .update(projects)

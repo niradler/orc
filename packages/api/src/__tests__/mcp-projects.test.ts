@@ -321,6 +321,8 @@ describe("connection-wide MCP project defaults", () => {
     const days = ((project()?.delete_after ?? 0) - Math.floor(Date.now() / 1000)) / 86_400;
     expect(days).toBeGreaterThan(29);
     expect(days).toBeLessThanOrEqual(30);
+    const listed = await rpc("", "project_list", { status: "archived" });
+    expect(listed.text).toMatch(new RegExp(`${name} +archived .*\\[deletes: `));
 
     const restored = await rpc("", "project_delete", { project: name, restore: true });
     expect(restored.error).not.toBe(true);
