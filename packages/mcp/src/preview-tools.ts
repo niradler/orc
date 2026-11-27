@@ -70,19 +70,9 @@ export interface PreviewScope {
 }
 
 /** Revalidated for every request; a web tab or another conversation grants nothing. */
-export async function availablePreviewTools(
-  scope?: PreviewScope,
-  projectIds?: readonly string[],
-): Promise<Set<string>> {
+export async function availablePreviewTools(scope?: PreviewScope): Promise<Set<string>> {
   if (!scope) return new Set();
   try {
-    const session = await orcApi<{ projectId: string | null }>(
-      "GET",
-      `/desktop-preview/session?session_id=${encodeURIComponent(scope.sessionId)}`,
-      { timeoutMs: 2000 },
-    );
-    if (projectIds && (!session.projectId || !projectIds.includes(session.projectId)))
-      return new Set();
     const { clients } = await orcApi<{
       clients: { client_id: string; agent_access: boolean; browser_ready: boolean }[];
     }>("GET", `/desktop-preview/clients?session_id=${encodeURIComponent(scope.sessionId)}`, {
@@ -161,7 +151,6 @@ export const previewToolDefinitions = [
 export async function executePreviewTool(
   name: string,
   args: unknown,
-  projectIds?: readonly string[],
   scope?: PreviewScope,
 ): Promise<string> {
   const definition = previewToolDefinitions.find((tool) => tool.name === name);
@@ -182,8 +171,6 @@ export async function executePreviewTool(
       "GET",
       `/desktop-preview/session?session_id=${encodeURIComponent(sessionId)}`,
     );
-    if (projectIds && (!session.projectId || !projectIds.includes(session.projectId)))
-      throw new ValidationError("Preview session is outside the selected MCP projects");
     if (scope) {
       const bound = await orcApi<{ id: string }>(
         "GET",

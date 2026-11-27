@@ -183,6 +183,22 @@ export function hostAlias(host: ExecHost): string | null {
   return host.kind === "ssh" ? host.alias : null;
 }
 
+export function resolveProjectHost(
+  projectHost: string | null | undefined,
+  config: OrcConfig = loadConfig(),
+): string | null {
+  if (projectHost === "local") return null;
+  if (projectHost) return projectHost;
+  return hostAlias(resolveExecHost(config));
+}
+
+export function projectHostKey(
+  projectHost: string | null | undefined,
+  config: OrcConfig = loadConfig(),
+): string {
+  return resolveProjectHost(projectHost, config) ?? "local";
+}
+
 export function hostPlatform(host: ExecHost): NodeJS.Platform {
   return host.kind === "ssh" ? "linux" : process.platform;
 }

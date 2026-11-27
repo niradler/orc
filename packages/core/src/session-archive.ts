@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CodingAgentIdSchema } from "./coding-agents.js";
 import { SessionBundleSchema } from "./session-handoff.js";
 
 export const ARCHIVE_MAX_BYTES = 64 * 1024 * 1024;
@@ -66,7 +67,7 @@ export const ArchiveSearchSchema = z
         return ids.length <= 50 && ids.every((id) => id.length > 0 && id.length <= 100);
       }, "Use 1-50 comma-separated project IDs of 1-100 characters")
       .optional(),
-    agent: z.enum(["claude", "codex"]).optional(),
+    agent: CodingAgentIdSchema.optional(),
     mode: z.enum(["auto", "lexical", "semantic", "hybrid"]).default("auto"),
     limit: z.coerce.number().int().min(1).max(100).default(20),
     offset: z.coerce.number().int().min(0).max(100000).default(0),

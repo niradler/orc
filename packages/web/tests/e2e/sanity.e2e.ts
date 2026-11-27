@@ -20,11 +20,8 @@ async function seedSession(
   agent: string,
   summary: string,
 ): Promise<string> {
-  const { result } = await apiPost<{ result: string }>(request, "/mcp/tool", {
-    name: "session_log",
-    args: { agent, summary },
-  });
-  return result.replace("Session logged: ", "").trim();
+  const { id } = await apiPost<{ id: string }>(request, "/sessions", { agent, summary });
+  return id;
 }
 
 test.describe("@sanity critical flows", () => {

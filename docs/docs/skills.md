@@ -143,7 +143,7 @@ orc skill projects my-workflow --set <project-id> <project-id>
 orc skill projects my-workflow --global             # clear
 ```
 
-An MCP connection to `/mcp?project=my-app` (or `?projects=a,b`) discovers the selected projects' skills plus global ones. `skill_create` over a scoped connection creates the skill in that project. API: `GET`/`PUT /api/skills/{name}/projects` with `{ "project_ids": [] }`.
+An MCP connection to `/mcp?project=my-app` (or `?projects=a,b`) discovers those projects' skills plus global ones by default. `skill_create` without a project creates the skill in the connection's default project; pass `project` to target another. API: `GET`/`PUT /api/skills/{name}/projects` with `{ "project_ids": [] }`.
 
 ## Discovery visibility
 

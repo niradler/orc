@@ -62,9 +62,8 @@ audit/KB scans. Project-required records still apply.
    for a read-only KB leave a comment. Edits use current `expected_revision`, a
    reason and evidence sources such as files/commits/session references. On conflict
    reread and reconcile. Load `orc-platform` knowledge guidance if mechanics are needed.
-4. Log the completed work unit with `session_log` when available, using its explicit
-   session ID and readable project. Keep the existing topic handoff current with
-   state, evidence, open issues and the immediate next action.
+4. Keep the existing topic handoff (and task notes) current with state, evidence,
+   open issues and the immediate next action.
 
 The next coding agent must be able to find the resulting fact/lesson in the same
 central ORC project. Keep provenance and uncertainty; check stale/contradictory

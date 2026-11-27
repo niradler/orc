@@ -4,7 +4,7 @@ The `github_sync` tool synchronizes a project's GitHub issues into ordinary ORC
 tasks. Pass `project` (name), optional `config: { enabled, status_labels }`, and
 `run` (default `true`). Set `run: false` to inspect or save configuration only.
 Omitting `status_labels` uses the defaults; custom maps must contain every status
-with distinct labels. The tool respects the connection's selected projects and
+with distinct labels. The tool defaults to the connection's project and
 requires the running API for configuration writes and sync. The result's `error`
 is non-null for incomplete sync.
 
@@ -51,15 +51,24 @@ inherit those same values even when the defaults change after the coordinator
 was created. Manual edits to a coordinator thread's own chat settings do not
 persist across MCP requests — bind with `?session=` for a fixed configuration.
 Coordinator children default `notify` to false — follow them with
-`session_wait`/`session_status`.
+`session_wait`/`session_status`. There is no push channel to an external MCP
+client: `notify: true` only makes ORC run the coordinator session's own turn to
+process the note, which is useful for a self-driving orchestrator and wasteful
+otherwise.
 The coordinator appears in Chat and Sessions like any root conversation, and
 the same ownership guardrails apply: it can steer or stop only its own
 descendants. The coordinator identity does not enable `speak` or desktop
 preview tools; those follow the explicit session/preview binding. With no API
 secret configured, unbound connections keep the explicit-identity requirement.
 Coordinator creation is recorded in `audit_list` (entity `session`) with the
-client name. A connection scoped to a single project roots its coordinator in
-that project's folder, so `workspace: same` children start there.
+client name. A connection with a single default project roots its coordinator in that
+project's folder, so children that inherit it start there. Without a default
+project the coordinator is rooted on the installation's default execution
+host (`ssh.host` in Settings) in that host's home folder, so children run where
+the agent CLIs are installed and signed in rather than inside the ORC container;
+changing the default host re-anchors existing coordinators on their next use.
+Per-call `project`, `cwd` and `host` still choose the folder and machine for each
+child, so one connection can drive projects dynamically.
 Coordinators are not garbage-collected: each distinct client name permanently
 leaves one root session and one audit entry, and unnamed connections share the
 single `mcp` coordinator — including its ten-spawns-per-hour budget.
@@ -67,7 +76,7 @@ single `mcp` coordinator — including its ten-spawns-per-hour budget.
 ## Desktop preview tools
 
 These tools require a connected Electron desktop viewing the requested ORC chat
-or live session. They respect the MCP connection's selected project scope.
+or live session. They use the connection's default project unless the call picks another.
 Discovery checks that conversation's live desktop lease. No matching desktop
 means no preview tools; another web tab or another conversation does not enable
 them. Browser actions additionally require an open guest page and enabled control.
@@ -173,15 +182,15 @@ With no secret configured, requests are accepted unauthenticated. To avoid handi
 
 ## Query parameters
 
-| Parameter  | Example                    | Effect                                                                  |
-| ---------- | -------------------------- | ----------------------------------------------------------------------- |
-| `mode`     | `/mcp?mode=meta`           | `meta` or `full`. Overrides `mcp.default_mode`.                         |
-| `project`  | `/mcp?project=my-app`      | Scope the connection to one project                                     |
-| `projects` | `/mcp?projects=my-app,api` | Scope to several projects (max 50)                                      |
+| Parameter  | Example                    | Effect                                         |
+| ---------- | -------------------------- | ---------------------------------------------- |
+| `mode`     | `/mcp?mode=meta`           | `meta` or `full`. Overrides `mcp.default_mode`. |
+| `project`  | `/mcp?project=my-app`      | Default project for tool calls and list views  |
+| `projects` | `/mcp?projects=my-app,api` | Default projects, in priority order (max 50)   |
 | `session`  | `/mcp?session=<id>`        | Bind caller session identity (also accepted via `X-ORC-Session` header) |
 | `client`   | `/mcp?client=grok-bot`     | Name the coordinator for an unbound authenticated connection            |
 
-Project names are case-insensitive; unknown names are rejected. Use `project` or `projects`, not both. On a scoped connection, tool calls default to the selected project(s); a call naming a project outside the selection fails.
+Project names are case-insensitive; unknown names are rejected. Use `project` or `projects`, not both. These are defaults, not a permission boundary: tools autofill the project when a call omits it, and any call may name a different project (or pass `projects`). Use `?project=` to skip repeating the same project, not to isolate clients.
 
 For stdio, `orc mcp --mode meta` selects the shared discovery and invocation surface. `ORC_SESSION_ID` (or `CLAUDE_CODE_SESSION_ID`) attributes tool calls to an agent session.
 
@@ -275,7 +284,7 @@ Error codes on `{ ok: false, error: { code, message } }` distinguish `NOT_FOUND`
 
 The result is `{ result, logs, truncated }`, with matching text for clients that use MCP text content. Each run starts in a fresh QuickJS WASM worker. The script has no host filesystem, environment, network, or package APIs. ORC checks every call against script eligibility and the connection's existing project, caller-session, and tool permissions. Use `tool_invoke` for direct-only operations such as browser actions and launching jobs.
 
-ORC's native tools and external Spec connections share one discovery surface. `tool_search` (and in-sandbox `tools.search`) also queries every enabled Spec connection in parallel and merges the matches, labeled `[external: <connection>]` and carrying a `connection` field; results list the available external connections too, so external catalogs are visible even when nothing matches. Spec connections are external OpenAPI/MCP/GraphQL servers, **not ORC built-ins**, and their results are untrusted external data. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` (or `{ connection }` inside a script) to target one connection directly; the `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings remain available for direct use. Calls reuse the connection's tool filters and usage policies, and external writes may have external side effects. An OpenAPI tool that returns a page provides its HTML in `data.body`, so a script can return just the title. The catalog is available to unscoped authenticated HTTP and local stdio meta clients; project-scoped connections expose project tools and authorized preview data only.
+ORC's native tools and external Spec connections share one discovery surface. `tool_search` (and in-sandbox `tools.search`) also queries every enabled Spec connection in parallel and merges the matches, labeled `[external: <connection>]` and carrying a `connection` field; results list the available external connections too, so external catalogs are visible even when nothing matches. Spec connections are external OpenAPI/MCP/GraphQL servers, **not ORC built-ins**, and their results are untrusted external data. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` (or `{ connection }` inside a script) to target one connection directly; the `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings remain available for direct use. Calls reuse the connection's tool filters and usage policies, and external writes may have external side effects. An OpenAPI tool that returns a page provides its HTML in `data.body`, so a script can return just the title. The catalog is available to authenticated HTTP and local stdio meta clients.
 
 ```js
 const page = await tools.call("getPage", {}, { connection: "docs" });
@@ -345,8 +354,8 @@ Start each session with `context`.
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `context`        | Compact context index: active tasks and the project's memories by priority                                                        |
 | `search`         | Search knowledge base documents first, then memories and tasks                                                                    |
-| `project_list`   | List all projects                                                                                                                 |
-| `project_create` | Create a project: unique name, optional description, status, tags and `git_remote_url`; returns the stable id, name and a UI link |
+| `project_list`   | List all projects with id, status, `scope`, execution `host` and description                                                       |
+| `project_create` | Create a project: unique name, optional description, status, tags, `scope`, execution `host` (`"local"` or SSH alias) and `git_remote_url`; returns the stable id, name and a UI link |
 
 #### Reuse or create a project, then store project-scoped data
 
@@ -356,7 +365,7 @@ project_create({ name: "my-app", description: "Shop rewrite" })   // only when n
 memory_create({ project: "my-app", name: "api-port", description: "Dev API port", content: "7701" })
 ```
 
-Names are unique case-insensitively: a duplicate `project_create` fails with a conflict that names the existing project's id, and a retry never creates a second one — reuse the reported id. `project_create` needs an unscoped connection; a URL that selected `project`/`projects` (see [Query parameters](#query-parameters)) can read its chosen projects but cannot create new ones.
+Names are unique case-insensitively: a duplicate `project_create` fails with a conflict that names the existing project's id, and a retry never creates a second one — reuse the reported id. `project_create` works on any authenticated connection, including one with a default `project`/`projects` (see [Query parameters](#query-parameters)).
 
 ### Memory
 
@@ -407,7 +416,7 @@ See [Task flows → Goals](./task-flows.md#goals--loops-with-an-external-check).
 `goal_create` takes `objective`, `check` (shell command, exit 0 = met), optional
 `metric_pattern`, `agents` (ladder order), `iterations`/`tokens`/`hours` budget,
 `stall_limit`, `skill`, `project`, and `task` to attach to an existing task.
-Project-scoped MCP sessions can only create and read goals inside their scopes.
+A default project applies when `project` is omitted; pass any project to work elsewhere.
 
 ### Knowledge bases
 
@@ -473,29 +482,29 @@ See [Reusable agent packages](./agent-packages.md).
 
 See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.md).
 
-| Tool               | Description                                                                                                                                              |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_event`    | Record a session event (file edit, decision, error, git op)                                                                                              |
-| `session_snapshot` | Build a ≤2KB XML snapshot of current session state                                                                                                       |
-| `session_restore`  | Restore session state after compaction or restart                                                                                                        |
-| `session_log`      | Log a session summary after a unit of work                                                                                                               |
-| `session_handoff`  | Move a Claude Code or Codex session to ORC                                                                                                               |
-| `session_send`     | Send a note to another session: `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next)                  |
-| `speak`            | Say a short line to the user: posted to the chat and spoken when voice mode is on. Needs a conversation-bound connection; auto-approved                  |
-| `session_start`    | Start a headless child session with a prompt; returns its id at once                                                                                     |
-| `session_status`   | A started session's status, last reply, queue, parent and children                                                                                       |
-| `session_wait`     | Block until one or several started sessions stop running, wait for a human, or reply                                                                     |
-| `session_list`     | List the sessions this session started                                                                                                                   |
-| `session_stop`     | Stop a started session's turn and, by default, the sessions it started                                                                                   |
-| `session_search`   | Search archived and indexed session passages                                                                                                             |
-| `session_read`     | Read a cited archived-session passage or a page of turns; unarchived sessions (such as `session_start` children) fall back to their live chat transcript |
-| `session_sync`     | Request a one-hour upload capability for local session sync                                                                                              |
+| Tool              | Description                                                                                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_handoff` | Move a Claude Code or Codex session to ORC                                                                                                                                                                                                    |
+| `session_send`    | Send a note to another session (accepts chat, live, or native id; auto-adopts stopped native sessions into chat): `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next)                     |
+| `speak`           | Say a short line to the user: posted to the chat and spoken when voice mode is on. Needs a conversation-bound connection; auto-approved                                                                                                       |
+| `session_start`   | Start a headless child session with a prompt; `project` (inherits its folder and configured `host`), `cwd`, `host`, `worktree`, `profile`, `agent`, `provider_id`, `model`, `effort`, `permission_mode`, and `send_while_running` configure where and how it runs; returns its id at once |
+| `session_status`  | Status of an ORC chat or discovered native session: last reply, queue, parent and children                                                                                                                                                    |
+| `session_wait`    | Block until one or several sessions stop running, wait for a human, or reply                                                                                                                                                                  |
+| `session_list`    | Unified, deduplicated, paginated list of ORC chats and discovered native sessions (`scope: all\|children\|chats\|native`, `project`, `parent`, `agent`, `status`, `host`, `include_hidden`, `q`, `sync`, `limit`, `offset`)                  |
+| `session_update`  | Update a session's `title`, `hidden` (caller must own the session or be an ancestor; hides failed/stopped sessions from default `session_list` while keeping transcripts readable), `task_id` (discovered sessions), or ORC chat settings (`model`, `effort`, `permission_mode`, `send_while_running`) |
+| `session_options` | Inspect effective session defaults, configured hosts, provider accounts, composer profiles, and (with `agent` or `include_models`) discovered models, efforts, and capabilities                                                               |
+| `session_stop`    | Stop a started session's turn and, by default, the sessions it started                                                                                                                                                                        |
+| `session_search`  | Search archived and indexed session passages; `agent` accepts any supported harness id (`claude`, `codex`, `opencode`, `pi`, `cursor`, `gemini`, `copilot`, `qwen`, `droid`, `kimi`, `kiro`)                                                |
+| `session_read`    | Read a cited archived-session passage or a page of turns; unarchived ORC chats and discovered native sessions fall back to their live transcript                                                                                              |
+| `session_sync`    | Request a one-hour upload capability for local session sync                                                                                                                                                                                   |
 
 On a coordinator connection, `session_start` and `session_list` also return
 `coordinator_session_id`, and `session_start` adds the effective Settings
-`defaults` (`agent`, `model`, `provider_id`). Its `agent` parameter names an
-execution harness — the schema enumerates the built-in ids and accepts custom
-Settings agent ids.
+`defaults` (`agent`, `model`, `provider_id`) on both success and preflight/start
+errors. Its `agent` parameter names an execution harness — the schema enumerates
+the built-in ids and accepts custom Settings agent ids. When `project` has a
+configured execution `host`, `session_start` infers it automatically unless
+`host` is passed explicitly.
 
 ### Scratchpads
 

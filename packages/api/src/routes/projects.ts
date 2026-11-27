@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { createRoute, z } from "@hono/zod-openapi";
 import { clearSetupDismissal } from "@orc/core/config";
 import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors";
+import { ALIAS_PATTERN } from "@orc/core/exec-host";
 import { GitRemoteUrlSchema } from "@orc/core/git-remote";
 import {
   GithubSyncConfigSchema,
@@ -58,6 +59,11 @@ export function reassignSessions(): void {
 
 const WorkspaceSchema = WorkspaceEnvironmentSchema;
 
+const ProjectHostSchema = z.string().trim().regex(ALIAS_PATTERN).openapi({
+  description:
+    'Execution host for this project: an SSH alias, "local" for this ORC server, or null to inherit Settings default.',
+});
+
 const ProjectSchema = z
   .object({
     id: z.string(),
@@ -65,6 +71,7 @@ const ProjectSchema = z
     description: z.string().nullable(),
     status: z.enum(["active", "archived", "paused"]),
     scope: z.string().nullable(),
+    host: ProjectHostSchema.nullable(),
     git_remote_url: z.string().nullable(),
     github_sync: GithubSyncConfigSchema.nullable(),
     github_sync_state: GithubSyncStateSchema.nullable(),
@@ -88,6 +95,7 @@ const CreateProjectSchema = z
     description: z.string().optional(),
     status: z.enum(["active", "archived", "paused"]).optional().default("active"),
     scope: z.string().optional(),
+    host: ProjectHostSchema.nullable().optional(),
     git_remote_url: GitRemoteUrlSchema.optional(),
     github_sync: GithubSyncConfigSchema.nullable().optional(),
     tags: z.array(z.string()).optional(),
@@ -109,6 +117,7 @@ const UpdateProjectSchema = z
     description: z.string().nullable().optional(),
     status: z.enum(["active", "archived", "paused"]).optional(),
     scope: z.string().nullable().optional(),
+    host: ProjectHostSchema.nullable().optional(),
     git_remote_url: GitRemoteUrlSchema.optional(),
     github_sync: GithubSyncConfigSchema.nullable().optional(),
     tags: z.array(z.string()).nullable().optional(),
@@ -267,6 +276,7 @@ function prepareWorkspace(
 function toDto(p: typeof projects.$inferSelect) {
   return {
     ...p,
+    host: p.host ?? null,
     max_workers: p.max_workers ?? null,
     upload_directory: p.upload_directory ?? null,
     git_remote_url: p.git_remote_url ?? null,
@@ -410,6 +420,7 @@ app.openapi(createRoute_, async (c) => {
     description: body.description,
     status: body.status,
     scope: body.scope,
+    host: body.host,
     git_remote_url: body.git_remote_url,
     github_sync: body.github_sync,
     tags: body.tags,
@@ -453,6 +464,7 @@ app.openapi(updateRoute, async (c) => {
     nextRemote !== existing.git_remote_url;
   const mappingChanged =
     (body.scope !== undefined && body.scope !== existing.scope) ||
+    (body.host !== undefined && body.host !== existing.host) ||
     (body.name !== undefined && body.name !== existing.name) ||
     (body.git_remote_url !== undefined && body.git_remote_url !== existing.git_remote_url);
   await db
@@ -462,6 +474,7 @@ app.openapi(updateRoute, async (c) => {
       ...(body.description !== undefined ? { description: body.description } : {}),
       ...(body.status !== undefined ? { status: body.status } : {}),
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
+      ...(body.host !== undefined ? { host: body.host } : {}),
       ...(body.git_remote_url !== undefined ? { git_remote_url: body.git_remote_url } : {}),
       ...(body.github_sync !== undefined ? { github_sync: body.github_sync } : {}),
       ...(syncChanged ? { github_sync_state: null } : {}),

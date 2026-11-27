@@ -159,10 +159,7 @@ export function createMcpServer({
       (input.success && input.data.session_id
         ? { sessionId: input.data.session_id, clientId: input.data.client_id }
         : undefined);
-    const available = await availablePreviewTools(
-      scope,
-      selected?.map((project) => project.id),
-    );
+    const available = await availablePreviewTools(scope);
     return exposedTools.filter(
       (tool) =>
         (!tool.name.startsWith("preview_") || available.has(tool.name)) &&
@@ -214,46 +211,23 @@ export function createMcpServer({
       }
 
       let scopedArgs = args ?? {};
-      let callProjects = selected;
       if (selected && typeof scopedArgs === "object" && !Array.isArray(scopedArgs)) {
         const input = scopedArgs as Record<string, unknown>;
+        const hasProject = "project" in toolDef.inputSchema.shape;
+        const hasProjectId = "project_id" in toolDef.inputSchema.shape;
         const explicit = input.project !== undefined || input.project_id !== undefined;
-        const chosen = selected.find(
-          (candidate) =>
-            (input.project === undefined ||
-              (typeof input.project === "string" &&
-                candidate.name.toLowerCase() === input.project.toLowerCase())) &&
-            (input.project_id === undefined || candidate.id === input.project_id),
-        );
-        if (!chosen)
-          throw new Error(
-            `This MCP connection is scoped to projects ${selected.map((p) => p.name).join(", ")}`,
-          );
-        callProjects = explicit ? [chosen] : selected;
-        scopedArgs =
-          "project" in toolDef.inputSchema.shape
-            ? { ...input, project: chosen.name }
-            : { ...input };
-        if (
-          "project_id" in toolDef.inputSchema.shape &&
-          !("project" in toolDef.inputSchema.shape) &&
-          input.project_id === undefined
-        )
-          scopedArgs = { ...scopedArgs, project_id: chosen.id };
-        if ("projects" in toolDef.inputSchema.shape) {
-          const requested = input.projects;
-          if (
-            requested !== undefined &&
-            (!Array.isArray(requested) ||
-              requested.some(
-                (value) =>
-                  typeof value !== "string" ||
-                  !selected.some((p) => p.name.toLowerCase() === value.toLowerCase()),
-              ))
-          )
-            throw new Error("Projects must be selected in this MCP connection");
-          scopedArgs = { ...scopedArgs, projects: requested ?? selected.map((p) => p.name) };
+        const skipDefaultProject =
+          (name === "session_start" && input.cwd !== undefined) ||
+          (name === "session_list" && (input.scope === "children" || input.parent !== undefined));
+        // The connection's projects are autofill defaults, not a permission
+        // boundary: any call may name another project. Fill one only when the
+        // call omitted it and the default is unambiguous.
+        if (!explicit && !skipDefaultProject && selected.length === 1) {
+          if (hasProject) scopedArgs = { ...input, project: selected[0]?.name };
+          else if (hasProjectId) scopedArgs = { ...input, project_id: selected[0]?.id };
         }
+        if ("projects" in toolDef.inputSchema.shape && input.projects === undefined)
+          scopedArgs = { ...scopedArgs, projects: selected.map((p) => p.name) };
       }
       const parsed = toolDef.inputSchema.safeParse(scopedArgs);
       if (!parsed.success) {
@@ -273,7 +247,7 @@ export function createMcpServer({
 
       const detailed = await executeToolDetailed(name as ToolName, parsed.data, {
         ...options,
-        ...(callProjects ? { projectScopes: callProjects } : {}),
+        ...(selected ? { projectScopes: selected } : {}),
       });
       const status = name.startsWith("preview_")
         ? z.object({ status: z.string() }).safeParse(JSON.parse(detailed.text))

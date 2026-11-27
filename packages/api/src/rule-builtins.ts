@@ -1,11 +1,167 @@
+import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
+import { loadConfig } from "@orc/core/config";
 import { ConflictError, ValidationError } from "@orc/core/errors";
-import { ulid } from "@orc/core/ids";
+import { shortId, ulid } from "@orc/core/ids";
 import type { RuleEvent } from "@orc/core/rule-types";
 import { claudeMemoryDirectory, syncClaudeMemory } from "@orc/db/agent-memory";
-import { getSqlite } from "@orc/db/client";
+import { getDb, getSqlite } from "@orc/db/client";
 import { RuleStore } from "@orc/db/rules";
+import { tasks } from "@orc/db/schema";
 import { executeTool } from "@orc/mcp/tools";
+import { sql } from "drizzle-orm";
+
+type SnapshotTaskRow = { id: string; title: string; status: string; priority: string };
+type SnapshotEventRow = { type: string; priority: number; data: string };
+
+const P1_TYPES = new Set(["file", "task", "rule"]);
+const P2_TYPES = new Set(["decision", "git", "env", "error", "plan"]);
+
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildSnapshot(
+  taskRows: SnapshotTaskRow[],
+  events: SnapshotEventRow[],
+  maxBytes: number,
+): string {
+  const taskXml = taskRows
+    .map(
+      (t) =>
+        `  <task id="${shortId(t.id)}" status="${t.status}" priority="${t.priority}">${escapeXml(t.title)}</task>`,
+    )
+    .join("\n");
+
+  const p1Events = events.filter((e) => P1_TYPES.has(e.type));
+  const p2Events = events.filter((e) => P2_TYPES.has(e.type));
+  const p3Events = events.filter((e) => !P1_TYPES.has(e.type) && !P2_TYPES.has(e.type));
+
+  function renderEvents(evs: SnapshotEventRow[], max = 5): string {
+    const grouped: Record<string, string[]> = {};
+    for (const e of evs.slice(0, max * 3)) {
+      if (!grouped[e.type]) grouped[e.type] = [];
+      const items = grouped[e.type] ?? [];
+      if (items.length >= max) continue;
+      try {
+        const d = JSON.parse(e.data) as Record<string, string>;
+        items.push(
+          Object.entries(d)
+            .map(([k, v]) => `${k}=${String(v).slice(0, 80)}`)
+            .join(" "),
+        );
+      } catch {
+        items.push(String(e.data).slice(0, 120));
+      }
+    }
+    return Object.entries(grouped)
+      .map(
+        ([type, items]) =>
+          `  <${type}s>${items.map((i) => `<item>${escapeXml(i)}</item>`).join("")}</${type}s>`,
+      )
+      .join("\n");
+  }
+
+  function assemble(includeP2: boolean, includeP3: boolean): string {
+    const parts = [`<tasks>\n${taskXml}\n</tasks>`];
+    const p1Xml = renderEvents(p1Events);
+    if (p1Xml) parts.push(`<context priority="high">\n${p1Xml}\n</context>`);
+    if (includeP2) {
+      const p2Xml = renderEvents(p2Events);
+      if (p2Xml) parts.push(`<context priority="normal">\n${p2Xml}\n</context>`);
+    }
+    if (includeP3) {
+      const p3Xml = renderEvents(p3Events, 3);
+      if (p3Xml) parts.push(`<context priority="low">\n${p3Xml}\n</context>`);
+    }
+    return `<session>\n${parts.join("\n")}\n</session>`;
+  }
+
+  for (const [incP2, incP3] of [
+    [true, true],
+    [true, false],
+    [false, false],
+  ] as const) {
+    const xml = assemble(incP2, incP3);
+    if (Buffer.byteLength(xml) <= maxBytes) return xml;
+  }
+
+  return `<session>\n<tasks>\n${taskXml}\n</tasks>\n</session>`;
+}
+
+function recordContinuityEvent(
+  sqlite: Database,
+  sessionId: string,
+  entry: { type: string; priority: number; data: Record<string, string> },
+): void {
+  const dataJson = JSON.stringify(entry.data);
+  const dataHash = createHash("sha256").update(dataJson).digest("hex").slice(0, 16);
+  const recent = sqlite
+    .query<{ data_hash: string }, [string, string, number]>(
+      `SELECT data_hash FROM session_events
+       WHERE session_id = ? AND type = ?
+       ORDER BY created_at DESC LIMIT ?`,
+    )
+    .all(sessionId, entry.type, 5);
+  if (recent.some((r) => r.data_hash === dataHash)) return;
+  const { n } = sqlite
+    .query<{ n: number }, [string]>("SELECT COUNT(*) as n FROM session_events WHERE session_id = ?")
+    .get(sessionId) ?? { n: 0 };
+  if (n >= 1000) {
+    sqlite
+      .query(
+        `DELETE FROM session_events WHERE id = (
+           SELECT id FROM session_events WHERE session_id = ?
+           ORDER BY priority ASC, created_at ASC LIMIT 1
+         )`,
+      )
+      .run(sessionId);
+  }
+  sqlite
+    .query(
+      "INSERT INTO session_events(id, session_id, type, priority, data, data_hash) VALUES (?,?,?,?,?,?)",
+    )
+    .run(ulid(), sessionId, entry.type, entry.priority, dataJson, dataHash);
+}
+
+async function snapshotContinuitySession(
+  sqlite: Database,
+  sessionId: string,
+  projectId: string | null,
+): Promise<void> {
+  const maxBytes = loadConfig().context.snapshot_max_bytes;
+  const activeTasks = await getDb().query.tasks.findMany({
+    where: sql`${tasks.project_id} IS ${projectId}`,
+    limit: 10,
+    orderBy: (t, { desc }) => [desc(t.updated_at)],
+  });
+  const filteredTasks = activeTasks.filter((t) => !["done", "cancelled"].includes(t.status));
+  const events = sqlite
+    .query<SnapshotEventRow, [string]>(
+      `SELECT type, priority, data FROM session_events
+       WHERE session_id = ?
+       ORDER BY priority ASC, created_at DESC LIMIT 100`,
+    )
+    .all(sessionId);
+  const xml = buildSnapshot(filteredTasks, events, maxBytes);
+  sqlite
+    .query("INSERT INTO session_snapshots(id, session_id, xml) VALUES (?,?,?)")
+    .run(ulid(), sessionId, xml);
+}
+
+function restoreContinuitySession(sqlite: Database, sessionId: string): string {
+  const snap = sqlite
+    .query<{ xml: string }, [string]>(
+      "SELECT xml FROM session_snapshots WHERE session_id = ? ORDER BY created_at DESC LIMIT 1",
+    )
+    .get(sessionId);
+  if (!snap) return "No session snapshot found. Starting fresh.";
+  return `## Session Restored\n\n${snap.xml}`;
+}
 
 function sessionEvent(
   event: RuleEvent,
@@ -124,18 +280,14 @@ export async function executeBuiltinRuleAction(
         context.push(await executeTool("context", { project_id: active.project_id }));
         break;
       case "restore_session":
-        context.push(await executeTool("session_restore", { session_id: continuitySessionId }));
+        context.push(restoreContinuitySession(db, continuitySessionId));
         break;
       case "snapshot_session":
-        await executeTool("session_snapshot", {
-          session_id: continuitySessionId,
-          project_id: active.project_id,
-        });
+        await snapshotContinuitySession(db, continuitySessionId, active.project_id);
         break;
       case "record_event": {
         const classified = sessionEvent(event, target.event_type);
-        if (classified)
-          await executeTool("session_event", { ...classified, session_id: continuitySessionId });
+        if (classified) recordContinuityEvent(db, continuitySessionId, classified);
         else status = "skipped";
         break;
       }
