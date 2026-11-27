@@ -151,7 +151,7 @@ for (const width of [1440, 390]) {
     } finally {
       try {
         if (taskId) await apiDelete(request, `/tasks/${taskId}`);
-        if (projectId) await apiDelete(request, `/projects/${projectId}`);
+        if (projectId) await apiDelete(request, `/projects/${projectId}?ttl_days=0`);
       } finally {
         try {
           rmSync(join(LIVE_REGISTRY_DIR, `codex-${externalId}.json`), {

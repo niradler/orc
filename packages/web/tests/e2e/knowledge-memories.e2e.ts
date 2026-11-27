@@ -52,7 +52,7 @@ for (const width of [1440, 390]) {
       expect(overflow).toBe(false);
       await page.screenshot({ path: `../../output/playwright/knowledge-memories-${width}.png` });
     } finally {
-      await apiDelete(request, `/projects/${project.id}`);
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 }

@@ -261,6 +261,6 @@ test("populated workspaces fit desktop, tablet and phones in both themes", async
     await apiDelete(request, `/jobs/${previewJob.id}`);
     await apiDelete(request, `/jobs/${backgroundJob.id}`);
     for (const id of pads) await apiDelete(request, `/scratchpads/${id}`);
-    await apiDelete(request, `/projects/${project.id}`);
+    await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
   }
 });

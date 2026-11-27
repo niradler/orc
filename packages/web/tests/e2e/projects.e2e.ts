@@ -70,9 +70,11 @@ test.describe("Projects CRUD", () => {
       await page.reload();
       await row.click();
       await expect(remote).toHaveValue("");
-      expect((await apiGet<Project>(request, `/projects/${id}`)).git_remote_url).toBeNull();
+      expect(
+        (await apiGet<Project>(request, `/projects/${id}?ttl_days=0`)).git_remote_url,
+      ).toBeNull();
     } finally {
-      await apiDelete(request, `/projects/${id}`);
+      await apiDelete(request, `/projects/${id}?ttl_days=0`);
     }
   });
   test("saves workspace scripts, ports and a masked secret", async ({ page, request }) => {
@@ -99,7 +101,7 @@ test.describe("Projects CRUD", () => {
     await expect(row).toBeVisible();
     const id = await row.getAttribute("data-project-id");
     try {
-      const saved = await apiGet<Project>(request, `/projects/${id}`);
+      const saved = await apiGet<Project>(request, `/projects/${id}?ttl_days=0`);
       expect(saved.workspace).toMatchObject({
         setup_script: "bun install",
         dev_script: "bun run dev --port $ORC_PORT",
@@ -119,10 +121,10 @@ test.describe("Projects CRUD", () => {
       await expect(page.getByLabel("Variable 1 name")).toHaveValue("API_TOKEN");
       await expect(page.getByLabel("Variable 1 value")).toHaveValue("");
     } finally {
-      await apiDelete(request, `/projects/${id}`);
+      await apiDelete(request, `/projects/${id}?ttl_days=0`);
     }
   });
-  test("create via UI, then delete via UI", async ({ page }) => {
+  test("create via UI, then delete via UI", async ({ page, request }) => {
     const name = tid("pw-proj");
     await gotoView(page, "projects");
     await expect(page.getByTestId("view-title")).toHaveText(/projects/i);
@@ -139,12 +141,19 @@ test.describe("Projects CRUD", () => {
     // Row appears
     const row = page.locator(`[data-testid="project-row"][data-project-name="${name}"]`);
     await expect(row).toBeVisible();
+    const projectId = await row.getAttribute("data-project-id");
 
-    // Delete via UI
+    // Delete via UI. Deletion archives first, so it leaves the Active filter.
+    await page.getByTestId("projects-filter-active").click();
     await row.getByTestId("project-delete").click();
     await page.getByTestId("confirm-dialog-confirm").click();
 
     await expect(row).toHaveCount(0);
+    await page.getByTestId("projects-filter-archived").click();
+    await expect(
+      page.locator(`[data-testid="project-row"][data-project-name="${name}"]`),
+    ).toBeVisible();
+    if (projectId) await apiDelete(request, `/projects/${projectId}?ttl_days=0`);
   });
 
   test("update via API reflects in UI", async ({ page, request }) => {
@@ -158,7 +167,7 @@ test.describe("Projects CRUD", () => {
       const row = page.locator(`[data-testid="project-row"][data-project-id="${created.id}"]`);
       await expect(row).toContainText(name);
     } finally {
-      await apiDelete(request, `/projects/${created.id}`);
+      await apiDelete(request, `/projects/${created.id}?ttl_days=0`);
     }
   });
 
@@ -196,7 +205,7 @@ test.describe("Projects CRUD", () => {
       await expect(updatedRow).toBeVisible();
       await expect(editDialog).not.toBeVisible();
     } finally {
-      await apiDelete(request, `/projects/${created.id}`);
+      await apiDelete(request, `/projects/${created.id}?ttl_days=0`);
     }
   });
 
@@ -235,8 +244,8 @@ test.describe("Projects CRUD", () => {
         page.locator(`[data-testid="project-row"][data-project-id="${activeProj.id}"]`),
       ).toHaveCount(0);
     } finally {
-      await apiDelete(request, `/projects/${activeProj.id}`);
-      await apiDelete(request, `/projects/${archivedProj.id}`);
+      await apiDelete(request, `/projects/${activeProj.id}?ttl_days=0`);
+      await apiDelete(request, `/projects/${archivedProj.id}?ttl_days=0`);
     }
   });
 });

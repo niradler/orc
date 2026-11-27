@@ -85,7 +85,7 @@ test("@sanity a goal loops worker and check until the check passes", async ({ pa
     await expect(history).toContainText("passed");
   } finally {
     if (taskId) await apiDelete(request, `/tasks/${taskId}`).catch(() => {});
-    if (projectId) await apiDelete(request, `/projects/${projectId}`).catch(() => {});
+    if (projectId) await apiDelete(request, `/projects/${projectId}?ttl_days=0`).catch(() => {});
     rmSync(scope, { recursive: true, force: true, maxRetries: 50, retryDelay: 200 });
   }
 });

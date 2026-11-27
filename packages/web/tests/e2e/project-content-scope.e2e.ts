@@ -40,7 +40,8 @@ for (const width of [1440, 390]) {
       await expect(page.getByTestId("memory-detail")).toBeVisible();
       await page.keyboard.press("Escape");
     } finally {
-      for (const project of [one, two]) await apiDelete(request, `/projects/${project.id}`);
+      for (const project of [one, two])
+        await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 
@@ -96,7 +97,8 @@ for (const width of [1440, 390]) {
       await expect(row(first.id)).toHaveCount(0);
     } finally {
       for (const pad of [shared, first, second]) await apiDelete(request, `/scratchpads/${pad.id}`);
-      for (const project of [one, two]) await apiDelete(request, `/projects/${project.id}`);
+      for (const project of [one, two])
+        await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 
@@ -162,7 +164,8 @@ for (const width of [1440, 390]) {
       await expect(row(second.name)).toBeVisible();
     } finally {
       for (const kb of [shared, first, second]) await apiDelete(request, `/kb/bases/${kb.id}`);
-      for (const project of [one, two]) await apiDelete(request, `/projects/${project.id}`);
+      for (const project of [one, two])
+        await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 }

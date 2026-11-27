@@ -117,7 +117,7 @@ test("exports a skill into a project's checkout and imports it back from the pro
     await expect(row.getByTestId("local-skill-select")).toBeDisabled();
   } finally {
     await apiDelete(request, `/skills/${name}`);
-    await apiDelete(request, `/projects/${project.id}`);
+    await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
   }
 });
 
@@ -189,7 +189,7 @@ test("exports project memories as Claude memory files and flags near copies on i
     await expect(importing.getByTestId("memory-import-submit")).toBeDisabled();
     await page.screenshot({ path: "../../output/playwright/memory-folder-import-dedup.png" });
   } finally {
-    await apiDelete(request, `/projects/${project.id}`);
+    await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
   }
 });
 
@@ -255,7 +255,7 @@ test("imports plain Codex notes and exports memories back as notes without an in
     expect(existsSync(join(notes, "MEMORY.md"))).toBe(false);
     expect(readFileSync(noteFile, "utf8")).toContain("Never push to master without consent.");
   } finally {
-    await apiDelete(request, `/projects/${project.id}`);
+    await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     rmSync(join(notes, `${name}.md`), { force: true });
     rmSync(noteFile, { force: true });
   }

@@ -91,7 +91,9 @@ for (const width of [1440, 390]) {
         path: `../../.claude/docs/channels-project-pagination-${width}.png`,
       });
     } finally {
-      await inFixtureBatches(projects, (project) => apiDelete(request, `/projects/${project.id}`));
+      await inFixtureBatches(projects, (project) =>
+        apiDelete(request, `/projects/${project.id}?ttl_days=0`),
+      );
     }
   });
 }

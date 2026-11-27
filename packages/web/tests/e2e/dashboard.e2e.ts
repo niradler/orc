@@ -50,7 +50,7 @@ test.describe("Dashboard", () => {
       // back to All Projects
       await selectProject(page, "all");
     } finally {
-      await apiDelete(request, `/projects/${project.id}`);
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 });
