@@ -561,6 +561,8 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 
 Deleting a scratchpad is recoverable: it stays readable and listed with a **deletes in N days** marker, and is permanently removed after 30 days. Use **Restore** before then. This is the same archive-then-purge lifecycle as project deletion.
 
+Pads can also **expire**. Set an expiry in the pad's properties (or `ttl` / `expires_at` through the API and `pad_*` tools) for one-off drafts and intermediate reports; leave long-lived pads and human notes without one. When an expiry is due the pad is archived like a delete, shown with its delete deadline, and purged after a 7-day grace period. **Pin** a pad to exempt it, and pads referenced by another pad, task, comment, knowledge-base document or memory are kept with an **expiry skipped** note. `keep_alive` extends the expiry on every edit. The list filters **Expiring soon** and **Archived**, and each row shows its expiry or pin state.
+
 HTML pads receive the **ORC HTML kit** in both the editor preview and chat artifacts:
 dashboard theme tokens, base styles, cards, tables, stats, badges, tabs and charts.
 Use `orc-*` classes to build a native-looking page without a custom `<style>` block.

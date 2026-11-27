@@ -379,6 +379,10 @@ auto-vacuum, so each pass returns a bounded number of freed pages to disk. An
 existing database keeps its current mode until a one-time `VACUUM`; `orc doctor`
 reports the size, free pages and mode. See [Notifications](./notifications.md).
 
+`preferences.scratchpad_expiry_grace_days` (default 7, JSON config) controls how long
+an expired scratchpad stays restorable before it is purged. See
+[Scratchpads](./desktop-and-web.md#scratchpads).
+
 ## Files and directories
 
 | Path                          | Holds                                                                                     |

@@ -692,6 +692,8 @@ export type ScratchpadListParams = {
   session_id?: string;
   tag?: string;
   q?: string;
+  expiry?: "expiring" | "expired";
+  pinned?: "true" | "false";
   limit?: number;
 };
 
@@ -702,6 +704,10 @@ export type CreateScratchpadInput = {
   project_id?: string | null;
   session_id?: string | null;
   tags?: string[];
+  ttl?: string;
+  expires_at?: number | null;
+  pinned?: boolean;
+  keep_alive?: boolean;
 };
 
 export type UpdateScratchpadInput = {
@@ -710,6 +716,10 @@ export type UpdateScratchpadInput = {
   project_id?: string | null;
   session_id?: string | null;
   tags?: string[];
+  ttl?: string | null;
+  expires_at?: number | null;
+  pinned?: boolean;
+  keep_alive?: boolean;
   if_revision?: number;
 };
 

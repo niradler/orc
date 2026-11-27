@@ -214,6 +214,7 @@ const PreferencesSchema = z
     notification_retention_days: z.number().int().min(1).max(3650).optional(),
     audit_retention_days: z.number().int().min(1).max(3650).optional(),
     history_retention_days: z.number().int().min(1).max(3650).optional(),
+    scratchpad_expiry_grace_days: z.number().int().min(1).max(3650).optional(),
     chat: ChatSettingsSchema.optional(),
     favorite_models: FavoriteModelsSchema.optional(),
     composer_profiles: ComposerProfilesSchema.optional(),

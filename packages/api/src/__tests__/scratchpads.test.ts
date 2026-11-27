@@ -237,3 +237,91 @@ describe("Scratchpads REST API", () => {
     expect(() => urls.verify(token, "download")).toThrow();
   });
 });
+
+describe("Scratchpad expiry", () => {
+  test("should set, extend, clear and reject invalid expiry input over the API", async () => {
+    const created = await create({ kind: "doc", title: "TTL", ttl: "1h" });
+    expect(created.ttl_seconds).toBe(3600);
+    expect(created.expires_at).toBeGreaterThan(created.created_at);
+    expect(created.pinned).toBe(false);
+
+    const extended = await req(app, "PATCH", `/scratchpads/${created.id}`, { ttl: "7d" });
+    expect((await extended.json()).ttl_seconds).toBe(604800);
+    const cleared = await req(app, "PATCH", `/scratchpads/${created.id}`, { expires_at: null });
+    expect(await cleared.json()).toMatchObject({ expires_at: null, ttl_seconds: null });
+
+    expect(
+      (await req(app, "POST", "/scratchpads", { kind: "doc", title: "bad", ttl: "soon" })).status,
+    ).toBe(400);
+    expect(
+      (
+        await req(app, "POST", "/scratchpads", {
+          kind: "doc",
+          title: "bad pair",
+          ttl: "1h",
+          expires_at: 4_000_000_000,
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await req(app, "POST", "/scratchpads", {
+          kind: "doc",
+          title: "past",
+          expires_at: 1,
+        })
+      ).status,
+    ).toBe(400);
+  });
+
+  test("should slide keep-alive expiry and leave pinned or referenced pads alone", () => {
+    const store = new ScratchpadStore(getSqlite());
+    const t0 = new Date(Date.now() + 60_000);
+    const t0Seconds = Math.floor(t0.getTime() / 1000);
+    const sliding = store.create(
+      { kind: "doc", title: "Sliding", ttl: "1h", keep_alive: true },
+      t0,
+    );
+    expect(sliding.expires_at).toBe(t0Seconds + 3600);
+    const t1 = new Date(t0.getTime() + 30 * 60_000);
+    expect(store.update(sliding.id, { content: "edited" }, t1).expires_at).toBe(
+      Math.floor(t1.getTime() / 1000) + 3600,
+    );
+
+    const pinned = store.create({ kind: "doc", title: "Pinned", ttl: "1h", pinned: true }, t0);
+    const referenced = store.create({ kind: "doc", title: "Referenced", ttl: "1h" }, t0);
+    const due = store.create({ kind: "doc", title: "Due", ttl: "1h" }, t0);
+    store.create({ kind: "doc", title: "Link", content: `see ${referenced.id}` }, t0);
+
+    // After the 1h TTLs but before the slid 1.5h window, so only the non-sliding pads are due.
+    const later = new Date(t0.getTime() + 80 * 60_000);
+    const laterSeconds = Math.floor(later.getTime() / 1000);
+    const outcome = store.expireDue(later, 7);
+    expect(outcome.archived).toBe(1);
+    expect(store.get(due.id)).toMatchObject({
+      expires_at: null,
+      delete_after: laterSeconds + 7 * 86_400,
+    });
+    expect(store.get(due.id).archived_at).not.toBeNull();
+    expect(store.get(pinned.id)).toMatchObject({
+      archived_at: null,
+      expiry_skipped_reason: "pinned",
+    });
+    expect(store.get(referenced.id)).toMatchObject({
+      archived_at: null,
+      expires_at: null,
+      expiry_skipped_reason: "referenced by another pad",
+    });
+    expect(store.list({ expiry: "expired" }).map((pad) => pad.id)).toContain(due.id);
+    expect(store.list({ expiry: "expiring" }).map((pad) => pad.id)).toContain(sliding.id);
+    expect(store.list({ pinned: true }).map((pad) => pad.id)).toContain(pinned.id);
+
+    store.restore(due.id);
+    expect(store.get(due.id)).toMatchObject({
+      archived_at: null,
+      delete_after: null,
+      expires_at: null,
+    });
+    expect(store.list({ expiry: "expired" }).map((pad) => pad.id)).not.toContain(due.id);
+  });
+});

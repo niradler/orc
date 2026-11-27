@@ -106,6 +106,8 @@ export const OrcConfigSchema = z.object({
       attention_retention_hours: z.number().int().min(1).max(8760).optional(),
       /** Days of terminal job, flow, gateway, MCP task and human-request history to keep. */
       history_retention_days: z.number().int().min(1).max(3650).optional(),
+      /** Grace days between a pad's expiry and its permanent purge. */
+      scratchpad_expiry_grace_days: z.number().int().min(1).max(3650).optional(),
       notification_retention_days: z.number().int().min(1).max(3650).optional(),
       audit_retention_days: z.number().int().min(1).max(3650).optional(),
       chat: ChatSettingsSchema.optional(),
