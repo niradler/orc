@@ -14,6 +14,11 @@ export type ToolTodoEntry = { id: string; content: string; status: ToolTodoStatu
 export type ToolQuestion = { header?: string; question: string; options: string[] };
 export type ToolImage = { src: string; bytes: number; name?: string };
 export type ToolLink = { label: string; href: string };
+export type ToolTaskChange = {
+  action: "create" | "update" | "list";
+  subject?: string;
+  status?: ToolTodoStatus;
+};
 
 export type ToolView =
   | { kind: "read"; target: string; path?: string; line?: number }
@@ -26,6 +31,7 @@ export type ToolView =
   | { kind: "todo"; entries: ToolTodoEntry[] }
   | { kind: "plan"; entries: ToolTodoEntry[]; title?: string }
   | { kind: "question"; questions: ToolQuestion[] }
+  | { kind: "task"; task: ToolTaskChange }
   | { kind: "generic" };
 
 const WRITE_TOOLS = new Set([
@@ -119,6 +125,12 @@ const TODO_TOOLS = new Set([
   "update_todos",
 ]);
 const PLAN_TOOLS = new Set(["plan", "update_plan", "updateplan", "set_plan", "write_plan"]);
+/** Claude's ID-based task tools; the live checklist comes from the runtime plan event. */
+const TASK_TOOL_ACTIONS: Readonly<Record<string, ToolTaskChange["action"]>> = {
+  taskcreate: "create",
+  taskupdate: "update",
+  tasklist: "list",
+};
 const QUESTION_TOOLS = new Set([
   "askuserquestion",
   "ask_user",
@@ -599,6 +611,15 @@ export function toolDetail(view: ToolView): string {
     return `${done} of ${view.entries.length} steps`;
   }
   if (view.kind === "question") return view.questions[0]?.question ?? "Question";
+  if (view.kind === "task") {
+    const { action, subject, status } = view.task;
+    if (action === "create") return subject ? `Created: ${subject}` : "Created a task";
+    if (action === "update") {
+      const next = status ? ` → ${status.replace("_", " ")}` : "";
+      return subject ? `${subject}${next}` : `Updated a task${next}`;
+    }
+    return "Listed tasks";
+  }
   return "";
 }
 
@@ -621,6 +642,23 @@ export function toolView(tool: ChatTool): ToolView {
     const title = text(record(input).title, record(input).explanation);
     if (entries.length)
       return { kind: "plan", entries, ...(title && title.length <= 200 ? { title } : {}) };
+  }
+  const taskAction = TASK_TOOL_ACTIONS[key];
+  if (taskAction) {
+    const value = record(input);
+    const subject = text(value.subject);
+    const status =
+      value.status === undefined || value.status === "deleted"
+        ? undefined
+        : todoStatus(value.status);
+    return {
+      kind: "task",
+      task: {
+        action: taskAction,
+        ...(subject ? { subject } : {}),
+        ...(status ? { status } : {}),
+      },
+    };
   }
   if (QUESTION_TOOLS.has(key)) {
     const asked = questions(input);

@@ -313,3 +313,23 @@ test("should link only the pull requests and Git files a result prints", () => {
   expect(resultBranch("ls", "On branch main")).toBeUndefined();
   expect(resultFiles("bun test", " M src/a.ts")).toEqual([]);
 });
+
+test("should summarise Claude's task tool calls instead of showing raw input", () => {
+  expect(toolView(tool("TaskCreate", { subject: "Alpha", description: "Do alpha" }))).toEqual({
+    kind: "task",
+    task: { action: "create", subject: "Alpha" },
+  });
+  expect(toolDetail(toolView(tool("TaskCreate", { subject: "Alpha" })))).toBe("Created: Alpha");
+  expect(
+    toolDetail(
+      toolView(tool("TaskUpdate", { taskId: "1", subject: "Alpha", status: "completed" })),
+    ),
+  ).toBe("Alpha → completed");
+  expect(toolDetail(toolView(tool("TaskUpdate", { taskId: "1", status: "in_progress" })))).toBe(
+    "Updated a task → in progress",
+  );
+  expect(toolDetail(toolView(tool("TaskUpdate", { taskId: "1", status: "deleted" })))).toBe(
+    "Updated a task",
+  );
+  expect(toolDetail(toolView(tool("TaskList", {})))).toBe("Listed tasks");
+});

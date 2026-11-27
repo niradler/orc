@@ -47,7 +47,7 @@ import { resolveClaudeSdkLaunch } from "./claude-executable.js";
 import { elicitationForm } from "./elicitation.js";
 import { sessionExecHost } from "./execution-host.js";
 import { buildOrcMcpServers, ORC_TOOL_PREFIX, ORC_TOOLS_RULE } from "./orc-mcp.js";
-import { planFromToolInput } from "./plan.js";
+import { PlanTracker, planFromToolInput } from "./plan.js";
 import { claudeLimitEvent } from "./provider-limits.js";
 import { registerBackend } from "./registry.js";
 import {
@@ -308,6 +308,8 @@ type ClaudeTurn = {
   wroteText: boolean;
   streamedText: boolean;
   lastResult: SDKResultMessage | undefined;
+  /** Claude's TaskCreate / TaskUpdate / TaskList checklist for this turn. */
+  readonly plan: PlanTracker;
   /**
    * Steers written to the CLI but not yet answered by a result. The CLI queues
    * mid-turn input and runs it as a continuation of the same query, so the
@@ -418,6 +420,7 @@ class ClaudeSDKSession implements AgentSession {
         wroteText: false,
         streamedText: false,
         lastResult: undefined,
+        plan: new PlanTracker(),
         pendingSteers: new Set(),
       };
       this.done = false;
@@ -449,6 +452,7 @@ class ClaudeSDKSession implements AgentSession {
       wroteText: false,
       streamedText: false,
       lastResult: undefined,
+      plan: new PlanTracker(),
       pendingSteers: new Set(),
     };
     const stream: ClaudeStream = {
@@ -1284,6 +1288,8 @@ class ClaudeSDKSession implements AgentSession {
               // TodoWrite carries the agent's checklist; the tool row stays, the plan is structured.
               const plan = planFromToolInput(block.name, input);
               if (plan) push(plan);
+              // Task tools report their change in the result; record the call now.
+              turn.plan.observeToolUse(block.id, block.name, block.input);
             }
           }
           if (!msg.parent_tool_use_id) turn.streamedText = false;
@@ -1305,7 +1311,15 @@ class ClaudeSDKSession implements AgentSession {
                 this.humanReceipts.delete(block.tool_use_id);
               }
             }
-            if (block.type === "tool_result")
+            if (block.type === "tool_result") {
+              if (turn && !turn.closing) {
+                const tracked = turn.plan.observeToolResult(
+                  block.tool_use_id,
+                  msg.tool_use_result,
+                  block.is_error ?? false,
+                );
+                if (tracked) push(tracked);
+              }
               push({
                 type: "tool_result",
                 data: {
@@ -1317,6 +1331,7 @@ class ClaudeSDKSession implements AgentSession {
                   isError: block.is_error ?? false,
                 },
               });
+            }
           }
         }
 
