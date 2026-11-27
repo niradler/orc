@@ -61,6 +61,18 @@ export function useDeleteProject() {
   });
 }
 
+export function useRestoreProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.projects.restore(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project"] });
+      qc.invalidateQueries({ queryKey: ["project-summary"] });
+    },
+  });
+}
+
 export function useSetProjectsStatus() {
   const queryClient = useQueryClient();
   return useMutation({

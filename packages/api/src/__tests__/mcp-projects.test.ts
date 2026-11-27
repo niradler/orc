@@ -306,6 +306,22 @@ describe("connection-wide MCP project defaults", () => {
     const untargeted = await rpc("", "project_delete", {});
     expect(untargeted.error).toBe(true);
     expect(untargeted.text).toContain("never uses the active project");
+    // A single-project connection is not auto-filled either.
+    expect((await rpc("", "project_create", { name: "autofill-guard" })).error).not.toBe(true);
+    const scopedUntargeted = await rpc("?project=autofill-guard", "project_delete", {});
+    expect(scopedUntargeted.error).toBe(true);
+    expect(scopedUntargeted.text).toContain("never uses the active project");
+    expect(
+      getSqlite().query("SELECT 1 FROM projects WHERE name='autofill-guard'").get(),
+    ).toBeTruthy();
+    expect(
+      (
+        await rpc("", "project_delete", {
+          project: "autofill-guard",
+          ttl_days: 0,
+        })
+      ).text,
+    ).toContain("Deleted project");
     const name = "archive-fixture";
     expect((await rpc("", "project_create", { name })).error).not.toBe(true);
     const project = () =>

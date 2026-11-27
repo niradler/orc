@@ -356,7 +356,7 @@ Start each session with `context`.
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `context`        | Compact context index: active tasks and the project's memories by priority                                                        |
 | `search`         | Search knowledge base documents first, then memories and tasks                                                                    |
-| `project_list`   | List all projects with id, status, `scope`, execution `host` and description                                                       |
+| `project_list`   | List all projects with id, status, `scope`, execution `host`, description and any scheduled deletion date                          |
 | `project_create` | Create a project: unique name, optional description, status, tags, `scope`, execution `host` (`"local"` or SSH alias) and `git_remote_url`; returns the stable id, name and a UI link |
 | `project_delete` | Delete safely: archive now, purge after `ttl_days` (default 30). `restore: true` cancels; `ttl_days: 0` deletes immediately       |
 

@@ -1,11 +1,12 @@
 import { DEFAULT_GITHUB_STATUS_LABELS } from "@orc/core/github-sync";
+import { ttlDaysLeft } from "@orc/core/ttl";
 import {
   defaultWorkspaceEnvironment,
   parseWorkspaceEnvironment,
   type WorkspaceEnvironment,
   WorkspaceEnvironmentSchema,
 } from "@orc/core/workspace-settings";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Plus, RotateCcw, Search, Trash2 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Project, ProjectStatus, ProjectSummary, UpdateProjectInput } from "@/api/client";
@@ -55,6 +56,7 @@ import {
   useDeleteProject,
   useProjectSummary,
   useProjects,
+  useRestoreProject,
   useSetProjectsStatus,
   useUpdateProject,
 } from "@/hooks/useProjects";
@@ -91,6 +93,7 @@ export default function Projects() {
     closeDetail: closeEdit,
   } = useDetailRoute("/projects", "projectId");
   const deleteProject = useDeleteProject();
+  const restoreProject = useRestoreProject();
   const editing = editingId ? ((projects ?? []).find((p) => p.id === editingId) ?? null) : null;
 
   const matches = useMemo(() => {
@@ -326,6 +329,11 @@ export default function Projects() {
                         {project.status}
                       </span>
                       {project.max_workers != null && <span>{project.max_workers} workers</span>}
+                      {project.delete_after && (
+                        <span data-testid="project-deletes" className="text-destructive">
+                          deletes in {ttlDaysLeft(new Date(project.delete_after))} days
+                        </span>
+                      )}
                     </div>
                     {project.description && (
                       <p className="mt-2 text-sm leading-relaxed text-muted-foreground wrap-break-word">
@@ -333,6 +341,20 @@ export default function Projects() {
                       </p>
                     )}
                   </div>
+                  {project.delete_after && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      data-testid="project-restore"
+                      aria-label={`Restore project: ${project.name}`}
+                      disabled={restoreProject.isPending}
+                      onClick={() => restoreProject.mutate(project.id)}
+                      className="shrink-0 text-muted-foreground hover:text-primary"
+                    >
+                      <RotateCcw size={14} />
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
@@ -424,6 +446,11 @@ export default function Projects() {
                           />
                           {p.status}
                         </span>
+                        {p.delete_after && (
+                          <span className="mt-0.5 block text-xs text-destructive">
+                            deletes in {ttlDaysLeft(new Date(p.delete_after))} days
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
@@ -444,6 +471,21 @@ export default function Projects() {
                         {new Date(p.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell>
+                        {p.delete_after && (
+                          <button
+                            type="button"
+                            data-testid="project-restore"
+                            aria-label={`Restore project: ${p.name}`}
+                            disabled={restoreProject.isPending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              restoreProject.mutate(p.id);
+                            }}
+                            className="text-muted-foreground hover:text-primary transition-colors p-1"
+                          >
+                            <RotateCcw size={12} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           data-testid="project-delete"
@@ -501,6 +543,11 @@ export default function Projects() {
         />
       )}
 
+      {restoreProject.error && (
+        <p role="alert" className="mb-3 text-sm text-error">
+          {restoreProject.error.message}
+        </p>
+      )}
       {deleting && (
         <ConfirmDialog
           open={Boolean(deleting)}

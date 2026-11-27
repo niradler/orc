@@ -150,9 +150,11 @@ test.describe("Projects CRUD", () => {
 
     await expect(row).toHaveCount(0);
     await page.getByTestId("projects-filter-archived").click();
-    await expect(
-      page.locator(`[data-testid="project-row"][data-project-name="${name}"]`),
-    ).toBeVisible();
+    const archivedRow = page.locator(`[data-testid="project-row"][data-project-name="${name}"]`);
+    await expect(archivedRow).toBeVisible();
+    await expect(archivedRow.getByTestId("project-deletes")).toContainText("deletes in 30 days");
+    await archivedRow.getByTestId("project-restore").click();
+    await expect(archivedRow.getByTestId("project-deletes")).toHaveCount(0);
     if (projectId) await apiDelete(request, `/projects/${projectId}?ttl_days=0`);
   });
 

@@ -664,7 +664,8 @@ effort and permission mode under a name (**Save current**). Clicking a profile
 restores all of them; in a started chat, a profile for another agent or provider
 opens a new chat. The pencil beside a profile renames it in place; tick **Use current**
 to also replace its agent, provider, model, effort and mode with the composer's current ones. Profiles are saved in workspace preferences
-(`composer_profiles`) and also appear in the **New terminal** launcher.
+(`composer_profiles`) and belong to the chat composer; the terminal launcher uses its
+own model, effort and mode controls.
 
 ## Chat turn progress
 
