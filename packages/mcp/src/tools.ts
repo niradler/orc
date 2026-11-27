@@ -1584,7 +1584,11 @@ function projectResourceCounts(projectId: string) {
   const count = (sql: string) => sqlite.query<{ n: number }, [string]>(sql).get(projectId)?.n ?? 0;
   return {
     task: count("SELECT count(*) AS n FROM tasks WHERE project_id=?"),
-    session: count("SELECT count(*) AS n FROM gateway_sessions WHERE project_id=?"),
+    session:
+      count("SELECT count(*) AS n FROM gateway_sessions WHERE project_id=?") +
+      count(
+        "SELECT count(*) AS n FROM chat_threads WHERE json_valid(data) AND json_extract(data, '$.projectId')=?",
+      ),
     memory: count("SELECT count(*) AS n FROM memories WHERE project_id=?"),
     job: count("SELECT count(*) AS n FROM jobs WHERE project_id=?"),
     pad: count("SELECT count(*) AS n FROM scratchpads WHERE project_id=?"),
