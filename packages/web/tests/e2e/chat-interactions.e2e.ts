@@ -200,6 +200,25 @@ for (const width of [390, 1440]) {
       "echo harmless",
     );
     await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeVisible();
+    // Collapsing only folds the card: the request stays pending and the transcript is readable.
+    await page.getByTestId("chat-question-collapse").filter({ visible: true }).click();
+    await expect(page.getByTestId("chat-question-collapsed")).toBeVisible();
+    await expect(page.getByTestId("chat-question")).toBeHidden();
+    await expect(page.getByTestId("chat-question-expand")).toBeFocused();
+    // The bar and the expanded card sit below the transcript instead of over it.
+    const messagesBox = await page.getByTestId("chat-messages").boundingBox();
+    const barBox = await page.getByTestId("chat-question-collapsed").boundingBox();
+    expect(messagesBox && barBox && barBox.y >= messagesBox.y + messagesBox.height - 2).toBe(true);
+    await page.getByTestId("chat-question-expand").click();
+    await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeVisible();
+    await expect(page.getByTestId("chat-question-collapsed")).toHaveCount(0);
+    const expandedBox = await page.getByTestId("chat-question").boundingBox();
+    const expandedMessages = await page.getByTestId("chat-messages").boundingBox();
+    expect(
+      expandedMessages &&
+        expandedBox &&
+        expandedBox.y >= expandedMessages.y + expandedMessages.height - 2,
+    ).toBe(true);
     await expect(page.getByTestId("chat-send-outcome").filter({ visible: true })).toHaveText(
       "command permission pending · sends queue",
     );

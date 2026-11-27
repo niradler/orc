@@ -61,7 +61,7 @@ import {
   chatCommandOptionId,
   useChatPromptMenu,
 } from "@/components/ChatPromptMenu";
-import { ChatQuestionForm } from "@/components/ChatQuestionForm";
+import { ChatQuestionBar, ChatQuestionForm } from "@/components/ChatQuestionForm";
 import { ChatSelectionToolbar } from "@/components/ChatSelectionToolbar";
 import { ChatSessionAnalytics } from "@/components/ChatSessionAnalytics";
 import { ChatContextMeter, useChatContextUsage } from "@/components/ChatSessionStrip";
@@ -776,6 +776,8 @@ export function ChatPanel({
   const headerWide = headerWidth >= 620;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  // Which pending question the human folded away; a new request id opens expanded.
+  const [collapsedQuestion, setCollapsedQuestion] = useState<string | null>(null);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [analyticsFocusModel, setAnalyticsFocusModel] = useState<string | null>(null);
   const openModelSplit = (model: string) => {
@@ -1636,13 +1638,20 @@ export function ChatPanel({
                         : {})}
                     />
                   ))}
+                {question && collapsedQuestion === question.requestId && (
+                  <ChatQuestionBar request={question} onExpand={() => setCollapsedQuestion(null)} />
+                )}
                 {question && (
-                  <ChatQuestionForm
-                    key={question.requestId}
-                    request={question}
-                    busy={responding}
-                    onAnswer={respondQuestion}
-                  />
+                  <div hidden={collapsedQuestion === question.requestId}>
+                    <ChatQuestionForm
+                      key={question.requestId}
+                      request={question}
+                      expanded={collapsedQuestion !== question.requestId}
+                      busy={responding}
+                      onAnswer={respondQuestion}
+                      onCollapse={() => setCollapsedQuestion(question.requestId)}
+                    />
+                  </div>
                 )}
               </div>
             )}
