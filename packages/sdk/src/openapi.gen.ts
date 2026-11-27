@@ -10498,7 +10498,11 @@ export interface paths {
                             attention_retention_hours?: number;
                             notification_retention_days?: number;
                             audit_retention_days?: number;
-                            history_retention_days?: number;
+                            job_history_retention_days?: number;
+                            request_retention_days?: number;
+                            database_size_limit_mb?: number;
+                            /** @enum {string} */
+                            database_size_action?: "warn" | "prune";
                             scratchpad_expiry_grace_days?: number;
                             chat?: {
                                 providerId?: string;
@@ -10652,7 +10656,11 @@ export interface paths {
                         attention_retention_hours?: number;
                         notification_retention_days?: number;
                         audit_retention_days?: number;
-                        history_retention_days?: number;
+                        job_history_retention_days?: number;
+                        request_retention_days?: number;
+                        database_size_limit_mb?: number;
+                        /** @enum {string} */
+                        database_size_action?: "warn" | "prune";
                         scratchpad_expiry_grace_days?: number;
                         chat?: {
                             providerId?: string;
@@ -10796,7 +10804,11 @@ export interface paths {
                             attention_retention_hours?: number;
                             notification_retention_days?: number;
                             audit_retention_days?: number;
-                            history_retention_days?: number;
+                            job_history_retention_days?: number;
+                            request_retention_days?: number;
+                            database_size_limit_mb?: number;
+                            /** @enum {string} */
+                            database_size_action?: "warn" | "prune";
                             scratchpad_expiry_grace_days?: number;
                             chat?: {
                                 providerId?: string;

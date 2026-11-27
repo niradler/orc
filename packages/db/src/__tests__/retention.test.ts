@@ -6,7 +6,12 @@ import { dirname, join } from "node:path";
 import { createDb, dbStorageStats, getSqlite, readDbStorageStats } from "../client.js";
 import { HumanRequestStore } from "../human-requests.js";
 import { installMcpTasks, MCP_TASK_MAX_TTL_MS, McpTaskStore } from "../mcp-tasks.js";
-import { autoVacuumMode, incrementalVacuum, pruneRetention } from "../retention.js";
+import {
+  autoVacuumMode,
+  databaseSizeBytes,
+  incrementalVacuum,
+  pruneRetention,
+} from "../retention.js";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -25,6 +30,7 @@ test("should enable incremental auto-vacuum on a new database and report storage
   expect(stats.page_count).toBeGreaterThan(0);
   expect(stats.auto_vacuum).toBe(2);
   expect(stats.database_bytes).toBeGreaterThan(0);
+  expect(databaseSizeBytes(sqlite)).toBeGreaterThan(0);
 
   // A bounded pass is a no-op when nothing is free, not an error.
   expect(incrementalVacuum(sqlite, 10)).toBe(0);
@@ -72,7 +78,7 @@ test("should prune terminal history, cap MCP tasks and leave pending work alone"
 
   const outcome = pruneRetention(sqlite, {
     now,
-    historyRetentionDays: 7,
+    requestRetentionDays: 7,
     mcpTerminalRowCap: 1,
   });
   expect(outcome).toEqual({ human_requests: 2, mcp_tasks: 2, vacuumed_pages: 0 });

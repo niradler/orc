@@ -2,14 +2,23 @@ import type { Database } from "bun:sqlite";
 import { HumanRequestStore } from "./human-requests.js";
 import { McpTaskStore } from "./mcp-tasks.js";
 
-export const DEFAULT_HISTORY_RETENTION_DAYS = 7;
+export const DEFAULT_REQUEST_RETENTION_DAYS = 7;
 export const DEFAULT_MCP_TERMINAL_ROW_CAP = 2_000;
 export const DEFAULT_INCREMENTAL_VACUUM_PAGES = 200;
+/** Soft database cap; 0 disables the check. */
+export const DEFAULT_DATABASE_SIZE_LIMIT_MB = 500;
+
+/** Main database file size from the page count, without opening a second handle. */
+export function databaseSizeBytes(sqlite: Database): number {
+  const pageCount = sqlite.query<{ page_count: number }, []>("PRAGMA page_count").get()?.page_count;
+  const pageSize = sqlite.query<{ page_size: number }, []>("PRAGMA page_size").get()?.page_size;
+  return (pageCount ?? 0) * (pageSize ?? 0);
+}
 
 export type RetentionOptions = {
   now?: number;
-  /** Terminal human requests older than this are deleted. */
-  historyRetentionDays?: number;
+  /** Terminal human requests and MCP tasks older than this are deleted. */
+  requestRetentionDays?: number;
   /** Newest terminal MCP tasks to keep, whatever their age. */
   mcpTerminalRowCap?: number;
   /** Upper bound on pages freed in one pass. */
@@ -58,7 +67,7 @@ export function incrementalVacuum(
 export function pruneRetention(sqlite: Database, options: RetentionOptions = {}): RetentionOutcome {
   const now = options.now ?? Date.now();
   const requests = new HumanRequestStore(sqlite, () => now).pruneTerminal(
-    options.historyRetentionDays ?? DEFAULT_HISTORY_RETENTION_DAYS,
+    options.requestRetentionDays ?? DEFAULT_REQUEST_RETENTION_DAYS,
     now,
   );
   const tasks = new McpTaskStore(sqlite);

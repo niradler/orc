@@ -163,8 +163,8 @@ describe("Scheduler - pruneHistory", () => {
   test("prunes old runs and terminal gateway sessions, nulling FK referrers without errors", async () => {
     const { getDb } = await import("@orc/db/client");
     const db = getDb();
-    // Older than the 7-day retention window.
-    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // Older than the 90-day job history window.
+    const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
 
     const jobId = ulid();
     await db.insert(jobs).values({
@@ -177,6 +177,11 @@ describe("Scheduler - pruneHistory", () => {
     await db
       .insert(job_runs)
       .values({ id: runId, job_id: jobId, status: "success", created_at: old });
+    // A very long run is active work, not history: age alone must not delete it.
+    const runningRunId = ulid();
+    await db
+      .insert(job_runs)
+      .values({ id: runningRunId, job_id: jobId, status: "running", created_at: old });
     // A runner session and bridge rows that reference the run / a terminal
     // gateway session — the exact FK web that previously made the prune fail.
     await db.insert(sessions).values({
@@ -224,6 +229,9 @@ describe("Scheduler - pruneHistory", () => {
 
     // The run and terminal gateway session are gone.
     expect(await db.query.job_runs.findFirst({ where: eq(job_runs.id, runId) })).toBeUndefined();
+    expect(
+      await db.query.job_runs.findFirst({ where: eq(job_runs.id, runningRunId) }),
+    ).toBeDefined();
     expect(
       await db.query.gateway_sessions.findFirst({
         where: eq(gateway_sessions.id, gwId),
