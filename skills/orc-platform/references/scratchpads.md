@@ -52,7 +52,7 @@ sequences, ER). Use `diagram` when layout matters or the human will draw on it.
 - MCP: `pad_create({kind, title, content?, project?, tags?, ttl?})` → id, revision, link.
   Give the human the link. Pads link to the current agent session by default
   (`link_session:false` to skip); `project` is optional. `ttl` (`1h`, `7d`, `4w`)
-  or `expires_at` makes the pad temporary.
+  or `expires_at` makes the pad temporary; pass one for most working pads.
 - `pad_list({project?, session:"current", kind?, q?, expiry?, pinned?})` finds pads;
   `expiry:"expiring"` is due within two days, `expiry:"expired"` is archived.
   `pad_get({id})` returns the header then the raw file, including any expiry.
@@ -70,8 +70,10 @@ sequences, ER). Use `diagram` when layout matters or the human will draw on it.
 
 ## Lifetime and cleanup
 
-Give a one-off pad a `ttl` (`1h`, `1d`, `7d`) or `expires_at`; leave a living plan,
-design note or human-owned pad without an expiry. `pad_update({id, ttl:null})` clears
+There is no implicit default: a pad without a `ttl` or `expires_at` lives until it is
+deleted. In practice most pads are temporary working surfaces, so create them with a
+`ttl` (`1h`, `1d`, `7d`) and omit it only for a living plan, a design note the human
+will keep, or a human-owned pad. `pad_update({id, ttl:null})` clears
 it, `ttl:"7d"` restarts it, `pinned:true` exempts the pad, and `keep_alive:true` slides
 the expiry forward on every edit.
 

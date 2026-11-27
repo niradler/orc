@@ -762,9 +762,9 @@ export const toolDefinitions = [
       "render it with ORC access, `window.orc.fetch(path, init)` calls the ORC API as them " +
       "(check `window.orc` and fall back to sample data; pin CDN scripts with integrity). " +
       "Linked to this agent session " +
-      "by default. Returns the id, revision and a deep link to share with the human. Give a " +
-      "one-off pad a ttl (for example 1h or 7d); omit it for a durable pad. pinned:true exempts " +
-      "a pad from its expiry. For large content create it empty, then pad_update with via:'url'.",
+      "by default. Returns the id, revision and a deep link to share with the human. Most pads " +
+      "are temporary: pass a ttl (1h, 7d); omit it only for a durable pad. pinned:true " +
+      "exempts a pad from its expiry. For large content create it empty, then pad_update with via:'url'.",
     inputSchema: z.object({
       kind: z.enum(SCRATCHPAD_KINDS),
       title: z.string().trim().min(1).max(SCRATCHPAD_TITLE_MAX),
