@@ -7,6 +7,7 @@ import {
 import { useRef, useState } from "react";
 import type { LiveSession } from "@/api/client";
 import { FormDialog } from "@/components/FormDialog";
+import { HelpPopover } from "@/components/HelpPopover";
 import { TagInput } from "@/components/TagInput";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -241,7 +242,13 @@ export function ScratchpadFormDialog({
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="scratchpad-expiry">Expiry</Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="scratchpad-expiry">Expiry</Label>
+                  <HelpPopover label="expiry" testId="scratchpad-expiry-help">
+                    Expiring pads are archived for a grace period before deletion. Pinned or
+                    referenced pads are kept.
+                  </HelpPopover>
+                </div>
                 <Select value={expiry} onValueChange={setExpiry}>
                   <SelectTrigger
                     id="scratchpad-expiry"
@@ -259,10 +266,6 @@ export function ScratchpadFormDialog({
                     <SelectItem value="30d">After 30 days</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  Expiring pads are archived for a grace period before deletion. Pinned or
-                  referenced pads are kept.
-                </p>
               </div>
               <div className="flex flex-wrap items-center gap-4">
                 <label className="flex min-h-11 items-center gap-2 text-sm">

@@ -30,7 +30,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api } from "@/api/client";
 import { ActionHelp } from "@/components/ActionHelp";
@@ -778,6 +778,8 @@ export function ChatPanel({
   const [actionsOpen, setActionsOpen] = useState(false);
   // Which pending question the human folded away; a new request id opens expanded.
   const [collapsedQuestion, setCollapsedQuestion] = useState<string | null>(null);
+  // Each mounted chat panel owns its form id, so a second panel cannot capture the first's bar.
+  const questionFormId = useId();
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [analyticsFocusModel, setAnalyticsFocusModel] = useState<string | null>(null);
   const openModelSplit = (model: string) => {
@@ -1639,13 +1641,18 @@ export function ChatPanel({
                     />
                   ))}
                 {question && collapsedQuestion === question.requestId && (
-                  <ChatQuestionBar request={question} onExpand={() => setCollapsedQuestion(null)} />
+                  <ChatQuestionBar
+                    request={question}
+                    formId={questionFormId}
+                    onExpand={() => setCollapsedQuestion(null)}
+                  />
                 )}
                 {question && (
                   <div hidden={collapsedQuestion === question.requestId}>
                     <ChatQuestionForm
                       key={question.requestId}
                       request={question}
+                      formId={questionFormId}
                       expanded={collapsedQuestion !== question.requestId}
                       busy={responding}
                       onAnswer={respondQuestion}

@@ -3,17 +3,17 @@ import { Check, MessageCircle } from "lucide-react";
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { HelpPopover } from "@/components/HelpPopover";
 
-const QUESTION_FORM_ID = "chat-question-form";
-
 /**
  * The slim bar a collapsed question becomes. It stays in the flow above the
  * composer so the transcript stays readable, and it never cancels the request.
  */
 export function ChatQuestionBar({
   request,
+  formId,
   onExpand,
 }: {
   request: ChatQuestion;
+  formId: string;
   onExpand: () => void;
 }) {
   const first = request.questions[0];
@@ -31,7 +31,7 @@ export function ChatQuestionBar({
         type="button"
         data-testid="chat-question-expand"
         aria-expanded={false}
-        aria-controls={QUESTION_FORM_ID}
+        aria-controls={formId}
         onClick={onExpand}
         className="flex min-h-11 w-full items-center gap-2 rounded-md text-left text-sm hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       >
@@ -118,12 +118,14 @@ function QuestionField({
 
 export function ChatQuestionForm({
   request,
+  formId,
   busy,
   expanded = true,
   onAnswer,
   onCollapse,
 }: {
   request: ChatQuestion;
+  formId: string;
   busy: boolean;
   /** Collapsed keeps the form mounted so typed answers survive the toggle. */
   expanded?: boolean;
@@ -180,7 +182,7 @@ export function ChatQuestionForm({
   return (
     <form
       ref={form}
-      id={QUESTION_FORM_ID}
+      id={formId}
       tabIndex={-1}
       data-testid="chat-question"
       className="shrink-0 max-h-[min(45vh,28rem)] overflow-auto border-t border-outline-variant px-4 py-3 text-sm space-y-3 focus-visible:outline-none"
@@ -308,7 +310,7 @@ export function ChatQuestionForm({
             type="button"
             data-testid="chat-question-collapse"
             aria-expanded={true}
-            aria-controls={QUESTION_FORM_ID}
+            aria-controls={formId}
             onClick={onCollapse}
             className="min-h-8 rounded-md px-3 text-on-surface-variant hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-md:min-h-11 pointer-coarse:min-h-11"
           >
