@@ -63,7 +63,11 @@ import {
   withOrcContext,
 } from "@orc/core/chat-context";
 import { chatTurnLeaseIsLive } from "@orc/core/chat-lease";
-import { ChatAgentOptionsMapSchema, unsupportedPermissionMode } from "@orc/core/chat-options";
+import {
+  ChatAgentOptionsMapSchema,
+  unsupportedPermissionMode,
+  withChatEffort,
+} from "@orc/core/chat-options";
 import { canonicalAgentId, codingAgent, supportsModelDiscovery } from "@orc/core/coding-agents";
 import { loadConfig } from "@orc/core/config";
 import {
@@ -80,6 +84,7 @@ import {
   hostRuntime,
   listHostEntries,
   resolveExecHost,
+  resolveProjectHost,
 } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
 import { notificationTitle } from "@orc/core/notifications";
@@ -111,6 +116,7 @@ import {
   type SessionMessageSender,
   type SessionSpawn,
   type SessionStatus,
+  type SessionUpdate,
 } from "@orc/core/session-messages";
 import { renderSkillInstructions } from "@orc/core/skill-service";
 import { AgentCapabilitiesSchema } from "@orc/core/types";
@@ -2756,9 +2762,17 @@ async function openChat(
   spawnedBy?: ChatSpawn,
   toolAllowlist?: string[],
 ): Promise<ChatRun> {
+  const configuredHost =
+    !body.threadId && body.projectId && body.workspace?.host === undefined
+      ? projectConfiguredHost(body.projectId)
+      : undefined;
+  const workspace =
+    configuredHost !== undefined
+      ? { ...(body.workspace ?? {}), host: configuredHost }
+      : body.workspace;
   let thread = body.threadId
     ? requireThread(body.threadId)
-    : await newThread(body.agent, body.model, undefined, body.workspace, body.providerId);
+    : await newThread(body.agent, body.model, undefined, workspace, body.providerId);
   if (!body.threadId && body.projectId) thread.projectId = body.projectId;
   if (body.secret_refs !== undefined) thread.secretRefs = body.secret_refs;
   // Settle a confirmed push into a live turn before anything below reads the
@@ -4016,15 +4030,25 @@ function spawnParent(sessionId: string): SpawnParent {
   };
 }
 
-function projectRoot(projectId: string): string {
+function projectConfiguredHost(projectId: string): string | null | undefined {
   const row = getSqlite()
-    .query<{ scope: string | null }, [string]>(
-      "SELECT scope FROM projects WHERE id = ? AND status = 'active'",
+    .query<{ host: string | null }, [string]>(
+      "SELECT host FROM projects WHERE id = ? AND status = 'active'",
+    )
+    .get(projectId);
+  if (!row?.host) return undefined;
+  return resolveProjectHost(row.host);
+}
+
+function projectTarget(projectId: string): { scope: string; host: string | null } {
+  const row = getSqlite()
+    .query<{ scope: string | null; host: string | null }, [string]>(
+      "SELECT scope, host FROM projects WHERE id = ? AND status = 'active'",
     )
     .get(projectId);
   if (!row) throw new NotFoundError("Project", projectId);
   if (!row.scope) throw new ValidationError("That project has no folder to work in");
-  return row.scope;
+  return { scope: row.scope, host: row.host ?? null };
 }
 
 const startingSpawns = new Set<string>();
@@ -4074,37 +4098,78 @@ async function startChild(
       `Hourly spawn limit (${SESSION_SPAWN_HOURLY_LIMIT}) reached for this session`,
     );
   const config = loadConfig();
-  const projectId = input.project_id ?? parent.projectId;
+  const composerProfile = input.profile
+    ? (config.preferences.composer_profiles ?? []).find(
+        (entry) =>
+          entry.id === input.profile || entry.name.toLowerCase() === input.profile?.toLowerCase(),
+      )
+    : undefined;
+  if (input.profile && !composerProfile) {
+    throw new NotFoundError("Composer profile", input.profile);
+  }
   const crossProject = input.project_id !== undefined && input.project_id !== parent.projectId;
-  const projectFolder = input.project_id !== undefined ? projectRoot(input.project_id) : null;
+  const targetProject = input.project_id !== undefined ? projectTarget(input.project_id) : null;
+  const projectFolder = targetProject?.scope ?? null;
+  const projectHost =
+    targetProject?.host !== null && targetProject?.host !== undefined
+      ? resolveProjectHost(targetProject.host, config)
+      : undefined;
   const requestedHost =
     input.host !== undefined ? hostAlias(selectedTerminalHost(config, input.host)) : undefined;
-  // An omitted host inherits the caller's host; a project checkout instead
-  // lives on the Settings default host, like a new chat in that project.
-  const host = input.host !== undefined ? requestedHost : crossProject ? undefined : parent.host;
-  const hostChanged = input.host !== undefined && requestedHost !== parent.host;
+  const host =
+    input.host !== undefined
+      ? requestedHost
+      : projectHost !== undefined
+        ? projectHost
+        : crossProject
+          ? undefined
+          : parent.host;
+  const hostChanged = host !== undefined && host !== parent.host;
   const cwd = input.cwd ?? projectFolder ?? (hostChanged ? undefined : (parent.cwd ?? undefined));
+  const projectId =
+    input.project_id !== undefined
+      ? input.project_id
+      : input.cwd !== undefined || hostChanged
+        ? undefined
+        : parent.projectId;
   const source = store().get(parentId);
-  const rawAgent = input.agent ?? parent.agent ?? undefined;
+  const rawAgent = input.agent ?? composerProfile?.agent ?? parent.agent ?? undefined;
   const agent = rawAgent ? canonicalAgentId(rawAgent) : undefined;
-  const sameAgent = !!source && agent === source.config.agent;
-  if (source?.toolAllowlist && agent !== "claude")
+  const effectiveAgent = agent ?? canonicalAgentId(config.preferences.chat?.agent ?? "claude");
+  const sameAgent = !!source && effectiveAgent === source.config.agent;
+  if (source?.toolAllowlist && effectiveAgent !== "claude")
     throw new ValidationError(
       "This session has a tool allowlist that only Claude can enforce; start a Claude child",
     );
-  const backend = agent ? chatBackendFor(agent) : null;
-  const permissionMode = source?.config.permissionMode ?? "default";
+  const backend = chatBackendFor(effectiveAgent);
+  const providerId =
+    input.provider_id ??
+    composerProfile?.providerId ??
+    (sameAgent ? source?.config.providerId : undefined);
+  const model = input.model ?? (composerProfile?.model ? composerProfile.model : undefined);
+  const effort = input.effort ?? (composerProfile?.effort ? composerProfile.effort : undefined);
+  const requestedPermissionMode = input.permission_mode ?? composerProfile?.permissionMode;
+  if (requestedPermissionMode && !permissionModeSupported(backend, requestedPermissionMode)) {
+    throw new ValidationError(unsupportedPermissionMode(requestedPermissionMode));
+  }
+  const permissionMode = requestedPermissionMode ?? source?.config.permissionMode ?? "default";
+  let agentOptions = sameAgent && source ? structuredClone(source.config.agentOptions) : undefined;
+  if (effort) {
+    const next = withChatEffort(effectiveAgent, agentOptions?.[effectiveAgent], effort);
+    agentOptions = { ...(agentOptions ?? {}) };
+    if (next) agentOptions[effectiveAgent] = next;
+    else delete agentOptions[effectiveAgent];
+  }
   const body: z.infer<typeof requestSchema> = {
     messages: [{ role: "user", content: input.prompt }],
-    ...(agent ? { agent } : {}),
-    ...(input.model ? { model: input.model } : {}),
+    ...(agent || effort ? { agent: effectiveAgent } : {}),
+    ...(model ? { model } : {}),
+    ...(providerId ? { providerId } : {}),
     ...(projectId ? { projectId } : {}),
-    ...(backend && permissionModeSupported(backend, permissionMode) ? { permissionMode } : {}),
-    ...(sameAgent && source
-      ? {
-          agentOptions: source.config.agentOptions,
-          ...(source.config.providerId ? { providerId: source.config.providerId } : {}),
-        }
+    ...(permissionModeSupported(backend, permissionMode) ? { permissionMode } : {}),
+    ...(agentOptions ? { agentOptions } : {}),
+    ...(input.send_while_running !== undefined
+      ? { sendWhileRunning: input.send_while_running }
       : {}),
     workspace: {
       host,
@@ -4156,6 +4221,7 @@ async function queueChild(
   if (toolAllowlist) thread.toolAllowlist = toolAllowlist;
   if (body.permissionMode !== undefined) thread.config.permissionMode = body.permissionMode;
   if (body.agentOptions !== undefined) thread.config.agentOptions = body.agentOptions;
+  if (body.sendWhileRunning !== undefined) thread.config.sendWhileRunning = body.sendWhileRunning;
   if (input.title) thread.title = input.title;
   if (body.workspace?.worktree) {
     const host = selectedTerminalHost(loadConfig(), thread.host);
@@ -4695,6 +4761,67 @@ registerChatControl({
   },
   full: () => runs.size >= 4,
   startPending: startPendingChildren,
+  adopt: async (sourceId: string) => {
+    const existing = store().bySource(sourceId);
+    if (existing) return existing;
+    const thread = await newThread(undefined, undefined, sourceId);
+    store().save(thread);
+    return thread;
+  },
+  updateThread: (threadId: string, patch: SessionUpdate) => {
+    const thread = store().get(threadId);
+    if (!thread) return null;
+    const updated: ChatThread = {
+      ...thread,
+      config: structuredClone(thread.config),
+      updatedAt: Date.now(),
+    };
+    const nextTitle = patch.title !== undefined ? patch.title : patch.display_title;
+    if (typeof nextTitle === "string") updated.title = nextTitle;
+    if (patch.hidden !== undefined) updated.hidden = patch.hidden;
+    if (patch.model !== undefined) updated.config.model = patch.model;
+    if (patch.effort !== undefined) {
+      const next = withChatEffort(
+        updated.config.agent,
+        updated.config.agentOptions[updated.config.agent],
+        patch.effort,
+      );
+      if (next) updated.config.agentOptions[updated.config.agent] = next;
+      else delete updated.config.agentOptions[updated.config.agent];
+    }
+    if (patch.send_while_running !== undefined) {
+      updated.config.sendWhileRunning = patch.send_while_running;
+    }
+    const run = threadRun(thread.id)?.[1];
+    if (patch.permission_mode !== undefined) {
+      if (!createBackend(updated.backend).capabilities?.permissionModes) {
+        throw new ValidationError("This backend does not support ORC permission modes.");
+      }
+      if (!permissionModeSupported(updated.backend, patch.permission_mode)) {
+        throw new ValidationError(unsupportedPermissionMode(patch.permission_mode));
+      }
+      updated.config.permissionMode = patch.permission_mode;
+      const options = updated.config.agentOptions[updated.config.agent];
+      if (options?.runtime === "claude-sdk" && options.options.permissionMode) {
+        options.options.permissionMode = patch.permission_mode;
+      }
+    }
+    getSqlite()
+      .transaction(() => {
+        store().save(updated);
+        if (patch.permission_mode !== undefined) {
+          run?.session?.setPermissionMode?.(patch.permission_mode);
+        }
+      })
+      .immediate();
+    if (run) {
+      run.thread.title = updated.title;
+      run.thread.hidden = updated.hidden;
+      run.thread.config = updated.config;
+      run.thread.updatedAt = updated.updatedAt;
+    }
+    return updated;
+  },
 });
 
 app.openapi(

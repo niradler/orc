@@ -130,16 +130,24 @@ mode. Keep API authentication in the configured Authorization header.
 An authenticated HTTP connection without a `session` binding acts as a
 coordinator: ORC reuses one lightweight root chat session per client name
 (default `mcp`) and binds the connection to it. External orchestrators can then
-`session_start` children (owned by the coordinator), `session_wait`,
-`session_status`, `session_read`, `session_send` and `session_stop` without a
-pre-existing session id. `session_start`/`session_list` return
-`coordinator_session_id`; `session_start` also returns the effective Settings
-`defaults` (agent/model/provider) and its `agent` parameter enumerates harness
-ids (claude, codex, opencode, ...) — `agent_list` lists role profiles, not
-harnesses. Coordinator children default `notify` to false; poll with
-`session_wait`/`session_status`. A single-project scope roots the coordinator
-in that project's folder. `speak` and preview tools still need an explicit
-`session` binding; anonymous installs (no API secret) keep the
+`session_options` (inspect defaults, hosts, providers, composer profiles, and
+models), `session_list` (unified, deduplicated, paginated chats + discovered
+native sessions; `scope: all|children|chats|native`, `project: "all"` to widen),
+`session_start` (with optional `profile`, `agent`, `provider_id`, `model`,
+`effort`, `permission_mode`, `send_while_running`, `project`, `cwd`, `host`,
+`worktree`; infers a project's configured `host` when set), `session_update`,
+`session_wait`, `session_status`, `session_read`, `session_send` (auto-adopts
+stopped native sessions into chat) and `session_stop` without a pre-existing
+session id. `session_start`/`session_list` return `coordinator_session_id`;
+`session_start` also returns the effective Settings `defaults`
+(agent/model/provider) on both success and failure, and its `agent` parameter
+enumerates harness ids (claude, codex, opencode, ...) — `agent_list` lists role
+profiles, not harnesses. Coordinator children default `notify` to false; poll
+with `session_wait`/`session_status`. A single-project scope roots the
+coordinator in that project's folder and configured host (an explicit `cwd` on
+`session_start` still resolves its own project from the folder). `speak` and
+preview tools still need an explicit `session` binding; anonymous installs (no
+API secret) keep the
 explicit-identity requirement. Creation is audited (`session` entity) with the
 client name.
 

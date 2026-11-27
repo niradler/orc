@@ -163,13 +163,13 @@ This prevents one project from starving others when the global `max_workers` is 
 
 ## Session continuity
 
-ORC captures session state so agents survive context compaction:
+ORC's built-in hook rules capture session state automatically so agents survive context compaction:
 
-1. **During work** - hooks automatically record file edits, task updates, git operations, and decisions as session events
-2. **Before compaction** - `session_snapshot` builds a priority-tiered 2KB summary (P1: files/tasks, P2: decisions/git, P3: intent)
-3. **After compaction** - `session_restore` injects the snapshot back so the agent resumes with full context
+1. **During work** - the `record_event` rule action records file edits, task updates, git operations, and decisions as session events
+2. **Before compaction** - the `snapshot_session` rule action builds a priority-tiered 2KB summary (P1: files/tasks, P2: decisions/git, P3: intent)
+3. **After compaction** - the `restore_session` rule action injects the snapshot back so the agent resumes with full context
 
-For Claude Code and Codex, this is automatic via hooks. For Cursor and other agents, call `session_event` and `session_snapshot` manually.
+For Claude Code and Codex, this runs automatically via ORC's hook rules. To record a manual session summary from the CLI, run `orc session log "<summary>"`.
 
 ### What agents should record
 

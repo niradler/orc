@@ -3,6 +3,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resetConfig } from "@orc/core/config";
+import { execHostFor, hostRuntime } from "@orc/core/exec-host";
 import { getDb, getSqlite } from "@orc/db/client";
 import { NotificationStore } from "@orc/db/notifications";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
@@ -231,5 +233,63 @@ test("drops an assignment its project's scope no longer justifies", async () => 
     expect(readScoped.unread).toBe(0);
   } finally {
     rmSync(movedBase, { recursive: true, force: true });
+  }
+});
+
+test("projectIdFor matches project scopes when targeting the configured default SSH host", async () => {
+  const nested = getSqlite()
+    .query<{ id: string }, []>("SELECT id FROM projects WHERE name='mapping-nested'")
+    .get();
+  if (!nested) throw new Error("Missing nested project");
+  const previous = process.env.ORC_SSH_HOST;
+  process.env.ORC_SSH_HOST = "devbox";
+  resetConfig();
+  invalidateProjectFolderCache();
+  try {
+    const devboxRuntime = hostRuntime(execHostFor("devbox"));
+    expect(await projectIdFor(join(nestedProjectFolder, "sub"), devboxRuntime)).toBe(nested.id);
+    const otherRuntime = hostRuntime(execHostFor("other-box"));
+    expect(await projectIdFor(join(nestedProjectFolder, "sub"), otherRuntime)).toBeNull();
+  } finally {
+    if (previous === undefined) delete process.env.ORC_SSH_HOST;
+    else process.env.ORC_SSH_HOST = previous;
+    resetConfig();
+    invalidateProjectFolderCache();
+  }
+});
+
+test("project host overrides global default host in API and projectIdFor", async () => {
+  const created = await (
+    await req(app, "POST", "/projects", {
+      name: "mapping-remote-host",
+      scope: "/srv/remote-app",
+      host: "remote-box",
+    })
+  ).json<{ id: string; host: string | null }>();
+  expect(created.host).toBe("remote-box");
+
+  invalidateProjectFolderCache();
+  const remoteRuntime = hostRuntime(execHostFor("remote-box"));
+  const localRuntime = hostRuntime(execHostFor(null));
+  expect(await projectIdFor("/srv/remote-app/src", remoteRuntime)).toBe(created.id);
+  expect(await projectIdFor("/srv/remote-app/src", localRuntime)).toBeNull();
+
+  const updated = await (
+    await req(app, "PATCH", `/projects/${created.id}`, { host: "local" })
+  ).json<{ host: string | null }>();
+  expect(updated.host).toBe("local");
+
+  const previous = process.env.ORC_SSH_HOST;
+  process.env.ORC_SSH_HOST = "remote-box";
+  resetConfig();
+  invalidateProjectFolderCache();
+  try {
+    expect(await projectIdFor("/srv/remote-app/src", localRuntime)).toBe(created.id);
+    expect(await projectIdFor("/srv/remote-app/src", remoteRuntime)).toBeNull();
+  } finally {
+    if (previous === undefined) delete process.env.ORC_SSH_HOST;
+    else process.env.ORC_SSH_HOST = previous;
+    resetConfig();
+    invalidateProjectFolderCache();
   }
 });

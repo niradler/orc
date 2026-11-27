@@ -47,10 +47,16 @@ type GatewayRow = {
   project_id: string | null;
   backend: string;
   runtime_session_id: string | null;
+  execution_host?: string | null;
   status: string;
   title: string | null;
   chat?: boolean;
 };
+
+function normalizeHost(host: string | null | undefined): string {
+  const value = host?.trim() ?? "";
+  return !value || value === "local" ? "local" : value;
+}
 
 export type ClaimOptions = {
   limit?: number;
@@ -144,19 +150,65 @@ export class SessionMessageStore {
       .run(this.now() - SESSION_MESSAGE_RETENTION_MS);
   }
 
+  private linkedChatFor(row: GatewayRow): GatewayRow | null {
+    const bySource = this.db
+      .query<GatewayRow, [string]>(
+        `SELECT id, json_extract(data,'$.projectId') AS project_id,
+                json_extract(data,'$.backend') AS backend,
+                json_extract(data,'$.runtimeId') AS runtime_session_id,
+                json_extract(data,'$.host') AS execution_host, 'chat' AS status, title
+         FROM chat_threads
+         WHERE json_extract(data,'$.sourceId') = ?
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+      )
+      .get(row.id);
+    if (bySource) return { ...bySource, chat: true };
+    if (!row.runtime_session_id) return null;
+    const targetBackend = sessionMessageBackend(row.backend);
+    const targetHost = normalizeHost(row.execution_host);
+    const candidates = this.db
+      .query<GatewayRow, [string]>(
+        `SELECT id, json_extract(data,'$.projectId') AS project_id,
+                json_extract(data,'$.backend') AS backend,
+                json_extract(data,'$.runtimeId') AS runtime_session_id,
+                json_extract(data,'$.host') AS execution_host, 'chat' AS status, title
+         FROM chat_threads
+         WHERE json_extract(data,'$.runtimeId') = ?
+         ORDER BY updated_at DESC
+         LIMIT 10`,
+      )
+      .all(row.runtime_session_id);
+    const match = candidates.find(
+      (candidate) =>
+        sessionMessageBackend(candidate.backend) === targetBackend &&
+        normalizeHost(candidate.execution_host) === targetHost,
+    );
+    return match ? { ...match, chat: true } : null;
+  }
+
+  private hasExecutionHostColumn(): boolean {
+    return this.db
+      .query<{ name: string }, []>("PRAGMA table_info(gateway_sessions)")
+      .all()
+      .some((column) => column.name === "execution_host");
+  }
+
   private resolveSession(identifier: string): GatewayRow | null {
     const chat = this.db
       .query<GatewayRow, [string]>(
         `SELECT id, json_extract(data,'$.projectId') AS project_id,
                 json_extract(data,'$.backend') AS backend,
-                json_extract(data,'$.runtimeId') AS runtime_session_id, 'chat' AS status, title
+                json_extract(data,'$.runtimeId') AS runtime_session_id,
+                json_extract(data,'$.host') AS execution_host, 'chat' AS status, title
          FROM chat_threads WHERE id = ?`,
       )
       .get(identifier);
     if (chat) return { ...chat, chat: true };
+    const hostExpr = this.hasExecutionHostColumn() ? "execution_host" : "NULL AS execution_host";
     const rows = this.db
       .query<GatewayRow, [string]>(
-        `SELECT id, project_id, backend, runtime_session_id, status, title
+        `SELECT id, project_id, backend, runtime_session_id, ${hostExpr}, status, title
          FROM gateway_sessions
          WHERE id = ?1 OR runtime_session_id = ?1
          ORDER BY CASE WHEN status = 'stopped' THEN 1 ELSE 0 END,
@@ -166,12 +218,34 @@ export class SessionMessageStore {
       .all(identifier);
     if (rows.length > 1) {
       const live = rows.filter((row) => row.status !== "stopped");
-      if (live.length === 1) return live[0] ?? null;
+      if (live.length === 1 && live[0]) {
+        return this.linkedChatFor(live[0]) ?? live[0];
+      }
       throw new ConflictError(
         "Session id matches more than one agent session; use the ORC session id instead",
       );
     }
-    return rows[0] ?? null;
+    if (rows[0]) {
+      return this.linkedChatFor(rows[0]) ?? rows[0];
+    }
+    const byRuntime = this.db
+      .query<GatewayRow, [string]>(
+        `SELECT id, json_extract(data,'$.projectId') AS project_id,
+                json_extract(data,'$.backend') AS backend,
+                json_extract(data,'$.runtimeId') AS runtime_session_id,
+                json_extract(data,'$.host') AS execution_host, 'chat' AS status, title
+         FROM chat_threads
+         WHERE json_extract(data,'$.runtimeId') = ?
+         ORDER BY updated_at DESC
+         LIMIT 2`,
+      )
+      .all(identifier);
+    if (byRuntime.length > 1) {
+      throw new ConflictError(
+        "Session id matches more than one agent session; use the ORC session id instead",
+      );
+    }
+    return byRuntime[0] ? { ...byRuntime[0], chat: true } : null;
   }
 
   private senderKey(sender: SessionMessageSender): string {

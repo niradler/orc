@@ -146,7 +146,7 @@ describe("MCP memory tools", () => {
     ).rejects.toThrow("Memory changed since review");
   });
 
-  test("should record the agent session id and list its memories in session_log", async () => {
+  test("should record the agent session id and attribute changes to it", async () => {
     await executeTool(
       "memory_create",
       {
@@ -168,21 +168,11 @@ describe("MCP memory tools", () => {
       { agentSessionId: "native-session-2" },
     );
     expect(store().get("mem-b", "session-fact").session_id).toBe("native-session-1");
-
-    const logged = await executeTool("session_log", {
-      agent: "test",
-      summary: "Did work",
-      session_id: "native-session-1",
-      project: "mem-b",
-    });
-    expect(logged).toMatch(/^Session logged:/);
-    const row = getSqlite()
-      .query<{ summary: string }, []>(
-        "SELECT summary FROM sessions WHERE summary LIKE 'Did work%' LIMIT 1",
-      )
-      .get();
-    expect(row?.summary).toContain("Memories: session-fact");
-    expect(row?.summary).not.toContain("other-fact");
+    const changes = store()
+      .sessionChanges("native-session-1")
+      .map((change) => change.memory_name);
+    expect(changes).toContain("session-fact");
+    expect(changes).not.toContain("other-fact");
   });
 });
 

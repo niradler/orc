@@ -10,19 +10,24 @@ see [Web navigation and links](web.md).
 For bulk/offline local history sync, use [session-archive.md](session-archive.md).
 It stores histories without running agents; the handoff below moves active work.
 
-Use the supplied ORC session ID. At meaningful milestones record decisions, failures,
-artifact/commit references and next action with `session_event`; avoid per-line
-noise. `session_snapshot` preserves compact context; after compaction use
-`session_restore`, then refresh task/feedback and relevant guidance. Do not assume
-every client has lifecycle hooks. `session_log` summarizes one completed work unit;
-progress belongs in the existing handoff when ORC tools are unavailable.
+Built-in hook rules maintain session snapshots automatically across compaction;
+after compaction, refresh context, task/feedback and relevant guidance. Progress
+and open items belong on the task or existing handoff when hooks are unavailable;
+use `orc session log "<summary>"` from the CLI to record a manual summary entry.
 
-Use Sessions or `orc session list` / `orc session show <id> --events` to inspect
-recorded work. Native live sessions are separate: Sessions searches/transcripts
-come from configured agent homes/watchers (`/api/sessions/live`), may need an
-explicit sync, and are paged. Verify agent, cwd and task link before resuming.
-Do not paste private native transcripts into shared memory/KBs. Snapshot before
-compaction where the client cannot do it; restore before re-deciding earlier work.
+Use Sessions, `session_list` (unified chats + discovered native sessions,
+paginated), or `orc session list` / `orc session show <id> --events` to inspect
+recorded work. Any session tool (`session_status`, `session_read`,
+`session_send`, `session_update`, `session_stop`) accepts a chat id, live id,
+or unique native session id; `session_options` inspects defaults, hosts,
+providers, profiles, and models; `session_start` infers a project's configured
+execution `host` when set; `session_send` auto-adopts stopped native
+sessions into ORC chat; `session_update({ hidden: true })` hides owned
+failed/stopped sessions from default `session_list` while keeping transcripts
+readable (`include_hidden: true` lists them). Native live sessions come from
+configured agent homes/watchers (`/api/sessions/live`, `/api/sessions/live/list`),
+may need `sync: true`, and are paged. Verify agent, cwd and task link before
+resuming. Do not paste private native transcripts into shared memory/KBs.
 
 ### Hand off a native Claude/Codex session
 

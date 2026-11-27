@@ -354,8 +354,8 @@ Start each session with `context`.
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `context`        | Compact context index: active tasks and the project's memories by priority                                                        |
 | `search`         | Search knowledge base documents first, then memories and tasks                                                                    |
-| `project_list`   | List all projects                                                                                                                 |
-| `project_create` | Create a project: unique name, optional description, status, tags and `git_remote_url`; returns the stable id, name and a UI link |
+| `project_list`   | List all projects with id, status, `scope`, execution `host` and description                                                       |
+| `project_create` | Create a project: unique name, optional description, status, tags, `scope`, execution `host` (`"local"` or SSH alias) and `git_remote_url`; returns the stable id, name and a UI link |
 
 #### Reuse or create a project, then store project-scoped data
 
@@ -482,29 +482,29 @@ See [Reusable agent packages](./agent-packages.md).
 
 See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.md).
 
-| Tool               | Description                                                                                                                             |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `session_event`    | Record a session event (file edit, decision, error, git op)                                                                             |
-| `session_snapshot` | Build a ≤2KB XML snapshot of current session state                                                                                      |
-| `session_restore`  | Restore session state after compaction or restart                                                                                       |
-| `session_log`      | Log a session summary after a unit of work                                                                                              |
-| `session_handoff`  | Move a Claude Code or Codex session to ORC                                                                                              |
-| `session_send`     | Send a note to another session: `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next) |
-| `speak`            | Say a short line to the user: posted to the chat and spoken when voice mode is on. Needs a conversation-bound connection; auto-approved |
-| `session_start`    | Start a headless child session with a prompt; `project`, `cwd`, `host` and `worktree` pick where it runs; returns its id at once         |
-| `session_status`   | A started session's status, last reply, queue, parent and children                                                                      |
-| `session_wait`     | Block until one or several started sessions stop running, wait for a human, or reply                                                    |
-| `session_list`     | List the sessions this session started                                                                                                  |
-| `session_stop`     | Stop a started session's turn and, by default, the sessions it started                                                                  |
-| `session_search`   | Search archived and indexed session passages                                                                                            |
-| `session_read`     | Read a cited archived-session passage or a page of turns; unarchived sessions (such as `session_start` children) fall back to their live chat transcript |
-| `session_sync`     | Request a one-hour upload capability for local session sync                                                                                              |
+| Tool              | Description                                                                                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `session_handoff` | Move a Claude Code or Codex session to ORC                                                                                                                                                                                                    |
+| `session_send`    | Send a note to another session (accepts chat, live, or native id; auto-adopts stopped native sessions into chat): `queue` (next safe point), `steer` (into its running turn) or `interrupt` (stop the turn, deliver next)                     |
+| `speak`           | Say a short line to the user: posted to the chat and spoken when voice mode is on. Needs a conversation-bound connection; auto-approved                                                                                                       |
+| `session_start`   | Start a headless child session with a prompt; `project` (inherits its folder and configured `host`), `cwd`, `host`, `worktree`, `profile`, `agent`, `provider_id`, `model`, `effort`, `permission_mode`, and `send_while_running` configure where and how it runs; returns its id at once |
+| `session_status`  | Status of an ORC chat or discovered native session: last reply, queue, parent and children                                                                                                                                                    |
+| `session_wait`    | Block until one or several sessions stop running, wait for a human, or reply                                                                                                                                                                  |
+| `session_list`    | Unified, deduplicated, paginated list of ORC chats and discovered native sessions (`scope: all\|children\|chats\|native`, `project`, `parent`, `agent`, `status`, `host`, `include_hidden`, `q`, `sync`, `limit`, `offset`)                  |
+| `session_update`  | Update a session's `title`, `hidden` (caller must own the session or be an ancestor; hides failed/stopped sessions from default `session_list` while keeping transcripts readable), `task_id` (discovered sessions), or ORC chat settings (`model`, `effort`, `permission_mode`, `send_while_running`) |
+| `session_options` | Inspect effective session defaults, configured hosts, provider accounts, composer profiles, and (with `agent` or `include_models`) discovered models, efforts, and capabilities                                                               |
+| `session_stop`    | Stop a started session's turn and, by default, the sessions it started                                                                                                                                                                        |
+| `session_search`  | Search archived and indexed session passages; `agent` accepts any supported harness id (`claude`, `codex`, `opencode`, `pi`, `cursor`, `gemini`, `copilot`, `qwen`, `droid`, `kimi`, `kiro`)                                                |
+| `session_read`    | Read a cited archived-session passage or a page of turns; unarchived ORC chats and discovered native sessions fall back to their live transcript                                                                                              |
+| `session_sync`    | Request a one-hour upload capability for local session sync                                                                                                                                                                                   |
 
 On a coordinator connection, `session_start` and `session_list` also return
 `coordinator_session_id`, and `session_start` adds the effective Settings
-`defaults` (`agent`, `model`, `provider_id`). Its `agent` parameter names an
-execution harness — the schema enumerates the built-in ids and accepts custom
-Settings agent ids.
+`defaults` (`agent`, `model`, `provider_id`) on both success and preflight/start
+errors. Its `agent` parameter names an execution harness — the schema enumerates
+the built-in ids and accepts custom Settings agent ids. When `project` has a
+configured execution `host`, `session_start` infers it automatically unless
+`host` is passed explicitly.
 
 ### Scratchpads
 

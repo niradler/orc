@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { FormStepActions, FormStepPanel, FormSteps, useFormSteps } from "@/components/useFormSteps";
 import { WorkspaceEnvironmentFields } from "@/components/WorkspaceEnvironmentFields";
 import { useCreateProject } from "@/hooks/useProjects";
+import { useSsh } from "@/hooks/useSsh";
 import { PROJECT_STATUSES } from "@/lib/project-statuses";
 
 export function CreateProjectDialog({
@@ -57,6 +58,8 @@ export function CreateProjectDialog({
   const [status, setStatus] = useState<ProjectStatus>("active");
   const [tags, setTags] = useState("");
   const [scope, setScope] = useState(initialScope ?? "");
+  const [host, setHost] = useState("");
+  const { data: ssh } = useSsh();
   const [gitRemoteUrl, setGitRemoteUrl] = useState("");
   const [githubSync, setGithubSync] = useState<GithubSyncConfig>({
     enabled: false,
@@ -74,6 +77,7 @@ export function CreateProjectDialog({
       status,
       tags,
       scope,
+      host,
       gitRemoteUrl,
       maxWorkers,
       firstTask,
@@ -88,6 +92,7 @@ export function CreateProjectDialog({
       initialScope ?? "",
       "",
       "",
+      "",
       allowFirstTask,
       { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
       defaultWorkspaceEnvironment(),
@@ -99,6 +104,7 @@ export function CreateProjectDialog({
     setStatus("active");
     setTags("");
     setScope(initialScope ?? "");
+    setHost("");
     setGitRemoteUrl("");
     setGithubSync({ enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS });
     setMaxWorkers("");
@@ -127,6 +133,7 @@ export function CreateProjectDialog({
             .filter(Boolean)
         : undefined,
       scope: scope.trim() || undefined,
+      host: host.trim() || undefined,
       git_remote_url: gitRemoteUrl.trim() || undefined,
       github_sync: githubSync,
       max_workers: maxWorkers ? Number(maxWorkers) : undefined,
@@ -246,10 +253,46 @@ export function CreateProjectDialog({
                     <FolderPickerDialog
                       open={browsing}
                       onOpenChange={setBrowsing}
-                      host={null}
+                      host={host === "local" ? null : host || ssh?.host || null}
                       initial={scope}
                       onPick={setScope}
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1">
+                      <Label
+                        htmlFor="project-host"
+                        className="font-label text-sm text-muted-foreground"
+                      >
+                        Execution host
+                      </Label>
+                      <HelpPopover label="execution host" testId="project-host-help">
+                        Where sessions for this project run by default. Leave on Settings default to
+                        follow global execution host settings.
+                      </HelpPopover>
+                    </div>
+                    <select
+                      id="project-host"
+                      data-testid="project-host"
+                      className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-sm text-on-surface sm:min-h-8"
+                      value={host}
+                      onChange={(event) => setHost(event.target.value)}
+                    >
+                      <option value="">
+                        Settings default{ssh?.host ? ` (${ssh.host})` : " (local)"}
+                      </option>
+                      <option value="local">This computer (local)</option>
+                      {Array.from(
+                        new Set([
+                          ...(ssh?.hosts ?? []),
+                          ...(host && host !== "local" ? [host] : []),
+                        ]),
+                      ).map((entry) => (
+                        <option key={entry} value={entry}>
+                          {entry}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
                     <div className="flex items-center gap-1">

@@ -122,6 +122,22 @@ export const CODING_AGENTS: readonly CodingAgent[] = [
   },
 ];
 
+export const CODING_AGENT_IDS = [
+  "pi",
+  "claude",
+  "codex",
+  "cursor",
+  "gemini",
+  "copilot",
+  "opencode",
+  "qwen",
+  "droid",
+  "kimi",
+  "kiro",
+] as const;
+
+export const CodingAgentIdSchema = z.enum(CODING_AGENT_IDS);
+
 export const DEFAULT_ENABLED_AGENTS = ["codex", "claude", "cursor", "gemini", "opencode"] as const;
 
 export const AGENT_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;

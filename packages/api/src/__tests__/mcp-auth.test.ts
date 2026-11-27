@@ -305,7 +305,9 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
     };
 
     try {
-      const listedViaQuery = await callMcp(`?mode=meta&session=${parentId}`, "session_list", {});
+      const listedViaQuery = await callMcp(`?mode=meta&session=${parentId}`, "session_list", {
+        scope: "children",
+      });
       expect(listedViaQuery.isError).toBeUndefined();
       expect(JSON.parse(listedViaQuery.content[0]?.text ?? "{}").sessions).toMatchObject([
         { session_id: childId },
@@ -314,7 +316,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       const listedViaHeader = await callMcp(
         "?mode=meta",
         "session_list",
-        {},
+        { scope: "children" },
         {
           "X-ORC-Session": parentId,
         },
@@ -389,7 +391,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
         {
           code: `
             const [list, sent] = await tools.allSettled([
-              { name: "session_list", args: {} },
+              { name: "session_list", args: { scope: "children" } },
               { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "queue", prompt: "From sandbox" } },
             ]);
             return {
@@ -438,7 +440,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       const previewWins = await callMcp(
         `?mode=meta&preview_session=${parentId}`,
         "session_list",
-        {},
+        { scope: "children" },
         { "X-ORC-Session": unrelatedId },
       );
       expect(previewWins.isError).toBeUndefined();

@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { chatBackendFor } from "@orc/agent-runtime";
 import type { ChatSettings, ChatThread } from "@orc/core/chat";
-import { hostAlias, hostHome, resolveExecHost } from "@orc/core/exec-host";
+import {
+  execHostFor,
+  hostAlias,
+  hostHome,
+  resolveExecHost,
+  resolveProjectHost,
+} from "@orc/core/exec-host";
 import { providerChatDefaults } from "@orc/core/provider-service";
 import { AuditLog } from "@orc/db/audit";
 import { ChatStore } from "@orc/db/chat";
@@ -70,16 +76,15 @@ export async function defaultCoordinatorBase(): Promise<CoordinatorBase> {
   };
 }
 
-function activeProjectScope(
+function activeProjectTarget(
   sqlite: ReturnType<typeof getSqlite>,
   projectId: string,
-): string | null {
-  const row = sqlite
-    .query<{ scope: string | null }, [string]>(
-      "SELECT scope FROM projects WHERE id = ? AND status = 'active'",
+): { scope: string | null; host: string | null } | null {
+  return sqlite
+    .query<{ scope: string | null; host: string | null }, [string]>(
+      "SELECT scope, host FROM projects WHERE id = ? AND status = 'active'",
     )
     .get(projectId);
-  return row?.scope ?? null;
 }
 
 /**
@@ -109,14 +114,18 @@ export async function ensureCoordinatorSession(
   const existing = store.get(id);
   if (existing) {
     const refreshed = refreshCoordinatorDefaults(store, existing, defaults);
-    const alias = hostAlias(resolveExecHost());
+    const target = refreshed.projectId ? activeProjectTarget(sqlite, refreshed.projectId) : null;
+    const alias = resolveProjectHost(target?.host);
     if (refreshed.host === alias) return refreshed;
     // Threads created before the anchor followed Settings (or before the
     // installation moved hosts) hold a stale local folder such as the
     // container's /data; spawned children would inherit it and run there.
     try {
-      const scoped = refreshed.projectId ? activeProjectScope(sqlite, refreshed.projectId) : null;
-      const anchored = scoped ? { host: alias, cwd: scoped } : await base();
+      const anchored = target?.scope
+        ? { host: alias, cwd: target.scope }
+        : target?.host
+          ? { host: alias, cwd: await hostHome(execHostFor(alias)) }
+          : await base();
       store.save({ ...refreshed, host: anchored.host, cwd: anchored.cwd });
       return store.get(id) ?? refreshed;
     } catch {
@@ -126,8 +135,13 @@ export async function ensureCoordinatorSession(
     }
   }
   const project = input.projects?.length === 1 ? input.projects[0] : undefined;
-  const scope = project ? activeProjectScope(sqlite, project.id) : null;
-  const anchor = scope ? { host: hostAlias(resolveExecHost()), cwd: scope } : await base();
+  const target = project ? activeProjectTarget(sqlite, project.id) : null;
+  const targetHost = resolveProjectHost(target?.host);
+  const anchor = target?.scope
+    ? { host: targetHost, cwd: target.scope }
+    : target?.host
+      ? { host: targetHost, cwd: await hostHome(execHostFor(targetHost)) }
+      : await base();
   const thread: ChatThread = {
     id,
     title: `MCP coordinator (${client})`,

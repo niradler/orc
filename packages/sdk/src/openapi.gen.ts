@@ -1294,6 +1294,7 @@ export interface paths {
                                 cancelled?: boolean;
                                 startError?: string;
                             };
+                            hidden?: boolean;
                             updatedAt: number;
                         };
                     };
@@ -1757,6 +1758,7 @@ export interface paths {
                                 cancelled?: boolean;
                                 startError?: string;
                             };
+                            hidden?: boolean;
                             updatedAt: number;
                         };
                     };
@@ -2154,6 +2156,7 @@ export interface paths {
                                 cancelled?: boolean;
                                 startError?: string;
                             };
+                            hidden?: boolean;
                             updatedAt: number;
                         };
                     };
@@ -2554,6 +2557,7 @@ export interface paths {
                                 cancelled?: boolean;
                                 startError?: string;
                             };
+                            hidden?: boolean;
                             updatedAt: number;
                         };
                     };
@@ -3242,6 +3246,7 @@ export interface paths {
                                 cancelled?: boolean;
                                 startError?: string;
                             };
+                            hidden?: boolean;
                             updatedAt: number;
                         };
                     };
@@ -3708,6 +3713,7 @@ export interface paths {
                                 cancelled?: boolean;
                                 startError?: string;
                             };
+                            hidden?: boolean;
                             updatedAt: number;
                         };
                     };
@@ -4273,6 +4279,7 @@ export interface paths {
                                 cancelled?: boolean;
                                 startError?: string;
                             };
+                            hidden?: boolean;
                             updatedAt: number;
                         };
                     };
@@ -4728,6 +4735,7 @@ export interface paths {
                                 cancelled?: boolean;
                                 startError?: string;
                             };
+                            hidden?: boolean;
                             updatedAt: number;
                         };
                     };
@@ -21707,7 +21715,7 @@ export interface paths {
                     q?: string;
                     project_id?: string;
                     project_ids?: string;
-                    agent?: "claude" | "codex";
+                    agent?: "pi" | "claude" | "codex" | "cursor" | "gemini" | "copilot" | "opencode" | "qwen" | "droid" | "kimi" | "kiro";
                     mode?: "auto" | "lexical" | "semantic" | "hybrid";
                     limit?: number;
                     offset?: number | null;
@@ -22089,6 +22097,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/sessions/live/list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List unified ORC chat and discovered native sessions with filters and pagination */
+        get: {
+            parameters: {
+                query?: {
+                    scope?: "all" | "children" | "chats" | "native";
+                    parent?: string;
+                    project_id?: string;
+                    project_ids?: string;
+                    agent?: string;
+                    host?: string;
+                    status?: string;
+                    q?: string;
+                    include_hidden?: "true" | "false";
+                    include_subagents?: "true" | "false";
+                    sync?: "true" | "false";
+                    limit?: number;
+                    offset?: number | null;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Unified paginated session list */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessions: {
+                                session_id: string;
+                                /** @enum {string} */
+                                source: "chat" | "native";
+                                title: string;
+                                agent: string | null;
+                                model: string | null;
+                                status: string;
+                                waiting_for: string | null;
+                                project_id: string | null;
+                                cwd: string | null;
+                                host: string | null;
+                                parent_session_id: string | null;
+                                working_children: number;
+                                waiting_children: number;
+                                native_session_id: string | null;
+                                live_session_id: string | null;
+                                hidden: boolean;
+                                last_message: string | null;
+                                updated_at: number;
+                                last_activity_at?: number | null;
+                            }[];
+                            total: number;
+                            offset: number;
+                            limit: number;
+                            has_more: boolean;
+                            next_offset: number | null;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sessions/live/{id}": {
         parameters: {
             query?: never;
@@ -22132,8 +22218,8 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Rename, hide or link a live session
-         * @description Send any of task_id (null unlinks), display_title (null restores the agent's title) or hidden. A rename and a hide survive re-sync and restart.
+         * Update a chat or discovered session
+         * @description Update title/display_title, hidden, task_id (discovered sessions), or chat settings (model, effort, permission_mode, send_while_running).
          */
         patch: {
             parameters: {
@@ -22148,8 +22234,15 @@ export interface paths {
                 content: {
                     "application/json": {
                         task_id?: string | null;
+                        title?: string | null;
                         display_title?: string | null;
                         hidden?: boolean;
+                        model?: string;
+                        effort?: string;
+                        /** @enum {string} */
+                        permission_mode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                        /** @enum {string} */
+                        send_while_running?: "steer" | "queue";
                     };
                 };
             };
@@ -22647,7 +22740,38 @@ export interface paths {
             };
         };
         put?: never;
-        post?: never;
+        /** Record a session log entry */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["CreateSession"];
+                };
+            };
+            responses: {
+                /** @description Created session log entry */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Session"];
+                    };
+                };
+                /** @description Project not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -23819,8 +23943,24 @@ export interface paths {
                 content: {
                     "application/json": {
                         prompt: string;
+                        /** @description Composer profile id or name configured in Settings; explicit agent/provider_id/model/effort/permission_mode override it. */
+                        profile?: string;
                         agent?: string;
+                        /** @description Configured provider account id for the agent. */
+                        provider_id?: string;
                         model?: string;
+                        /** @description Reasoning effort level supported by the selected agent/model. */
+                        effort?: string;
+                        /**
+                         * @description Permission mode for the session.
+                         * @enum {string}
+                         */
+                        permission_mode?: "default" | "plan" | "acceptEdits" | "auto" | "bypassPermissions";
+                        /**
+                         * @description Default behavior when a message arrives while the session is busy.
+                         * @enum {string}
+                         */
+                        send_while_running?: "steer" | "queue";
                         project_id?: string;
                         /** @description Execution host: an SSH alias configured in Settings. Omit to inherit the calling session's host, or the Settings default when selecting a project; null runs on this ORC server. */
                         host?: string | null;
@@ -27450,6 +27590,8 @@ export interface components {
             /** @enum {string} */
             status: "active" | "archived" | "paused";
             scope: string | null;
+            /** @description Execution host for this project: an SSH alias, "local" for this ORC server, or null to inherit Settings default. */
+            host: string | null;
             git_remote_url: string | null;
             github_sync: {
                 enabled: boolean;
@@ -27512,6 +27654,8 @@ export interface components {
              */
             status: "active" | "archived" | "paused";
             scope?: string;
+            /** @description Execution host for this project: an SSH alias, "local" for this ORC server, or null to inherit Settings default. */
+            host?: string | null;
             git_remote_url?: string | null;
             github_sync?: {
                 enabled: boolean;
@@ -27563,6 +27707,8 @@ export interface components {
             /** @enum {string} */
             status?: "active" | "archived" | "paused";
             scope?: string | null;
+            /** @description Execution host for this project: an SSH alias, "local" for this ORC server, or null to inherit Settings default. */
+            host?: string | null;
             git_remote_url?: string | null;
             github_sync?: {
                 enabled: boolean;
@@ -28380,6 +28526,14 @@ export interface components {
             tokens_used: number | null;
             /** Format: date-time */
             created_at: string;
+        };
+        CreateSession: {
+            agent: string;
+            agent_version?: string;
+            project?: string;
+            project_id?: string;
+            summary?: string;
+            tokens_used?: number;
         };
         SessionDetail: components["schemas"]["Session"] & {
             events: {

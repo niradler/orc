@@ -1,7 +1,14 @@
 import { statSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { type HostRuntime, hostRuntime, LOCAL_HOST } from "@orc/core/exec-host";
+import {
+  type HostRuntime,
+  hostAlias,
+  hostRuntime,
+  LOCAL_HOST,
+  projectHostKey,
+  resolveExecHost,
+} from "@orc/core/exec-host";
 import { projectForFolder } from "@orc/core/project-path";
 import { getDb, getSqlite } from "@orc/db/client";
 import { projects } from "@orc/db/schema";
@@ -14,6 +21,7 @@ type ProjectRow = {
   id: string;
   name: string;
   scope: string | null;
+  host: string | null;
   git_remote_url: string | null;
 };
 type FolderRow = { id: string; scope: string | null };
@@ -92,6 +100,7 @@ const projectByCwd = new Map<string, string | null>();
 const repoRootByCwd = new Map<string, string | null>();
 let cachedProjects: ProjectRow[] | null = null;
 let cachedFolders: FolderRow[] | null = null;
+let cachedFoldersHost: string | null = null;
 let foldersInFlight: Promise<FolderRow[]> | null = null;
 let cachedProjectsAt = 0;
 const PROJECT_ROWS_TTL_MS = 30_000;
@@ -102,30 +111,29 @@ export function invalidateProjectFolderCache(): void {
   repoRootByCwd.clear();
   cachedProjects = null;
   cachedFolders = null;
+  cachedFoldersHost = null;
   foldersInFlight = null;
   cachedProjectsAt = 0;
 }
 
-/**
- * Every folder that identifies a project: its explicit scope plus, for projects
- * without a scope, the repository roots of its known sessions. Those derived
- * roots are what make an unscoped project useful without a second folder list.
- * They are never mixed into a scoped project's folders: a session that no longer
- * sits under that scope stops justifying its assignment.
- */
-async function projectFolders(rows: ProjectRow[], localRuntime: HostRuntime): Promise<FolderRow[]> {
-  if (cachedFolders) return cachedFolders;
-  // The reconcile maps several folders at once; one build is enough for all of them.
-  foldersInFlight ??= buildProjectFolders(rows, localRuntime).finally(() => {
-    foldersInFlight = null;
-  });
+async function projectFolders(
+  rows: ProjectRow[],
+  runtime: HostRuntime,
+  defaultHost: string,
+): Promise<FolderRow[]> {
+  const cacheKey = `${hostKey(runtime)}:${defaultHost}`;
+  if (cachedFolders && cachedFoldersHost === cacheKey) return cachedFolders;
+  if (!foldersInFlight || cachedFoldersHost !== cacheKey) {
+    cachedFoldersHost = cacheKey;
+    foldersInFlight = buildProjectFolders(rows, runtime).finally(() => {
+      foldersInFlight = null;
+    });
+  }
   return foldersInFlight;
 }
 
-async function buildProjectFolders(
-  rows: ProjectRow[],
-  localRuntime: HostRuntime,
-): Promise<FolderRow[]> {
+async function buildProjectFolders(rows: ProjectRow[], runtime: HostRuntime): Promise<FolderRow[]> {
+  const host = hostKey(runtime);
   const folders = new Map<string, FolderRow>();
   const add = (id: string, scope: string | null) => {
     if (!scope?.trim()) return;
@@ -135,6 +143,7 @@ async function buildProjectFolders(
   };
   const unscoped = new Set<string>();
   for (const project of rows) {
+    if (projectHostKey(project.host) !== host) continue;
     add(project.id, project.scope);
     if (!project.scope?.trim()) unscoped.add(project.id);
   }
@@ -142,19 +151,31 @@ async function buildProjectFolders(
     cachedFolders = [...folders.values()];
     return cachedFolders;
   }
-  const sessions = getSqlite()
-    .query<{ project_id: string; cwd: string }, []>(
-      `SELECT project_id, cwd FROM gateway_sessions
-       WHERE project_id IS NOT NULL AND cwd IS NOT NULL
-         AND (execution_host IS NULL OR execution_host = '' OR execution_host = 'local')
-       GROUP BY project_id, cwd
-       ORDER BY MAX(last_activity_at) DESC
-       LIMIT 500`,
-    )
-    .all();
+  const sessions =
+    host === "local"
+      ? getSqlite()
+          .query<{ project_id: string; cwd: string }, []>(
+            `SELECT project_id, cwd FROM gateway_sessions
+             WHERE project_id IS NOT NULL AND cwd IS NOT NULL
+               AND (execution_host IS NULL OR execution_host = '' OR execution_host = 'local')
+             GROUP BY project_id, cwd
+             ORDER BY MAX(last_activity_at) DESC
+             LIMIT 500`,
+          )
+          .all()
+      : getSqlite()
+          .query<{ project_id: string; cwd: string }, [string]>(
+            `SELECT project_id, cwd FROM gateway_sessions
+             WHERE project_id IS NOT NULL AND cwd IS NOT NULL
+               AND execution_host = ?
+             GROUP BY project_id, cwd
+             ORDER BY MAX(last_activity_at) DESC
+             LIMIT 500`,
+          )
+          .all(host);
   for (const session of sessions) {
     if (!unscoped.has(session.project_id)) continue;
-    add(session.project_id, (await repoRootFor(session.cwd, localRuntime)) ?? session.cwd);
+    add(session.project_id, (await repoRootFor(session.cwd, runtime)) ?? session.cwd);
   }
   cachedFolders = [...folders.values()];
   return cachedFolders;
@@ -167,6 +188,7 @@ async function projectRows(): Promise<ProjectRow[]> {
       id: projects.id,
       name: projects.name,
       scope: projects.scope,
+      host: projects.host,
       git_remote_url: projects.git_remote_url,
     })
     .from(projects);
@@ -247,18 +269,14 @@ export async function projectIdFor(
   runtime: HostRuntime = hostRuntime(LOCAL_HOST),
 ): Promise<string | null> {
   if (!cwd) return null;
-  const key = `${hostKey(runtime)}:${cwd}`;
+  const defaultHost = hostAlias(resolveExecHost()) ?? "local";
+  const key = `${hostKey(runtime)}:${defaultHost}:${cwd}`;
   const cached = projectByCwd.get(key);
   if (cached !== undefined) return cached;
   const rows = await projectRows();
-  // Project scopes describe the local machine; a remote folder of the same name is
-  // a different folder, so remote sessions can only match by their git remote.
-  const local = runtime.host.kind !== "ssh";
-  const folders = local ? await projectFolders(rows, runtime) : [];
+  const folders = await projectFolders(rows, runtime, defaultHost);
   let id = projectForFolder(cwd, folders)?.id ?? null;
-  if (!id && local) {
-    // Sessions often run in a worktree outside the project's folder. Resolve the
-    // shared checkout first so sibling folders and worktrees agree on one project.
+  if (!id && folders.length > 0) {
     const root = await repoRootFor(cwd, runtime);
     if (root) id = projectForFolder(root, folders)?.id ?? null;
   }

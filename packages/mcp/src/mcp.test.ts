@@ -35,105 +35,6 @@ afterAll(() => {
   rmSync(testOrcHome, { recursive: true, force: true });
 });
 
-// ── Session event dedup & eviction ──────────────────────────────────────────
-
-describe("Session event dedup", () => {
-  beforeAll(() => {
-    process.env.ORC_SESSION_ID = "test-dedup-session";
-  });
-
-  afterAll(() => {
-    delete process.env.ORC_SESSION_ID;
-  });
-
-  test("duplicate events are silently dropped", async () => {
-    const data = { path: "src/auth.ts", tool: "Write" };
-    const r1 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data,
-    });
-    const r2 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data,
-    });
-    const r3 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data,
-    });
-
-    expect(r1).toContain("Event recorded");
-    expect(r2).toBe("Duplicate event skipped.");
-    expect(r3).toBe("Duplicate event skipped.");
-  });
-
-  test("different data on same type is NOT dropped", async () => {
-    const r1 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data: { path: "src/a.ts", tool: "Write" },
-    });
-    const r2 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data: { path: "src/b.ts", tool: "Write" },
-    });
-    expect(r1).toContain("Event recorded");
-    expect(r2).toContain("Event recorded");
-  });
-});
-
-// ── Session snapshot & restore ───────────────────────────────────────────────
-
-describe("Session snapshot round-trip", () => {
-  const sessionId = "test-snapshot-session";
-
-  beforeAll(() => {
-    process.env.ORC_SESSION_ID = sessionId;
-  });
-
-  afterAll(() => {
-    delete process.env.ORC_SESSION_ID;
-  });
-
-  test("session_snapshot builds valid XML", async () => {
-    await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data: { path: "src/main.ts", tool: "Edit" },
-    });
-    await executeTool("session_event", {
-      type: "decision",
-      priority: 2,
-      data: { content: "Use Bun instead of Node" },
-    });
-
-    const snap = await executeTool("session_snapshot", {
-      session_id: sessionId,
-    });
-    expect(snap).toContain("<session>");
-    expect(snap).toContain("</session>");
-    expect(snap).toContain("<tasks>");
-  });
-
-  test("session_restore returns stored snapshot", async () => {
-    const restored = await executeTool("session_restore", {
-      session_id: sessionId,
-    });
-    expect(restored).toContain("Session Restored");
-    expect(restored).toContain("<session>");
-  });
-
-  test("snapshot XML stays within 2KB", async () => {
-    const snap = await executeTool("session_snapshot", {
-      session_id: sessionId,
-    });
-    expect(Buffer.byteLength(snap, "utf-8")).toBeLessThanOrEqual(2048);
-  });
-});
-
 // ── Task tools ────────────────────────────────────────────────────────────────
 
 describe("MCP task tools", () => {
@@ -432,49 +333,22 @@ describe("MCP skill tools", () => {
   });
 });
 
-// ── Session log ───────────────────────────────────────────────────────────────
-
-describe("MCP session_log tool", () => {
-  test("session_log with agent_version stores session", async () => {
-    const result = await executeTool("session_log", {
-      agent: "codex",
-      agent_version: "codex/0.1",
-      summary: "Implemented scheduler integration tests",
-    });
-    expect(result).toMatch(/^Session logged:/);
+describe("Removed legacy session log tools & session_search agent schema", () => {
+  test("legacy session_event, session_snapshot, session_restore, session_log are not registered", () => {
+    const names = new Set<string>(toolDefinitions.map((tool) => tool.name));
+    for (const removed of ["session_event", "session_snapshot", "session_restore", "session_log"]) {
+      expect(names.has(removed)).toBe(false);
+    }
   });
 
-  test("session_log picks up ORC_JOB_RUN_ID from env", async () => {
-    const { getDb } = await import("@orc/db/client");
-    const { job_runs, jobs } = await import("@orc/db/schema");
-    const { ulid } = await import("@orc/core/ids");
-    const db = getDb();
-    const now = new Date();
-    const jobId = ulid();
-    const runId = ulid();
-
-    await db.insert(jobs).values({
-      id: jobId,
-      name: "env-run-test-job",
-      command: "echo ok",
-      trigger_type: "manual",
-      created_at: now,
-      updated_at: now,
-    });
-    await db.insert(job_runs).values({
-      id: runId,
-      job_id: jobId,
-      status: "success",
-      created_at: now,
-    });
-
-    process.env.ORC_JOB_RUN_ID = runId;
-    const result = await executeTool("session_log", {
-      agent: "runner",
-      summary: "Job env-run-test-job succeeded in 1s (exit 0)",
-    });
-    delete process.env.ORC_JOB_RUN_ID;
-    expect(result).toMatch(/^Session logged:/);
+  test("session_search accepts opencode, pi, and other harnesses and rejects unknown agents", () => {
+    const schema = toolDefinitions.find((tool) => tool.name === "session_search")?.inputSchema;
+    expect(schema).toBeDefined();
+    for (const agent of ["claude", "codex", "opencode", "pi", "cursor", "gemini"]) {
+      expect(schema?.safeParse({ q: "test", agent }).success).toBe(true);
+    }
+    const invalid = schema?.safeParse({ q: "test", agent: "nonexistent-harness" });
+    expect(invalid?.success).toBe(false);
   });
 });
 
@@ -567,6 +441,20 @@ describe("MCP project_create tool", () => {
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     const failure = results.find((result) => result.status === "rejected");
     expect(failure?.status === "rejected" && failure.reason).toBeInstanceOf(ConflictError);
+  });
+
+  test("project_create stores optional host and project_list returns it", async () => {
+    const name = uniqueName();
+    created.push(name);
+    const createdText = await executeTool("project_create", {
+      name,
+      scope: "/home/dev/repo",
+      host: "devbox",
+    });
+    expect(createdText).toContain(`Created project ${name}`);
+    const listText = await executeTool("project_list", {});
+    expect(listText).toContain(`${name}`);
+    expect(listText).toContain("[host: devbox]");
   });
 
   test("project_create works on a connection that has default projects", async () => {
@@ -683,7 +571,7 @@ describe("MCP tool schemas", () => {
   });
 
   test("every tool that takes arguments advertises them", () => {
-    const argless = new Set(["project_list", "agent_list", "agent_package_list", "session_list"]);
+    const argless = new Set(["project_list", "agent_list", "agent_package_list"]);
     for (const { name, schema } of advertised()) {
       if (argless.has(name)) continue;
       const props = Object.keys(schema.properties ?? {});

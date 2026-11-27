@@ -1,4 +1,5 @@
-import type { SessionDelivery } from "@orc/core/session-messages";
+import type { ChatThread } from "@orc/core/chat";
+import type { SessionDelivery, SessionUpdate } from "@orc/core/session-messages";
 
 export const activeTurns = new Set<string>();
 
@@ -22,6 +23,8 @@ export type ChatControl = {
   waiting(threadId: string): "question" | "approval" | null;
   full(): boolean;
   startPending(): void;
+  adopt?: (sourceId: string) => Promise<ChatThread | null>;
+  updateThread?: (threadId: string, patch: SessionUpdate) => ChatThread | null;
 };
 
 let control: ChatControl = {

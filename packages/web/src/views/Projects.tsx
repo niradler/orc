@@ -58,6 +58,7 @@ import {
   useSetProjectsStatus,
   useUpdateProject,
 } from "@/hooks/useProjects";
+import { useSsh } from "@/hooks/useSsh";
 import { MEMORIES_PATH } from "@/lib/memory-routes";
 import { PROJECT_STATUSES } from "@/lib/project-statuses";
 import { useViewParam } from "@/lib/view-params";
@@ -545,8 +546,10 @@ function EditProjectDialog({
   const [status, setStatus] = useState<ProjectStatus>(project.status);
   const [tags, setTags] = useState((project.tags ?? []).join(", "));
   const [scope, setScope] = useState(project.scope ?? "");
+  const [host, setHost] = useState(project.host ?? "");
   const [browsingScope, setBrowsingScope] = useState(false);
   const scopeFolderTrigger = useRef<HTMLButtonElement>(null);
+  const { data: ssh } = useSsh();
   const [gitRemoteUrl, setGitRemoteUrl] = useState(project.git_remote_url ?? "");
   const [githubSync, setGithubSync] = useState(
     project.github_sync ?? { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
@@ -569,6 +572,7 @@ function EditProjectDialog({
       status,
       tags,
       scope,
+      host,
       gitRemoteUrl,
       githubSync,
       maxWorkers,
@@ -581,6 +585,7 @@ function EditProjectDialog({
       project.status,
       (project.tags ?? []).join(", "),
       project.scope ?? "",
+      project.host ?? "",
       project.git_remote_url ?? "",
       project.github_sync ?? { enabled: false, status_labels: DEFAULT_GITHUB_STATUS_LABELS },
       project.max_workers != null ? String(project.max_workers) : "",
@@ -610,6 +615,7 @@ function EditProjectDialog({
             .filter(Boolean)
         : null,
       scope: scope.trim() || null,
+      host: host.trim() || null,
       git_remote_url: gitRemoteUrl.trim() || null,
       github_sync: githubSync,
       max_workers: maxWorkers ? Number(maxWorkers) : null,
@@ -742,11 +748,47 @@ function EditProjectDialog({
                     <FolderPickerDialog
                       open={browsingScope}
                       onOpenChange={setBrowsingScope}
-                      host={null}
+                      host={host === "local" ? null : host || ssh?.host || null}
                       initial={scope}
                       onPick={setScope}
                       returnFocusRef={scopeFolderTrigger}
                     />
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-1">
+                      <Label
+                        htmlFor="edit-project-host"
+                        className="font-label text-sm text-muted-foreground"
+                      >
+                        Execution host
+                      </Label>
+                      <HelpPopover label="execution host" testId="edit-project-host-help">
+                        Where sessions for this project run by default. Leave on Settings default to
+                        follow global execution host settings.
+                      </HelpPopover>
+                    </div>
+                    <select
+                      id="edit-project-host"
+                      data-testid="edit-project-host"
+                      className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-sm text-on-surface sm:min-h-8"
+                      value={host}
+                      onChange={(event) => setHost(event.target.value)}
+                    >
+                      <option value="">
+                        Settings default{ssh?.host ? ` (${ssh.host})` : " (local)"}
+                      </option>
+                      <option value="local">This computer (local)</option>
+                      {Array.from(
+                        new Set([
+                          ...(ssh?.hosts ?? []),
+                          ...(host && host !== "local" ? [host] : []),
+                        ]),
+                      ).map((entry) => (
+                        <option key={entry} value={entry}>
+                          {entry}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-1.5 md:col-span-2">
                     <div className="flex items-center gap-1">

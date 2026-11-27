@@ -216,10 +216,13 @@ export function createMcpServer({
         const hasProject = "project" in toolDef.inputSchema.shape;
         const hasProjectId = "project_id" in toolDef.inputSchema.shape;
         const explicit = input.project !== undefined || input.project_id !== undefined;
+        const skipDefaultProject =
+          (name === "session_start" && input.cwd !== undefined) ||
+          (name === "session_list" && (input.scope === "children" || input.parent !== undefined));
         // The connection's projects are autofill defaults, not a permission
         // boundary: any call may name another project. Fill one only when the
         // call omitted it and the default is unambiguous.
-        if (!explicit && selected.length === 1) {
+        if (!explicit && !skipDefaultProject && selected.length === 1) {
           if (hasProject) scopedArgs = { ...input, project: selected[0]?.name };
           else if (hasProjectId) scopedArgs = { ...input, project_id: selected[0]?.id };
         }

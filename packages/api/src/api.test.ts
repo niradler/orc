@@ -226,22 +226,17 @@ describe("Sessions", () => {
     expect(Array.isArray(body.sessions)).toBe(true);
   });
 
-  test("POST /mcp/tool session_log writes a session with agent_version", async () => {
-    const res = await app.request("/api/mcp/tool", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: AUTH },
-      body: JSON.stringify({
-        name: "session_log",
-        args: {
-          agent: "cursor",
-          agent_version: "cursor/1.0",
-          summary: "CLI integration test session",
-        },
-      }),
+  test("POST /sessions writes a session with agent_version", async () => {
+    const res = await req("POST", "/sessions", {
+      agent: "cursor",
+      agent_version: "cursor/1.0",
+      summary: "CLI integration test session",
     });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { result: string };
-    expect(body.result).toMatch(/^Session logged:/);
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { id: string; agent: string; agent_version: string | null };
+    expect(body.id).toBeTruthy();
+    expect(body.agent).toBe("cursor");
+    expect(body.agent_version).toBe("cursor/1.0");
   });
 
   test("GET /sessions shows the logged session with agent_version", async () => {
@@ -261,14 +256,11 @@ describe("Sessions", () => {
 
   test("GET /sessions paginates with offset and reports total", async () => {
     for (const n of [1, 2]) {
-      await app.request("/api/mcp/tool", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: AUTH },
-        body: JSON.stringify({
-          name: "session_log",
-          args: { agent: "pager-agent", summary: `pager session ${n}` },
-        }),
+      const created = await req("POST", "/sessions", {
+        agent: "pager-agent",
+        summary: `pager session ${n}`,
       });
+      expect(created.status).toBe(201);
     }
     const first = await req("GET", "/sessions?agent=pager-agent&limit=1&offset=0");
     const second = await req("GET", "/sessions?agent=pager-agent&limit=1&offset=1");

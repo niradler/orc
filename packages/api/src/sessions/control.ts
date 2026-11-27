@@ -1,5 +1,5 @@
 import { changes } from "@orc/core/changes";
-import type { ChatThread } from "@orc/core/chat";
+import { type ChatThread, nativeChatAgent } from "@orc/core/chat";
 import { ConflictError, ForbiddenError } from "@orc/core/errors";
 import { execHostFor, hostRuntime } from "@orc/core/exec-host";
 import { createLogger } from "@orc/core/logger";
@@ -56,17 +56,59 @@ export function requireAncestor(sender: SessionMessageSender, targetId: string):
     );
 }
 
+type SteerOutcome =
+  | { status: "steered" | "unavailable" | "busy" }
+  | { status: "error"; error: unknown };
+
+async function steerQueuedMessage(
+  mails: SessionMessageStore,
+  message: SessionMessage,
+): Promise<SteerOutcome> {
+  if (!mails.take(message.id)) return { status: "busy" };
+  try {
+    const steered = await chatControl().steer(
+      { threadId: message.target_session_id },
+      sessionMessageContext([message]),
+      { deliveries: [sessionDeliveryFromMessage(message)] },
+    );
+    if (!steered) {
+      mails.release(message.id);
+      return { status: "unavailable" };
+    }
+    mails.deliver([message.id], "steer");
+    return { status: "steered" };
+  } catch (error) {
+    if (error instanceof ConflictError && error.code !== "STEER_UNCONFIRMED") {
+      mails.release(message.id);
+    } else {
+      mails.failed([message.id], error instanceof Error ? error.message : String(error));
+    }
+    return { status: "error", error };
+  }
+}
+
 export async function sendToSession(
   input: SessionMessageCreate,
   sender: SessionMessageSender,
   structuredDelivery?: SessionDelivery | null,
 ): Promise<SessionMessageResult> {
   const mails = new SessionMessageStore(getSqlite());
-  const target = mails.target(input.session_id);
-  const chat = target.status === "chat";
+  let target = mails.target(input.session_id);
+  let chat = target.status === "chat";
   const mode = input.mode ?? "queue";
   if (mode !== "queue") requireAncestor(sender, target.id);
-  const message = mails.create(input, sender, structuredDelivery ?? null);
+  let effectiveInput = input;
+  if (!chat && target.status === "stopped" && nativeChatAgent(target.backend)) {
+    const adopted = await chatControl()
+      .adopt?.(target.id)
+      .catch(() => null);
+    if (adopted) {
+      effectiveInput = { ...input, session_id: adopted.id };
+      target = mails.target(adopted.id);
+      chat = true;
+    }
+  }
+  const message = mails.create(effectiveInput, sender, structuredDelivery ?? null);
   let delivery: SessionMessageResult["target"]["delivery"] = chat
     ? "chat"
     : target.status === "stopped"
@@ -74,23 +116,9 @@ export async function sendToSession(
       : sessionMessageHookSupported(target.backend)
         ? "hook"
         : "unsupported";
-  if (chat && mode === "steer" && message.state === "queued" && mails.take(message.id)) {
-    try {
-      if (
-        await chatControl().steer({ threadId: target.id }, sessionMessageContext([message]), {
-          deliveries: [sessionDeliveryFromMessage(message)],
-        })
-      ) {
-        mails.deliver([message.id], "steer");
-        delivery = "steer";
-      } else mails.release(message.id);
-    } catch (error) {
-      if (error instanceof ConflictError && error.code !== "STEER_UNCONFIRMED") {
-        mails.release(message.id);
-      } else {
-        mails.failed([message.id], error instanceof Error ? error.message : String(error));
-      }
-    }
+  if (chat && mode === "steer" && message.state === "queued") {
+    const outcome = await steerQueuedMessage(mails, message);
+    if (outcome.status === "steered") delivery = "steer";
   }
   if (chat && mode === "interrupt") chatControl().stop(target.id);
   changes.publish("session-messages", "sessions");
@@ -122,32 +150,18 @@ export async function deliverSessionMessageNow(id: string): Promise<SessionMessa
     throw new ConflictError(
       "This response cannot be steered right now. The message stays queued for the next safe point.",
     );
-  if (!mails.take(message.id)) throw new ConflictError("This message is already being delivered");
-  try {
-    const steered = await chatControl().steer(
-      { threadId: message.target_session_id },
-      sessionMessageContext([message]),
-      { deliveries: [sessionDeliveryFromMessage(message)] },
-    );
-    if (!steered) {
-      mails.release(message.id);
-      throw new ConflictError(
-        "This response cannot be steered right now. The message stays queued for the next safe point.",
-      );
-    }
-    mails.deliver([message.id], "steer");
-    changes.publish("session-messages", "sessions");
-    return mails.get(message.id);
-  } catch (error) {
-    if (error instanceof ConflictError && error.code !== "STEER_UNCONFIRMED") {
-      mails.release(message.id);
-      changes.publish("session-messages", "sessions");
-      throw error;
-    }
-    mails.failed([message.id], error instanceof Error ? error.message : String(error));
-    changes.publish("session-messages", "sessions");
-    throw error;
+  const outcome = await steerQueuedMessage(mails, message);
+  changes.publish("session-messages", "sessions");
+  if (outcome.status === "busy") {
+    throw new ConflictError("This message is already being delivered");
   }
+  if (outcome.status === "unavailable") {
+    throw new ConflictError(
+      "This response cannot be steered right now. The message stays queued for the next safe point.",
+    );
+  }
+  if (outcome.status === "error") throw outcome.error;
+  return mails.get(message.id);
 }
 
 export function lastReply(thread: ChatThread): string {

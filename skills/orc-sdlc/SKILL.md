@@ -64,9 +64,9 @@ requires its own authorization.
 | Assigned managed node | Keep its task/session/checkout, role, declared outcomes and flow; load only its relevant reference |
 | Rework or resume | Refresh feedback and effective guidance; preserve prior valid evidence and recheck changed behavior |
 
-After compaction restore the supplied ORC session with `session_restore`, then
-refresh the task, feedback, effective skills and relevant knowledge. Do not invent
-an ORC session when none exists; use the existing repository handoff instead.
+After compaction, refresh `context`, the active task, feedback, effective skills
+and relevant knowledge before continuing. Do not invent an ORC session when none
+exists; use the existing repository handoff instead.
 
 An engineering request alone does not require a managed flow, decomposition or
 another agent. When coordination/review is warranted, inspect effective flows:
