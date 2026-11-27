@@ -728,7 +728,9 @@ function EditProjectDialog({
                 </FormStepPanel>
                 <FormStepPanel steps={steps} id="configuration">
                   <div className="space-y-1.5">
-                    <Label className="font-label text-sm  text-muted-foreground">Scope</Label>
+                    <div className="flex min-h-11 items-center lg:min-h-8">
+                      <Label className="font-label text-sm text-muted-foreground">Scope</Label>
+                    </div>
                     <Input
                       aria-label="Scope"
                       value={scope}
@@ -755,7 +757,7 @@ function EditProjectDialog({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <div className="flex items-center gap-1">
+                    <div className="flex min-h-11 items-center gap-1 lg:min-h-8">
                       <Label
                         htmlFor="edit-project-host"
                         className="font-label text-sm text-muted-foreground"
@@ -770,7 +772,7 @@ function EditProjectDialog({
                     <select
                       id="edit-project-host"
                       data-testid="edit-project-host"
-                      className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-sm text-on-surface sm:min-h-8"
+                      className="form-control form-control-single w-full bg-background border-control-border text-on-surface font-body text-sm"
                       value={host}
                       onChange={(event) => setHost(event.target.value)}
                     >

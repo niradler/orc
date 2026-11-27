@@ -230,9 +230,11 @@ export function CreateProjectDialog({
                 </FormStepPanel>
                 <FormStepPanel steps={steps} id="configuration">
                   <div className="space-y-1.5">
-                    <Label className="font-label text-sm  text-muted-foreground">
-                      Project folder on the ORC machine
-                    </Label>
+                    <div className="flex min-h-11 items-center lg:min-h-8">
+                      <Label className="font-label text-sm text-muted-foreground">
+                        Project folder on the ORC machine
+                      </Label>
+                    </div>
                     <Input
                       aria-label="Project folder on the ORC machine"
                       data-testid="project-folder-input"
@@ -259,7 +261,7 @@ export function CreateProjectDialog({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <div className="flex items-center gap-1">
+                    <div className="flex min-h-11 items-center gap-1 lg:min-h-8">
                       <Label
                         htmlFor="project-host"
                         className="font-label text-sm text-muted-foreground"
@@ -274,7 +276,7 @@ export function CreateProjectDialog({
                     <select
                       id="project-host"
                       data-testid="project-host"
-                      className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-sm text-on-surface sm:min-h-8"
+                      className="form-control form-control-single w-full bg-background border-control-border text-on-surface font-body text-sm"
                       value={host}
                       onChange={(event) => setHost(event.target.value)}
                     >
