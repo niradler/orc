@@ -93,6 +93,10 @@ export const ScratchpadSchema = z.object({
   revision: z.number().int(),
   created_at: z.number().int(),
   updated_at: z.number().int(),
+  /** When a recoverable delete archived the pad; null while active. */
+  archived_at: z.number().int().nullable(),
+  /** Epoch seconds after which the maintenance sweep purges the pad; null when active. */
+  delete_after: z.number().int().nullable(),
 });
 export type Scratchpad = z.infer<typeof ScratchpadSchema>;
 

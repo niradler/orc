@@ -559,6 +559,8 @@ Applied rules and their outcomes per workspace, plus rule settings for enforceme
 
 Working documents, diagrams and HTML pages that you or an agent create and come back to. Agents use the `pad_*` MCP tools. Share one by copying its link.
 
+Deleting a scratchpad is recoverable: it stays readable and listed with a **deletes in N days** marker, and is permanently removed after 30 days. Use **Restore** before then. This is the same archive-then-purge lifecycle as project deletion.
+
 HTML pads receive the **ORC HTML kit** in both the editor preview and chat artifacts:
 dashboard theme tokens, base styles, cards, tables, stats, badges, tabs and chart
 wrappers. Use `orc-*` classes to build a native-looking page without a custom

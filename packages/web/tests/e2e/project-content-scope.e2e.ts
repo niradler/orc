@@ -96,7 +96,8 @@ for (const width of [1440, 390]) {
       await expect(row(shared.id)).toBeVisible();
       await expect(row(first.id)).toHaveCount(0);
     } finally {
-      for (const pad of [shared, first, second]) await apiDelete(request, `/scratchpads/${pad.id}`);
+      for (const pad of [shared, first, second])
+        await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
       for (const project of [one, two])
         await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }

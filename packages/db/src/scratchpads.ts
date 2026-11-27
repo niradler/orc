@@ -11,6 +11,7 @@ import {
   validateScratchpadContent,
 } from "@orc/core/scratchpad";
 import { normalizeTags } from "@orc/core/tags";
+import { restoreTtl, scheduleTtl } from "./ttl.js";
 
 type Row = Omit<Scratchpad, "tags"> & { tags: string | null };
 type Revisions = { revision: number; content_revision: number };
@@ -32,10 +33,14 @@ export function installScratchpads(sqlite: Database): void {
       revision INTEGER NOT NULL DEFAULT 1,
       content_revision INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      archived_at INTEGER,
+      delete_after INTEGER
     );
     CREATE INDEX IF NOT EXISTS scratchpads_project_idx ON scratchpads(project_id, updated_at);
     CREATE INDEX IF NOT EXISTS scratchpads_session_idx ON scratchpads(session_id);
+    CREATE INDEX IF NOT EXISTS scratchpads_delete_after_idx
+      ON scratchpads(delete_after) WHERE delete_after IS NOT NULL;
   `);
 }
 
@@ -80,7 +85,7 @@ export class ScratchpadStore {
     return this.sqlite
       .query<ListRow, string[]>(
         `SELECT id,kind,title,project_id,session_id,tags,author,revision,created_at,updated_at,
-           length(CAST(content AS BLOB)) AS size_bytes
+           archived_at,delete_after,length(CAST(content AS BLOB)) AS size_bytes
          FROM scratchpads ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
          ORDER BY updated_at DESC, rowid DESC`,
       )
@@ -91,7 +96,8 @@ export class ScratchpadStore {
   get(id: string): Scratchpad {
     const row = this.sqlite
       .query<Row, [string]>(
-        `SELECT id,kind,title,content,project_id,session_id,tags,author,revision,created_at,updated_at
+        `SELECT id,kind,title,content,project_id,session_id,tags,author,revision,created_at,
+           updated_at,archived_at,delete_after
          FROM scratchpads WHERE id=?`,
       )
       .get(id);
@@ -171,7 +177,29 @@ export class ScratchpadStore {
     return this.get(id);
   }
 
-  remove(id: string): void {
+  /**
+   * Recoverable delete: the pad stays readable and listed with its deadline until
+   * the maintenance sweep purges it. ttlDays 0 purges immediately and returns null.
+   */
+  delete(id: string, ttlDays: number, now = new Date()): Scratchpad | null {
+    this.get(id);
+    if (ttlDays === 0) {
+      this.purge(id);
+      return null;
+    }
+    scheduleTtl(this.sqlite, { table: "scratchpads", id, ttlDays, now });
+    return this.get(id);
+  }
+
+  /** Cancels a scheduled delete and clears the archive marker. */
+  restore(id: string): Scratchpad {
+    this.get(id);
+    restoreTtl(this.sqlite, { table: "scratchpads", id });
+    return this.get(id);
+  }
+
+  /** Permanent removal, called by an immediate delete and the TTL sweep. */
+  purge(id: string): void {
     const { changes } = this.sqlite.query("DELETE FROM scratchpads WHERE id=?").run(id);
     if (!changes) throw new NotFoundError("Scratchpad", id);
   }

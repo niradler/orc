@@ -162,9 +162,23 @@ describe("ScratchpadStore", () => {
     sqlite.exec("DELETE FROM projects WHERE id='p2'");
     expect(() => store.get(pad.id)).toThrow("Scratchpad not found");
     expect(store.get(unassigned.id).project_id).toBeNull();
-    store.remove(unassigned.id);
+    store.purge(unassigned.id);
     expect(() => store.get(unassigned.id)).toThrow("Scratchpad not found");
     expect(() => store.get(pad.id)).toThrow("Scratchpad not found");
-    expect(() => store.remove(unassigned.id)).toThrow("Scratchpad not found");
+    expect(() => store.purge(unassigned.id)).toThrow("Scratchpad not found");
+  });
+
+  test("should schedule a recoverable delete, list it until due, and restore it", () => {
+    const pad = store.create({ kind: "doc", title: "Recoverable" });
+    const scheduled = store.delete(pad.id, 7, new Date("2026-01-01T00:00:00Z"));
+    expect(scheduled?.archived_at).toBe(Math.floor(Date.parse("2026-01-01T00:00:00Z") / 1000));
+    expect(scheduled?.delete_after).toBe(Math.floor(Date.parse("2026-01-08T00:00:00Z") / 1000));
+    // The pad stays readable and searchable during the grace period.
+    expect(store.get(pad.id).content).toBe("");
+    expect(store.list({ q: "Recoverable" }).map((item) => item.id)).toEqual([pad.id]);
+
+    expect(store.restore(pad.id)).toMatchObject({ archived_at: null, delete_after: null });
+    expect(store.delete(pad.id, 0)).toBeNull();
+    expect(() => store.get(pad.id)).toThrow("Scratchpad not found");
   });
 });

@@ -5,6 +5,7 @@ import { getSqlite } from "@orc/db/client";
 import { ScratchpadStore } from "@orc/db/scratchpads";
 import { ScratchpadContentUrls } from "../scratchpad-content.js";
 import type { createApp } from "../server.js";
+import { purgeExpiredTtl } from "../ttl.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof createApp>;
@@ -48,9 +49,20 @@ describe("Scratchpads REST API", () => {
     expect(updated.status).toBe(200);
     expect(await updated.json()).toMatchObject({ revision: 2, author: "human" });
 
-    expect((await req(app, "DELETE", `/scratchpads/${pad.id}`)).status).toBe(204);
+    // Deleting schedules a purge; the pad stays readable during the grace period.
+    const scheduled = await req(app, "DELETE", `/scratchpads/${pad.id}`);
+    expect(scheduled.status).toBe(202);
+    const archived = await scheduled.json();
+    expect(archived.delete_after).toBeGreaterThan(archived.updated_at);
+    expect((await req(app, "GET", `/scratchpads/${pad.id}`)).status).toBe(200);
+
+    const restored = await req(app, "POST", `/scratchpads/${pad.id}/restore`);
+    expect(restored.status).toBe(200);
+    expect(await restored.json()).toMatchObject({ archived_at: null, delete_after: null });
+
+    expect((await req(app, "DELETE", `/scratchpads/${pad.id}?ttl_days=0`)).status).toBe(204);
     expect((await req(app, "GET", `/scratchpads/${pad.id}`)).status).toBe(404);
-    expect((await req(app, "DELETE", `/scratchpads/${pad.id}`)).status).toBe(404);
+    expect((await req(app, "DELETE", `/scratchpads/${pad.id}?ttl_days=0`)).status).toBe(404);
   });
 
   test("should return 409 for a stale if_revision and 400 for bad diagram content", async () => {
@@ -193,9 +205,24 @@ describe("Scratchpads REST API", () => {
       ["GET", `/api/scratchpads/${pad.id}`],
       ["POST", `/api/scratchpads/${pad.id}/content-url`],
       ["DELETE", `/api/scratchpads/${pad.id}`],
+      ["POST", `/api/scratchpads/${pad.id}/restore`],
       ["GET", "/api/scratchpads/content/not-a-token"],
     ] as const)
       expect((await app.request(path, { method })).status).toBe(401);
+  });
+
+  test("the maintenance sweep purges pads whose delete_after passed", () => {
+    const store = new ScratchpadStore(getSqlite());
+    const pad = store.create({ kind: "doc", title: "Sweep me" });
+    store.delete(pad.id, 7);
+    getSqlite().query("UPDATE scratchpads SET delete_after=unixepoch()-60 WHERE id=?").run(pad.id);
+    const outcome = purgeExpiredTtl();
+    expect(outcome.purged).toContainEqual({
+      resource: "scratchpad",
+      id: pad.id,
+      label: "Sweep me",
+    });
+    expect(() => store.get(pad.id)).toThrow("Scratchpad not found");
   });
 
   test("should expire content URLs", () => {

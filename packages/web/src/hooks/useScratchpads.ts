@@ -55,13 +55,18 @@ export function useUpdateScratchpad() {
 }
 
 export function useDeleteScratchpad() {
-  const qc = useQueryClient();
   const invalidate = useInvalidateScratchpads();
   return useMutation({
-    mutationFn: (id: string) => api.scratchpads.delete(id),
-    onSuccess: (_, id) => {
-      qc.removeQueries({ queryKey: [DETAIL_KEY, id] });
-      return invalidate();
-    },
+    mutationFn: ({ id, ttlDays }: { id: string; ttlDays?: number }) =>
+      api.scratchpads.delete(id, ttlDays),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRestoreScratchpad() {
+  const invalidate = useInvalidateScratchpads();
+  return useMutation({
+    mutationFn: (id: string) => api.scratchpads.restore(id),
+    onSuccess: invalidate,
   });
 }

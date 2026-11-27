@@ -1,6 +1,5 @@
 import type { Database } from "bun:sqlite";
 import { ConflictError } from "@orc/core/errors";
-import { createLogger } from "@orc/core/logger";
 import { getDb, getSqlite } from "@orc/db/client";
 import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
 import { MemoryStore } from "@orc/db/memories";
@@ -18,8 +17,6 @@ import { withTx } from "@orc/db/tx";
 import { deleteProjectWorkspaceEnvironments } from "@orc/db/workspaces";
 import { and, eq } from "drizzle-orm";
 import { invalidateProjectFolderCache } from "./sessions/common.js";
-
-const logger = createLogger("api:projects");
 
 /** Assigned skills block deletion: they are deliberate, project-scoped choices. */
 export function projectSkillCount(sqlite: Database, projectId: string): number {
@@ -79,33 +76,4 @@ export function purgeProject(id: string): void {
     tx.delete(projects).where(eq(projects.id, id)).run();
   }, db);
   invalidateProjectFolderCache();
-}
-
-/**
- * Purges projects whose scheduled deletion has come due. A project that gained
- * knowledge bases or assigned skills since it was scheduled stays archived: its
- * schedule is cancelled rather than retried every minute, and the reason is logged.
- */
-export function purgeExpiredProjects(sqlite: Database = getSqlite()): string[] {
-  const due = sqlite
-    .query<{ id: string; name: string }, []>(
-      "SELECT id, name FROM projects WHERE delete_after IS NOT NULL AND delete_after <= unixepoch()",
-    )
-    .all();
-  const purged: string[] = [];
-  for (const project of due) {
-    try {
-      purgeProject(project.id);
-      purged.push(project.id);
-      logger.info(`Purged archived project ${project.name} after its delete-after date`);
-    } catch (error) {
-      sqlite.query("UPDATE projects SET delete_after=NULL WHERE id=?").run(project.id);
-      logger.warn(
-        `Scheduled deletion of project ${project.name} was cancelled: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-  return purged;
 }

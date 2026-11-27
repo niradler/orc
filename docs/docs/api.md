@@ -489,7 +489,9 @@ live records that have no backing chat thread.
 | `GET` | `/rules/catalog` | Rule templates |
 | `POST` | `/rules/check`, `/rules/activate`, `/rules/revert` | Validate / activate / revert |
 | `GET` `POST` | `/scratchpads` | List / create |
-| `GET` `PATCH` `DELETE` | `/scratchpads/{id}` | Read / update / delete |
+| `GET` `PATCH` `DELETE` | `/scratchpads/{id}` | Read / update / delete (archives first; `?ttl_days=30` default, `0` deletes now) |
+| `POST` | `/scratchpads/{id}/restore` | Cancel a scheduled deletion |
+| `POST` | `/projects/{id}/restore` | Restore an archived project and cancel its scheduled deletion |
 
 ### System
 

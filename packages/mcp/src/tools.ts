@@ -82,6 +82,7 @@ import {
   type SkillRefContent,
 } from "@orc/core/skill-service";
 import { SkillUpdateSchema } from "@orc/core/skill-update";
+import { DEFAULT_TTL_DAYS, TtlDaysSchema, ttlDaysLeft } from "@orc/core/ttl";
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema, TaskLinkTypeSchema, TaskStatusSchema } from "@orc/core/types";
 import { AuditLog } from "@orc/db/audit";
@@ -793,8 +794,15 @@ export const toolDefinitions = [
   },
   {
     name: "pad_delete",
-    description: "Delete a scratchpad. This cannot be undone.",
-    inputSchema: z.object({ id: z.string().min(1).max(64) }),
+    description:
+      "Delete a scratchpad safely: it stays readable and listed with its deadline, then is " +
+      "permanently removed after ttl_days (default 30). restore true cancels the deletion; " +
+      "ttl_days 0 removes it immediately and cannot be undone.",
+    inputSchema: z.object({
+      id: z.string().min(1).max(64),
+      ttl_days: TtlDaysSchema.describe("Days before permanent removal; 0 deletes immediately"),
+      restore: z.boolean().default(false).describe("Cancel a scheduled deletion"),
+    }),
   },
   {
     name: "task_list",
@@ -1105,13 +1113,9 @@ export const toolDefinitions = [
       .object({
         project: projectParam,
         project_id: z.string().min(1).max(100).optional().describe("Explicit project id"),
-        ttl_days: z
-          .number()
-          .int()
-          .min(0)
-          .max(3650)
-          .default(30)
-          .describe("Days to keep the archived project restorable; 0 deletes it immediately"),
+        ttl_days: TtlDaysSchema.describe(
+          "Days to keep the archived project restorable; 0 deletes it immediately",
+        ),
         restore: z
           .boolean()
           .default(false)
@@ -1535,7 +1539,10 @@ function padProjectName(projectId: string | null): string {
 function formatPadLine(pad: ScratchpadListItem): string {
   const tags = pad.tags.length ? ` #${pad.tags.join(" #")}` : "";
   const updated = new Date(pad.updated_at * 1000).toISOString();
-  return `${pad.id} [${pad.kind}] ${pad.title} - rev ${pad.revision}, ${pad.size_bytes} B, project ${padProjectName(pad.project_id)}, updated ${updated} by ${pad.author}${tags}`;
+  const deletes = pad.delete_after
+    ? `, deletes ${new Date(pad.delete_after * 1000).toISOString().slice(0, 10)}`
+    : "";
+  return `${pad.id} [${pad.kind}] ${pad.title} - rev ${pad.revision}, ${pad.size_bytes} B, project ${padProjectName(pad.project_id)}, updated ${updated} by ${pad.author}${tags}${deletes}`;
 }
 
 function padHeader(pad: Scratchpad, options: ToolOptions): string {
@@ -1543,6 +1550,11 @@ function padHeader(pad: Scratchpad, options: ToolOptions): string {
     `# ${pad.title}`,
     `id: ${pad.id} | kind: ${pad.kind} | revision: ${pad.revision} | author: ${pad.author}`,
     `project: ${padProjectName(pad.project_id)} | session: ${pad.session_id ?? "none"} | tags: ${pad.tags.join(", ") || "none"}`,
+    ...(pad.delete_after
+      ? [
+          `deletes: ${new Date(pad.delete_after * 1000).toISOString().slice(0, 10)} (${ttlDaysLeft(pad.delete_after)} days left; pad_delete restore true cancels)`,
+        ]
+      : []),
     `link: ${padLink(pad.id, options)}`,
   ].join("\n");
 }
@@ -2614,11 +2626,21 @@ async function runTool(
     }
 
     case "pad_delete": {
-      const { id } = args as { id: string };
+      const { id, ttl_days, restore } = args as {
+        id: string;
+        ttl_days?: number;
+        restore?: boolean;
+      };
       const store = new ScratchpadStore(getSqlite(db));
       padById(store, id);
-      store.remove(id);
-      return `Deleted scratchpad ${id}`;
+      if (restore) {
+        store.restore(id);
+        return `Restored scratchpad ${id}; active with no scheduled deletion`;
+      }
+      const deleted = store.delete(id, ttl_days ?? DEFAULT_TTL_DAYS);
+      if (!deleted) return `Deleted scratchpad ${id}`;
+      const until = new Date((deleted.delete_after ?? 0) * 1000).toISOString().slice(0, 10);
+      return `Scheduled deletion of scratchpad ${id} in ${ttlDaysLeft(deleted.delete_after ?? 0)} days (${until}); pad_list shows it until then. pad_delete restore true cancels.`;
     }
 
     case "task_list": {
@@ -3327,15 +3349,13 @@ async function runTool(
         options.publicApiBaseUrl ?? orcApiBase(),
       ).toString();
       if (input.restore) {
-        await orcApi("PATCH", `/projects/${encodeURIComponent(id)}`, {
-          body: { status: "active" },
-        });
+        await orcApi("POST", `/projects/${encodeURIComponent(id)}/restore`);
         options.projectsChanged?.();
         return `${
           row.status === "archived" ? "Restored" : "Kept"
         } project ${row.name} [id: ${id}]; active with no scheduled deletion\nlink: ${link}`;
       }
-      const ttlDays = input.ttl_days ?? 30;
+      const ttlDays = input.ttl_days ?? DEFAULT_TTL_DAYS;
       const resources = projectResourceCounts(id);
       const linked = Object.entries(resources).filter(([, n]) => n > 0) as [string, number][];
       const describe = linked.map(([kind, n]) => `${n} ${kind}${n === 1 ? "" : "s"}`).join(", ");

@@ -12,6 +12,7 @@ import {
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { UploadDirectorySchema } from "@orc/core/session-file-types";
+import { TtlDaysSchema } from "@orc/core/ttl";
 import {
   defaultWorkspaceEnvironment,
   parseWorkspaceEnvironment,
@@ -24,6 +25,7 @@ import { getDb, getSqlite } from "@orc/db/client";
 import { projectKbCount } from "@orc/db/kb";
 import { NotificationStore } from "@orc/db/notifications";
 import { comments, projects } from "@orc/db/schema";
+import { restoreTtl, scheduleTtl } from "@orc/db/ttl";
 import { and, desc, eq } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
 import { projectSkillCount, purgeProject } from "../project-purge.js";
@@ -208,9 +210,7 @@ const deleteRoute = createRoute({
     "PATCH status active before then restores it. ttl_days=0 purges immediately, which cannot be undone.",
   request: {
     params: z.object({ id: z.string() }),
-    query: z.object({
-      ttl_days: z.coerce.number().int().min(0).max(3650).optional().default(30),
-    }),
+    query: z.object({ ttl_days: TtlDaysSchema }),
   },
   responses: {
     202: {
@@ -219,6 +219,21 @@ const deleteRoute = createRoute({
     },
     204: { description: "Deleted immediately (ttl_days=0)" },
     409: { description: "Project still owns knowledge bases or assigned skills" },
+  },
+});
+
+const restoreRoute = createRoute({
+  method: "post",
+  path: "/projects/{id}/restore",
+  tags: ["Projects"],
+  summary: "Restore an archived project and cancel its scheduled deletion",
+  request: { params: z.object({ id: z.string() }) },
+  responses: {
+    200: {
+      description: "Restored",
+      content: { "application/json": { schema: ProjectSchema } },
+    },
+    404: { description: "Project not found" },
   },
 });
 
@@ -549,19 +564,33 @@ app.openapi(deleteRoute, async (c) => {
     return new Response(null, { status: 204 });
   }
   const now = new Date();
-  await db
-    .update(projects)
-    .set({
-      status: "archived",
-      archived_at: existing.archived_at ?? now,
-      delete_after: new Date(now.getTime() + ttlDays * 86_400_000),
-      updated_at: now,
-    })
-    .where(eq(projects.id, id));
+  scheduleTtl(sqlite, {
+    table: "projects",
+    id,
+    ttlDays,
+    now,
+    extra: { status: "archived", updated_at: Math.floor(now.getTime() / 1000) },
+  });
   const scheduled = await db.query.projects.findFirst({ where: eq(projects.id, id) });
   if (!scheduled) throw new Error("Expected project to exist after scheduling its deletion");
   reassignSessions();
   return c.json(toDto(scheduled), 202);
+});
+
+app.openapi(restoreRoute, async (c) => {
+  const db = getDb();
+  const { id } = c.req.valid("param");
+  const existing = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  if (!existing) throw new NotFoundError("Project", id);
+  restoreTtl(getSqlite(), {
+    table: "projects",
+    id,
+    extra: { status: "active", updated_at: Math.floor(Date.now() / 1000) },
+  });
+  const restored = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  if (!restored) throw new Error("Expected project to exist after restore");
+  reassignSessions();
+  return c.json(toDto(restored));
 });
 
 // --- Project Comments ---

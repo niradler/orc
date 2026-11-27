@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { getSqlite } from "@orc/db/client";
 import { MemoryStore } from "@orc/db/memories";
-import { purgeExpiredProjects } from "../project-purge.js";
 import type { createApp } from "../server.js";
+import { purgeExpiredTtl } from "../ttl.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof createApp>;
@@ -305,6 +305,16 @@ describe("Projects CRUD", () => {
       expect(restoredBody.status).toBe("active");
       expect(restoredBody.delete_after).toBeNull();
       expect(restoredBody.archived_at).toBeNull();
+
+      // The shared restore endpoint is what MCP and clients use.
+      expect((await req(app, "DELETE", `/projects/${created.id}`)).status).toBe(202);
+      const restoredAgain = await req(app, "POST", `/projects/${created.id}/restore`);
+      expect(restoredAgain.status).toBe(200);
+      expect(await restoredAgain.json()).toMatchObject({
+        status: "active",
+        archived_at: null,
+        delete_after: null,
+      });
     });
 
     test("deletes immediately with ttl_days=0", async () => {
@@ -332,7 +342,11 @@ describe("Projects CRUD", () => {
       getSqlite()
         .query("UPDATE projects SET delete_after=unixepoch()-60 WHERE id=?")
         .run(created.id);
-      expect(purgeExpiredProjects()).toContain(created.id);
+      expect(purgeExpiredTtl().purged).toContainEqual({
+        resource: "project",
+        id: created.id,
+        label: "sweep-me",
+      });
       expect((await req(app, "GET", `/projects/${created.id}`)).status).toBe(404);
       expect(new MemoryStore(getSqlite()).list(created.id)).toHaveLength(0);
     });

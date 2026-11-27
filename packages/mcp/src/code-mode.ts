@@ -65,6 +65,7 @@ const writable: ReadonlySet<ToolName> = new Set<ToolName>([
   "memory_update",
   "pad_create",
   "pad_update",
+  "pad_delete",
   "session_send",
   "session_update",
   "session_delete",

@@ -191,11 +191,24 @@ export function padCommand() {
 
   cmd
     .command("rm <id>")
-    .description("Delete a scratchpad (cannot be undone)")
+    .description("Delete a scratchpad; it is permanently removed after 30 days")
+    .option("--now", "Delete permanently now instead of scheduling it")
+    .action(async (id: string, opts: { now?: boolean }) => {
+      const pad = unwrap(
+        await createOrcClient({ source: "cli" }).scratchpads.delete(id, opts.now ? 0 : 30),
+      );
+      if (isJson()) return jsonOut(opts.now ? { deleted: id } : pad);
+      if (opts.now) return console.log(`Deleted scratchpad ${id}`);
+      console.log(`Scheduled deletion of scratchpad ${id}; restore with: orc pad restore ${id}`);
+    });
+
+  cmd
+    .command("restore <id>")
+    .description("Cancel a scratchpad's scheduled deletion")
     .action(async (id: string) => {
-      unwrap(await createOrcClient({ source: "cli" }).scratchpads.delete(id));
-      if (isJson()) return jsonOut({ deleted: id });
-      console.log(`Deleted scratchpad ${id}`);
+      const pad = unwrap(await createOrcClient({ source: "cli" }).scratchpads.restore(id));
+      if (isJson()) return jsonOut(pad);
+      console.log(`Restored scratchpad ${id}`);
     });
 
   return cmd;

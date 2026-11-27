@@ -492,6 +492,9 @@ function setupDb(sqlite: Database): void {
     // delete_after passes, so an accidental delete stays recoverable for a while.
     "ALTER TABLE projects ADD COLUMN archived_at INTEGER",
     "ALTER TABLE projects ADD COLUMN delete_after INTEGER",
+    "ALTER TABLE scratchpads ADD COLUMN archived_at INTEGER",
+    "ALTER TABLE scratchpads ADD COLUMN delete_after INTEGER",
+    "CREATE INDEX IF NOT EXISTS scratchpads_delete_after_idx ON scratchpads(delete_after) WHERE delete_after IS NOT NULL",
   ];
   for (const statement of migrations) {
     try {

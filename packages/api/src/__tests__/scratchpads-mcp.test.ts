@@ -70,7 +70,14 @@ describe("scratchpad MCP tools", () => {
     await executeTool("pad_update", { id, project: null }, options);
     expect((await (await req(app, "GET", `/scratchpads/${id}`)).json()).project_id).toBeNull();
 
-    expect(await executeTool("pad_delete", { id }, options)).toBe(`Deleted scratchpad ${id}`);
+    const scheduled = await executeTool("pad_delete", { id }, options);
+    expect(scheduled).toContain("Scheduled deletion of scratchpad");
+    expect(await executeTool("pad_get", { id }, options)).toContain("deletes:");
+    expect(await executeTool("pad_list", {}, options)).toContain(`deletes `);
+    expect(await executeTool("pad_delete", { id, restore: true }, options)).toContain("Restored");
+    expect(await executeTool("pad_delete", { id, ttl_days: 0 }, options)).toBe(
+      `Deleted scratchpad ${id}`,
+    );
     await expect(executeTool("pad_get", { id }, options)).rejects.toThrow("not found");
   });
 

@@ -520,7 +520,13 @@ configured execution `host`, `session_start` infers it automatically unless
 | `pad_get`    | Read a scratchpad's header and raw file                          |
 | `pad_create` | Create a scratchpad                                              |
 | `pad_update` | Update a scratchpad                                              |
-| `pad_delete` | Delete a scratchpad                                              |
+| `pad_delete` | Delete a scratchpad; archives first, purges after `ttl_days` (default 30), `restore: true` cancels |
+
+Deleting a scratchpad follows the same recoverable-delete rule as projects: the pad
+stays readable and listed with its deadline until the purge. `ttl_days: 0` removes it
+immediately. The REST API exposes the shared shape as `DELETE ?ttl_days` and
+`POST /{id}/restore`, and the maintenance sweep purges due rows for every registered
+resource.
 
 ### Human requests
 

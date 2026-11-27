@@ -16,6 +16,7 @@
     "./schema": "./src/schema.ts",
     "./client": "./src/client.ts",
     "./tx": "./src/tx.ts",
+    "./ttl": "./src/ttl.ts",
     "./rules": "./src/rules.ts",
     "./audit": "./src/audit.ts",
     "./kb": "./src/kb.ts",
