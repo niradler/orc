@@ -80,10 +80,13 @@ const TitleSchema = z.string().trim().min(1).max(SCRATCHPAD_TITLE_MAX);
 const TagsSchema = z.array(z.string().min(1).max(64)).max(SCRATCHPAD_TAGS_MAX);
 const SessionIdSchema = z.string().min(1).max(200);
 
+/** Furthest accepted absolute deadline (2100-01-01); keeps dates printable and sweeps bounded. */
+export const MAX_EXPIRES_AT = 4_102_444_800;
+
 /** `ttl` is a duration (`1h`, `7d`) and `expires_at` an absolute epoch-seconds deadline. */
 const ExpiryFields = {
   ttl: z.string().trim().min(1).max(16).nullable().optional(),
-  expires_at: z.number().int().positive().nullable().optional(),
+  expires_at: z.number().int().positive().max(MAX_EXPIRES_AT).nullable().optional(),
   pinned: z.boolean().optional(),
   keep_alive: z.boolean().optional(),
 };

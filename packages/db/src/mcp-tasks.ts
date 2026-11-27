@@ -252,6 +252,14 @@ export class McpTaskStore {
    * clients can request a 24h TTL, and a busy install creates rows faster than
    * they age out. Returns how many rows this cap removed.
    */
+  /** Terminal tasks last touched before `cutoffMs` (epoch ms), regardless of their own TTL. */
+  pruneTerminalOlderThan(cutoffMs: number): number {
+    if (!Number.isFinite(cutoffMs)) return 0;
+    return this.sqlite
+      .query("DELETE FROM mcp_tasks WHERE terminal_at IS NOT NULL AND terminal_at < ?")
+      .run(cutoffMs).changes;
+  }
+
   pruneTerminal(maxRows: number): number {
     if (!Number.isInteger(maxRows) || maxRows < 1) return 0;
     return this.sqlite

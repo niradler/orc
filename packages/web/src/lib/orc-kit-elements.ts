@@ -63,6 +63,9 @@ export const ORC_KIT_ELEMENTS_JS = `const registerOrcElements = (selectTab) => {
     disconnectedCallback() { this.resize.disconnect(); }
     attributeChangedCallback() { if (this.isConnected) this.draw(); }
     draw() {
+      // Pads written before kit v3 use <orc-chart> as a plain container with
+      // their own SVG; only a data-driven element owns its children.
+      if (!this.hasAttribute("data")) return;
       const width = Math.max(120, Math.floor(this.clientWidth || 320));
       this.width = width;
       const kind = ["bar", "line", "area", "sparkline"].includes(this.getAttribute("kind"))

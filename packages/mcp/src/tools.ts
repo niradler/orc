@@ -50,6 +50,7 @@ import {
 } from "@orc/core/package-service";
 import { providerChatDefaults } from "@orc/core/provider-service";
 import {
+  MAX_EXPIRES_AT,
   SCRATCHPAD_KINDS,
   SCRATCHPAD_TAGS_MAX,
   SCRATCHPAD_TITLE_MAX,
@@ -1591,7 +1592,7 @@ function padExpiryParts(
 ): string[] {
   const parts: string[] = [];
   if (pad.pinned) parts.push("pinned");
-  if (pad.expires_at && !pad.archived_at)
+  if (pad.expires_at && !pad.archived_at && pad.expires_at <= MAX_EXPIRES_AT)
     parts.push(`expires ${new Date(pad.expires_at * 1000).toISOString().slice(0, 10)}`);
   if (pad.keep_alive) parts.push("keep-alive");
   if (pad.expiry_skipped_reason) parts.push(`expiry skipped: ${pad.expiry_skipped_reason}`);

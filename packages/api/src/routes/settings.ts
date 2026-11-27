@@ -321,8 +321,16 @@ app.openapi(
         subject_ids: [],
         snapshot: { before, after },
       });
+    const retentionKeys = new Set([
+      "notification_retention_days",
+      "audit_retention_days",
+      "job_history_retention_days",
+      "request_retention_days",
+      "database_size_limit_mb",
+      "database_size_action",
+    ]);
     const others = Object.fromEntries(
-      Object.entries(preferences).filter(([key]) => !key.endsWith("_retention_days")),
+      Object.entries(preferences).filter(([key]) => !retentionKeys.has(key)),
     );
     const diff = diffSummary(
       previous as Record<string, unknown>,

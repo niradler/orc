@@ -66,17 +66,21 @@ export function incrementalVacuum(
  */
 export function pruneRetention(sqlite: Database, options: RetentionOptions = {}): RetentionOutcome {
   const now = options.now ?? Date.now();
-  const requests = new HumanRequestStore(sqlite, () => now).pruneTerminal(
-    options.requestRetentionDays ?? DEFAULT_REQUEST_RETENTION_DAYS,
-    now,
-  );
+  const requestDays = options.requestRetentionDays ?? DEFAULT_REQUEST_RETENTION_DAYS;
+  const requests = new HumanRequestStore(sqlite, () => now).pruneTerminal(requestDays, now);
   const tasks = new McpTaskStore(sqlite);
   const expired = tasks.prune();
+  // Rows without a per-task TTL (or older than it) still obey the request window.
+  const aged = tasks.pruneTerminalOlderThan(now - requestDays * 86_400_000);
   const capped = tasks.pruneTerminal(options.mcpTerminalRowCap ?? DEFAULT_MCP_TERMINAL_ROW_CAP);
   sqlite.exec("PRAGMA optimize=0x10002");
   const vacuumed = incrementalVacuum(
     sqlite,
     options.vacuumPages ?? DEFAULT_INCREMENTAL_VACUUM_PAGES,
   );
-  return { human_requests: requests, mcp_tasks: expired + capped, vacuumed_pages: vacuumed };
+  return {
+    human_requests: requests,
+    mcp_tasks: expired + aged + capped,
+    vacuumed_pages: vacuumed,
+  };
 }

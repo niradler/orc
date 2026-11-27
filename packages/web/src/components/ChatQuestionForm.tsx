@@ -1,6 +1,6 @@
 import { CHAT_QUESTION_DISMISS_ANSWER, type ChatQuestion } from "@orc/core/chat";
 import { Check, MessageCircle } from "lucide-react";
-import { type KeyboardEvent, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { HelpPopover } from "@/components/HelpPopover";
 
 const QUESTION_FORM_ID = "chat-question-form";
@@ -132,7 +132,11 @@ export function ChatQuestionForm({
 }) {
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
   const [step, setStep] = useState(0);
+  const tabBase = useId();
+  const tabId = (index: number) => `${tabBase}-tab-${index}`;
+  const panelId = (index: number) => `${tabBase}-panel-${index}`;
   const form = useRef<HTMLFormElement>(null);
+  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
   const panel = useRef<HTMLDivElement>(null);
   const focusPanel = useRef(false);
   const wasCollapsed = useRef(!expanded);
@@ -171,7 +175,7 @@ export function ChatQuestionForm({
     if (next === null) return;
     event.preventDefault();
     setStep(next);
-    document.getElementById(`chat-question-tab-${next}`)?.focus();
+    tabs.current[next]?.focus();
   };
   return (
     <form
@@ -196,10 +200,13 @@ export function ChatQuestionForm({
               key={question.id}
               type="button"
               role="tab"
-              id={`chat-question-tab-${index}`}
+              id={tabId(index)}
+              ref={(node) => {
+                tabs.current[index] = node;
+              }}
               data-testid={`chat-question-tab-${index}`}
               aria-selected={index === active}
-              aria-controls={`chat-question-panel-${index}`}
+              aria-controls={panelId(index)}
               tabIndex={index === active ? 0 : -1}
               onClick={() => setStep(index)}
               onKeyDown={(event) => onTabKeyDown(event, index)}
@@ -218,32 +225,33 @@ export function ChatQuestionForm({
           ))}
         </div>
       )}
-      {current &&
-        (total > 1 ? (
+      {request.questions.map((question, index) => {
+        const activePanel = index === active;
+        return (
           <div
-            ref={panel}
-            role="tabpanel"
-            id={`chat-question-panel-${active}`}
-            aria-labelledby={`chat-question-tab-${active}`}
-            tabIndex={-1}
-            data-testid={`chat-question-panel-${active}`}
+            key={question.id}
+            ref={activePanel ? panel : undefined}
+            hidden={total > 1 && !activePanel}
+            {...(total > 1
+              ? {
+                  role: "tabpanel" as const,
+                  id: panelId(index),
+                  "aria-labelledby": tabId(index),
+                  tabIndex: -1,
+                  "data-testid": `chat-question-panel-${index}`,
+                }
+              : {})}
             className="focus-visible:outline-none"
           >
             <QuestionField
-              question={current}
-              answers={answers[current.id] ?? []}
+              question={question}
+              answers={answers[question.id] ?? []}
               disabled={busy}
-              onChange={(next) => setAnswers((all) => ({ ...all, [current.id]: next }))}
+              onChange={(next) => setAnswers((all) => ({ ...all, [question.id]: next }))}
             />
           </div>
-        ) : (
-          <QuestionField
-            question={current}
-            answers={answers[current.id] ?? []}
-            disabled={busy}
-            onChange={(next) => setAnswers((all) => ({ ...all, [current.id]: next }))}
-          />
-        ))}
+        );
+      })}
       <div className="flex flex-wrap items-center gap-2">
         {total > 1 && (
           <span className="text-xs text-on-surface-variant" data-testid="chat-question-step">

@@ -76,12 +76,20 @@ test("should prune terminal history, cap MCP tasks and leave pending work alone"
     ids.push(task.task_id);
   }
 
+  // A terminal row with no per-task TTL would survive `prune()`; the request window removes it.
+  sqlite
+    .query(
+      `INSERT INTO mcp_tasks(task_id,flavor,status,owner,tool_name,created_at,updated_at,terminal_at,ttl_ms)
+       VALUES('aged-1','v2','completed','retention-test','project_list',?,?,?,NULL)`,
+    )
+    .run(now - 10 * day, now - 10 * day, now - 10 * day);
+
   const outcome = pruneRetention(sqlite, {
     now,
     requestRetentionDays: 7,
     mcpTerminalRowCap: 1,
   });
-  expect(outcome).toEqual({ human_requests: 2, mcp_tasks: 2, vacuumed_pages: 0 });
+  expect(outcome).toEqual({ human_requests: 2, mcp_tasks: 3, vacuumed_pages: 0 });
   expect(
     sqlite
       .query<{ id: string }, []>("SELECT id FROM human_requests")

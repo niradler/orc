@@ -244,10 +244,13 @@ for (const width of [390, 1440]) {
     await expect(checkboxes).toHaveCount(2);
     await checkboxes.nth(0).check();
     await checkboxes.nth(1).check();
-    // Tabs jump back and forth without losing the answers.
+    // Tabs jump back and forth without losing the answers; arrows move between tabs.
     await page.getByTestId("chat-question-tab-0").click();
-    await expect(page.getByTestId("chat-question-answer")).toBeVisible();
-    await page.getByTestId("chat-question-tab-1").click();
+    await expect(page.getByTestId("chat-question-answer").filter({ visible: true })).toBeVisible();
+    await page.getByTestId("chat-question-tab-0").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("chat-question-tab-1")).toBeFocused();
+    await expect(page.getByTestId("chat-question-tab-1")).toHaveAttribute("aria-selected", "true");
     await expect(checkboxes.nth(0)).toBeChecked();
     await expect(checkboxes.nth(1)).toBeChecked();
     await page.screenshot({ path: testInfo.outputPath(`chat-question-${width}.png`) });

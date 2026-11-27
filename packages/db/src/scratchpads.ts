@@ -3,6 +3,7 @@ import { ConflictError, NotFoundError, ValidationError } from "@orc/core/errors"
 import { ulid } from "@orc/core/ids";
 import {
   emptyScratchpadContent,
+  MAX_EXPIRES_AT,
   type Scratchpad,
   type ScratchpadCreate,
   type ScratchpadListItem,
@@ -120,6 +121,8 @@ function resolveExpiry(
   if (typeof input.expires_at === "number") {
     if (input.expires_at <= nowSeconds)
       throw new ValidationError("expires_at must be in the future");
+    if (input.expires_at > MAX_EXPIRES_AT)
+      throw new ValidationError("expires_at must be before 2100");
     return { expires_at: input.expires_at, ttl_seconds: input.expires_at - nowSeconds };
   }
   return { expires_at: null, ttl_seconds: null };
@@ -288,7 +291,11 @@ export class ScratchpadStore {
             ttlSeconds,
             (input.pinned ?? before.pinned) ? 1 : 0,
             keepAlive ? 1 : 0,
-            expiry === null ? before.expiry_skipped_reason : null,
+            expiry !== null
+              ? null
+              : input.pinned === false && before.expiry_skipped_reason === "pinned"
+                ? null
+                : before.expiry_skipped_reason,
             id,
           );
       })

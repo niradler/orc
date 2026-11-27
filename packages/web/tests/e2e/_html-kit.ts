@@ -106,6 +106,14 @@ export async function checkHtmlKitElements(
     });
     await expect(frame.getByText("No chart data")).toBeVisible();
     await expect(bars).toHaveCount(0);
+    // Pre-v3 pads used <orc-chart> as a plain container; their authored SVG must survive.
+    await contentFrame.evaluate(() => {
+      const legacy = document.createElement("orc-chart");
+      legacy.id = "legacy-chart";
+      legacy.innerHTML = '<svg data-authored="1"><rect width="10" height="10"></rect></svg>';
+      document.body.append(legacy);
+    });
+    await expect(frame.locator('#legacy-chart svg[data-authored="1"]')).toHaveCount(1);
     await contentFrame.evaluate(() => {
       const tabs = document.createElement("orc-tabs");
       tabs.setAttribute("label", "Independent tabs");

@@ -332,6 +332,8 @@ type ClaudeStream = {
   readonly backgroundTasks: Map<string, ChatBackgroundTask>;
   readonly awaitingTaskNotifications: Set<string>;
   readonly toolInputs: Map<string, { name: string; command?: string; description?: string }>;
+  /** Task-tool state outlives one turn: updates in a later turn can target earlier tasks. */
+  readonly plan: PlanTracker;
   finished: Promise<void>;
 };
 
@@ -420,7 +422,7 @@ class ClaudeSDKSession implements AgentSession {
         wroteText: false,
         streamedText: false,
         lastResult: undefined,
-        plan: new PlanTracker(),
+        plan: this.stream.plan,
         pendingSteers: new Set(),
       };
       this.done = false;
@@ -446,13 +448,14 @@ class ClaudeSDKSession implements AgentSession {
     }
     this.done = false;
     this.eventQueue.length = 0;
+    const plan = new PlanTracker();
     const turn: ClaudeTurn = {
       stopping: false,
       closing: false,
       wroteText: false,
       streamedText: false,
       lastResult: undefined,
-      plan: new PlanTracker(),
+      plan,
       pendingSteers: new Set(),
     };
     const stream: ClaudeStream = {
@@ -469,6 +472,7 @@ class ClaudeSDKSession implements AgentSession {
       backgroundTasks: new Map(),
       awaitingTaskNotifications: new Set(),
       toolInputs: new Map(),
+      plan,
       finished: Promise.resolve(),
     };
     this.stream = stream;
