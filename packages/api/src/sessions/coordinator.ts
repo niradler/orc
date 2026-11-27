@@ -2,6 +2,13 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { chatBackendFor } from "@orc/agent-runtime";
 import type { ChatSettings, ChatThread } from "@orc/core/chat";
+import {
+  execHostFor,
+  hostAlias,
+  hostHome,
+  resolveExecHost,
+  resolveProjectHost,
+} from "@orc/core/exec-host";
 import { providerChatDefaults } from "@orc/core/provider-service";
 import { AuditLog } from "@orc/db/audit";
 import { ChatStore } from "@orc/db/chat";
@@ -53,17 +60,48 @@ function refreshCoordinatorDefaults(
   return store.get(existing.id) ?? existing;
 }
 
+/** Where a coordinator with no project scope lives: the Settings execution host and its home. */
+export type CoordinatorBase = { host: string | null; cwd: string };
+
+/**
+ * The installation's default execution target, mirroring a new chat with no host
+ * or folder of its own. Never the container's own filesystem when Settings points
+ * ORC at an SSH host — `host: null` means "local" to `session_start` children.
+ */
+export async function defaultCoordinatorBase(): Promise<CoordinatorBase> {
+  const host = resolveExecHost();
+  return {
+    host: hostAlias(host),
+    cwd: host.kind === "ssh" ? await hostHome(host) : homedir(),
+  };
+}
+
+function activeProjectTarget(
+  sqlite: ReturnType<typeof getSqlite>,
+  projectId: string,
+): { scope: string | null; host: string | null } | null {
+  return sqlite
+    .query<{ scope: string | null; host: string | null }, [string]>(
+      "SELECT scope, host FROM projects WHERE id = ? AND status = 'active'",
+    )
+    .get(projectId);
+}
+
 /**
  * The lightweight root session an authenticated MCP connection gets when it has no
  * `?session=` binding. A real chat thread, so spawn/stop/message ownership works through
- * the existing lineage rules. Children inherit its chat settings and folder, so its
- * config is kept in sync with the live Settings defaults on every use; manual edits to
- * a coordinator's own chat settings do not persist across requests.
+ * the existing lineage rules. Children inherit its chat settings, host and folder, so its
+ * config is kept in sync with the live Settings defaults on every use and its host is
+ * re-anchored when the installation's default execution host changes; manual edits to a
+ * coordinator's own chat settings do not persist across requests.
  */
-export function ensureCoordinatorSession(input: {
-  client?: string | undefined;
-  projects?: readonly { id: string; name: string }[] | undefined;
-}): ChatThread {
+export async function ensureCoordinatorSession(
+  input: {
+    client?: string | undefined;
+    projects?: readonly { id: string; name: string }[] | undefined;
+  },
+  base: () => Promise<CoordinatorBase> = defaultCoordinatorBase,
+): Promise<ChatThread> {
   const client = coordinatorClientName(input.client);
   const id = coordinatorSessionId(client);
   const sqlite = getSqlite();
@@ -74,23 +112,44 @@ export function ensureCoordinatorSession(input: {
     process.env.ORC_E2E_CHAT_MOCK === "1",
   );
   const existing = store.get(id);
-  if (existing) return refreshCoordinatorDefaults(store, existing, defaults);
+  if (existing) {
+    const refreshed = refreshCoordinatorDefaults(store, existing, defaults);
+    const target = refreshed.projectId ? activeProjectTarget(sqlite, refreshed.projectId) : null;
+    const alias = resolveProjectHost(target?.host);
+    if (refreshed.host === alias) return refreshed;
+    // Threads created before the anchor followed Settings (or before the
+    // installation moved hosts) hold a stale local folder such as the
+    // container's /data; spawned children would inherit it and run there.
+    try {
+      const anchored = target?.scope
+        ? { host: alias, cwd: target.scope }
+        : target?.host
+          ? { host: alias, cwd: await hostHome(execHostFor(alias)) }
+          : await base();
+      store.save({ ...refreshed, host: anchored.host, cwd: anchored.cwd });
+      return store.get(id) ?? refreshed;
+    } catch {
+      // The configured host is unreachable right now. Keep the old anchor and
+      // retry on the next request instead of failing every MCP call.
+      return refreshed;
+    }
+  }
   const project = input.projects?.length === 1 ? input.projects[0] : undefined;
-  const scope = project
-    ? sqlite
-        .query<{ scope: string | null }, [string]>(
-          "SELECT scope FROM projects WHERE id = ? AND status = 'active'",
-        )
-        .get(project.id)?.scope
-    : null;
+  const target = project ? activeProjectTarget(sqlite, project.id) : null;
+  const targetHost = resolveProjectHost(target?.host);
+  const anchor = target?.scope
+    ? { host: targetHost, cwd: target.scope }
+    : target?.host
+      ? { host: targetHost, cwd: await hostHome(execHostFor(targetHost)) }
+      : await base();
   const thread: ChatThread = {
     id,
     title: `MCP coordinator (${client})`,
     config: defaults,
     backend: chatBackendFor(defaults.agent),
     runtimeId: null,
-    cwd: scope || homedir(),
-    host: null,
+    cwd: anchor.cwd,
+    host: anchor.host,
     sourceId: null,
     messages: [],
     ...(project ? { projectId: project.id } : {}),

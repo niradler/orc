@@ -1,12 +1,6 @@
 import { z } from "zod";
-import { CODING_AGENTS } from "./coding-agents.js";
+import { CodingAgentIdSchema } from "./coding-agents.js";
 import { SessionBundleSchema } from "./session-handoff.js";
-
-/** Every supported harness can be filtered, not only the two the sync script uploads today. */
-const ARCHIVE_SEARCH_AGENTS = [...new Set(CODING_AGENTS.map((agent) => agent.id))] as [
-  string,
-  ...string[],
-];
 
 export const ARCHIVE_MAX_BYTES = 64 * 1024 * 1024;
 export const SESSION_SYNC_PATH_PATTERN =
@@ -73,10 +67,7 @@ export const ArchiveSearchSchema = z
         return ids.length <= 50 && ids.every((id) => id.length > 0 && id.length <= 100);
       }, "Use 1-50 comma-separated project IDs of 1-100 characters")
       .optional(),
-    agent: z
-      .enum(ARCHIVE_SEARCH_AGENTS)
-      .optional()
-      .describe("Harness id to filter by, e.g. claude, codex or opencode"),
+    agent: CodingAgentIdSchema.optional(),
     mode: z.enum(["auto", "lexical", "semantic", "hybrid"]).default("auto"),
     limit: z.coerce.number().int().min(1).max(100).default(20),
     offset: z.coerce.number().int().min(0).max(100000).default(0),

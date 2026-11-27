@@ -2,14 +2,22 @@ import type { Database } from "bun:sqlite";
 import { realpath } from "node:fs/promises";
 import { posix, relative } from "node:path";
 import { createRoute, z } from "@hono/zod-openapi";
-import { NATIVE_CHAT_AGENTS } from "@orc/core/chat";
+import { type ChatThread, NATIVE_CHAT_AGENTS } from "@orc/core/chat";
 import { ChatAnalyticsSchema } from "@orc/core/chat-analytics";
-import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { ForbiddenError, NotFoundError, ValidationError } from "@orc/core/errors";
 import { execHostFor, hostRuntime, resolveExecHost } from "@orc/core/exec-host";
+import { ulid } from "@orc/core/ids";
+import {
+  type SessionListItem,
+  SessionListResponseSchema,
+  SessionListScopeSchema,
+  SessionUpdateSchema,
+  sessionMessageBackend,
+} from "@orc/core/session-messages";
 import { SessionCacheUsageSchema } from "@orc/core/usage";
 import { ChatStore } from "@orc/db/chat";
 import { getDb, getSqlite } from "@orc/db/client";
-import { gateway_sessions, session_handoffs, sessions, tasks } from "@orc/db/schema";
+import { gateway_sessions, projects, session_handoffs, sessions, tasks } from "@orc/db/schema";
 import {
   and,
   asc,
@@ -31,12 +39,13 @@ import { createRouter } from "../lib/router.js";
 import { LIVE_CHAT_ID, liveRunFields, syncNow } from "../session-watcher.js";
 import { emptySessionCacheUsage, loadSessionCacheUsage } from "../sessions/cache-usage.js";
 import { chatAnalyticsFor } from "../sessions/chat-analytics.js";
-import { childWorkCountsMany } from "../sessions/control.js";
+import { childWorkCountsMany, spawnChain } from "../sessions/control.js";
 import { chatThreadTranscript, resolveSessionRef } from "../sessions/resolve.js";
 import { searchSessions } from "../sessions/search.js";
 import { bodyLinkIndex, sessionIdsOfTask } from "../sessions/tasklinks.js";
 import { readTranscriptBytes } from "../sessions/transcript.js";
 import { loadTranscriptBytes, transcriptCacheKey } from "../sessions/transcript-source.js";
+import { chatControl } from "../sessions/turns.js";
 import { chatStatus } from "./chat.js";
 
 const app = createRouter();
@@ -305,6 +314,45 @@ const liveSyncRoute = createRoute({
   },
 });
 
+const liveListUnifiedRoute = createRoute({
+  method: "get",
+  path: "/sessions/live/list",
+  tags: ["Sessions"],
+  summary: "List unified ORC chat and discovered native sessions with filters and pagination",
+  request: {
+    query: z.object({
+      scope: SessionListScopeSchema.optional().default("all"),
+      parent: z.string().min(1).max(200).optional(),
+      project_id: z.string().min(1).max(200).optional(),
+      project_ids: z.string().optional(),
+      agent: z.string().min(1).max(64).optional(),
+      host: z.string().min(1).max(255).optional(),
+      status: z.string().min(1).max(32).optional(),
+      q: z.string().trim().min(1).max(200).optional(),
+      include_hidden: z
+        .enum(["true", "false"])
+        .optional()
+        .transform((v) => v === "true"),
+      include_subagents: z
+        .enum(["true", "false"])
+        .optional()
+        .transform((v) => v === "true"),
+      sync: z
+        .enum(["true", "false"])
+        .optional()
+        .transform((v) => v === "true"),
+      limit: z.coerce.number().int().min(1).max(100).optional().default(25),
+      offset: z.coerce.number().int().min(0).optional().default(0),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Unified paginated session list",
+      content: { "application/json": { schema: SessionListResponseSchema } },
+    },
+  },
+});
+
 const liveGetRoute = createRoute({
   method: "get",
   path: "/sessions/live/{id}",
@@ -324,19 +372,15 @@ const liveUpdateRoute = createRoute({
   method: "patch",
   path: "/sessions/live/{id}",
   tags: ["Sessions"],
-  summary: "Rename, hide or link a live session",
+  summary: "Update a chat or discovered session",
   description:
-    "Send any of task_id (null unlinks), display_title (null restores the agent's title) or hidden. A rename and a hide survive re-sync and restart.",
+    "Update title/display_title, hidden, task_id (discovered sessions), or chat settings (model, effort, permission_mode, send_while_running).",
   request: {
     params: z.object({ id: z.string() }),
     body: {
       content: {
         "application/json": {
-          schema: z.object({
-            task_id: z.string().nullable().optional(),
-            display_title: z.string().trim().min(1).max(200).nullable().optional(),
-            hidden: z.boolean().optional(),
-          }),
+          schema: SessionUpdateSchema,
         },
       },
     },
@@ -377,6 +421,36 @@ const listRoute = createRoute({
         },
       },
     },
+  },
+});
+
+const CreateSessionSchema = z
+  .object({
+    agent: z.string().trim().min(1).max(100),
+    agent_version: z.string().max(100).optional(),
+    project: z.string().max(200).optional(),
+    project_id: z.string().max(200).optional(),
+    summary: z.string().max(10_000).optional(),
+    tokens_used: z.number().int().nonnegative().optional(),
+  })
+  .openapi("CreateSession");
+
+const createSessionRoute = createRoute({
+  method: "post",
+  path: "/sessions",
+  tags: ["Sessions"],
+  summary: "Record a session log entry",
+  request: {
+    body: {
+      content: { "application/json": { schema: CreateSessionSchema } },
+    },
+  },
+  responses: {
+    201: {
+      description: "Created session log entry",
+      content: { "application/json": { schema: SessionSchema } },
+    },
+    404: { description: "Project not found" },
   },
 });
 
@@ -627,18 +701,12 @@ app.openapi(liveSearchRoute, async (c) => {
   );
 });
 
-// Registered after the static /sessions/live/search route: Hono matches in
-// registration order, so {id} would otherwise swallow "search".
-app.openapi(liveGetRoute, async (c) => {
-  const { id } = c.req.valid("param");
-  const resolved = resolveSessionRef(id);
-  if (!resolved) throw new NotFoundError("Session", id);
-  if (resolved.gateway) {
-    const [session] = await toLiveDtos([resolved.gateway]);
-    if (session) return c.json(session, 200);
-  }
-  if (!resolved.thread) throw new NotFoundError("Session", id);
-  const thread = resolved.thread;
+function normalizeHost(host: string | null | undefined): string {
+  const value = host?.trim() ?? "";
+  return !value || value === "local" ? "local" : value;
+}
+
+function threadToLiveDto(thread: ChatThread): z.infer<typeof LiveSessionSchema> {
   const st = chatStatus(thread.id);
   const createdMs = thread.spawnedBy?.at ?? thread.messages[0]?.timestamp ?? thread.updatedAt;
   const liveStatus: "idle" | "running" | "stopped" | "error" =
@@ -649,44 +717,337 @@ app.openapi(liveGetRoute, async (c) => {
         : st.status === "stopped"
           ? "stopped"
           : "idle";
+  return {
+    id: thread.id,
+    agent: thread.config.agent,
+    session_id: thread.runtimeId ?? null,
+    parent_id: null,
+    spawned_from_id: thread.spawnedBy?.sessionId ?? null,
+    name: thread.title,
+    summary: st.last_message,
+    tokens_used: null,
+    tokens_estimated: false,
+    model: thread.config.model || null,
+    permission_mode: thread.config.permissionMode ?? null,
+    cwd: thread.cwd,
+    host: thread.host,
+    pid: null,
+    status: liveStatus,
+    waiting_for_human: st.waiting_for !== null,
+    waiting_for:
+      st.waiting_for === "question"
+        ? { reason: "question" as const, tool: null }
+        : st.waiting_for === "approval"
+          ? { reason: "permission" as const, tool: null }
+          : null,
+    background_work: false,
+    working_children: st.working_children,
+    waiting_children: st.waiting_children,
+    hidden: !!thread.hidden,
+    renamed: false,
+    project_id: thread.projectId ?? null,
+    handoff: null,
+    send: null,
+    task: null,
+    last_activity_at: new Date(st.last_activity_at ?? st.updated_at).toISOString(),
+    created_at: new Date(createdMs).toISOString(),
+  };
+}
+
+app.openapi(liveListUnifiedRoute, async (c) => {
+  const {
+    scope,
+    parent,
+    project_id,
+    project_ids,
+    agent,
+    host,
+    status,
+    q,
+    include_hidden,
+    include_subagents,
+    sync,
+    limit,
+    offset,
+  } = c.req.valid("query");
+  if (sync) await syncNow();
+
+  let parentKeys: Set<string> | null = null;
+  const requestedParent =
+    parent === "self" || (!parent && scope === "children")
+      ? c.req.header("x-orc-session")?.trim() || null
+      : (parent ?? null);
+  if (requestedParent) {
+    const resolvedParent = resolveSessionRef(requestedParent);
+    parentKeys = new Set(
+      [
+        requestedParent,
+        resolvedParent?.thread?.id,
+        resolvedParent?.gateway?.id,
+        resolvedParent?.thread?.runtimeId,
+        resolvedParent?.gateway?.runtime_session_id,
+      ].filter((value): value is string => !!value),
+    );
+  } else if (scope === "children") {
+    return c.json(
+      { sessions: [], total: 0, offset, limit, has_more: false, next_offset: null },
+      200,
+    );
+  }
+
+  const chatRows =
+    scope === "native"
+      ? []
+      : getSqlite()
+          .query<
+            {
+              id: string;
+              title: string;
+              updatedAt: number;
+              agent: string | null;
+              backend: string | null;
+              runtimeId: string | null;
+              runtimeModel: string | null;
+              model: string | null;
+              sourceId: string | null;
+              host: string | null;
+              cwd: string | null;
+              projectId: string | null;
+              spawnedFrom: string | null;
+              hidden: number;
+              queued: number;
+            },
+            []
+          >(
+            `SELECT id, title, updated_at AS updatedAt,
+              CASE WHEN json_valid(data) AND json_type(data, '$.config.agent') = 'text'
+                THEN json_extract(data, '$.config.agent') END AS agent,
+              CASE WHEN json_valid(data) AND json_type(data, '$.backend') = 'text'
+                THEN json_extract(data, '$.backend') END AS backend,
+              CASE WHEN json_valid(data) AND json_type(data, '$.runtimeId') = 'text'
+                THEN json_extract(data, '$.runtimeId') END AS runtimeId,
+              CASE WHEN json_valid(data) AND json_type(data, '$.runtimeModel') = 'text'
+                THEN json_extract(data, '$.runtimeModel') END AS runtimeModel,
+              CASE WHEN json_valid(data) AND json_type(data, '$.config.model') = 'text'
+                THEN json_extract(data, '$.config.model') END AS model,
+              CASE WHEN json_valid(data) AND json_type(data, '$.sourceId') = 'text'
+                THEN json_extract(data, '$.sourceId') END AS sourceId,
+              CASE WHEN json_valid(data) AND json_type(data, '$.host') = 'text'
+                THEN json_extract(data, '$.host') END AS host,
+              CASE WHEN json_valid(data) AND json_type(data, '$.cwd') = 'text'
+                THEN json_extract(data, '$.cwd') END AS cwd,
+              CASE WHEN json_valid(data) AND json_type(data, '$.projectId') = 'text'
+                THEN json_extract(data, '$.projectId') END AS projectId,
+              CASE WHEN json_valid(data) AND json_type(data, '$.spawnedBy.sessionId') = 'text'
+                THEN json_extract(data, '$.spawnedBy.sessionId') END AS spawnedFrom,
+              CASE WHEN json_valid(data) AND json_extract(data, '$.hidden') = 1 THEN 1 ELSE 0 END AS hidden,
+              CASE WHEN json_valid(data) AND json_extract(data, '$.spawnedBy.prompt') IS NOT NULL THEN 1 ELSE 0 END AS queued
+            FROM chat_threads ORDER BY updated_at DESC`,
+          )
+          .all();
+  const gatewayRows =
+    scope === "chats"
+      ? []
+      : await getDb().query.gateway_sessions.findMany({
+          where: eq(gateway_sessions.chat_id, LIVE_CHAT_ID),
+          orderBy: [desc(gateway_sessions.last_activity_at), desc(gateway_sessions.updated_at)],
+          limit: 500,
+        });
+
+  const gatewayById = new Map(gatewayRows.map((row) => [row.id, row]));
+  const gatewayByRuntime = new Map<string, (typeof gatewayRows)[number]>();
+  for (const row of gatewayRows) {
+    if (!row.runtime_session_id) continue;
+    const key = `${sessionMessageBackend(row.backend)}\0${normalizeHost(row.execution_host)}\0${row.runtime_session_id}`;
+    if (!gatewayByRuntime.has(key)) gatewayByRuntime.set(key, row);
+  }
+
+  const mergedGatewayIds = new Set<string>();
+  const items: SessionListItem[] = [];
+
+  for (const chat of chatRows) {
+    const linked =
+      (chat.sourceId ? gatewayById.get(chat.sourceId) : undefined) ??
+      (chat.runtimeId && (chat.backend || chat.agent)
+        ? gatewayByRuntime.get(
+            `${sessionMessageBackend(chat.backend ?? chat.agent ?? "")}\0${normalizeHost(chat.host)}\0${chat.runtimeId}`,
+          )
+        : undefined);
+    if (linked) mergedGatewayIds.add(linked.id);
+    const running = chatControl().running(chat.id);
+    const waiting = running ? chatControl().waiting(chat.id) : null;
+    const itemStatus = waiting ? "waiting" : running ? "running" : chat.queued ? "queued" : "idle";
+    const updatedAt = Math.max(
+      chat.updatedAt,
+      linked?.last_activity_at?.getTime() ?? linked?.updated_at.getTime() ?? 0,
+    );
+    items.push({
+      session_id: chat.id,
+      source: "chat",
+      title: chat.title || linked?.display_title || linked?.title || chat.id,
+      agent: chat.agent ?? (chat.backend ? sessionMessageBackend(chat.backend) : null),
+      model: chat.runtimeModel ?? (chat.model || null) ?? linked?.model ?? null,
+      status: itemStatus,
+      waiting_for: waiting,
+      project_id: chat.projectId ?? linked?.project_id ?? null,
+      cwd: chat.cwd ?? linked?.cwd ?? null,
+      host: chat.host ?? linked?.execution_host ?? null,
+      parent_session_id:
+        chat.spawnedFrom ?? linked?.spawned_from_session_id ?? linked?.parent_session_id ?? null,
+      working_children: 0,
+      waiting_children: 0,
+      native_session_id: chat.runtimeId ?? linked?.runtime_session_id ?? null,
+      live_session_id: linked?.id ?? null,
+      hidden: Boolean(chat.hidden || linked?.hidden_at != null),
+      last_message: linked?.summary ? linked.summary.slice(0, 300) : null,
+      updated_at: updatedAt,
+      last_activity_at: linked?.last_activity_at?.getTime() ?? chat.updatedAt,
+    });
+  }
+
+  for (const row of gatewayRows) {
+    if (mergedGatewayIds.has(row.id)) continue;
+    if (row.parent_session_id && !include_subagents && !parentKeys) continue;
+    const live = liveRunFields(
+      row.backend,
+      row.execution_host ?? null,
+      row.runtime_session_id ?? null,
+    );
+    const waitingFor = live.waiting_for?.reason ?? null;
+    const updatedAt = row.last_activity_at?.getTime() ?? row.updated_at.getTime();
+    items.push({
+      session_id: row.id,
+      source: "native",
+      title: row.display_title ?? row.title ?? row.id,
+      agent: sessionMessageBackend(row.backend),
+      model: row.model ?? null,
+      status: waitingFor ? "waiting" : row.status,
+      waiting_for: waitingFor,
+      project_id: row.project_id ?? null,
+      cwd: row.cwd ?? null,
+      host: row.execution_host ?? null,
+      parent_session_id: row.spawned_from_session_id ?? row.parent_session_id ?? null,
+      working_children: 0,
+      waiting_children: 0,
+      native_session_id: row.runtime_session_id ?? null,
+      live_session_id: row.id,
+      hidden: row.hidden_at != null,
+      last_message: row.summary ? row.summary.slice(0, 300) : null,
+      updated_at: updatedAt,
+      last_activity_at: row.last_activity_at?.getTime() ?? null,
+    });
+  }
+
+  const projectIdSet = project_ids
+    ? new Set(
+        project_ids
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean),
+      )
+    : null;
+  const agentFilter = agent ? sessionMessageBackend(agent) : null;
+  const hostFilter = host ? normalizeHost(host) : null;
+  const needle = q?.toLowerCase() ?? null;
+
+  const filtered = items
+    .filter((item) => {
+      if (!include_hidden && item.hidden) return false;
+      if (parentKeys && (!item.parent_session_id || !parentKeys.has(item.parent_session_id))) {
+        return false;
+      }
+      if (project_id === "unassigned") {
+        if (item.project_id !== null) return false;
+      } else if (project_id) {
+        if (item.project_id !== project_id) return false;
+      } else if (projectIdSet && projectIdSet.size > 0) {
+        if (!item.project_id || !projectIdSet.has(item.project_id)) return false;
+      }
+      if (agentFilter) {
+        const itemAgent = item.agent ? sessionMessageBackend(item.agent) : "";
+        if (itemAgent !== agentFilter && item.agent !== agent) return false;
+      }
+      if (hostFilter && normalizeHost(item.host) !== hostFilter) return false;
+      if (status) {
+        if (status === "active") {
+          if (!["running", "waiting", "queued"].includes(item.status)) return false;
+        } else if (item.status !== status) {
+          return false;
+        }
+      }
+      if (needle) {
+        const hay = [
+          item.title,
+          item.cwd,
+          item.session_id,
+          item.native_session_id,
+          item.last_message,
+        ]
+          .filter(Boolean)
+          .join("\n")
+          .toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => b.updated_at - a.updated_at || a.session_id.localeCompare(b.session_id));
+
+  const total = filtered.length;
+  const page = filtered.slice(offset, offset + limit);
+  const childWork = childWorkCountsMany(
+    page.map((item) => ({
+      id: item.session_id,
+      nativeId: item.native_session_id,
+      backend: item.agent,
+      host: item.host,
+    })),
+  );
+  for (const item of page) {
+    const counts = childWork.get(item.session_id);
+    if (counts) {
+      item.working_children = counts.working;
+      item.waiting_children = counts.waiting;
+    }
+    if (item.source === "chat") {
+      try {
+        const st = chatStatus(item.session_id);
+        item.status = st.status;
+        item.waiting_for = st.waiting_for;
+        item.working_children = st.working_children;
+        item.waiting_children = st.waiting_children;
+        item.last_message = st.last_message ? st.last_message.slice(0, 300) : item.last_message;
+        item.last_activity_at = st.last_activity_at ?? item.last_activity_at;
+      } catch {
+        // Keep summary fields if thread payload is unreadable.
+      }
+    }
+  }
+  const hasMore = offset + page.length < total;
   return c.json(
     {
-      id: thread.id,
-      agent: thread.config.agent,
-      session_id: thread.runtimeId ?? null,
-      parent_id: null,
-      spawned_from_id: thread.spawnedBy?.sessionId ?? null,
-      name: thread.title,
-      summary: st.last_message,
-      tokens_used: null,
-      tokens_estimated: false,
-      model: thread.config.model || null,
-      permission_mode: thread.config.permissionMode ?? null,
-      cwd: thread.cwd,
-      host: thread.host,
-      pid: null,
-      status: liveStatus,
-      waiting_for_human: st.waiting_for !== null,
-      waiting_for:
-        st.waiting_for === "question"
-          ? { reason: "question" as const, tool: null }
-          : st.waiting_for === "approval"
-            ? { reason: "permission" as const, tool: null }
-            : null,
-      background_work: false,
-      working_children: st.working_children,
-      waiting_children: st.waiting_children,
-      hidden: false,
-      renamed: false,
-      project_id: thread.projectId ?? null,
-      handoff: null,
-      send: null,
-      task: null,
-      last_activity_at: new Date(st.last_activity_at ?? st.updated_at).toISOString(),
-      created_at: new Date(createdMs).toISOString(),
+      sessions: page,
+      total,
+      offset,
+      limit,
+      has_more: hasMore,
+      next_offset: hasMore ? offset + page.length : null,
     },
     200,
   );
+});
+
+// Registered after static /sessions/live/* routes: Hono matches in
+// registration order, so {id} would otherwise swallow "search" or "list".
+app.openapi(liveGetRoute, async (c) => {
+  const { id } = c.req.valid("param");
+  const resolved = resolveSessionRef(id);
+  if (!resolved) throw new NotFoundError("Session", id);
+  if (resolved.gateway) {
+    const [session] = await toLiveDtos([resolved.gateway]);
+    if (session) return c.json(session, 200);
+  }
+  if (!resolved.thread) throw new NotFoundError("Session", id);
+  return c.json(threadToLiveDto(resolved.thread), 200);
 });
 
 app.openapi(
@@ -817,32 +1178,91 @@ app.openapi(liveSyncRoute, async (c) => c.json({ results: await syncNow() }, 200
 app.openapi(liveUpdateRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
-  const { task_id, display_title, hidden } = c.req.valid("json");
-  if (task_id === undefined && display_title === undefined && hidden === undefined)
-    throw new ValidationError("Send task_id, display_title or hidden");
-  const resolved = resolveSessionRef(id);
-  const row = resolved?.gateway ?? null;
-  if (!row) throw new NotFoundError("Session", id);
-  if (task_id && !(await db.query.tasks.findFirst({ where: eq(tasks.id, task_id) }))) {
-    throw new NotFoundError("Task", task_id);
+  const body = c.req.valid("json");
+  const nextTitle = body.title !== undefined ? body.title : body.display_title;
+  const hasChatConfigPatch =
+    body.model !== undefined ||
+    body.effort !== undefined ||
+    body.permission_mode !== undefined ||
+    body.send_while_running !== undefined;
+  const hasAnyPatch =
+    body.task_id !== undefined ||
+    nextTitle !== undefined ||
+    body.hidden !== undefined ||
+    hasChatConfigPatch;
+  if (!hasAnyPatch) {
+    throw new ValidationError(
+      "Send at least one of title, display_title, hidden, task_id, model, effort, permission_mode or send_while_running",
+    );
   }
-  const patch: Partial<typeof gateway_sessions.$inferInsert> = {};
-  if (task_id !== undefined) patch.task_id = task_id;
-  if (display_title !== undefined) patch.display_title = display_title;
-  if (hidden !== undefined) patch.hidden_at = hidden ? (row.hidden_at ?? new Date()) : null;
-  await db
-    .update(gateway_sessions)
-    .set({ ...patch, updated_at: new Date() })
-    .where(eq(gateway_sessions.id, row.id));
-  const [dto] = await toLiveDtos([
-    {
-      ...row,
-      ...(task_id !== undefined ? { task_id } : {}),
-      ...(display_title !== undefined ? { display_title } : {}),
-      ...(hidden !== undefined ? { hidden_at: patch.hidden_at ?? null } : {}),
-    },
-  ]);
-  return c.json(dto as NonNullable<typeof dto>, 200);
+  const resolved = resolveSessionRef(id);
+  if (!resolved) throw new NotFoundError("Session", id);
+  const row = resolved.gateway;
+  const thread = resolved.thread;
+  const callerId = c.req.header("X-ORC-Session")?.trim();
+  if (callerId && body.hidden !== undefined) {
+    const owned = thread
+      ? thread.id === callerId ||
+        thread.runtimeId === callerId ||
+        spawnChain(thread.id).includes(callerId)
+      : !!row && (row.id === callerId || row.runtime_session_id === callerId);
+    if (!owned) {
+      throw new ForbiddenError("Only a session or its ancestor can hide or unhide it");
+    }
+  }
+  if (hasChatConfigPatch && !thread) {
+    throw new ValidationError(
+      "model, effort, permission_mode and send_while_running can only be updated on ORC chat sessions",
+    );
+  }
+  if (body.task_id !== undefined && !row) {
+    throw new ValidationError("task_id can only be updated on discovered sessions");
+  }
+  if (body.task_id && !(await db.query.tasks.findFirst({ where: eq(tasks.id, body.task_id) }))) {
+    throw new NotFoundError("Task", body.task_id);
+  }
+
+  let updatedThread: ChatThread | null = thread;
+  if (thread && (nextTitle !== undefined || body.hidden !== undefined || hasChatConfigPatch)) {
+    const updater = chatControl().updateThread;
+    if (!updater) {
+      throw new ValidationError("Chat session updates are unavailable");
+    }
+    updatedThread = updater(thread.id, body) ?? thread;
+  }
+
+  if (row) {
+    const patch: Partial<typeof gateway_sessions.$inferInsert> = {};
+    if (body.task_id !== undefined) patch.task_id = body.task_id;
+    if (nextTitle !== undefined) patch.display_title = nextTitle;
+    if (body.hidden !== undefined)
+      patch.hidden_at = body.hidden ? (row.hidden_at ?? new Date()) : null;
+    if (Object.keys(patch).length > 0) {
+      await db
+        .update(gateway_sessions)
+        .set({ ...patch, updated_at: new Date() })
+        .where(eq(gateway_sessions.id, row.id));
+    }
+    const [dto] = await toLiveDtos([
+      {
+        ...row,
+        ...(body.task_id !== undefined ? { task_id: body.task_id } : {}),
+        ...(nextTitle !== undefined ? { display_title: nextTitle } : {}),
+        ...(body.hidden !== undefined ? { hidden_at: patch.hidden_at ?? null } : {}),
+      },
+    ]);
+    if (dto) {
+      if (updatedThread) {
+        if (body.model !== undefined) dto.model = updatedThread.config.model || null;
+        if (body.permission_mode !== undefined) {
+          dto.permission_mode = updatedThread.config.permissionMode ?? null;
+        }
+      }
+      return c.json(dto, 200);
+    }
+  }
+  if (!updatedThread) throw new NotFoundError("Session", id);
+  return c.json(threadToLiveDto(updatedThread), 200);
 });
 
 app.openapi(listRoute, async (c) => {
@@ -871,6 +1291,35 @@ app.openapi(listRoute, async (c) => {
     sessions: rows.map(toDto),
     total: Number(counted?.total ?? 0),
   });
+});
+
+app.openapi(createSessionRoute, async (c) => {
+  const db = getDb();
+  const body = c.req.valid("json");
+  let projectId: string | null = null;
+  const projectRef = body.project_id ?? body.project;
+  if (projectRef) {
+    const project = await db.query.projects.findFirst({
+      where: or(eq(projects.id, projectRef), eq(projects.name, projectRef)),
+      columns: { id: true },
+    });
+    if (!project) throw new NotFoundError("Project", projectRef);
+    projectId = project.id;
+  }
+  const id = ulid();
+  const createdAt = new Date();
+  await db.insert(sessions).values({
+    id,
+    agent: body.agent,
+    agent_version: body.agent_version,
+    project_id: projectId,
+    summary: body.summary,
+    tokens_used: body.tokens_used,
+    created_at: createdAt,
+  });
+  const created = await db.query.sessions.findFirst({ where: eq(sessions.id, id) });
+  if (!created) throw new NotFoundError("Session", id);
+  return c.json(toDto(created), 201);
 });
 
 app.openapi(getRoute, async (c) => {

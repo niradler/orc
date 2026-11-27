@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ChatPermissionModeSchema } from "./chat-options.js";
 
 /** A message chain may cross this many agent sessions before it must be relayed by a human. */
 export const SESSION_MESSAGE_HOP_LIMIT = 3;
@@ -95,8 +96,6 @@ export const SessionMessageCreateSchema = z
   .object({
     /** ORC live session id, or the agent's native session id. */
     session_id: identity,
-    /** Disambiguates a native session id that exists for more than one agent. */
-    backend: backend.optional(),
     body: z.string().trim().min(1).max(SESSION_MESSAGE_MAX_BODY),
     /** Optional caller-supplied idempotency key for retries. */
     request_id: z.string().trim().min(1).max(128).optional(),
@@ -381,18 +380,75 @@ export function parseSessionDeliveryEnvelope(content: string): SessionDelivery[]
 
 export const SESSION_SPAWN_HOURLY_LIMIT = 10;
 
-export const SessionWorkspaceSchema = z.enum(["same", "worktree", "project"]);
-
 export const SessionSpawnSchema = z
   .object({
     prompt: z.string().trim().min(1).max(100000),
+    profile: z
+      .string()
+      .trim()
+      .min(1)
+      .max(64)
+      .optional()
+      .describe(
+        "Composer profile id or name configured in Settings; explicit agent/provider_id/model/effort/permission_mode override it.",
+      ),
     agent: z
       .string()
       .regex(/^[a-z][a-z0-9-]{0,31}$/i)
       .optional(),
+    provider_id: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
+      .optional()
+      .describe("Configured provider account id for the agent."),
     model: z.string().trim().min(1).max(200).optional(),
+    effort: z
+      .string()
+      .regex(/^[a-z][a-z0-9_-]{0,31}$/i)
+      .optional()
+      .describe("Reasoning effort level supported by the selected agent/model."),
+    permission_mode: ChatPermissionModeSchema.optional().describe(
+      "Permission mode for the session.",
+    ),
+    send_while_running: z
+      .enum(["steer", "queue"])
+      .optional()
+      .describe("Default behavior when a message arrives while the session is busy."),
     project_id: identity.optional(),
-    workspace: SessionWorkspaceSchema.default("same"),
+    host: z
+      .string()
+      .trim()
+      .min(1)
+      .max(255)
+      .nullable()
+      .optional()
+      .describe(
+        "Execution host: an SSH alias configured in Settings. Omit to inherit the calling session's host, or the Settings default when selecting a project; null runs on this ORC server.",
+      ),
+    cwd: z
+      .string()
+      .trim()
+      .min(1)
+      .max(4096)
+      .optional()
+      .describe(
+        "Folder to run in. Overrides the project's main checkout and the calling session's folder.",
+      ),
+    worktree: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Create a new git worktree from the resolved folder instead of working in it as it is.",
+      ),
+    base: z
+      .string()
+      .trim()
+      .min(1)
+      .max(200)
+      .optional()
+      .describe(
+        "Branch the new worktree branches from, local (main) or remote-tracking (origin/main); omitted uses the checkout's current HEAD.",
+      ),
     title: z.string().trim().min(1).max(100).optional(),
     notify: z.boolean().default(true),
     request_id: z.string().trim().min(1).max(128).optional(),
@@ -429,8 +485,6 @@ export const SessionStatusSchema = z.object({
   waiting_children: z.number().int().min(0).default(0),
   /** Stop was requested and the turn has not drained yet; status stays running until it does. */
   stopping: z.boolean().default(false),
-  /** Archived by the session that started it: hidden from the default child list, transcript kept. */
-  archived: z.boolean().default(false),
   project_id: identity.nullable(),
   cwd: z.string(),
   /** When a session another session started began; null for one a human started. */
@@ -485,3 +539,56 @@ export const SessionSubagentSchema = z.object({
 });
 export const SessionSubagentsSchema = z.object({ subagents: z.array(SessionSubagentSchema) });
 export type SessionSubagents = z.infer<typeof SessionSubagentsSchema>;
+
+export const SessionListScopeSchema = z.enum(["all", "children", "chats", "native"]);
+export type SessionListScope = z.infer<typeof SessionListScopeSchema>;
+
+export const SessionListItemSchema = z.object({
+  session_id: identity,
+  source: z.enum(["chat", "native"]),
+  title: z.string(),
+  agent: z.string().max(64).nullable(),
+  model: z.string().max(200).nullable(),
+  status: z.string().max(32),
+  waiting_for: z.string().max(200).nullable(),
+  project_id: identity.nullable(),
+  cwd: z.string().nullable(),
+  host: z.string().max(255).nullable(),
+  parent_session_id: identity.nullable(),
+  working_children: z.number().int().min(0),
+  waiting_children: z.number().int().min(0),
+  native_session_id: z.string().max(200).nullable(),
+  live_session_id: identity.nullable(),
+  hidden: z.boolean(),
+  last_message: z.string().max(300).nullable(),
+  updated_at: timestamp,
+  last_activity_at: timestamp.nullable().optional(),
+});
+export type SessionListItem = z.infer<typeof SessionListItemSchema>;
+
+export const SessionListResponseSchema = z.object({
+  sessions: z.array(SessionListItemSchema),
+  total: z.number().int().min(0),
+  offset: z.number().int().min(0),
+  limit: z.number().int().min(1),
+  has_more: z.boolean(),
+  next_offset: z.number().int().min(0).nullable(),
+});
+export type SessionListResponse = z.infer<typeof SessionListResponseSchema>;
+
+export const SessionUpdateSchema = z
+  .object({
+    task_id: identity.nullable().optional(),
+    title: z.string().trim().min(1).max(200).nullable().optional(),
+    display_title: z.string().trim().min(1).max(200).nullable().optional(),
+    hidden: z.boolean().optional(),
+    model: z.string().trim().max(200).optional(),
+    effort: z
+      .string()
+      .regex(/^$|^[a-z][a-z0-9_-]{0,31}$/i)
+      .optional(),
+    permission_mode: ChatPermissionModeSchema.optional(),
+    send_while_running: z.enum(["steer", "queue"]).optional(),
+  })
+  .strict();
+export type SessionUpdate = z.infer<typeof SessionUpdateSchema>;

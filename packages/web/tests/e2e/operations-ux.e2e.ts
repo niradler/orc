@@ -130,12 +130,12 @@ for (const theme of ["dark", "light"] as const) {
 
 test("an Audit detail URL reopens directly", async ({ page, request }) => {
   const agent = tid("direct-session");
-  const { result } = await apiPost<{ result: string }>(request, "/mcp/tool", {
-    name: "session_log",
-    args: { agent, summary: "Direct session detail" },
+  const { id } = await apiPost<{ id: string }>(request, "/sessions", {
+    agent,
+    summary: "Direct session detail",
   });
   await gotoView(page, "sessions");
-  await page.goto(`/audit/${result.replace("Session logged: ", "").trim()}`);
+  await page.goto(`/audit/${id}`);
   await expect(page.getByTestId("nav-audit")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("dialog")).toContainText(agent);
   await page.getByTestId("sheet-close").click();

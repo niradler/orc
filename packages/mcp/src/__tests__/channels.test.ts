@@ -73,7 +73,7 @@ afterAll(async () => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test("MCP discovery/send/status/edit use the real HTTP service and enforce selected projects", async () => {
+test("MCP discovery/send/status/edit use the real HTTP service and default projects", async () => {
   const options = { projectScopes: [{ id: "p1", name: "channel-one" }] };
   const listing = JSON.parse(await executeTool("channel_list", {}, options));
   expect(listing.connections.find((c: { id: string }) => c.id === "slack").targets).toHaveLength(1);
@@ -105,9 +105,11 @@ test("MCP discovery/send/status/edit use the real HTTP service and enforce selec
       ),
     ).id,
   ).toBe(receipt.id);
+  // The connection default does not block p2; the channel service still
+  // decides which targets a project may use.
   await expect(
     executeTool("channel_send", { ...input, project_id: "p2" }, options),
-  ).rejects.toThrow("outside");
+  ).rejects.toThrow();
   const other = JSON.parse(
     await executeTool(
       "channel_targets",

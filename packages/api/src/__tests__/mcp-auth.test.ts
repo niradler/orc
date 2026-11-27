@@ -305,7 +305,9 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
     };
 
     try {
-      const listedViaQuery = await callMcp(`?mode=meta&session=${parentId}`, "session_list", {});
+      const listedViaQuery = await callMcp(`?mode=meta&session=${parentId}`, "session_list", {
+        scope: "children",
+      });
       expect(listedViaQuery.isError).toBeUndefined();
       expect(JSON.parse(listedViaQuery.content[0]?.text ?? "{}").sessions).toMatchObject([
         { session_id: childId },
@@ -314,7 +316,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       const listedViaHeader = await callMcp(
         "?mode=meta",
         "session_list",
-        {},
+        { scope: "children" },
         {
           "X-ORC-Session": parentId,
         },
@@ -327,7 +329,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       const directSend = await callMcp(`?mode=meta&session=${parentId}`, "session_send", {
         session_id: childId,
         mode: "queue",
-        body: "Direct bound message",
+        prompt: "Direct bound message",
       });
       expect(directSend.isError).toBeUndefined();
       expect(JSON.parse(directSend.content[0]?.text ?? "{}").message).toMatchObject({
@@ -343,7 +345,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
         {
           session_id: childId,
           mode: "steer",
-          body: "Ancestor steer",
+          prompt: "Ancestor steer",
         },
         { "X-ORC-Session": parentId },
       );
@@ -356,7 +358,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       const nonAncestorSteer = await callMcp(`?mode=meta&session=${unrelatedId}`, "session_send", {
         session_id: childId,
         mode: "steer",
-        body: "Not an ancestor",
+        prompt: "Not an ancestor",
       });
       expect(nonAncestorSteer.isError).toBe(true);
       expect(nonAncestorSteer.content[0]?.text).toContain("Only the session that started");
@@ -366,7 +368,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       const unboundQueue = await callMcp("?mode=meta", "session_send", {
         session_id: childId,
         mode: "queue",
-        body: "Unbound coordinator queue",
+        prompt: "Unbound coordinator queue",
       });
       expect(unboundQueue.isError).toBeUndefined();
       expect(JSON.parse(unboundQueue.content[0]?.text ?? "{}").message).toMatchObject({
@@ -378,7 +380,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       const unboundSteer = await callMcp("?mode=meta", "session_send", {
         session_id: childId,
         mode: "steer",
-        body: "Non-ancestor steer must fail",
+        prompt: "Non-ancestor steer must fail",
       });
       expect(unboundSteer.isError).toBe(true);
       expect(unboundSteer.content[0]?.text).toContain("Only the session that started");
@@ -389,8 +391,8 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
         {
           code: `
             const [list, sent] = await tools.allSettled([
-              { name: "session_list", args: {} },
-              { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "queue", body: "From sandbox" } },
+              { name: "session_list", args: { scope: "children" } },
+              { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "queue", prompt: "From sandbox" } },
             ]);
             return {
               listOk: list.ok,
@@ -418,8 +420,8 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       const scriptedUnbound = await callMcp("?mode=meta", "tool_execute", {
         code: `
           const [queued, steered] = await tools.allSettled([
-            { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "queue", body: "Sandbox unbound queue" } },
-            { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "steer", body: "Sandbox unbound steer" } },
+            { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "queue", prompt: "Sandbox unbound queue" } },
+            { name: "session_send", args: { session_id: ${JSON.stringify(childId)}, mode: "steer", prompt: "Sandbox unbound steer" } },
           ]);
           return {
             queuedKind: queued.ok ? queued.data.message.sender_kind : null,
@@ -438,7 +440,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       const previewWins = await callMcp(
         `?mode=meta&preview_session=${parentId}`,
         "session_list",
-        {},
+        { scope: "children" },
         { "X-ORC-Session": unrelatedId },
       );
       expect(previewWins.isError).toBeUndefined();
@@ -453,7 +455,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
     }
   });
 
-  test("enforces project scopes on session_send for chat and non-chat sessions both directly and in tool_execute", async () => {
+  test("does not restrict session_send to the connection's default projects", async () => {
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -553,35 +555,29 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
     };
 
     try {
-      const directOutOfScopeChat = await callMcp(
+      const otherProjectChat = await callMcp(
         `?mode=meta&project=ScopeAlpha&session=${alphaChatId}`,
         "session_send",
-        { session_id: betaChatId, body: "Cross-project chat" },
+        { session_id: betaChatId, prompt: "Cross-project chat" },
       );
-      expect(directOutOfScopeChat.isError).toBe(true);
-      expect(directOutOfScopeChat.content[0]?.text).toContain("outside the selected MCP projects");
+      expect(otherProjectChat.isError).toBeUndefined();
 
-      const directOutOfScopeGateway = await callMcp(
-        "?mode=meta&project=ScopeAlpha",
-        "session_send",
-        { session_id: "native-gw-beta", backend: "claude", body: "Cross-project gateway" },
-      );
-      expect(directOutOfScopeGateway.isError).toBe(true);
-      expect(directOutOfScopeGateway.content[0]?.text).toContain(
-        "outside the selected MCP projects",
-      );
+      const otherProjectGateway = await callMcp("?mode=meta&project=ScopeAlpha", "session_send", {
+        session_id: "native-gw-beta",
+        prompt: "Cross-project gateway",
+      });
+      expect(otherProjectGateway.isError).toBeUndefined();
 
       const directInScopeChat = await callMcp(
         `?mode=meta&project=ScopeAlpha&session=${alphaChatId}`,
         "session_send",
-        { session_id: alphaChatId, body: "In-scope chat" },
+        { session_id: alphaChatId, prompt: "In-scope chat" },
       );
       expect(directInScopeChat.isError).toBeUndefined();
 
       const directInScopeGateway = await callMcp("?mode=meta&project=ScopeAlpha", "session_send", {
         session_id: "native-gw-alpha",
-        backend: "claude",
-        body: "In-scope gateway",
+        prompt: "In-scope gateway",
       });
       expect(directInScopeGateway.isError).toBeUndefined();
 
@@ -591,9 +587,9 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
         {
           code: `
             const [betaChat, betaGw, alphaGw] = await tools.allSettled([
-              { name: "session_send", args: { session_id: ${JSON.stringify(betaChatId)}, body: "blocked" } },
-              { name: "session_send", args: { session_id: "native-gw-beta", backend: "claude", body: "blocked" } },
-              { name: "session_send", args: { session_id: "native-gw-alpha", backend: "claude", body: "allowed" } },
+              { name: "session_send", args: { session_id: ${JSON.stringify(betaChatId)}, prompt: "blocked" } },
+              { name: "session_send", args: { session_id: "native-gw-beta", prompt: "blocked" } },
+              { name: "session_send", args: { session_id: "native-gw-alpha", prompt: "allowed" } },
             ]);
             return {
               betaChat: betaChat.ok ? "ok" : betaChat.error.code,
@@ -605,8 +601,8 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
       );
       expect(scripted.isError).toBeUndefined();
       expect(scripted.structuredContent?.result).toEqual({
-        betaChat: "FORBIDDEN",
-        betaGw: "FORBIDDEN",
+        betaChat: "ok",
+        betaGw: "ok",
         alphaGwOk: true,
       });
 
@@ -615,7 +611,7 @@ describe("MCP HTTP session caller identity and code mode integration", () => {
           "SELECT COUNT(*) AS count FROM session_messages WHERE target_session_id IN (?, ?)",
         )
         .get(betaChatId, "gw-beta-521");
-      expect(betaMessages?.count).toBe(0);
+      expect(betaMessages?.count).toBe(4);
     } finally {
       server.stop(true);
       if (previousBase === undefined) delete process.env.ORC_API_BASE;

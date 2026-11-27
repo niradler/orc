@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getUserAgentsDir } from "@orc/core/agent-service";
 import { globalConfigPath, loadConfig, resetConfig } from "@orc/core/config";
-import { ConflictError, ValidationError } from "@orc/core/errors";
+import { ConflictError } from "@orc/core/errors";
 import { shortId, ulid } from "@orc/core/ids";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
 import { toolListing } from "./server.js";
@@ -33,105 +33,6 @@ afterAll(() => {
   delete process.env.ORC_API_SECRET;
   delete process.env.ORC_DB_PATH;
   rmSync(testOrcHome, { recursive: true, force: true });
-});
-
-// ── Session event dedup & eviction ──────────────────────────────────────────
-
-describe("Session event dedup", () => {
-  beforeAll(() => {
-    process.env.ORC_SESSION_ID = "test-dedup-session";
-  });
-
-  afterAll(() => {
-    delete process.env.ORC_SESSION_ID;
-  });
-
-  test("duplicate events are silently dropped", async () => {
-    const data = { path: "src/auth.ts", tool: "Write" };
-    const r1 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data,
-    });
-    const r2 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data,
-    });
-    const r3 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data,
-    });
-
-    expect(r1).toContain("Event recorded");
-    expect(r2).toBe("Duplicate event skipped.");
-    expect(r3).toBe("Duplicate event skipped.");
-  });
-
-  test("different data on same type is NOT dropped", async () => {
-    const r1 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data: { path: "src/a.ts", tool: "Write" },
-    });
-    const r2 = await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data: { path: "src/b.ts", tool: "Write" },
-    });
-    expect(r1).toContain("Event recorded");
-    expect(r2).toContain("Event recorded");
-  });
-});
-
-// ── Session snapshot & restore ───────────────────────────────────────────────
-
-describe("Session snapshot round-trip", () => {
-  const sessionId = "test-snapshot-session";
-
-  beforeAll(() => {
-    process.env.ORC_SESSION_ID = sessionId;
-  });
-
-  afterAll(() => {
-    delete process.env.ORC_SESSION_ID;
-  });
-
-  test("session_snapshot builds valid XML", async () => {
-    await executeTool("session_event", {
-      type: "file",
-      priority: 1,
-      data: { path: "src/main.ts", tool: "Edit" },
-    });
-    await executeTool("session_event", {
-      type: "decision",
-      priority: 2,
-      data: { content: "Use Bun instead of Node" },
-    });
-
-    const snap = await executeTool("session_snapshot", {
-      session_id: sessionId,
-    });
-    expect(snap).toContain("<session>");
-    expect(snap).toContain("</session>");
-    expect(snap).toContain("<tasks>");
-  });
-
-  test("session_restore returns stored snapshot", async () => {
-    const restored = await executeTool("session_restore", {
-      session_id: sessionId,
-    });
-    expect(restored).toContain("Session Restored");
-    expect(restored).toContain("<session>");
-  });
-
-  test("snapshot XML stays within 2KB", async () => {
-    const snap = await executeTool("session_snapshot", {
-      session_id: sessionId,
-    });
-    expect(Buffer.byteLength(snap, "utf-8")).toBeLessThanOrEqual(2048);
-  });
 });
 
 // ── Task tools ────────────────────────────────────────────────────────────────
@@ -243,21 +144,13 @@ describe("MCP task tools", () => {
     expect(await executeTool("task_link", { id: taskId })).toBe(`No links for task ${taskId}.`);
   });
 
-  test("ID-only task tools refuse tasks outside the selected projects", async () => {
+  test("connection defaults never block ID-only tools", async () => {
     const scoped = { projectScopes: [{ id: "other-project", name: "other" }] };
-    await expect(executeTool("task_link", { id: taskId }, scoped)).rejects.toThrow(
-      "outside the selected MCP projects",
-    );
-    await expect(executeTool("flow_status", { task: taskId }, scoped)).rejects.toThrow(
-      "outside the selected MCP projects",
-    );
+    await expect(executeTool("task_link", { id: taskId }, scoped)).resolves.toContain("No links");
+    await expect(executeTool("flow_status", { task: taskId }, scoped)).resolves.toBeString();
     await expect(
-      executeTool("flow_attach", { task: taskId, name: "default" }, scoped),
-    ).rejects.toThrow("outside the selected MCP projects");
-    await expect(
-      executeTool("flow_report", { task: taskId, outcome: "done" }, scoped),
-    ).rejects.toThrow("outside the selected MCP projects");
-    await expect(executeTool("task_update", { id: taskId, title: "x" }, scoped)).rejects.toThrow();
+      executeTool("task_update", { id: taskId, title: "x" }, scoped),
+    ).resolves.toBeString();
   });
 });
 
@@ -440,49 +333,22 @@ describe("MCP skill tools", () => {
   });
 });
 
-// ── Session log ───────────────────────────────────────────────────────────────
-
-describe("MCP session_log tool", () => {
-  test("session_log with agent_version stores session", async () => {
-    const result = await executeTool("session_log", {
-      agent: "codex",
-      agent_version: "codex/0.1",
-      summary: "Implemented scheduler integration tests",
-    });
-    expect(result).toMatch(/^Session logged:/);
+describe("Removed legacy session log tools & session_search agent schema", () => {
+  test("legacy session_event, session_snapshot, session_restore, session_log are not registered", () => {
+    const names = new Set<string>(toolDefinitions.map((tool) => tool.name));
+    for (const removed of ["session_event", "session_snapshot", "session_restore", "session_log"]) {
+      expect(names.has(removed)).toBe(false);
+    }
   });
 
-  test("session_log picks up ORC_JOB_RUN_ID from env", async () => {
-    const { getDb } = await import("@orc/db/client");
-    const { job_runs, jobs } = await import("@orc/db/schema");
-    const { ulid } = await import("@orc/core/ids");
-    const db = getDb();
-    const now = new Date();
-    const jobId = ulid();
-    const runId = ulid();
-
-    await db.insert(jobs).values({
-      id: jobId,
-      name: "env-run-test-job",
-      command: "echo ok",
-      trigger_type: "manual",
-      created_at: now,
-      updated_at: now,
-    });
-    await db.insert(job_runs).values({
-      id: runId,
-      job_id: jobId,
-      status: "success",
-      created_at: now,
-    });
-
-    process.env.ORC_JOB_RUN_ID = runId;
-    const result = await executeTool("session_log", {
-      agent: "runner",
-      summary: "Job env-run-test-job succeeded in 1s (exit 0)",
-    });
-    delete process.env.ORC_JOB_RUN_ID;
-    expect(result).toMatch(/^Session logged:/);
+  test("session_search accepts opencode, pi, and other harnesses and rejects unknown agents", () => {
+    const schema = toolDefinitions.find((tool) => tool.name === "session_search")?.inputSchema;
+    expect(schema).toBeDefined();
+    for (const agent of ["claude", "codex", "opencode", "pi", "cursor", "gemini"]) {
+      expect(schema?.safeParse({ q: "test", agent }).success).toBe(true);
+    }
+    const invalid = schema?.safeParse({ q: "test", agent: "nonexistent-harness" });
+    expect(invalid?.success).toBe(false);
   });
 });
 
@@ -577,17 +443,29 @@ describe("MCP project_create tool", () => {
     expect(failure?.status === "rejected" && failure.reason).toBeInstanceOf(ConflictError);
   });
 
-  test("project-scoped connections are refused with actionable guidance", async () => {
-    const error = await executeTool(
+  test("project_create stores optional host and project_list returns it", async () => {
+    const name = uniqueName();
+    created.push(name);
+    const createdText = await executeTool("project_create", {
+      name,
+      scope: "/home/dev/repo",
+      host: "devbox",
+    });
+    expect(createdText).toContain(`Created project ${name}`);
+    const listText = await executeTool("project_list", {});
+    expect(listText).toContain(`${name}`);
+    expect(listText).toContain("[host: devbox]");
+  });
+
+  test("project_create works on a connection that has default projects", async () => {
+    const name = uniqueName();
+    created.push(name);
+    const text = await executeTool(
       "project_create",
-      { name: uniqueName() },
+      { name },
       { projectScopes: [{ id: "scope-id", name: "scope" }] },
-    ).then(
-      () => null,
-      (e: unknown) => e,
     );
-    expect(error).toBeInstanceOf(ValidationError);
-    expect((error as ValidationError).message).toContain("unscoped connection");
+    expect(text).toContain(`Created project ${name}`);
   });
 
   test("creating a project clears setup_dismissed in config.json and loadConfig()", async () => {
@@ -755,7 +633,7 @@ describe("MCP detached shell tools", () => {
     }
   });
 
-  test("shell_* tools enforce MCP projectScopes isolation", async () => {
+  test("shell_* tools default to the connection projects without blocking others", async () => {
     const db = getSqlite();
     const now = Math.floor(Date.now() / 1000);
     db.query(
@@ -777,20 +655,21 @@ describe("MCP detached shell tools", () => {
     ) as { id: string; project_id: string | null };
     expect(jobA.project_id).toBe("proj-shell-a");
 
+    let jobBId: string | undefined;
     try {
-      await expect(
-        executeTool(
+      const jobB = JSON.parse(
+        await executeTool(
           "shell_run",
           { command: "echo nope", cwd: process.cwd(), project: "shell-proj-b" },
           scopeA,
         ),
-      ).rejects.toThrow("outside the selected MCP projects");
+      ) as { id: string; project_id: string | null };
+      jobBId = jobB.id;
+      expect(jobB.project_id).toBe("proj-shell-b");
 
-      await expect(executeTool("shell_status", { job_id: jobA.id }, scopeB)).rejects.toThrow(
-        "BackgroundJob",
-      );
-      await expect(executeTool("shell_stop", { job_id: jobA.id }, scopeB)).rejects.toThrow(
-        "BackgroundJob",
+      // Direct ids are reachable from any connection; only list defaults filter.
+      expect(JSON.parse(await executeTool("shell_status", { job_id: jobA.id }, scopeB)).id).toBe(
+        jobA.id,
       );
 
       const listB = JSON.parse(await executeTool("shell_list", { limit: 50 }, scopeB)) as {
@@ -804,6 +683,8 @@ describe("MCP detached shell tools", () => {
       expect(listA.jobs.some((j) => j.id === jobA.id)).toBe(true);
     } finally {
       await executeTool("shell_stop", { job_id: jobA.id }, scopeA).catch(() => undefined);
+      if (jobBId)
+        await executeTool("shell_stop", { job_id: jobBId }, scopeA).catch(() => undefined);
     }
   });
 });

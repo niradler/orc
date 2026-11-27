@@ -101,30 +101,16 @@ export class ChatStore {
       .get(sourceId);
     return row ? this.get(row.id) : null;
   }
-  children(sessionIds: string[], opts: { includeArchived?: boolean } = {}): ChatThread[] {
+  children(sessionIds: string[]): ChatThread[] {
     if (!sessionIds.length) return [];
-    // Existing callers keep every child; explicit includeArchived:false hides
-    // the ones a starter archived from its session list.
-    const archived =
-      opts.includeArchived === false ? "AND json_extract(data, '$.archivedAt') IS NULL" : "";
     return this.db
       .query<{ id: string }, string[]>(
         `SELECT id FROM chat_threads WHERE json_valid(data)
           AND json_extract(data, '$.spawnedBy.sessionId') IN (${sessionIds.map(() => "?").join(",")})
-          ${archived}
           ORDER BY updated_at DESC LIMIT 200`,
       )
       .all(...sessionIds)
       .flatMap((row) => this.get(row.id) ?? []);
-  }
-  /** Archive or restore a thread without dropping its transcript. */
-  setArchived(id: string, archivedAt: number | null): ChatThread | null {
-    const thread = this.get(id);
-    if (!thread) return null;
-    if (archivedAt === null) delete thread.archivedAt;
-    else thread.archivedAt = archivedAt;
-    this.save(thread);
-    return thread;
   }
   pendingSpawns(): ChatThread[] {
     return this.db

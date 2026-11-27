@@ -147,7 +147,9 @@ describe("project-scoped skill discovery", () => {
         { name: "orc-platform", download: true, ref: "SKILL.md" },
       ])
         expect((await call("skill_read", args)).text).toContain("Skill not found");
-      expect((await call("skill_list", { project: "skills-two" })).data.result.isError).toBe(true);
+      const otherProject = await call("skill_list", { project: "skills-two" });
+      expect(otherProject.data.result.isError).not.toBe(true);
+      expect(otherProject.text).toContain("orc-platform");
       const globals = await call("skill_list", { source: "builtin", scope: "global" });
       expect(globals.text).toContain("No skills found");
       expect(globals.data.result.isError).not.toBe(true);

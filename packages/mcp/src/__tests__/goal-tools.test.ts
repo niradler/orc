@@ -124,18 +124,9 @@ test("goal_stop stops a running goal", async () => {
   expect(body.goal.status).toBe("stopped");
 });
 
-test("goal tools respect project scopes", async () => {
+test("goal tools use project defaults without blocking other projects", async () => {
   const scoped = { projectScopes: [{ id: "mcp-goal-project", name: "mcp-goal-project" }] };
-  await expect(
-    executeTool(
-      "goal_create",
-      {
-        objective: "escape the scope",
-        check: "bun check.mjs",
-        task: "outside-task",
-      },
-      scoped,
-    ),
-  ).rejects.toThrow();
-  await expect(executeTool("goal_status", { task: "outside-task" }, scoped)).rejects.toThrow();
+  expect(await executeTool("goal_status", { task: "outside-task" }, scoped)).toContain(
+    "No goal on task outside-task.",
+  );
 });

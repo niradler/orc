@@ -67,7 +67,7 @@ afterAll(() => {
 test("sends a message with the calling session identity", async () => {
   const output = await executeTool(
     "session_send",
-    { session_id: "target", body: "Please review." },
+    { session_id: "target", prompt: "Please review." },
     { agentSessionId: "sender" },
   );
   expect(request?.path).toBe("/api/session-messages");
@@ -81,7 +81,7 @@ test("sends a message with the calling session identity", async () => {
 test("falls back to human relay for queue when unbound", async () => {
   const output = await executeTool(
     "session_send",
-    { session_id: "target", body: "Queued without binding" },
+    { session_id: "target", prompt: "Queued without binding" },
     { agentSessionId: null },
   );
   expect(request?.path).toBe("/api/session-messages");
@@ -96,7 +96,7 @@ test("refuses steer and interrupt without a calling session identity", async () 
     await expect(
       executeTool(
         "session_send",
-        { session_id: "target", body: "hello", mode },
+        { session_id: "target", prompt: "hello", mode },
         { agentSessionId: null },
       ),
     ).rejects.toThrow(/requires a bound calling session identity/);

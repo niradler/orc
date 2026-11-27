@@ -45,6 +45,7 @@ export const projects = sqliteTable(
       .default("active")
       .notNull(),
     scope: text("scope"),
+    host: text("host"),
     git_remote_url: text("git_remote_url"),
     github_sync: text("github_sync", { mode: "json" }).$type<GithubSyncConfig>(),
     github_sync_state: text("github_sync_state", { mode: "json" }).$type<GithubSyncState>(),

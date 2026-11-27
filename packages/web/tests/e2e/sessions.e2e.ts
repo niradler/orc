@@ -1,18 +1,13 @@
 import { expect, test } from "@playwright/test";
 import { apiPost, gotoView, tid } from "./_helpers";
 
-/** Seed a session via the MCP session_log tool and return the created session id. */
 async function seedSession(
   request: Parameters<typeof apiPost>[0],
   agent: string,
   summary: string,
 ): Promise<string> {
-  const { result } = await apiPost<{ result: string }>(request, "/mcp/tool", {
-    name: "session_log",
-    args: { agent, summary },
-  });
-  // result = "Session logged: <ulid>"
-  return result.replace("Session logged: ", "").trim();
+  const { id } = await apiPost<{ id: string }>(request, "/sessions", { agent, summary });
+  return id;
 }
 
 test.describe("Sessions", () => {

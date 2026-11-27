@@ -427,7 +427,7 @@ describe("agent session control", () => {
     });
   });
 
-  test("should create a git worktree for workspace=worktree and reject a shared folder across projects", async () => {
+  test("should create a worktree, use a project's folder, and let cwd override it", async () => {
     const parent = await startParent("lead: split work", repo);
     (await turnFor("lead: split work")).release();
     await until(async () => (await status(parent.id)).status === "idle", "lead idle");
@@ -436,7 +436,7 @@ describe("agent session control", () => {
         app,
         "POST",
         "/sessions/live/spawn",
-        { prompt: "child: isolated change", workspace: "worktree", notify: false },
+        { prompt: "child: isolated change", worktree: true, notify: false },
         as(parent.id),
       )
     ).json<SessionStatus>();
@@ -451,30 +451,44 @@ describe("agent session control", () => {
       getSqlite()
         .query("INSERT INTO projects (id, name, scope) VALUES ('other-project', 'other', ?)")
         .run(other);
-      const shared = await req(
-        app,
-        "POST",
-        "/sessions/live/spawn",
-        { prompt: "child: elsewhere", project_id: "other-project", workspace: "same" },
-        as(parent.id),
-      );
-      expect(shared.status).toBe(400);
       const elsewhere = await (
         await req(
           app,
           "POST",
           "/sessions/live/spawn",
-          {
-            prompt: "child: in the other project",
-            project_id: "other-project",
-            workspace: "project",
-            notify: false,
-          },
+          { prompt: "child: in the other project", project_id: "other-project", notify: false },
           as(parent.id),
         )
       ).json<SessionStatus>();
       expect(elsewhere).toMatchObject({ project_id: "other-project", cwd: other });
       (await turnFor("child: in the other project")).release();
+
+      const overridden = await (
+        await req(
+          app,
+          "POST",
+          "/sessions/live/spawn",
+          {
+            prompt: "child: cwd wins",
+            project_id: "other-project",
+            cwd: repo,
+            notify: false,
+          },
+          as(parent.id),
+        )
+      ).json<SessionStatus>();
+      expect(overridden).toMatchObject({ project_id: "other-project", cwd: repo });
+      (await turnFor("child: cwd wins")).release();
+
+      const unknownHost = await req(
+        app,
+        "POST",
+        "/sessions/live/spawn",
+        { prompt: "child: bad host", host: "session-control-missing-host", notify: false },
+        as(parent.id),
+      );
+      expect(unknownHost.status).toBe(400);
+      expect(await unknownHost.text()).toContain("Unknown SSH host");
     } finally {
       rmSync(other, { recursive: true, force: true });
     }

@@ -314,7 +314,7 @@ export function sessionCommand() {
 
   cmd
     .command("log <summary>")
-    .description("Log a session summary (calls session_log MCP tool)")
+    .description("Log a session summary")
     .option("-a, --agent <name>", "Agent name", "human")
     .option("--agent-version <v>", "Agent version string")
     .action(async (summary: string, opts) => {
@@ -325,23 +325,20 @@ export function sessionCommand() {
       };
       if (config.api.secret) headers.Authorization = `Bearer ${config.api.secret}`;
 
-      const res = await fetch(`${base}/mcp/tool`, {
+      const res = await fetch(`${base}/sessions`, {
         method: "POST",
         headers,
         body: JSON.stringify({
-          name: "session_log",
-          args: {
-            agent: opts.agent,
-            agent_version: opts.agentVersion,
-            summary,
-          },
+          agent: opts.agent,
+          ...(opts.agentVersion ? { agent_version: opts.agentVersion } : {}),
+          summary,
         }),
       });
 
-      const body = (await res.json()) as { result?: string; error?: string };
+      const body = (await res.json()) as { id?: string; error?: string };
       if (!res.ok) return console.error("Error:", body.error);
       if (isJson()) return jsonOut(body);
-      console.log(body.result);
+      console.log(`Session logged: ${body.id}`);
     });
 
   return cmd;

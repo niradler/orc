@@ -81,13 +81,15 @@ test("should continue explicit MCP requests with project and origin binding and 
   await expect(
     executeTool("human_request_get", { id: request.id }, { agentSessionId: "wrong" }),
   ).rejects.toThrow("another agent");
-  await expect(
-    executeTool(
-      "human_request_get",
-      { id: request.id },
-      { projectScopes: [{ id: "wrong", name: "other" }] },
-    ),
-  ).rejects.toThrow("outside");
+  expect(
+    JSON.parse(
+      await executeTool(
+        "human_request_get",
+        { id: request.id },
+        { projectScopes: [{ id: "wrong", name: "other" }] },
+      ),
+    ).id,
+  ).toBe(request.id);
   const waiting = executeTool("human_request_get", { id: request.id, wait_seconds: 2 }, options);
   store.respond(request.id, 1, { kind: "question", answer: "Blue" });
   expect(JSON.parse(await waiting).response).toEqual({ kind: "question", answer: "Blue" });

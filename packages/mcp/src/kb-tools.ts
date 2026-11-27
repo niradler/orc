@@ -1,4 +1,4 @@
-import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { ValidationError } from "@orc/core/errors";
 import {
   KB_COMMENT_STATUSES,
   KB_SCOPES,
@@ -19,7 +19,6 @@ import {
   KbDocumentUpdateSchema,
   KbUpdateSchema,
 } from "@orc/core/kb";
-import { getSqlite } from "@orc/db/client";
 import { getKnowledgeService, parseCitation } from "@orc/knowledge";
 import { z } from "zod";
 import { orcApi } from "./api-client.js";
@@ -294,42 +293,13 @@ export async function executeKbTool(
   projectIds?: readonly string[],
 ): Promise<string> {
   const svc = await getKnowledgeService();
+  // The connection's projects are defaults: an explicit `scope: "all"` widens
+  // past them, and direct ids are never filtered out.
+  const defaults = projectIds && args.scope !== "all" && args.scope !== "global";
   const ctx = {
     ...context(projectId, args.session_id as string | undefined),
-    ...(projectIds ? { project_ids: projectIds } : {}),
+    ...(defaults ? { project_ids: projectIds } : {}),
   };
-  if (projectIds) {
-    const visible = new Set(
-      svc.listKbs(ctx, args.scope === "global" ? "global" : "default").map((kb) => kb.id),
-    );
-    const checkKb = (id: string) => {
-      if (!visible.has(id)) throw new NotFoundError("Knowledge base", id);
-    };
-    if (typeof args.kb_id === "string") checkKb(args.kb_id);
-    if (Array.isArray(args.kb_ids)) for (const id of args.kb_ids) checkKb(id as string);
-    const documentId =
-      typeof args.document_id === "string"
-        ? args.document_id
-        : (name === "kb_read" || name === "kb_document") && typeof args.id === "string"
-          ? args.id
-          : typeof args.citation === "string"
-            ? parseCitation(args.citation)?.document_id
-            : undefined;
-    if (documentId) {
-      const row = getSqlite()
-        .query<{ kb_id: string }, [string]>("SELECT kb_id FROM kb_documents WHERE id=?")
-        .get(documentId);
-      if (!row) throw new NotFoundError("Document", documentId);
-      checkKb(row.kb_id);
-    }
-    if (typeof args.comment_id === "string") {
-      const row = getSqlite()
-        .query<{ kb_id: string }, [string]>("SELECT kb_id FROM kb_comments WHERE id=?")
-        .get(args.comment_id);
-      if (!row) throw new NotFoundError("Comment", args.comment_id);
-      checkKb(row.kb_id);
-    }
-  }
   switch (name) {
     case "kb_list": {
       const kbs = svc.listKbs(ctx, (args.scope as (typeof KB_SCOPES)[number]) ?? "default");

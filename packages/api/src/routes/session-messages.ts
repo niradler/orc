@@ -1,6 +1,6 @@
 import { createRoute, z } from "@hono/zod-openapi";
 import { changes } from "@orc/core/changes";
-import { NotFoundError, ValidationError } from "@orc/core/errors";
+import { ValidationError } from "@orc/core/errors";
 import {
   SessionLineageSchema,
   SessionMessageCreateSchema,
@@ -22,7 +22,6 @@ import { bodyLimit } from "hono/body-limit";
 import { createRouter } from "../lib/router.js";
 import {
   deliverSessionMessageNow,
-  requireAncestor,
   sendToSession,
   sessionLineage,
   sessionSubagents,
@@ -91,7 +90,7 @@ app.openapi(
       body: {
         content: {
           "application/json": {
-            schema: SessionMessageCreateSchema.omit({ session_id: true, backend: true }),
+            schema: SessionMessageCreateSchema.omit({ session_id: true }),
           },
         },
       },
@@ -244,17 +243,7 @@ app.openapi(
     path: "/sessions/live/{id}/children",
     tags: ["Sessions"],
     summary: "Sessions started by this session",
-    request: {
-      params,
-      query: z.object({
-        include_archived: z
-          .enum(["true", "false"])
-          .optional()
-          .default("false")
-          .transform((value) => value === "true")
-          .openapi({ description: "Also return children the caller archived" }),
-      }),
-    },
+    request: { params },
     responses: {
       200: {
         description: "Child sessions",
@@ -276,61 +265,11 @@ app.openapi(
     return c.json(
       {
         sessions: new ChatStore(getSqlite())
-          .children([...ids], {
-            includeArchived: c.req.valid("query").include_archived,
-          })
+          .children([...ids])
           .map((child) => chatStatus(child.id)),
       },
       200,
     );
-  },
-);
-
-app.openapi(
-  createRoute({
-    method: "post",
-    path: "/sessions/live/{id}/archive",
-    tags: ["Sessions"],
-    summary: "Archive or restore a session started with session_start",
-    description:
-      "Archiving only removes the session from the default child list; its transcript stays readable by id. Only the session that started it (or an ancestor) may archive it.",
-    request: {
-      params,
-      body: {
-        content: {
-          "application/json": {
-            schema: z.object({ archived: z.boolean().default(true) }).strict(),
-          },
-        },
-      },
-    },
-    responses: {
-      200: {
-        description: "Updated session",
-        content: { "application/json": { schema: SessionStatusSchema } },
-      },
-      403: { description: "Only the session that started it, or an ancestor, can archive it" },
-      404: { description: "Session not found, or it was not started with session_start" },
-    },
-  }),
-  (c) => {
-    const { id } = c.req.valid("param");
-    const { archived } = c.req.valid("json");
-    const header = c.req.header("X-ORC-Session");
-    if (!header)
-      throw new ValidationError(
-        "Pass X-ORC-Session with the calling session id to archive sessions",
-      );
-    const thread = resolveSessionRef(id)?.thread;
-    if (!thread) throw new NotFoundError("Session started with session_start", id);
-    requireAncestor(caller(header), thread.id);
-    const updated = new ChatStore(getSqlite()).setArchived(
-      thread.id,
-      archived ? (thread.archivedAt ?? Date.now()) : null,
-    );
-    if (!updated) throw new NotFoundError("Session", id);
-    changes.publish("sessions");
-    return c.json(chatStatus(updated.id), 200);
   },
 );
 

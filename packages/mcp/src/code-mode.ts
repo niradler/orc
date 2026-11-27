@@ -36,6 +36,7 @@ const readable: ReadonlySet<ToolName> = new Set<ToolName>([
   "shell_list",
   "shell_status",
   "session_list",
+  "session_options",
   "session_status",
   "session_search",
   "session_read",
@@ -66,6 +67,7 @@ const writable: ReadonlySet<ToolName> = new Set<ToolName>([
   "pad_create",
   "pad_update",
   "session_send",
+  "session_update",
   "session_delete",
   "spec_invoke",
 ]);
@@ -90,6 +92,10 @@ const outputHints: Partial<Record<ToolName, string>> = {
     "Structured data: { name, description, content, priority, project_id }; text has markdown heading and content.",
   project_list:
     "Structured data: { projects: [{ id, name, status, description, tags, scope }] }; text has one project per line.",
+  session_list:
+    "Structured data: { sessions: [{ session_id, source, title, agent, model, status, waiting_for, project_id, cwd, host, parent_session_id, native_session_id, live_session_id, updated_at }], total, offset, limit, has_more, next_offset }.",
+  session_options:
+    "Structured data: { defaults, agents, hosts, providers, profiles, models?, capabilities? }.",
 };
 
 const inputSchema = z.strictObject({
