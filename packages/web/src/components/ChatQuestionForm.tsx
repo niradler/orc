@@ -1,6 +1,6 @@
 import { CHAT_QUESTION_DISMISS_ANSWER, type ChatQuestion } from "@orc/core/chat";
-import { MessageCircle } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Check, MessageCircle } from "lucide-react";
+import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { HelpPopover } from "@/components/HelpPopover";
 
 const QUESTION_FORM_ID = "chat-question-form";
@@ -49,6 +49,73 @@ export function ChatQuestionBar({
   );
 }
 
+type Question = ChatQuestion["questions"][number];
+
+function QuestionField({
+  question,
+  answers,
+  disabled,
+  onChange,
+}: {
+  question: Question;
+  answers: string[];
+  disabled: boolean;
+  onChange: (next: string[]) => void;
+}) {
+  const optionLabels = new Set(question.options?.map((option) => option.label) ?? []);
+  const selectedOptions = answers.filter((answer) => optionLabels.has(answer));
+  const custom = answers.find((answer) => !optionLabels.has(answer)) ?? "";
+  return (
+    <fieldset className="space-y-2" disabled={disabled}>
+      <legend className="font-medium">{question.question}</legend>
+      {question.options?.map((option) => (
+        <label key={option.label} className="flex min-h-11 items-start gap-2 py-2">
+          <input
+            type={question.multiSelect ? "checkbox" : "radio"}
+            name={question.id}
+            value={option.label}
+            className="mt-1"
+            checked={answers.includes(option.label)}
+            onChange={() => {
+              if (!question.multiSelect) return onChange([option.label]);
+              onChange(
+                answers.includes(option.label)
+                  ? answers.filter((value) => value !== option.label)
+                  : [...answers, option.label],
+              );
+            }}
+          />
+          <span>
+            {option.label}
+            <span className="block text-xs text-muted-foreground">{option.description}</span>
+          </span>
+        </label>
+      ))}
+      <input
+        data-testid="chat-question-answer"
+        aria-label={`${question.header || "Your answer"}: ${question.question}`}
+        type={question.isSecret ? "password" : "text"}
+        autoComplete="off"
+        placeholder={question.options?.length ? "Or enter your answer" : "Your answer"}
+        value={
+          question.multiSelect
+            ? custom
+            : optionLabels.has(answers[0] ?? "")
+              ? ""
+              : (answers[0] ?? "")
+        }
+        onChange={(event) => {
+          if (!question.multiSelect) return onChange([event.target.value]);
+          onChange(
+            event.target.value.trim() ? [...selectedOptions, event.target.value] : selectedOptions,
+          );
+        }}
+        className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-base sm:text-sm"
+      />
+    </fieldset>
+  );
+}
+
 export function ChatQuestionForm({
   request,
   busy,
@@ -64,12 +131,48 @@ export function ChatQuestionForm({
   onCollapse?: () => void;
 }) {
   const [answers, setAnswers] = useState<Record<string, string[]>>({});
+  const [step, setStep] = useState(0);
   const form = useRef<HTMLFormElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const focusPanel = useRef(false);
   const wasCollapsed = useRef(!expanded);
   useEffect(() => {
     if (expanded && wasCollapsed.current) form.current?.focus();
     wasCollapsed.current = !expanded;
   }, [expanded]);
+  const total = request.questions.length;
+  const active = Math.min(step, Math.max(0, total - 1));
+  const current = request.questions[active];
+  const answered = (question: (typeof request.questions)[number]) =>
+    Boolean(answers[question.id]?.some((answer) => answer.trim()));
+  const allAnswered = request.questions.every(answered);
+  // Back/Next move focus into the step they reveal; tab presses keep their own focus.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the effect reads refs only, but `active` is what moves focus.
+  useEffect(() => {
+    if (!focusPanel.current) return;
+    focusPanel.current = false;
+    panel.current?.focus();
+  }, [active]);
+  const go = (next: number) => {
+    focusPanel.current = true;
+    setStep(Math.max(0, Math.min(total - 1, next)));
+  };
+  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    const next =
+      event.key === "ArrowRight"
+        ? (index + 1) % total
+        : event.key === "ArrowLeft"
+          ? (index - 1 + total) % total
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? total - 1
+              : null;
+    if (next === null) return;
+    event.preventDefault();
+    setStep(next);
+    document.getElementById(`chat-question-tab-${next}`)?.focus();
+  };
   return (
     <form
       ref={form}
@@ -82,83 +185,97 @@ export function ChatQuestionForm({
         void onAnswer(answers);
       }}
     >
-      {request.questions.map((question) => {
-        const selected = answers[question.id] ?? [];
-        const optionLabels = new Set(question.options?.map((option) => option.label) ?? []);
-        const custom = selected.find((answer) => !optionLabels.has(answer)) ?? "";
-        return (
-          <fieldset key={question.id} className="space-y-2" disabled={busy}>
-            <legend className="font-medium">{question.question}</legend>
-            {question.options?.map((option) => (
-              <label key={option.label} className="flex min-h-11 items-start gap-2 py-2">
-                <input
-                  type={question.multiSelect ? "checkbox" : "radio"}
-                  name={question.id}
-                  value={option.label}
-                  className="mt-1"
-                  checked={selected.includes(option.label)}
-                  onChange={() =>
-                    setAnswers((current) => {
-                      const values = current[question.id] ?? [];
-                      if (!question.multiSelect)
-                        return { ...current, [question.id]: [option.label] };
-                      return {
-                        ...current,
-                        [question.id]: values.includes(option.label)
-                          ? values.filter((value) => value !== option.label)
-                          : [...values, option.label],
-                      };
-                    })
-                  }
-                />
-                <span>
-                  {option.label}
-                  <span className="block text-xs text-muted-foreground">{option.description}</span>
-                </span>
-              </label>
-            ))}
-            <input
-              data-testid="chat-question-answer"
-              aria-label={`${question.header || "Your answer"}: ${question.question}`}
-              type={question.isSecret ? "password" : "text"}
-              autoComplete="off"
-              placeholder={question.options?.length ? "Or enter your answer" : "Your answer"}
-              value={
-                question.multiSelect
-                  ? custom
-                  : optionLabels.has(selected[0] ?? "")
-                    ? ""
-                    : (selected[0] ?? "")
-              }
-              onChange={(event) =>
-                setAnswers((current) => {
-                  const values = current[question.id] ?? [];
-                  if (!question.multiSelect)
-                    return { ...current, [question.id]: [event.target.value] };
-                  const choices = values.filter((value) => optionLabels.has(value));
-                  return {
-                    ...current,
-                    [question.id]: event.target.value.trim()
-                      ? [...choices, event.target.value]
-                      : choices,
-                  };
-                })
-              }
-              className="min-h-11 w-full rounded-md border border-control-border bg-background px-3 text-base sm:text-sm"
+      {total > 1 && (
+        <div
+          role="tablist"
+          aria-label="Questions"
+          className="flex flex-wrap gap-1 border-b border-outline-variant pb-2"
+        >
+          {request.questions.map((question, index) => (
+            <button
+              key={question.id}
+              type="button"
+              role="tab"
+              id={`chat-question-tab-${index}`}
+              data-testid={`chat-question-tab-${index}`}
+              aria-selected={index === active}
+              aria-controls={`chat-question-panel-${index}`}
+              tabIndex={index === active ? 0 : -1}
+              onClick={() => setStep(index)}
+              onKeyDown={(event) => onTabKeyDown(event, index)}
+              className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-md px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+                index === active
+                  ? "bg-surface font-medium text-foreground"
+                  : "text-on-surface-variant hover:bg-surface"
+              }`}
+            >
+              <span className="shrink-0 tabular-nums opacity-70">{index + 1}</span>
+              <span className="truncate">{question.header || `Question ${index + 1}`}</span>
+              {answered(question) && (
+                <Check aria-label="Answered" size={12} className="shrink-0 text-primary" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+      {current &&
+        (total > 1 ? (
+          <div
+            ref={panel}
+            role="tabpanel"
+            id={`chat-question-panel-${active}`}
+            aria-labelledby={`chat-question-tab-${active}`}
+            tabIndex={-1}
+            data-testid={`chat-question-panel-${active}`}
+            className="focus-visible:outline-none"
+          >
+            <QuestionField
+              question={current}
+              answers={answers[current.id] ?? []}
+              disabled={busy}
+              onChange={(next) => setAnswers((all) => ({ ...all, [current.id]: next }))}
             />
-          </fieldset>
-        );
-      })}
+          </div>
+        ) : (
+          <QuestionField
+            question={current}
+            answers={answers[current.id] ?? []}
+            disabled={busy}
+            onChange={(next) => setAnswers((all) => ({ ...all, [current.id]: next }))}
+          />
+        ))}
       <div className="flex flex-wrap items-center gap-2">
+        {total > 1 && (
+          <span className="text-xs text-on-surface-variant" data-testid="chat-question-step">
+            Question {active + 1} of {total}
+          </span>
+        )}
+        {total > 1 && active > 0 && (
+          <button
+            type="button"
+            data-testid="chat-question-back"
+            disabled={busy}
+            onClick={() => go(active - 1)}
+            className="min-h-8 rounded-md border border-control-border px-3 max-md:min-h-11 pointer-coarse:min-h-11"
+          >
+            Back
+          </button>
+        )}
+        {total > 1 && current && active < total - 1 && (
+          <button
+            type="button"
+            data-testid="chat-question-next"
+            disabled={busy || !answered(current)}
+            onClick={() => go(active + 1)}
+            className="min-h-8 rounded-md border border-control-border px-3 disabled:opacity-50 max-md:min-h-11 pointer-coarse:min-h-11"
+          >
+            Next
+          </button>
+        )}
         <button
           type="submit"
           data-testid="chat-question-submit"
-          disabled={
-            busy ||
-            request.questions.some(
-              (question) => !answers[question.id]?.some((answer) => answer.trim()),
-            )
-          }
+          disabled={busy || !allAnswered}
           className="min-h-8 rounded-md bg-primary px-3 text-primary-foreground disabled:opacity-50 max-md:min-h-11 pointer-coarse:min-h-11"
         >
           {busy ? "Sending…" : "Send answer"}
@@ -191,9 +308,10 @@ export function ChatQuestionForm({
           </button>
         )}
         <HelpPopover label="Answering questions" testId="chat-question-help">
-          Pick a suggestion, or type your own answer in the field under the options. Dismiss sends a
-          &ldquo;no answer&rdquo; note and lets the agent continue with its best judgment; the
-          conversation stays open.
+          Pick a suggestion, or type your own answer in the field under the options. With several
+          questions, use the tabs or Next to move between them; the answer sends once every question
+          has a value. Dismiss sends a &ldquo;no answer&rdquo; note and lets the agent continue with
+          its best judgment; the conversation stays open.
         </HelpPopover>
       </div>
     </form>

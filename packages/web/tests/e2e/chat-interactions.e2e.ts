@@ -229,11 +229,27 @@ for (const width of [390, 1440]) {
     ).toBeDisabled();
     await page.keyboard.press("Escape");
     await page.getByTestId("chat-permission-allow").filter({ visible: true }).click();
-    await page.getByTestId("chat-question-answer").filter({ visible: true }).first().fill("Blue");
+    // Several questions become a tabbed wizard: one step at a time, answers kept.
+    await expect(page.getByTestId("chat-question-step")).toHaveText("Question 1 of 2");
+    await expect(page.getByTestId("chat-question-tab-0")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("chat-question-submit")).toBeDisabled();
+    await page.getByTestId("chat-question-answer").filter({ visible: true }).fill("Blue");
+    const next = page.getByTestId("chat-question-next");
+    await expect(next).toBeEnabled();
+    await next.click();
+    await expect(page.getByTestId("chat-question-step")).toHaveText("Question 2 of 2");
+    await expect(page.getByTestId("chat-question-tab-1")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("chat-question-next")).toHaveCount(0);
     const checkboxes = page.locator('input[type="checkbox"]').filter({ visible: true });
     await expect(checkboxes).toHaveCount(2);
     await checkboxes.nth(0).check();
     await checkboxes.nth(1).check();
+    // Tabs jump back and forth without losing the answers.
+    await page.getByTestId("chat-question-tab-0").click();
+    await expect(page.getByTestId("chat-question-answer")).toBeVisible();
+    await page.getByTestId("chat-question-tab-1").click();
+    await expect(checkboxes.nth(0)).toBeChecked();
+    await expect(checkboxes.nth(1)).toBeChecked();
     await page.screenshot({ path: testInfo.outputPath(`chat-question-${width}.png`) });
     await page.getByTestId("chat-question-submit").filter({ visible: true }).click();
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();
