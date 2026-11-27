@@ -30,8 +30,9 @@ afterAll(() => {
 const store = () => new MemoryStore(getSqlite());
 
 describe("MCP memory tools", () => {
-  test("should require a project", async () => {
-    await expect(executeTool("memory_list", {})).rejects.toThrow("Memories belong to a project");
+  test("lists across projects without one, but writes still require a project", async () => {
+    // A project-less caller gets every accessible memory instead of a dead end.
+    expect(await executeTool("memory_list", {})).toBe("No memories found.");
     await expect(
       executeTool("memory_create", { name: "no-project", description: "d", content: "c" }),
     ).rejects.toThrow("Memories belong to a project");

@@ -125,7 +125,7 @@ describe("project workspace environment", () => {
     ).json();
     expect(missing.workspaces).toEqual([]);
 
-    expect((await req(app, "DELETE", `/projects/${project.id}`)).status).toBe(204);
+    expect((await req(app, "DELETE", `/projects/${project.id}?ttl_days=0`)).status).toBe(204);
     const afterDelete = await (
       await req(app, "GET", `/workspaces?project_id=${project.id}`)
     ).json();

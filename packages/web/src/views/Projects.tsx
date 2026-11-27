@@ -505,14 +505,17 @@ export default function Projects() {
         <ConfirmDialog
           open={Boolean(deleting)}
           title="Delete project"
-          description="This deletes the project, its memories and its scratchpads. Its tasks, jobs and sessions are kept without a project. This action cannot be undone."
-          confirmLabel="Delete"
+          description="The project is archived now and permanently deleted after 30 days. Restore it with its status before then. Its memories, scratchpads, comments and secrets are deleted with it; its tasks, jobs and sessions are kept without a project."
+          confirmLabel="Schedule deletion"
           variant="destructive"
           isPending={deleteProject.isPending}
           onConfirm={() => {
-            deleteProject.mutate(deleting.id, {
-              onSuccess: () => setDeleting(null),
-            });
+            deleteProject.mutate(
+              { id: deleting.id },
+              {
+                onSuccess: () => setDeleting(null),
+              },
+            );
           }}
           onCancel={() => setDeleting(null)}
         />

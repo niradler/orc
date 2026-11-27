@@ -21,23 +21,12 @@ import {
   WorkspaceEnvironmentSchema,
 } from "@orc/core/workspace-environment";
 import { getDb, getSqlite } from "@orc/db/client";
-import { detachLegacyKnowledgeCollections, projectKbCount } from "@orc/db/kb";
-import { MemoryStore } from "@orc/db/memories";
+import { projectKbCount } from "@orc/db/kb";
 import { NotificationStore } from "@orc/db/notifications";
-import { deleteProjectSecrets } from "@orc/db/project-secrets";
-import {
-  bridge_chats,
-  comments,
-  gateway_sessions,
-  jobs,
-  projects,
-  sessions,
-  tasks,
-} from "@orc/db/schema";
-import { withTx } from "@orc/db/tx";
-import { deleteProjectWorkspaceEnvironments } from "@orc/db/workspaces";
+import { comments, projects } from "@orc/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { createRouter } from "../lib/router.js";
+import { projectSkillCount, purgeProject } from "../project-purge.js";
 import { reconcileSessionProjects } from "../session-watcher.js";
 import { invalidateProjectFolderCache } from "../sessions/common.js";
 
@@ -80,6 +69,8 @@ const ProjectSchema = z
     max_workers: z.number().int().nullable(),
     upload_directory: z.string().nullable(),
     workspace: WorkspaceSchema,
+    archived_at: z.string().datetime().nullable(),
+    delete_after: z.string().datetime().nullable(),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
   })
@@ -211,11 +202,23 @@ const deleteRoute = createRoute({
   method: "delete",
   path: "/projects/{id}",
   tags: ["Projects"],
-  summary: "Delete project",
-  request: { params: z.object({ id: z.string() }) },
+  summary: "Delete project (archive now, purge after ttl_days)",
+  description:
+    "Deleting archives the project and schedules permanent removal after ttl_days (default 30). " +
+    "PATCH status active before then restores it. ttl_days=0 purges immediately, which cannot be undone.",
+  request: {
+    params: z.object({ id: z.string() }),
+    query: z.object({
+      ttl_days: z.coerce.number().int().min(0).max(3650).optional().default(30),
+    }),
+  },
   responses: {
-    204: { description: "Deleted" },
-    409: { description: "Project still owns knowledge bases" },
+    202: {
+      description: "Archived; permanent deletion is scheduled",
+      content: { "application/json": { schema: ProjectSchema } },
+    },
+    204: { description: "Deleted immediately (ttl_days=0)" },
+    409: { description: "Project still owns knowledge bases or assigned skills" },
   },
 });
 
@@ -281,6 +284,8 @@ function toDto(p: typeof projects.$inferSelect) {
     upload_directory: p.upload_directory ?? null,
     git_remote_url: p.git_remote_url ?? null,
     workspace: publicWorkspaceEnvironment(p.workspace),
+    archived_at: p.archived_at?.toISOString() ?? null,
+    delete_after: p.delete_after?.toISOString() ?? null,
     created_at: p.created_at.toISOString(),
     updated_at: p.updated_at.toISOString(),
   };
@@ -297,6 +302,10 @@ function rawToDto(row: Record<string, unknown>) {
         ? JSON.parse(row.github_sync_state)
         : row.github_sync_state,
     workspace: publicWorkspaceEnvironment(row.workspace),
+    archived_at:
+      row.archived_at == null ? null : new Date((row.archived_at as number) * 1000).toISOString(),
+    delete_after:
+      row.delete_after == null ? null : new Date((row.delete_after as number) * 1000).toISOString(),
     created_at: new Date((row.created_at as number) * 1000).toISOString(),
     updated_at: new Date((row.updated_at as number) * 1000).toISOString(),
   };
@@ -427,6 +436,7 @@ app.openapi(createRoute_, async (c) => {
     obsidian_path: body.obsidian_path,
     max_workers: body.max_workers,
     upload_directory: body.upload_directory,
+    archived_at: body.status === "archived" ? now : null,
     workspace: prepareWorkspace(
       body.workspace ?? defaultWorkspaceEnvironment(),
       defaultWorkspaceEnvironment(),
@@ -473,6 +483,15 @@ app.openapi(updateRoute, async (c) => {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
       ...(body.status !== undefined ? { status: body.status } : {}),
+      // Moving out of archived restores the project and cancels a scheduled deletion;
+      // archiving records when it happened (an existing schedule and date are left alone).
+      ...(body.status === "archived"
+        ? existing.status !== "archived"
+          ? { archived_at: new Date() }
+          : {}
+        : body.status !== undefined
+          ? { archived_at: null, delete_after: null }
+          : {}),
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
       ...(body.host !== undefined ? { host: body.host } : {}),
       ...(body.git_remote_url !== undefined ? { git_remote_url: body.git_remote_url } : {}),
@@ -507,18 +526,15 @@ app.openapi(updateRoute, async (c) => {
 app.openapi(deleteRoute, async (c) => {
   const db = getDb();
   const { id } = c.req.valid("param");
+  const { ttl_days: ttlDays } = c.req.valid("query");
   const existing = await db.query.projects.findFirst({
     where: eq(projects.id, id),
   });
   if (!existing) throw new NotFoundError("Project", id);
-  // Knowledge bases are scoped deliberately; deleting the project must not silently re-scope them.
-  const sqlite = (db as unknown as { $client: Database }).$client;
-  const assignedSkills =
-    sqlite
-      .query<{ count: number }, [string]>(
-        "SELECT count(*) AS count FROM skill_projects WHERE project_id=?",
-      )
-      .get(id)?.count ?? 0;
+  // Knowledge bases and assigned skills are scoped deliberately; deleting the project
+  // must not silently re-scope them. The same guard runs again before the purge.
+  const sqlite = getSqlite();
+  const assignedSkills = projectSkillCount(sqlite, id);
   if (assignedSkills > 0)
     throw new ConflictError(`Project has ${assignedSkills} assigned skills; reassign them first`);
   const kbs = projectKbCount(sqlite, id);
@@ -526,29 +542,25 @@ app.openapi(deleteRoute, async (c) => {
     throw new ConflictError(
       `Project has ${kbs} knowledge base${kbs === 1 ? "" : "s"}; delete them first`,
     );
-  withTx((tx) => {
-    tx.update(tasks).set({ project_id: null }).where(eq(tasks.project_id, id)).run();
-    // Memories belong to one project, so they go with it (with their history and reads).
-    new MemoryStore(sqlite).removeProject(id);
-    // Scratchpads go with it too, through their ON DELETE CASCADE foreign key.
-    tx.update(jobs).set({ project_id: null }).where(eq(jobs.project_id, id)).run();
-    tx.update(sessions).set({ project_id: null }).where(eq(sessions.project_id, id)).run();
-    tx.update(gateway_sessions)
-      .set({ project_id: null })
-      .where(eq(gateway_sessions.project_id, id))
-      .run();
-    sqlite.query("UPDATE notifications SET project_id=NULL WHERE project_id=?").run(id);
-    tx.update(bridge_chats).set({ project_id: null }).where(eq(bridge_chats.project_id, id)).run();
-    detachLegacyKnowledgeCollections(sqlite, id);
-    deleteProjectWorkspaceEnvironments(sqlite, id);
-    deleteProjectSecrets(sqlite, id);
-    tx.delete(comments)
-      .where(and(eq(comments.resource_type, "project"), eq(comments.resource_id, id)))
-      .run();
-    tx.delete(projects).where(eq(projects.id, id)).run();
-  }, db);
+  if (ttlDays === 0) {
+    purgeProject(id);
+    reassignSessions();
+    return new Response(null, { status: 204 });
+  }
+  const now = new Date();
+  await db
+    .update(projects)
+    .set({
+      status: "archived",
+      archived_at: existing.archived_at ?? now,
+      delete_after: new Date(now.getTime() + ttlDays * 86_400_000),
+      updated_at: now,
+    })
+    .where(eq(projects.id, id));
+  const scheduled = await db.query.projects.findFirst({ where: eq(projects.id, id) });
+  if (!scheduled) throw new Error("Expected project to exist after scheduling its deletion");
   reassignSessions();
-  return new Response(null, { status: 204 });
+  return c.json(toDto(scheduled), 202);
 });
 
 // --- Project Comments ---

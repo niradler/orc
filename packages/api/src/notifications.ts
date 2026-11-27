@@ -11,6 +11,7 @@ import { HumanRequestStore } from "@orc/db/human-requests";
 import { notificationProjectLabel, publishNotification } from "@orc/db/notification-producers";
 import { NotificationStore } from "@orc/db/notifications";
 import { pruneRuleStorage } from "@orc/db/rules";
+import { purgeExpiredProjects } from "./project-purge.js";
 import { notify, sessionWaitingMessage } from "./push/service.js";
 import { activeTurns, turnKey } from "./sessions/turns.js";
 
@@ -274,6 +275,7 @@ export function maintainNotifications(sqlite: Database = getSqlite()): void {
   syncFinishedNotificationSessions(sqlite);
   syncRequestNotifications(sqlite);
   new NotificationStore(sqlite).cleanup();
+  purgeExpiredProjects(sqlite);
   cleanupAuditLog(sqlite, loadConfig().preferences.audit_retention_days ?? 90);
   const rules = loadConfig().rules;
   pruneRuleStorage(sqlite, {

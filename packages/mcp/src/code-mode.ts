@@ -60,7 +60,6 @@ const writable: ReadonlySet<ToolName> = new Set<ToolName>([
   "task_update",
   "task_batch_create",
   "task_link",
-  "project_archive",
   "project_delete",
   "memory_create",
   "memory_update",

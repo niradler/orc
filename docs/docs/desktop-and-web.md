@@ -415,7 +415,7 @@ Browser terminals for shells and coding agents, with split panes and Files and G
 
 ## Projects
 
-Create, edit and archive projects. A project has a name, description, tags and an optional Git remote URL. Deleting a project deletes its memories and scratchpads and keeps its tasks, jobs and sessions without a project.
+Create, edit and archive projects. A project has a name, description, tags and an optional Git remote URL. Deleting a project archives it and permanently removes it after 30 days; set its status back to active before then to restore it. Its memories, scratchpads, comments and secrets are deleted with it, while its tasks, jobs and sessions are kept without a project.
 
 ## Memories
 

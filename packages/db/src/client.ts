@@ -488,6 +488,10 @@ function setupDb(sqlite: Database): void {
     "CREATE INDEX IF NOT EXISTS usage_events_raw_ts_idx ON usage_events(ts) WHERE resolution='request'",
     "ALTER TABLE gateway_sessions ADD COLUMN parent_session_id TEXT",
     "ALTER TABLE gateway_sessions ADD COLUMN spawned_from_session_id TEXT",
+    // Deleting a project archives it first; the maintenance sweep purges it once
+    // delete_after passes, so an accidental delete stays recoverable for a while.
+    "ALTER TABLE projects ADD COLUMN archived_at INTEGER",
+    "ALTER TABLE projects ADD COLUMN delete_after INTEGER",
   ];
   for (const statement of migrations) {
     try {

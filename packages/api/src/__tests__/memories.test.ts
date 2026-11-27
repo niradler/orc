@@ -248,7 +248,7 @@ describe("Memories REST API", () => {
   });
 
   test("should remove a project's memories, history and reads with the project", async () => {
-    expect((await req(app, "DELETE", `/projects/${projectId}`)).status).toBe(204);
+    expect((await req(app, "DELETE", `/projects/${projectId}?ttl_days=0`)).status).toBe(204);
     const sqlite = getSqlite();
     for (const table of ["memories", "memory_changes", "memory_usage"])
       expect(

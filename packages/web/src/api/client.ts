@@ -1437,7 +1437,8 @@ export const api = {
     create: (data: CreateProjectInput) => req<Project>("POST", "/projects", data),
     update: (id: string, data: UpdateProjectInput) =>
       req<Project>("PATCH", `/projects/${id}`, data),
-    delete: (id: string) => req<null>("DELETE", `/projects/${id}`),
+    delete: (id: string, ttlDays = 30) =>
+      req<Project | null>("DELETE", `/projects/${id}?ttl_days=${ttlDays}`),
     addComment: (id: string, content: string, author = "human") =>
       req<Comment>("POST", `/projects/${id}/comments`, { content, author }),
     listComments: (id: string) => req<{ comments: Comment[] }>("GET", `/projects/${id}/comments`),

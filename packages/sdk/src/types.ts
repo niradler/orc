@@ -348,6 +348,8 @@ export type Project = {
   obsidian_path: string | null;
   max_workers: number | null;
   workspace: WorkspaceEnvironment;
+  archived_at?: string | null;
+  delete_after?: string | null;
   created_at: string;
   updated_at: string;
 };

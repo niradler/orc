@@ -301,24 +301,32 @@ describe("connection-wide MCP project defaults", () => {
     expect(unknown.text).toContain("No-Such-Project");
   });
 
-  test("project_archive hides a project, and project_delete refuses linked resources unless forced", async () => {
+  test("project_delete archives with a ttl, restores, and purges immediately with ttl_days 0", async () => {
     const name = "archive-fixture";
     expect((await rpc("", "project_create", { name })).error).not.toBe(true);
     const project = () =>
       getSqlite()
-        .query<{ id: string; status: string }, [string]>(
-          "SELECT id, status FROM projects WHERE name=?",
+        .query<{ id: string; status: string; delete_after: number | null }, [string]>(
+          "SELECT id, status, delete_after FROM projects WHERE name=?",
         )
         .get(name);
     const id = project()?.id;
     expect(id).toBeDefined();
-    const archived = await rpc("", "project_archive", { project: name });
-    expect(archived.error).not.toBe(true);
-    expect(archived.text).toContain("Archived project");
+
+    const scheduled = await rpc("", "project_delete", { project: name });
+    expect(scheduled.error).not.toBe(true);
+    expect(scheduled.text).toContain("Scheduled deletion of project");
+    expect(scheduled.text).toContain("in 30 days");
     expect(project()?.status).toBe("archived");
-    const restored = await rpc("", "project_archive", { project: name, archived: false });
+    const days = ((project()?.delete_after ?? 0) - Math.floor(Date.now() / 1000)) / 86_400;
+    expect(days).toBeGreaterThan(29);
+    expect(days).toBeLessThanOrEqual(30);
+
+    const restored = await rpc("", "project_delete", { project: name, restore: true });
+    expect(restored.error).not.toBe(true);
     expect(restored.text).toContain("Restored project");
     expect(project()?.status).toBe("active");
+    expect(project()?.delete_after).toBeNull();
 
     new MemoryStore(getSqlite()).create({
       project_id: id as string,
@@ -326,16 +334,18 @@ describe("connection-wide MCP project defaults", () => {
       description: "Linked fixture memory",
       content: "not safe to drop silently",
     });
-    const blocked = await rpc("", "project_delete", { project: name });
-    expect(blocked.error).toBe(true);
-    expect(blocked.text).toContain("1 memory");
-    expect(blocked.text).toContain("project_archive");
-    expect(project()).not.toBeNull();
+    // A scheduled deletion keeps every resource readable until it comes due.
+    const later = await rpc("", "project_delete", { project: name, ttl_days: 7 });
+    expect(later.error).not.toBe(true);
+    expect(later.text).toContain("in 7 days");
+    expect(later.text).toContain("1 memory");
+    expect(new MemoryStore(getSqlite()).list(id as string)).toHaveLength(1);
 
-    const forced = await rpc("", "project_delete", { project: name, force: true });
-    expect(forced.error).not.toBe(true);
-    expect(forced.text).toContain("Deleted project");
+    const immediate = await rpc("", "project_delete", { project: name, ttl_days: 0 });
+    expect(immediate.error).not.toBe(true);
+    expect(immediate.text).toContain("Deleted project");
     expect(project()).toBeNull();
+    expect(new MemoryStore(getSqlite()).list(id as string)).toHaveLength(0);
   });
 
   test("project_create stores its folder and maps existing sessions in it", async () => {

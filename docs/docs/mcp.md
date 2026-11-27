@@ -358,8 +358,7 @@ Start each session with `context`.
 | `search`         | Search knowledge base documents first, then memories and tasks                                                                    |
 | `project_list`   | List all projects with id, status, `scope`, execution `host` and description                                                       |
 | `project_create` | Create a project: unique name, optional description, status, tags, `scope`, execution `host` (`"local"` or SSH alias) and `git_remote_url`; returns the stable id, name and a UI link |
-| `project_archive` | Archive a project (or restore it with `archived: false`) without deleting tasks, memories or knowledge bases                    |
-| `project_delete` | Permanently delete an empty project; refuses while resources are linked unless `force` is true                                    |
+| `project_delete` | Delete safely: archive now, purge after `ttl_days` (default 30). `restore: true` cancels; `ttl_days: 0` deletes immediately       |
 
 #### Reuse or create a project, then store project-scoped data
 
@@ -371,7 +370,7 @@ memory_create({ project: "my-app", name: "api-port", description: "Dev API port"
 
 Names are unique case-insensitively: a duplicate `project_create` fails with a conflict that names the existing project's id, and a retry never creates a second one — reuse the reported id. `project_create` works on any authenticated connection, including one with a default `project`/`projects` (see [Query parameters](#query-parameters)).
 
-Prefer `project_archive` over `project_delete`. Deleting is refused while the project still has tasks, sessions, memories, jobs, pads, knowledge bases or skills; pass `force: true` only after those are deliberately dealt with. Knowledge bases and assigned skills must be reassigned first. The CLI exposes the same paths as `orc project archive <name>` and `orc project delete <name>`.
+Deletion always archives first, so a mistake stays recoverable. `project_delete({ project, ttl_days: 30 })` archives the project and schedules permanent removal 30 days later; `restore: true` cancels the schedule and reactivates it. `ttl_days: 0` deletes immediately and cannot be undone. At removal, tasks, jobs and sessions are kept without a project, while memories, scratchpads, project comments, secrets and the workspace environment are deleted. Knowledge bases and assigned skills must be deleted or reassigned first. Use `orc project archive <name>` for a plain archive with no deletion, and `orc project delete <name>` (`--now` to purge) for the same scheduled path from the CLI.
 
 ### Memory
 

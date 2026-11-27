@@ -925,7 +925,9 @@ export function createOrcClient(options?: OrcClientOptions) {
       update: (id: string, input: UpdateProjectInput) =>
         c<Project>("PATCH", `/projects/${id}`, input),
 
-      delete: (id: string) => c<null>("DELETE", `/projects/${id}`),
+      // Archives immediately and schedules permanent deletion; ttlDays 0 deletes now.
+      delete: (id: string, ttlDays = 30) =>
+        c<Project | null>("DELETE", `/projects/${id}?ttl_days=${ttlDays}`),
 
       addComment: (id: string, content: string, author = "human") =>
         c<{

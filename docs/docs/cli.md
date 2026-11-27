@@ -65,7 +65,7 @@ use the existing task commands and reach GitHub on the next sync cycle.
 | `orc project use <name>` | `--clear` unsets the active project |
 | `orc project update <name>` | `--name`, `-d`, `--status active\|paused\|archived`, `--scope`, `--git-remote-url`, `--clear-git-remote-url`, `--tags` |
 | `orc project archive <name>` | |
-| `orc project delete <name>` | |
+| `orc project delete <name>` | `--now` to delete permanently instead of scheduling it after 30 days |
 
 ## Tasks
 

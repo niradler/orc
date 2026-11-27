@@ -1045,7 +1045,7 @@ export const toolDefinitions = [
   {
     name: "project_list",
     description:
-      "List all projects. Returns name, status, id, scope, execution host and description for each.",
+      "List all projects. Returns name, status, id, scope, execution host, description and any scheduled deletion date for each.",
     inputSchema: z.object({
       status: z.enum(["active", "archived", "paused"]).optional(),
     }),
@@ -1095,29 +1095,27 @@ export const toolDefinitions = [
     }),
   },
   {
-    name: "project_archive",
-    description:
-      "Archive a project so it leaves the active project list without deleting anything; archived false restores it. Tasks, memories, pads, sessions and knowledge bases stay attached. Prefer this over project_delete.",
-    inputSchema: z
-      .object({
-        project: projectParam,
-        project_id: z.string().min(1).max(100).optional().describe("Explicit project id"),
-        archived: z.boolean().default(true).describe("true archives; false restores to active"),
-      })
-      .strict(),
-  },
-  {
     name: "project_delete",
     description:
-      "Permanently delete a project. Refuses while the project still has tasks, sessions, memories, jobs, pads, knowledge bases or skills unless force true; archives are preferred. Deleting memories and detaching tasks cannot be undone.",
+      "Delete a project safely: it is archived now and permanently removed after ttl_days (default 30). " +
+      "Until then restore true cancels the deletion and reactivates it. ttl_days 0 removes it immediately and cannot be undone. " +
+      "At removal, tasks, jobs and sessions are kept but unassigned; memories, scratchpads, comments, project secrets and its workspace environment go with it. " +
+      "Knowledge bases and assigned skills must be deleted or reassigned first.",
     inputSchema: z
       .object({
         project: projectParam,
         project_id: z.string().min(1).max(100).optional().describe("Explicit project id"),
-        force: z
+        ttl_days: z
+          .number()
+          .int()
+          .min(0)
+          .max(3650)
+          .default(30)
+          .describe("Days to keep the archived project restorable; 0 deletes it immediately"),
+        restore: z
           .boolean()
           .default(false)
-          .describe("Delete even when tasks, sessions, memories, jobs or pads are linked"),
+          .describe("Cancel a scheduled deletion and reactivate the project"),
       })
       .strict(),
   },
@@ -3230,14 +3228,18 @@ async function runTool(
           tags: p.tags,
           scope: p.scope ?? null,
           host: p.host ?? null,
+          delete_after: p.delete_after?.toISOString() ?? null,
         })),
       });
       if (rows.length === 0) return "No projects found.";
       return rows
         .map((p) => {
           const hostTag = p.host ? ` [host: ${p.host}]` : "";
+          const deletes = p.delete_after
+            ? ` [deletes: ${p.delete_after.toISOString().slice(0, 10)}]`
+            : "";
           const desc = p.description ? `  ${p.description.slice(0, 60)}` : "";
-          return `${p.name.padEnd(24)} ${p.status} [id: ${p.id}]${hostTag}${desc}`;
+          return `${p.name.padEnd(24)} ${p.status} [id: ${p.id}]${hostTag}${deletes}${desc}`;
         })
         .join("\n");
     }
@@ -3303,13 +3305,12 @@ async function runTool(
       return `Created project ${name} [id: ${id}]\nlink: ${link}`;
     }
 
-    case "project_archive":
     case "project_delete": {
       const input = args as {
         project?: string;
         project_id?: string;
-        archived?: boolean;
-        force?: boolean;
+        ttl_days?: number;
+        restore?: boolean;
       };
       const id = input.project_id ?? resolveProjectId(input.project)?.id;
       if (!id) throw new ValidationError("Pass project (name) or project_id");
@@ -3325,27 +3326,38 @@ async function runTool(
         `/tasks?project=${encodeURIComponent(row.name)}`,
         options.publicApiBaseUrl ?? orcApiBase(),
       ).toString();
-      if (name === "project_archive") {
-        const archived = input.archived ?? true;
+      if (input.restore) {
         await orcApi("PATCH", `/projects/${encodeURIComponent(id)}`, {
-          body: { status: archived ? "archived" : "active" },
+          body: { status: "active" },
         });
-        return `${archived ? "Archived" : "Restored"} project ${row.name} [id: ${id}]\nlink: ${link}`;
+        options.projectsChanged?.();
+        return `${
+          row.status === "archived" ? "Restored" : "Kept"
+        } project ${row.name} [id: ${id}]; active with no scheduled deletion\nlink: ${link}`;
       }
+      const ttlDays = input.ttl_days ?? 30;
       const resources = projectResourceCounts(id);
       const linked = Object.entries(resources).filter(([, n]) => n > 0) as [string, number][];
       const describe = linked.map(([kind, n]) => `${n} ${kind}${n === 1 ? "" : "s"}`).join(", ");
-      if (linked.length > 0 && input.force !== true)
-        throw new ConflictError(
-          `Project ${row.name} still has ${describe}. Archive it with project_archive, or pass force true to delete; knowledge bases and assigned skills must be reassigned first.`,
-          "PROJECT_HAS_RESOURCES",
-          { project_id: id, resources },
-        );
-      await orcApi("DELETE", `/projects/${encodeURIComponent(id)}`);
+      if (ttlDays === 0) {
+        await orcApi("DELETE", `/projects/${encodeURIComponent(id)}?ttl_days=0`);
+        options.projectsChanged?.();
+        return `Deleted project ${row.name} [id: ${id}]${
+          linked.length ? `; removed or detached ${describe}` : ""
+        }`;
+      }
+      const scheduled = (await orcApi(
+        "DELETE",
+        `/projects/${encodeURIComponent(id)}?ttl_days=${ttlDays}`,
+      )) as { delete_after?: string } | null;
       options.projectsChanged?.();
-      return `Deleted project ${row.name} [id: ${id}]${
-        linked.length ? `; removed or detached ${describe}` : ""
-      }`;
+      const until = scheduled?.delete_after ? new Date(scheduled.delete_after) : null;
+      return (
+        `Scheduled deletion of project ${row.name} [id: ${id}] in ${ttlDays} days` +
+        `${until ? ` (${until.toISOString().slice(0, 10)})` : ""}; it is archived now.` +
+        `${linked.length ? ` Kept until then: ${describe}.` : ""} ` +
+        `Use project_delete restore true to cancel.\nlink: ${link}`
+      );
     }
 
     case "task_batch_create": {

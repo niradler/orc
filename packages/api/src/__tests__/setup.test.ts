@@ -431,7 +431,7 @@ describe("setup dismissal lifecycle", () => {
     const project = await created.json<{ id: string }>();
     const after = await req(app, "GET", "/settings");
     expect((await after.json()).setup_dismissed).toBeUndefined();
-    const removed = await req(app, "DELETE", `/projects/${project.id}`);
+    const removed = await req(app, "DELETE", `/projects/${project.id}?ttl_days=0`);
     expect(removed.status).toBe(204);
   });
 });
