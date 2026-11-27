@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resetConfig } from "@orc/core/config";
-import { execHostFor, hostRuntime } from "@orc/core/exec-host";
+import { execHostFor, type HostRuntime, hostRuntime } from "@orc/core/exec-host";
 import { getDb, getSqlite } from "@orc/db/client";
 import { NotificationStore } from "@orc/db/notifications";
 import { bridge_chats, gateway_sessions } from "@orc/db/schema";
@@ -236,6 +236,18 @@ test("drops an assignment its project's scope no longer justifies", async () => 
   }
 });
 
+function stubSshRuntime(alias: string): HostRuntime {
+  const host = execHostFor(alias);
+  return {
+    ...hostRuntime(host),
+    exec: async () => ({ code: 1, stdout: "", stderr: "" }),
+    home: async () => `/home/${alias}`,
+    isDirectory: async () => false,
+    isFile: async () => false,
+    stat: async () => null,
+  };
+}
+
 test("projectIdFor matches project scopes when targeting the configured default SSH host", async () => {
   const nested = getSqlite()
     .query<{ id: string }, []>("SELECT id FROM projects WHERE name='mapping-nested'")
@@ -246,9 +258,9 @@ test("projectIdFor matches project scopes when targeting the configured default 
   resetConfig();
   invalidateProjectFolderCache();
   try {
-    const devboxRuntime = hostRuntime(execHostFor("devbox"));
+    const devboxRuntime = stubSshRuntime("devbox");
     expect(await projectIdFor(join(nestedProjectFolder, "sub"), devboxRuntime)).toBe(nested.id);
-    const otherRuntime = hostRuntime(execHostFor("other-box"));
+    const otherRuntime = stubSshRuntime("other-box");
     expect(await projectIdFor(join(nestedProjectFolder, "sub"), otherRuntime)).toBeNull();
   } finally {
     if (previous === undefined) delete process.env.ORC_SSH_HOST;
@@ -269,7 +281,7 @@ test("project host overrides global default host in API and projectIdFor", async
   expect(created.host).toBe("remote-box");
 
   invalidateProjectFolderCache();
-  const remoteRuntime = hostRuntime(execHostFor("remote-box"));
+  const remoteRuntime = stubSshRuntime("remote-box");
   const localRuntime = hostRuntime(execHostFor(null));
   expect(await projectIdFor("/srv/remote-app/src", remoteRuntime)).toBe(created.id);
   expect(await projectIdFor("/srv/remote-app/src", localRuntime)).toBeNull();
