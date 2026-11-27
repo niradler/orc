@@ -38,6 +38,19 @@ describe("MCP memory tools", () => {
     ).rejects.toThrow("Memories belong to a project");
   });
 
+  test("an explicit project wins over the connection's scoped projects", async () => {
+    await executeTool("memory_create", {
+      name: "beta-memory",
+      description: "d",
+      content: "c",
+      project: "mem-b",
+    });
+    const scoped = { projectScopes: [{ id: "scope-a", name: "scope-a" }] };
+    expect(await executeTool("memory_list", {}, scoped)).not.toContain("beta-memory");
+    expect(await executeTool("memory_list", { project: "mem-b" }, scoped)).toContain("beta-memory");
+    await executeTool("memory_delete", { name: "beta-memory", project: "mem-b" });
+  });
+
   test("should create, read and list a memory, counting mcp reads", async () => {
     expect(
       await executeTool("memory_create", {

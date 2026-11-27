@@ -1108,10 +1108,13 @@ export const toolDefinitions = [
       "Delete a project safely: it is archived now and permanently removed after ttl_days (default 30). " +
       "Until then restore true cancels the deletion and reactivates it. ttl_days 0 removes it immediately and cannot be undone. " +
       "At removal, tasks, jobs and sessions are kept but unassigned; memories, scratchpads, comments, project secrets and its workspace environment go with it. " +
-      "Knowledge bases and assigned skills must be deleted or reassigned first.",
+      "Knowledge bases and assigned skills must be deleted or reassigned first. " +
+      "Name the project explicitly: this tool never falls back to the active project.",
     inputSchema: z
       .object({
-        project: projectParam,
+        project: projectParam.describe(
+          "Project name to delete or restore; required (no activeProject fallback)",
+        ),
         project_id: z.string().min(1).max(100).optional().describe("Explicit project id"),
         ttl_days: TtlDaysSchema.describe(
           "Days to keep the archived project restorable; 0 deletes it immediately",
@@ -2386,11 +2389,12 @@ async function runTool(
       // project, instead of the dead-end "pass project" error.
       // A connection scoped to several projects keeps that scope (the server also
       // fills project with the first one); otherwise project is authoritative.
-      const projectIds = options.projectScopes
-        ? options.projectScopes.map((item) => item.id)
-        : project !== undefined
+      const projectIds =
+        project !== undefined
           ? [memoryProject(project, options)]
-          : undefined;
+          : options.projectScopes
+            ? options.projectScopes.map((item) => item.id)
+            : undefined;
       const matched = new MemoryStore(getSqlite(db)).list(projectIds ?? null, { q, sort });
       const shown = matched.slice(0, limit ?? MEMORY_LIST_LIMIT);
       setData?.({ memories: shown, total: matched.length });
@@ -3334,6 +3338,10 @@ async function runTool(
         ttl_days?: number;
         restore?: boolean;
       };
+      if (!input.project_id && !input.project)
+        throw new ValidationError(
+          "Pass project (name) or project_id; project_delete never uses the active project implicitly",
+        );
       const id = input.project_id ?? resolveProjectId(input.project)?.id;
       if (!id) throw new ValidationError("Pass project (name) or project_id");
       const row = getSqlite()
@@ -3342,8 +3350,6 @@ async function runTool(
         )
         .get(id);
       if (!row) throw new NotFoundError("Project", id);
-      if (options.projectScopes && !options.projectScopes.some((p) => p.id === id))
-        throw new ForbiddenError("Project is outside the selected MCP projects");
       const link = new URL(
         `/tasks?project=${encodeURIComponent(row.name)}`,
         options.publicApiBaseUrl ?? orcApiBase(),

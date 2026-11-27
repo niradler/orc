@@ -9,16 +9,23 @@ import { purgeProject } from "./project-purge.js";
  * resource here after giving its table `archived_at` and `delete_after` and wiring
  * DELETE ?ttl_days / restore in its route.
  */
-const sweeps: TtlSweep[] = [
-  { resource: "project", table: "projects", labelColumn: "name", purge: purgeProject },
-  {
-    resource: "scratchpad",
-    table: "scratchpads",
-    labelColumn: "title",
-    purge: (id) => new ScratchpadStore(getSqlite()).purge(id),
-  },
-];
+function sweepsFor(sqlite: Database): TtlSweep[] {
+  return [
+    {
+      resource: "project",
+      table: "projects",
+      labelColumn: "name",
+      purge: (id) => purgeProject(id, sqlite),
+    },
+    {
+      resource: "scratchpad",
+      table: "scratchpads",
+      labelColumn: "title",
+      purge: (id) => new ScratchpadStore(sqlite).purge(id),
+    },
+  ];
+}
 
 export function purgeExpiredTtl(sqlite: Database = getSqlite()): TtlSweepOutcome {
-  return sweepTtl(sqlite, sweeps);
+  return sweepTtl(sqlite, sweepsFor(sqlite));
 }

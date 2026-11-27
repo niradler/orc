@@ -11,12 +11,11 @@ export const MAX_TTL_DAYS = 3650;
  * Shared `ttl_days` value for scheduled deletes: whole days, default 30, where 0
  * means "delete permanently now". Also used as an MCP tool argument.
  */
-export const TtlDaysSchema = z.coerce
-  .number()
-  .int()
-  .min(0)
-  .max(MAX_TTL_DAYS)
-  .default(DEFAULT_TTL_DAYS);
+export const TtlDaysSchema = z.preprocess(
+  // An omitted or empty value means the default; only an explicit 0 deletes now.
+  (value) => (value === null || value === "" ? undefined : value),
+  z.coerce.number().int().min(0).max(MAX_TTL_DAYS).default(DEFAULT_TTL_DAYS),
+);
 
 /** Epoch milliseconds after which a soft-deleted row may be purged. */
 export function ttlDeadline(ttlDays: number, now = new Date()): Date {

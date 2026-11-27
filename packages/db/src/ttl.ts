@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { ConflictError } from "@orc/core/errors";
 import { createLogger } from "@orc/core/logger";
 import { ttlDeadline } from "@orc/core/ttl";
 
@@ -34,6 +35,8 @@ export type TtlSweep = TtlTable & {
 export type TtlSweepOutcome = {
   purged: { resource: string; id: string; label: string }[];
   cancelled: { resource: string; id: string; label: string; reason: string }[];
+  /** Transient purge failures; the schedule stays set so the next sweep retries. */
+  failed: { resource: string; id: string; label: string; reason: string }[];
 };
 
 export type TtlClock = {
@@ -130,12 +133,13 @@ export function cancelScheduledTtl(sqlite: Database, spec: TtlColumns & { id: st
 }
 
 /**
- * Purges every due row for each registered resource. A purge that throws (for
- * example because the row gained a linked knowledge base) leaves the row archived
- * but clears its schedule, so the sweep does not retry the same failure every minute.
+ * Purges every due row for each registered resource. A deliberate ConflictError (for
+ * example the row gained a linked knowledge base) leaves it archived and clears the
+ * schedule so the same refusal is not retried every minute. Any other failure leaves
+ * the schedule in place for the next sweep.
  */
 export function sweepTtl(sqlite: Database, sweeps: TtlSweep[]): TtlSweepOutcome {
-  const outcome: TtlSweepOutcome = { purged: [], cancelled: [] };
+  const outcome: TtlSweepOutcome = { purged: [], cancelled: [], failed: [] };
   for (const sweep of sweeps) {
     for (const row of dueTtlRows(sqlite, sweep)) {
       try {
@@ -143,12 +147,24 @@ export function sweepTtl(sqlite: Database, sweeps: TtlSweep[]): TtlSweepOutcome 
         outcome.purged.push({ resource: sweep.resource, id: row.id, label: row.label });
         logger.info(`Purged ${sweep.resource} ${row.label} after its delete-after date`);
       } catch (error) {
-        cancelScheduledTtl(sqlite, { ...sweep, id: row.id });
         const reason = error instanceof Error ? error.message : String(error);
-        outcome.cancelled.push({ resource: sweep.resource, id: row.id, label: row.label, reason });
-        logger.warn(
-          `Scheduled deletion of ${sweep.resource} ${row.label} was cancelled: ${reason}`,
-        );
+        if (error instanceof ConflictError) {
+          cancelScheduledTtl(sqlite, { ...sweep, id: row.id });
+          outcome.cancelled.push({
+            resource: sweep.resource,
+            id: row.id,
+            label: row.label,
+            reason,
+          });
+          logger.warn(
+            `Scheduled deletion of ${sweep.resource} ${row.label} was cancelled: ${reason}`,
+          );
+        } else {
+          outcome.failed.push({ resource: sweep.resource, id: row.id, label: row.label, reason });
+          logger.error(
+            `Purging ${sweep.resource} ${row.label} failed; the next sweep will retry: ${reason}`,
+          );
+        }
       }
     }
   }

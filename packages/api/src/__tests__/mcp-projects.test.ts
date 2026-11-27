@@ -302,6 +302,10 @@ describe("connection-wide MCP project defaults", () => {
   });
 
   test("project_delete archives with a ttl, restores, and purges immediately with ttl_days 0", async () => {
+    // Destructive tools require an explicit target; activeProject is never implicit.
+    const untargeted = await rpc("", "project_delete", {});
+    expect(untargeted.error).toBe(true);
+    expect(untargeted.text).toContain("never uses the active project");
     const name = "archive-fixture";
     expect((await rpc("", "project_create", { name })).error).not.toBe(true);
     const project = () =>
