@@ -146,6 +146,14 @@ needed** and wait for it.
   `$env:ORC_INPUT_NAME` (PowerShell); never ask for secrets in chat. The user
   reviews, may edit, and runs it; the redacted result returns to you.
   Feed secrets on stdin (for example `sudo -S`); interactive prompts hang.
+- Inside `tool_execute`, `await tools.elicit(message, requestedSchema)` asks a
+  non-secret form question inline and returns `{ action, content }` (`accept`,
+  `decline`, or `cancel`). Live stdio connections use native MCP elicitation;
+  stateless HTTP and background tasks route through Attention (Web UI +
+  Telegram/Slack with `deliver_to_session: false`) and pause the sandbox timer
+  while waiting (`ORC_MCP_ELICIT_WAIT_MS` / `ORC_MCP_ELICIT_NOTIFY`). Never use
+  form elicitation for secrets, approvals, or commands — use `human_request` /
+  `command_request` instead.
 - `human_request` with `kind: "question"` (optional `choices`) or
   `kind: "approval"` with `action: {tool, input, cwd, host}` for the exact call
   (no choices; the user approves or denies). Use `command_request`, not

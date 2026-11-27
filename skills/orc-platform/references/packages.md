@@ -11,6 +11,10 @@ effective entry instructions and file inventory. Load a supporting file with
 `skill_read({name, ref: "references/knowledge.md", project})`. Bare reference
 filenames are supported; paths resolve from the skill root, never the repo cwd.
 Reads do not execute scripts. Binary content uses explicit base64 encoding.
+Spec-compliant MCP clients can also use the `io.modelcontextprotocol/skills`
+extension (`skills/list`, `skills/get`, `resources/read` with `skill://<name>/...`
+URIs and SHA-256/byte-size manifests, and `resources/directory/read`) with the
+same project scoping and effective overlays.
 
 Skills can belong to multiple projects; unassigned skills are global. Use
 `/mcp?project=<readable-name>` or `/mcp?projects=orc,project2` to bind the connection
