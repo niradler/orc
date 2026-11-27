@@ -90,7 +90,7 @@ app.openapi(
       body: {
         content: {
           "application/json": {
-            schema: SessionMessageCreateSchema.omit({ session_id: true, backend: true }),
+            schema: SessionMessageCreateSchema.omit({ session_id: true }),
           },
         },
       },

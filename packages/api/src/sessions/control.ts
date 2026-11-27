@@ -62,7 +62,7 @@ export async function sendToSession(
   structuredDelivery?: SessionDelivery | null,
 ): Promise<SessionMessageResult> {
   const mails = new SessionMessageStore(getSqlite());
-  const target = mails.target(input.session_id, input.backend);
+  const target = mails.target(input.session_id);
   const chat = target.status === "chat";
   const mode = input.mode ?? "queue";
   if (mode !== "queue") requireAncestor(sender, target.id);

@@ -144,7 +144,7 @@ export class SessionMessageStore {
       .run(this.now() - SESSION_MESSAGE_RETENTION_MS);
   }
 
-  private resolveSession(identifier: string, backend?: string): GatewayRow | null {
+  private resolveSession(identifier: string): GatewayRow | null {
     const chat = this.db
       .query<GatewayRow, [string]>(
         `SELECT id, json_extract(data,'$.projectId') AS project_id,
@@ -164,18 +164,14 @@ export class SessionMessageStore {
          LIMIT 10`,
       )
       .all(identifier);
-    const requested = backend ? sessionMessageBackend(backend) : null;
-    const matched = requested
-      ? rows.filter((row) => sessionMessageBackend(row.backend) === requested)
-      : rows;
-    if (matched.length > 1) {
-      const live = matched.filter((row) => row.status !== "stopped");
+    if (rows.length > 1) {
+      const live = rows.filter((row) => row.status !== "stopped");
       if (live.length === 1) return live[0] ?? null;
       throw new ConflictError(
-        "Session id matches more than one agent session; pass the backend to choose one",
+        "Session id matches more than one agent session; use the ORC session id instead",
       );
     }
-    return matched[0] ?? null;
+    return rows[0] ?? null;
   }
 
   private senderKey(sender: SessionMessageSender): string {
@@ -242,8 +238,8 @@ export class SessionMessageStore {
     };
   }
 
-  target(identifier: string, backend?: string): GatewayRow {
-    const row = this.resolveSession(identifier, backend);
+  target(identifier: string): GatewayRow {
+    const row = this.resolveSession(identifier);
     if (!row)
       throw new NotFoundError(
         "Session",
@@ -263,7 +259,7 @@ export class SessionMessageStore {
     };
     return this.db
       .transaction(() => {
-        const target = this.resolveSession(input.session_id, input.backend);
+        const target = this.resolveSession(input.session_id);
         if (!target)
           throw new NotFoundError(
             "Session",

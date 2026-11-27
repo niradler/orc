@@ -23411,7 +23411,6 @@ export interface paths {
                 content: {
                     "application/json": {
                         session_id: string;
-                        backend?: string;
                         body: string;
                         request_id?: string;
                         /** @enum {string} */

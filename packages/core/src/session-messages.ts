@@ -95,8 +95,6 @@ export const SessionMessageCreateSchema = z
   .object({
     /** ORC live session id, or the agent's native session id. */
     session_id: identity,
-    /** Disambiguates a native session id that exists for more than one agent. */
-    backend: backend.optional(),
     body: z.string().trim().min(1).max(SESSION_MESSAGE_MAX_BODY),
     /** Optional caller-supplied idempotency key for retries. */
     request_id: z.string().trim().min(1).max(128).optional(),
