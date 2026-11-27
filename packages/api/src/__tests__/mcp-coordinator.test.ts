@@ -194,9 +194,74 @@ describe("MCP coordinator identity", () => {
     }
   });
 
+  test("a failed coordinator start still names the defaults it would have used", async () => {
+    const client = await connect({ client: "failure-defaults" });
+    const failed = await call(client, "session_start", {
+      prompt: "should never start",
+      project: "coord-scope",
+      workspace: "same",
+    });
+    expect(failed.isError).toBe(true);
+    expect(failed.text).toContain("cannot share this folder");
+    const line = failed.text.split("\n").find((item) => item.startsWith("defaults: "));
+    expect(line).toBeDefined();
+    expect(JSON.parse((line as string).slice("defaults: ".length))).toEqual({
+      agent: "claude",
+      model: "fixture",
+      provider_id: "claude",
+    });
+  });
+
+  test("session_list hides terminal and archived children, and session_delete archives without losing evidence", async () => {
+    const client = await connect({ client: "cleanup-bot" });
+    const listed = async (args: Record<string, unknown> = {}) =>
+      ((await call(client, "session_list", args)).data.sessions as SessionStatus[]).map(
+        (session) => session.session_id,
+      );
+
+    const finished = await call(client, "session_start", {
+      prompt: "Reply with exactly: cleanup child",
+    });
+    const finishedId = finished.data.session_id as string;
+    await call(client, "session_wait", { session_id: finishedId, timeout_s: 15 });
+    expect(await listed()).toContain(finishedId);
+
+    const archived = await call(client, "session_delete", { session_id: finishedId });
+    expect(archived.isError).toBe(false);
+    expect(archived.data.archived).toBe(true);
+    expect(await listed()).not.toContain(finishedId);
+    expect(await listed({ include_archived: true })).toContain(finishedId);
+    // Archiving keeps the transcript readable by id.
+    expect((await call(client, "session_read", { id: finishedId })).text).toContain(
+      "cleanup child",
+    );
+    const restored = await call(client, "session_delete", {
+      session_id: finishedId,
+      restore: true,
+    });
+    expect(restored.data.archived).toBe(false);
+    expect(await listed()).toContain(finishedId);
+
+    // A stopped child is hidden by default and visible with include_terminal.
+    const held = await call(client, "session_start", { prompt: "hold after 8000ms" });
+    const heldId = held.data.session_id as string;
+    await statusUntil(client, heldId, "running");
+    await call(client, "session_stop", { session_id: heldId });
+    await statusUntil(client, heldId, "stopped");
+    expect(await listed()).not.toContain(heldId);
+    expect(await listed({ include_terminal: true })).toContain(heldId);
+
+    // Only the session that started it (or an ancestor) may archive it.
+    const other = await connect({ client: "cleanup-other" });
+    const forbidden = await call(other, "session_delete", { session_id: finishedId });
+    expect(forbidden.isError).toBe(true);
+    expect(forbidden.text).toContain("Only the session that started");
+  });
+
   test("the coordinator is reused per client name, distinct across clients, and listed", async () => {
     const grok = await connect({ client: "grok-bot" });
-    const first = await call(grok, "session_list");
+    // Earlier children are finished, so ask for terminal sessions too.
+    const first = await call(grok, "session_list", { include_terminal: true });
     expect(first.isError).toBe(false);
     expect(first.data.coordinator_session_id).toBe(coordinatorSessionId("grok-bot"));
     expect((first.data.sessions as SessionStatus[]).length).toBeGreaterThanOrEqual(2);

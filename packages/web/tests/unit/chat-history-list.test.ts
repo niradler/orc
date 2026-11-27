@@ -220,26 +220,17 @@ test("an agent running in an ORC terminal joins the list once and shell terminal
   expect(chatHistoryList([], [], [], [], "nomatch", "all", [terminal])).toHaveLength(0);
 });
 
-test("folder scopes place native aliases and shells under their project before filtering", () => {
+test("folder scopes place native aliases under their project before filtering, and plain shells stay out", () => {
   const projects = [{ id: "orc", scope: "C:/Projects/orc" }];
   const native = { ...live, project_id: null, cwd: "C:\\projects\\ORC\\packages\\web" };
   const shell = { ...terminal, kind: "shell", cwd: "c:/Projects/orc" };
-  const rows = chatHistoryList([], [saved], [native], [], "", "orc", [shell], true, projects);
-  expect(rows).toHaveLength(2);
-  expect(rows.map((row) => row.projectId)).toEqual(["orc", "orc"]);
+  const rows = chatHistoryList([], [saved], [native], [], "", "orc", [shell], projects);
+  expect(rows).toHaveLength(1);
+  expect(rows.map((row) => row.projectId)).toEqual(["orc"]);
+  expect(rows.some((row) => row.terminalId === shell.id)).toBe(false);
   expect(rows.some((row) => row.id === `chat:${saved.id}`)).toBe(true);
   expect(
-    chatHistoryList(
-      [],
-      [],
-      [{ ...native, project_id: "assigned" }],
-      [],
-      "",
-      "orc",
-      [],
-      true,
-      projects,
-    ),
+    chatHistoryList([], [], [{ ...native, project_id: "assigned" }], [], "", "orc", [], projects),
   ).toHaveLength(0);
   expect(
     chatHistoryList(
@@ -250,7 +241,6 @@ test("folder scopes place native aliases and shells under their project before f
       "",
       "orc",
       [{ ...shell, cwd: "C:/Projects/orchestra" }],
-      true,
       projects,
     ),
   ).toHaveLength(0);

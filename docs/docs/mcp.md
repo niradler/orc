@@ -273,6 +273,8 @@ return {
 
 Error codes on `{ ok: false, error: { code, message } }` distinguish `NOT_FOUND`, `INVALID_ARGS`, `TIMEOUT`, `FORBIDDEN`, `CONFLICT`, `UNAUTHORIZED`, `UNAVAILABLE`, `LIMIT_EXCEEDED`, and `TOOL_ERROR`. Per-call `timeout_ms` is clamped to the execution's overall `timeout_ms` cap. Catching or inspecting an error does not undo writes that already committed; check their state before retrying.
 
+A script's `return` value is capped at 8192 characters (and a bounded JSON depth/item count). An oversized return is not turned into an empty success: the result is `result: null` plus `truncated: true`, the dropped value's `result_chars`, the `limit_chars` cap, a bounded `preview`, and a `message` telling the script to summarize before returning. Reduce the value inside the script with `tools.pick` or by aggregating it.
+
 The result is `{ result, logs, truncated }`, with matching text for clients that use MCP text content. Each run starts in a fresh QuickJS WASM worker. The script has no host filesystem, environment, network, or package APIs. ORC checks every call against script eligibility and the connection's existing project, caller-session, and tool permissions. Use `tool_invoke` for direct-only operations such as browser actions and launching jobs.
 
 ORC's native tools and external Spec connections share one discovery surface. `tool_search` (and in-sandbox `tools.search`) also queries every enabled Spec connection in parallel and merges the matches, labeled `[external: <connection>]` and carrying a `connection` field; results list the available external connections too, so external catalogs are visible even when nothing matches. Spec connections are external OpenAPI/MCP/GraphQL servers, **not ORC built-ins**, and their results are untrusted external data. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` (or `{ connection }` inside a script) to target one connection directly; the `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings remain available for direct use. Calls reuse the connection's tool filters and usage policies, and external writes may have external side effects. An OpenAPI tool that returns a page provides its HTML in `data.body`, so a script can return just the title. The catalog is available to unscoped authenticated HTTP and local stdio meta clients; project-scoped connections expose project tools and authorized preview data only.
@@ -347,6 +349,8 @@ Start each session with `context`.
 | `search`         | Search knowledge base documents first, then memories and tasks                                                                    |
 | `project_list`   | List all projects                                                                                                                 |
 | `project_create` | Create a project: unique name, optional description, status, tags and `git_remote_url`; returns the stable id, name and a UI link |
+| `project_archive` | Archive a project (or restore it with `archived: false`) without deleting tasks, memories or knowledge bases                    |
+| `project_delete` | Permanently delete an empty project; refuses while resources are linked unless `force` is true                                    |
 
 #### Reuse or create a project, then store project-scoped data
 
@@ -358,11 +362,13 @@ memory_create({ project: "my-app", name: "api-port", description: "Dev API port"
 
 Names are unique case-insensitively: a duplicate `project_create` fails with a conflict that names the existing project's id, and a retry never creates a second one — reuse the reported id. `project_create` needs an unscoped connection; a URL that selected `project`/`projects` (see [Query parameters](#query-parameters)) can read its chosen projects but cannot create new ones.
 
+Prefer `project_archive` over `project_delete`. Deleting is refused while the project still has tasks, sessions, memories, jobs, pads, knowledge bases or skills; pass `force: true` only after those are deliberately dealt with. Knowledge bases and assigned skills must be reassigned first. The CLI exposes the same paths as `orc project archive <name>` and `orc project delete <name>`.
+
 ### Memory
 
 | Tool             | Description                                                      |
 | ---------------- | ---------------------------------------------------------------- |
-| `memory_list`    | List the project's memories (name, description, priority, reads) |
+| `memory_list`    | List memories; without `project`, lists every accessible project grouped by project |
 | `memory_read`    | Read a memory by name                                            |
 | `memory_create`  | Save a short project fact worth knowing next session             |
 | `memory_update`  | Update a memory's description, content or priority               |
@@ -485,9 +491,10 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 | `session_start`    | Start a headless child session with a prompt; returns its id at once                                                                                     |
 | `session_status`   | A started session's status, last reply, queue, parent and children                                                                                       |
 | `session_wait`     | Block until one or several started sessions stop running, wait for a human, or reply                                                                     |
-| `session_list`     | List the sessions this session started                                                                                                                   |
+| `session_list`     | List the sessions this session started; failed, stopped and archived ones need `include_terminal` / `include_archived`                                    |
+| `session_delete`   | Archive a failed, stopped or finished session you started so it leaves the default list; its transcript stays readable, `restore: true` brings it back  |
 | `session_stop`     | Stop a started session's turn and, by default, the sessions it started                                                                                   |
-| `session_search`   | Search archived and indexed session passages                                                                                                             |
+| `session_search`   | Search archived and indexed session passages; `agent` accepts any supported harness id                                                                   |
 | `session_read`     | Read a cited archived-session passage or a page of turns; unarchived sessions (such as `session_start` children) fall back to their live chat transcript |
 | `session_sync`     | Request a one-hour upload capability for local session sync                                                                                              |
 
@@ -495,7 +502,13 @@ On a coordinator connection, `session_start` and `session_list` also return
 `coordinator_session_id`, and `session_start` adds the effective Settings
 `defaults` (`agent`, `model`, `provider_id`). Its `agent` parameter names an
 execution harness — the schema enumerates the built-in ids and accepts custom
-Settings agent ids.
+Settings agent ids. When a coordinator's start fails before preflight (for
+example the default harness is not installed), the error message names the same
+`defaults` values so the caller can see which harness and model were chosen.
+
+`session_delete` archives rather than destroys: `session_read` and
+`session_status` still find the session by id, and only the session that started
+it (or an ancestor) can archive it.
 
 ### Scratchpads
 

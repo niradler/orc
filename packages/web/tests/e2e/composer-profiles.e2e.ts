@@ -205,7 +205,7 @@ test("Codex lists its own approval presets by name", async ({ page, request }) =
   ]);
 });
 
-test("a terminal launches with the chosen model, effort and mode, and a profile in one click", async ({
+test("a terminal launches with the chosen model and effort, and saved composer profiles are not offered", async ({
   page,
   request,
 }) => {
@@ -261,13 +261,5 @@ test("a terminal launches with the chosen model, effort and mode, and a profile 
     effort: "high",
     permissionMode: "acceptEdits",
   });
-  await menu.getByTestId("terminal-profile-deep").click();
-  await expect.poll(() => bodies.length).toBe(2);
-  expect(bodies[1]).toMatchObject({
-    kind: "claude",
-    name: "Deep plan",
-    model: "opus",
-    effort: "max",
-    permissionMode: "plan",
-  });
+  await expect(menu.getByTestId("terminal-profile-deep")).toHaveCount(0);
 });

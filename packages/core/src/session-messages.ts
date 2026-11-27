@@ -429,6 +429,8 @@ export const SessionStatusSchema = z.object({
   waiting_children: z.number().int().min(0).default(0),
   /** Stop was requested and the turn has not drained yet; status stays running until it does. */
   stopping: z.boolean().default(false),
+  /** Archived by the session that started it: hidden from the default child list, transcript kept. */
+  archived: z.boolean().default(false),
   project_id: identity.nullable(),
   cwd: z.string(),
   /** When a session another session started began; null for one a human started. */

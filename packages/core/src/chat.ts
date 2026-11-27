@@ -810,6 +810,9 @@ export const ChatThreadSchema = z.object({
   recovery: ChatRecoverySchema.optional(),
   lostBackgroundWork: ChatLostBackgroundWorkSchema.optional(),
   spawnedBy: ChatSpawnSchema.optional(),
+  // Archived by its starter so a failed or stopped probe leaves the default
+  // session list while its transcript stays readable by id.
+  archivedAt: z.number().optional(),
   updatedAt: z.number(),
 });
 export type ChatThread = z.infer<typeof ChatThreadSchema>;

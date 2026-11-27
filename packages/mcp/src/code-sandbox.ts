@@ -160,7 +160,14 @@ const bootstrap = `
         const json = stringify(value === undefined ? null : value);
         if (json === undefined) throw new Type("Return a JSON value");
         if (json.length > ${CODE_LIMITS.resultChars}) {
-          return '{"result":null,"truncated":true}';
+          return stringify({
+            result: null,
+            truncated: true,
+            result_chars: json.length,
+            limit_chars: ${CODE_LIMITS.resultChars},
+            preview: slice(json, 0, ${CODE_LIMITS.resultPreviewChars}),
+            message: "Return value was " + json.length + " characters, over the ${CODE_LIMITS.resultChars}-character tool_execute result limit, so it was dropped. Return a smaller summary from the script (pick a few fields or aggregate) instead of the full value.",
+          });
         }
         return '{"result":' + json + ',"truncated":false}';
       },
@@ -265,7 +272,14 @@ export async function executeCode(
           "Script must return a JSON-serializable value within sandbox limits",
         );
         const json = context.getString(encoded);
-        if (!hasBoundedJsonShape(json)) return { result: null, logs, truncated: true };
+        if (!hasBoundedJsonShape(json))
+          return {
+            result: null,
+            logs,
+            truncated: true,
+            preview: json.slice(0, CODE_LIMITS.resultPreviewChars),
+            message: `Return value exceeded the JSON shape limit (depth ${CODE_LIMITS.jsonDepth} or ${CODE_LIMITS.jsonItems} items). Return a smaller or shallower summary instead of the full value.`,
+          };
         const result = JSON.parse(json) as Omit<CodeOutput, "logs">;
         return { ...result, logs, truncated: result.truncated || logsTruncated };
       }

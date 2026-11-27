@@ -230,16 +230,40 @@ describe("MCP code mode", () => {
         return "y".repeat(16000);
       `,
       );
-      expect(capped.structuredContent).toEqual({
-        result: null,
-        logs: Array(CODE_LIMITS.logLines).fill("x".repeat(CODE_LIMITS.logChars)),
-        truncated: true,
-      });
+      const cappedData = capped.structuredContent as {
+        result: unknown;
+        logs: string[];
+        truncated: boolean;
+        result_chars: number;
+        limit_chars: number;
+        preview: string;
+        message: string;
+      };
+      expect(cappedData.result).toBeNull();
+      expect(cappedData.logs).toEqual(
+        Array(CODE_LIMITS.logLines).fill("x".repeat(CODE_LIMITS.logChars)),
+      );
+      expect(cappedData.truncated).toBe(true);
+      expect(cappedData.result_chars).toBeGreaterThan(CODE_LIMITS.resultChars);
+      expect(cappedData.limit_chars).toBe(CODE_LIMITS.resultChars);
+      expect(cappedData.preview.length).toBe(CODE_LIMITS.resultPreviewChars);
+      expect(cappedData.message).toContain(`${CODE_LIMITS.resultChars}-character`);
       const deep = await execute(
         client,
         "let value = 0; for (let i = 0; i < 75; i++) value = [value]; return value;",
       );
-      expect(deep.structuredContent).toEqual({ result: null, logs: [], truncated: true });
+      const deepData = deep.structuredContent as {
+        result: unknown;
+        logs: string[];
+        truncated: boolean;
+        preview: string;
+        message: string;
+      };
+      expect(deepData.result).toBeNull();
+      expect(deepData.logs).toEqual([]);
+      expect(deepData.truncated).toBe(true);
+      expect(typeof deepData.preview).toBe("string");
+      expect(deepData.message).toContain("shape limit");
     });
   });
 

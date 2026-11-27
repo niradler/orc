@@ -66,6 +66,7 @@ import {
   SessionMessageCreateSchema,
   SessionMessageResultSchema,
   SessionSpawnSchema,
+  type SessionStatus,
   SessionStatusSchema,
   SessionWaitManySchema,
   SessionWaitSchema,
@@ -82,6 +83,7 @@ import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema, TaskLinkTypeSchema, TaskStatusSchema } from "@orc/core/types";
 import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
+import { projectKbCount } from "@orc/db/kb";
 import { KbDigestStore } from "@orc/db/kb-digest";
 import {
   MEMORY_DESCRIPTION_MAX,
@@ -449,8 +451,37 @@ export const toolDefinitions = [
   {
     name: "session_list",
     description:
-      "List the sessions this session started, with status and last reply. A coordinator connection also returns its coordinator_session_id.",
-    inputSchema: z.object({}).strict(),
+      "List the sessions this session started, with status and last reply. Failed and stopped children and archived ones are hidden by default; pass include_terminal or include_archived to see them. A coordinator connection also returns its coordinator_session_id.",
+    inputSchema: z
+      .object({
+        include_terminal: z
+          .boolean()
+          .default(false)
+          .describe("Include children that failed or were stopped"),
+        include_archived: z
+          .boolean()
+          .default(false)
+          .describe("Include children archived with session_delete"),
+      })
+      .strict(),
+  },
+  {
+    name: "session_delete",
+    description:
+      "Remove a failed, stopped or finished session you started from the default session_list. It archives the session instead of destroying it: the transcript stays readable with session_read, session_status still finds it by id, and restore true brings it back. Only the session that started it (or an ancestor) can delete it.",
+    inputSchema: z
+      .object({
+        session_id: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("Session id from session_start or session_list"),
+        restore: z
+          .boolean()
+          .default(false)
+          .describe("Bring an archived session back into the default list"),
+      })
+      .strict(),
   },
   {
     name: "session_stop",
@@ -498,7 +529,8 @@ export const toolDefinitions = [
   {
     name: "memory_list",
     description:
-      "List this project's memories (name, description, priority, reads). Defaults to the 30 most read; " +
+      "List memories (name, description, priority, reads). Pass project to scope to one project; without " +
+      "it, lists every project you can access, grouped by project. Defaults to the 30 most read; " +
       "q searches name and description. Read one with memory_read. Memories are short project facts; " +
       "procedures and long guidance are skills.",
     inputSchema: z.object({
@@ -1007,6 +1039,33 @@ export const toolDefinitions = [
     }),
   },
   {
+    name: "project_archive",
+    description:
+      "Archive a project so it leaves the active project list without deleting anything; archived false restores it. Tasks, memories, pads, sessions and knowledge bases stay attached. Prefer this over project_delete.",
+    inputSchema: z
+      .object({
+        project: projectParam,
+        project_id: z.string().min(1).max(100).optional().describe("Explicit project id"),
+        archived: z.boolean().default(true).describe("true archives; false restores to active"),
+      })
+      .strict(),
+  },
+  {
+    name: "project_delete",
+    description:
+      "Permanently delete a project. Refuses while the project still has tasks, sessions, memories, jobs, pads, knowledge bases or skills unless force true; archives are preferred. Deleting memories and detaching tasks cannot be undone.",
+    inputSchema: z
+      .object({
+        project: projectParam,
+        project_id: z.string().min(1).max(100).optional().describe("Explicit project id"),
+        force: z
+          .boolean()
+          .default(false)
+          .describe("Delete even when tasks, sessions, memories, jobs or pads are linked"),
+      })
+      .strict(),
+  },
+  {
     name: "skill_list",
     description:
       "List installed skills (built-in + user) with name, description and read count. " +
@@ -1463,11 +1522,35 @@ function padProject(project: string, options: ToolOptions): string {
 /** Memories belong to a project; there is no global memory. */
 function memoryProject(project: string | undefined): string {
   const resolved = resolveProjectId(project);
-  if (!resolved)
+  if (!resolved) {
+    const names = getSqlite()
+      .query<{ name: string }, []>(
+        "SELECT name FROM projects WHERE status != 'archived' ORDER BY name LIMIT 25",
+      )
+      .all()
+      .map((row) => row.name);
     throw new ValidationError(
-      "Memories belong to a project: pass project or set activeProject in ORC config",
+      names.length
+        ? `Memories belong to a project: pass project (available: ${names.join(", ")}) or set activeProject in ORC config. project_list shows each id.`
+        : "Memories belong to a project: no projects exist yet, so create one with project_create or pass project once it exists.",
     );
+  }
   return resolved.id;
+}
+
+/** Linked resources a project delete would detach or destroy, for the safety gate. */
+function projectResourceCounts(projectId: string) {
+  const sqlite = getSqlite();
+  const count = (sql: string) => sqlite.query<{ n: number }, [string]>(sql).get(projectId)?.n ?? 0;
+  return {
+    task: count("SELECT count(*) AS n FROM tasks WHERE project_id=?"),
+    session: count("SELECT count(*) AS n FROM gateway_sessions WHERE project_id=?"),
+    memory: count("SELECT count(*) AS n FROM memories WHERE project_id=?"),
+    job: count("SELECT count(*) AS n FROM jobs WHERE project_id=?"),
+    pad: count("SELECT count(*) AS n FROM scratchpads WHERE project_id=?"),
+    "knowledge base": projectKbCount(sqlite, projectId),
+    skill: count("SELECT count(*) AS n FROM skill_projects WHERE project_id=?"),
+  };
 }
 
 function formatMemoryLine(memory: MemoryListItem): string {
@@ -1905,6 +1988,7 @@ async function runTool(
     name === "session_status" ||
     name === "session_wait" ||
     name === "session_list" ||
+    name === "session_delete" ||
     name === "session_stop"
   ) {
     if (!options.agentSessionId) {
@@ -1915,39 +1999,44 @@ async function runTool(
     const coordinator = options.coordinatorSessionId ?? null;
     if (name === "session_start") {
       const { project, ...input } = sessionSpawnToolSchema.parse(args);
-      const status = SessionStatusSchema.parse(
-        await orcApi("POST", "/sessions/live/spawn", {
-          body: {
-            ...input,
-            notify: input.notify ?? !coordinator,
-            ...(project ? { project_id: padProject(project, options) } : {}),
-          },
-          headers,
-        }),
-      );
+      // What a successful start would use, including explicit inputs. External
+      // coordinators have no live turn and must not guess installation defaults,
+      // and a preflight failure still has to say which harness and model it chose.
+      const effectiveDefaults = () => {
+        const base = providerChatDefaults(undefined, input.agent);
+        return {
+          agent: base.agent,
+          model: input.model ?? base.model,
+          provider_id: base.providerId ?? null,
+        };
+      };
+      let status: z.infer<typeof SessionStatusSchema>;
+      try {
+        status = SessionStatusSchema.parse(
+          await orcApi("POST", "/sessions/live/spawn", {
+            body: {
+              ...input,
+              notify: input.notify ?? !coordinator,
+              ...(project ? { project_id: padProject(project, options) } : {}),
+            },
+            headers,
+          }),
+        );
+      } catch (error) {
+        if (!coordinator) throw error;
+        const message = error instanceof Error ? error.message : "Session start failed";
+        throw new OrcError(
+          `${message}\ndefaults: ${JSON.stringify(effectiveDefaults())}`,
+          error instanceof OrcError ? error.code : "TOOL_ERROR",
+          error instanceof OrcError ? error.statusCode : 500,
+        );
+      }
       if (!coordinator) return JSON.stringify(status);
-      // External coordinators have no live turn to receive notifications and must not
-      // guess the installation's defaults; report both the identity and the defaults.
-      const defaults = providerChatDefaults();
       return JSON.stringify({
         ...status,
         coordinator_session_id: coordinator,
-        defaults: {
-          agent: defaults.agent,
-          model: defaults.model,
-          provider_id: defaults.providerId ?? null,
-        },
+        defaults: effectiveDefaults(),
       });
-    }
-    if (name === "session_list") {
-      const result = await orcApi<{ sessions: unknown[] }>(
-        "GET",
-        `/sessions/live/${encodeURIComponent(options.agentSessionId)}/children`,
-        { headers },
-      );
-      return JSON.stringify(
-        coordinator ? { ...result, coordinator_session_id: coordinator } : result,
-      );
     }
     const scoped = async (id: string) => {
       const current = SessionStatusSchema.parse(
@@ -1957,6 +2046,43 @@ async function runTool(
         throw new ValidationError("Session is outside the selected MCP projects");
       return current;
     };
+    if (name === "session_list") {
+      const input = z
+        .object({
+          include_terminal: z.boolean().default(false),
+          include_archived: z.boolean().default(false),
+        })
+        .strict()
+        .parse(args);
+      const result = await orcApi<{ sessions: SessionStatus[] }>(
+        "GET",
+        `/sessions/live/${encodeURIComponent(options.agentSessionId)}/children?include_archived=${input.include_archived}`,
+        { headers },
+      );
+      const sessions = input.include_terminal
+        ? result.sessions
+        : result.sessions.filter(
+            (session) => session.status !== "failed" && session.status !== "stopped",
+          );
+      const listed = { ...result, sessions };
+      return JSON.stringify(
+        coordinator ? { ...listed, coordinator_session_id: coordinator } : listed,
+      );
+    }
+    if (name === "session_delete") {
+      const input = z
+        .object({ session_id: z.string().min(1).max(200), restore: z.boolean().default(false) })
+        .strict()
+        .parse(args);
+      await scoped(input.session_id);
+      const status = SessionStatusSchema.parse(
+        await orcApi("POST", `/sessions/live/${encodeURIComponent(input.session_id)}/archive`, {
+          body: { archived: !input.restore },
+          headers,
+        }),
+      );
+      return JSON.stringify(status);
+    }
     if (name === "session_wait") {
       const input = SessionWaitSchema.extend({
         session_id: z.string().min(1).max(200).optional(),
@@ -2108,10 +2234,26 @@ async function runTool(
         limit?: number;
         project?: string;
       };
-      const projectIds = selectedProjectIds(project, options) ?? [memoryProject(project)];
-      const matched = new MemoryStore(getSqlite(db)).list(projectIds, { q, sort });
+      // A project-less caller (for example an external coordinator with no
+      // activeProject) gets every memory it can already access, grouped by
+      // project, instead of the dead-end "pass project" error.
+      // A connection scoped to several projects keeps that scope (the server also
+      // fills project with the first one); otherwise project is authoritative.
+      const projectIds = options.projectScopes
+        ? options.projectScopes.map((item) => item.id)
+        : project !== undefined
+          ? [memoryProject(project)]
+          : undefined;
+      const matched = new MemoryStore(getSqlite(db)).list(projectIds ?? null, { q, sort });
       const shown = matched.slice(0, limit ?? MEMORY_LIST_LIMIT);
       setData?.({ memories: shown, total: matched.length });
+      const projectNames = new Map(
+        getSqlite(db)
+          .query<{ id: string; name: string }, []>("SELECT id, name FROM projects")
+          .all()
+          .map((row) => [row.id, row.name]),
+      );
+      const groupByProject = !projectIds || projectIds.length > 1;
       const more =
         matched.length > shown.length
           ? [`Showing ${shown.length} of ${matched.length}; use q to search or raise limit.`]
@@ -2119,10 +2261,9 @@ async function runTool(
       return [
         shown
           .map((memory) => {
-            const label =
-              projectIds.length > 1
-                ? ` [project: ${options.projectScopes?.find((p) => p.id === memory.project_id)?.name ?? memory.project_id}]`
-                : "";
+            const label = groupByProject
+              ? ` [project: ${projectNames.get(memory.project_id) ?? memory.project_id}]`
+              : "";
             return `${formatMemoryLine(memory)}${label}`;
           })
           .join("\n") || "No memories found.",
@@ -3249,6 +3390,51 @@ async function runTool(
         options.publicApiBaseUrl ?? orcApiBase(),
       ).toString();
       return `Created project ${name} [id: ${id}]\nlink: ${link}`;
+    }
+
+    case "project_archive":
+    case "project_delete": {
+      const input = args as {
+        project?: string;
+        project_id?: string;
+        archived?: boolean;
+        force?: boolean;
+      };
+      const id = input.project_id ?? resolveProjectId(input.project)?.id;
+      if (!id) throw new ValidationError("Pass project (name) or project_id");
+      const row = getSqlite()
+        .query<{ id: string; name: string; status: string }, [string]>(
+          "SELECT id, name, status FROM projects WHERE id=?",
+        )
+        .get(id);
+      if (!row) throw new NotFoundError("Project", id);
+      if (options.projectScopes && !options.projectScopes.some((p) => p.id === id))
+        throw new ForbiddenError("Project is outside the selected MCP projects");
+      const link = new URL(
+        `/tasks?project=${encodeURIComponent(row.name)}`,
+        options.publicApiBaseUrl ?? orcApiBase(),
+      ).toString();
+      if (name === "project_archive") {
+        const archived = input.archived ?? true;
+        await orcApi("PATCH", `/projects/${encodeURIComponent(id)}`, {
+          body: { status: archived ? "archived" : "active" },
+        });
+        return `${archived ? "Archived" : "Restored"} project ${row.name} [id: ${id}]\nlink: ${link}`;
+      }
+      const resources = projectResourceCounts(id);
+      const linked = Object.entries(resources).filter(([, n]) => n > 0) as [string, number][];
+      const describe = linked.map(([kind, n]) => `${n} ${kind}${n === 1 ? "" : "s"}`).join(", ");
+      if (linked.length > 0 && input.force !== true)
+        throw new ConflictError(
+          `Project ${row.name} still has ${describe}. Archive it with project_archive, or pass force true to delete; knowledge bases and assigned skills must be reassigned first.`,
+          "PROJECT_HAS_RESOURCES",
+          { project_id: id, resources },
+        );
+      await orcApi("DELETE", `/projects/${encodeURIComponent(id)}`);
+      options.projectsChanged?.();
+      return `Deleted project ${row.name} [id: ${id}]${
+        linked.length ? `; removed or detached ${describe}` : ""
+      }`;
     }
 
     case "task_batch_create": {

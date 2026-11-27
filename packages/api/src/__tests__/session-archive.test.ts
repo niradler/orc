@@ -87,6 +87,12 @@ describe("session archive storage and identities", () => {
     );
     expect(() => search("", { project_ids: "pa," })).toThrow();
   });
+  test("search accepts every supported harness id and rejects unknown ones", () => {
+    expect(search("", { agent: "opencode" }).agent).toBe("opencode");
+    expect(search("", { agent: "pi" }).agent).toBe("pi");
+    expect(search("", { agent: "claude" }).agent).toBe("claude");
+    expect(() => search("", { agent: "not-a-harness" })).toThrow();
+  });
   test("startup repairs stale index revisions even when chunks are present", async () => {
     const first = await svc.ingest(upload());
     await svc.idle();

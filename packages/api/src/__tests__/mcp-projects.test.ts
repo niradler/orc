@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { resetConfig } from "@orc/core/config";
 import { readSkill, type SkillRefContent } from "@orc/core/skill-service";
 import { getDb, getSqlite } from "@orc/db/client";
 import { MemoryStore } from "@orc/db/memories";
@@ -12,7 +13,9 @@ import { setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof setupTestApp>;
 let root: string;
+let server: ReturnType<typeof Bun.serve>;
 const oldRoot = process.env.ORC_KNOWLEDGE_ROOT;
+const oldBase = process.env.ORC_API_BASE;
 const kbs: Record<string, string> = {};
 const docs: Record<string, string> = {};
 const multi = "?projects=Alpha,Beta";
@@ -21,6 +24,11 @@ beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "orc-mcp-projects-"));
   process.env.ORC_KNOWLEDGE_ROOT = root;
   app = setupTestApp();
+  // Project archive/delete go through the API so they share its guards; give
+  // the in-process MCP tools a live fixture endpoint instead of the 404 probe.
+  server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: app.fetch });
+  process.env.ORC_API_BASE = `http://127.0.0.1:${server.port}`;
+  resetConfig();
   const sqlite = getSqlite();
   sqlite.exec(
     "INSERT INTO projects(id,name) VALUES ('alpha','Alpha'),('beta','Beta'),('gamma','Gamma')",
@@ -72,6 +80,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await server.stop(true);
+  if (oldBase === undefined) delete process.env.ORC_API_BASE;
+  else process.env.ORC_API_BASE = oldBase;
+  resetConfig();
   await closeKnowledgeService();
   teardownTestApp();
   if (oldRoot === undefined) delete process.env.ORC_KNOWLEDGE_ROOT;
@@ -268,6 +280,60 @@ describe("connection-wide MCP project defaults", () => {
     const invalid = await rpc("", "project_create", { name: "has space" });
     expect(invalid.error).toBe(true);
     expect(invalid.text).toContain("Invalid args");
+  });
+
+  test("memory_list without a project lists every accessible project grouped", async () => {
+    const all = await rpc("", "memory_list", {});
+    expect(all.error).not.toBe(true);
+    expect(all.text).toContain("[project: Alpha]");
+    expect(all.text).toContain("[project: Beta]");
+    expect(all.text).toContain("needle memory alpha");
+    // Passing project still scopes the list to that project.
+    const scoped = await rpc("", "memory_list", { project: "Alpha" });
+    expect(scoped.error).not.toBe(true);
+    expect(scoped.text).not.toContain("[project:");
+    expect(scoped.text).not.toContain("needle memory beta");
+    // An unknown project is rejected instead of silently listing everything.
+    const unknown = await rpc("", "memory_list", { project: "No-Such-Project" });
+    expect(unknown.error).toBe(true);
+    expect(unknown.text).toContain("No-Such-Project");
+  });
+
+  test("project_archive hides a project, and project_delete refuses linked resources unless forced", async () => {
+    const name = "archive-fixture";
+    expect((await rpc("", "project_create", { name })).error).not.toBe(true);
+    const project = () =>
+      getSqlite()
+        .query<{ id: string; status: string }, [string]>(
+          "SELECT id, status FROM projects WHERE name=?",
+        )
+        .get(name);
+    const id = project()?.id;
+    expect(id).toBeDefined();
+    const archived = await rpc("", "project_archive", { project: name });
+    expect(archived.error).not.toBe(true);
+    expect(archived.text).toContain("Archived project");
+    expect(project()?.status).toBe("archived");
+    const restored = await rpc("", "project_archive", { project: name, archived: false });
+    expect(restored.text).toContain("Restored project");
+    expect(project()?.status).toBe("active");
+
+    new MemoryStore(getSqlite()).create({
+      project_id: id as string,
+      name: "keep-me",
+      description: "Linked fixture memory",
+      content: "not safe to drop silently",
+    });
+    const blocked = await rpc("", "project_delete", { project: name });
+    expect(blocked.error).toBe(true);
+    expect(blocked.text).toContain("1 memory");
+    expect(blocked.text).toContain("project_archive");
+    expect(project()).not.toBeNull();
+
+    const forced = await rpc("", "project_delete", { project: name, force: true });
+    expect(forced.error).not.toBe(true);
+    expect(forced.text).toContain("Deleted project");
+    expect(project()).toBeNull();
   });
 
   test("project_create stores its folder and maps existing sessions in it", async () => {
