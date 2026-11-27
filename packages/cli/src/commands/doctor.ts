@@ -1,10 +1,18 @@
 import { probeBackends } from "@orc/agent-runtime";
 import { loadConfig } from "@orc/core/config";
+import { readDbStorageStats } from "@orc/db/client";
 import { Command } from "commander";
 import { isJson, jsonOut } from "../output.js";
 
 const DIM = "\x1b[90m";
 const RESET = "\x1b[0m";
+
+function bytes(value: number): string {
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`;
+  if (value >= 1024 ** 2) return `${(value / 1024 ** 2).toFixed(1)} MB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${value} B`;
+}
 
 /**
  * Answers "which coding agents can this install actually run, and what do I
@@ -19,9 +27,10 @@ export function doctorCommand() {
       const config = loadConfig();
       const probes = await probeBackends();
       const defaultBackend = config.agent_loop.default_backend;
+      const storage = readDbStorageStats(config.db.path);
 
       if (isJson()) {
-        return jsonOut({ backends: probes, default_backend: defaultBackend });
+        return jsonOut({ backends: probes, default_backend: defaultBackend, storage });
       }
 
       const usable = probes.filter((p) => p.available);
@@ -50,6 +59,20 @@ export function doctorCommand() {
             "Tasks will fail to start until it is, or until agent_loop.default_backend " +
             "names one of the usable backends above.",
         );
+      }
+
+      if (storage) {
+        const mode =
+          storage.auto_vacuum === 2 ? "incremental" : storage.auto_vacuum === 1 ? "full" : "off";
+        console.log("");
+        console.log(
+          `Database  ${bytes(storage.database_bytes)} · ${storage.freelist_count} free pages · ` +
+            `WAL ${bytes(storage.wal_bytes)} · auto-vacuum ${mode}`,
+        );
+        if (storage.auto_vacuum !== 2 && storage.freelist_count > 0)
+          console.log(
+            `    ${DIM}Run VACUUM once to return free pages to disk; new installs use incremental auto-vacuum.${RESET}`,
+          );
       }
 
       // A task can name any agent: unknown names are passed to acpx as its agent

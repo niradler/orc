@@ -104,6 +104,8 @@ export const OrcConfigSchema = z.object({
       theme: z.enum(["dark", "light"]).optional(),
       terminal_font: z.string().max(200).optional(),
       attention_retention_hours: z.number().int().min(1).max(8760).optional(),
+      /** Days of terminal job, flow, gateway, MCP task and human-request history to keep. */
+      history_retention_days: z.number().int().min(1).max(3650).optional(),
       notification_retention_days: z.number().int().min(1).max(3650).optional(),
       audit_retention_days: z.number().int().min(1).max(3650).optional(),
       chat: ChatSettingsSchema.optional(),

@@ -355,7 +355,7 @@ quota data does not prevent usage from loading.
 
 Where ORC keeps its config and data, every config key and environment variable you are likely to set, logs, running as a background service, and authentication.
 
-## Notification and audit retention
+## Notification, audit and history retention
 
 Set these server-wide preferences in **Settings → Notifications → Automatic cleanup** or the JSON config:
 
@@ -363,12 +363,21 @@ Set these server-wide preferences in **Settings → Notifications → Automatic 
 | ----------------------------------------- | ------- | ------------ |
 | `preferences.notification_retention_days` | 30      | 1–3650       |
 | `preferences.audit_retention_days`        | 90      | 1–3650       |
+| `preferences.history_retention_days`      | 7       | 1–3650       |
 
 All notifications expire, including unresolved requests' alerts. Audit history
 retains the notification title and message independently until the audit event
 expires. The audit log is also capped at 200,000 rows, oldest removed first. Expiry filters apply immediately; the API performs bounded cleanup at
-startup and every minute. Freed SQLite pages are reusable but the file may not
-shrink. See [Notifications](./notifications.md).
+startup and every minute.
+
+The daily maintenance pass also deletes terminal history older than
+`history_retention_days`: finished job and flow runs, stopped gateway sessions,
+answered/expired/cancelled human requests and finished MCP tasks. Pending,
+running and snoozed work is never touched, and MCP task results still honour
+their own per-task TTL (default 1h, max 24h). New databases use incremental
+auto-vacuum, so each pass returns a bounded number of freed pages to disk. An
+existing database keeps its current mode until a one-time `VACUUM`; `orc doctor`
+reports the size, free pages and mode. See [Notifications](./notifications.md).
 
 ## Files and directories
 

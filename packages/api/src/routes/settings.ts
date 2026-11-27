@@ -213,6 +213,7 @@ const PreferencesSchema = z
     attention_retention_hours: z.number().int().min(1).max(8760).optional(),
     notification_retention_days: z.number().int().min(1).max(3650).optional(),
     audit_retention_days: z.number().int().min(1).max(3650).optional(),
+    history_retention_days: z.number().int().min(1).max(3650).optional(),
     chat: ChatSettingsSchema.optional(),
     favorite_models: FavoriteModelsSchema.optional(),
     composer_profiles: ComposerProfilesSchema.optional(),
@@ -290,14 +291,17 @@ app.openapi(
     const before = {
       notification_retention_days: previous.notification_retention_days ?? 30,
       audit_retention_days: previous.audit_retention_days ?? 90,
+      history_retention_days: previous.history_retention_days ?? 7,
     };
     const after = {
       notification_retention_days: config.preferences.notification_retention_days ?? 30,
       audit_retention_days: config.preferences.audit_retention_days ?? 90,
+      history_retention_days: config.preferences.history_retention_days ?? 7,
     };
     if (
       before.notification_retention_days !== after.notification_retention_days ||
-      before.audit_retention_days !== after.audit_retention_days
+      before.audit_retention_days !== after.audit_retention_days ||
+      before.history_retention_days !== after.history_retention_days
     )
       recordAudit(c, {
         action: "settings.retention_changed",

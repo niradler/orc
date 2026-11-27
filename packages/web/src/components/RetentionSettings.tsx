@@ -11,14 +11,17 @@ export function RetentionSettings() {
   const preferences = useQuery({ queryKey: ["workspace-preferences"], queryFn: api.settings.get });
   const [notifications, setNotifications] = useState<string | null>(null);
   const [audit, setAudit] = useState<string | null>(null);
+  const [history, setHistory] = useState<string | null>(null);
   const notificationDays =
     notifications ?? String(preferences.data?.notification_retention_days ?? 30);
   const auditDays = audit ?? String(preferences.data?.audit_retention_days ?? 90);
+  const historyDays = history ?? String(preferences.data?.history_retention_days ?? 7);
   const save = useMutation({
     mutationFn: () =>
       api.settings.save({
         notification_retention_days: Number(notificationDays),
         audit_retention_days: Number(auditDays),
+        history_retention_days: Number(historyDays),
       }),
     onSuccess: async () => {
       await client.invalidateQueries({ queryKey: ["workspace-preferences"] });
@@ -33,7 +36,9 @@ export function RetentionSettings() {
         </h3>
         <HelpPopover label="automatic cleanup" testId="retention-help">
           Notifications expire even when unresolved; their requests are kept. Audit events use their
-          own expiry. Shorter periods also apply to existing history.
+          own expiry. History covers finished job and flow runs, stopped sessions, answered requests
+          and finished MCP tasks; pending work is never deleted. Shorter periods also apply to
+          existing history.
         </HelpPopover>
       </div>
       <form
@@ -74,6 +79,24 @@ export function RetentionSettings() {
             value={auditDays}
             onChange={(event) => {
               setAudit(event.target.value);
+              save.reset();
+            }}
+            className="w-32"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="history-retention-days">Job &amp; request history (days)</Label>
+          <Input
+            id="history-retention-days"
+            data-testid="history-retention-days"
+            type="number"
+            min={1}
+            max={3650}
+            step={1}
+            required
+            value={historyDays}
+            onChange={(event) => {
+              setHistory(event.target.value);
               save.reset();
             }}
             className="w-32"

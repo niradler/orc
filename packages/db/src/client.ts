@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { loadConfig } from "@orc/core/config";
 import { drizzle } from "drizzle-orm/bun-sqlite";
@@ -694,6 +694,9 @@ export function createDb(dbPath?: string): ReturnType<typeof drizzle<typeof sche
   }
 
   const sqlite = new Database(path);
+  // New databases reclaim freed pages in bounded daily passes (see retention.ts).
+  // An existing database keeps its current mode; switching it needs a one-time VACUUM.
+  if (path !== ":memory:") sqlite.exec("PRAGMA auto_vacuum=INCREMENTAL;");
   sqlite.exec("PRAGMA journal_mode=WAL;");
   sqlite.exec("PRAGMA foreign_keys=ON;");
   sqlite.exec("PRAGMA synchronous=NORMAL;");
@@ -781,6 +784,63 @@ export function createTestDb(): OrcDb {
 export function getSqlite(db?: OrcDb): Database {
   const d = db ?? getDb();
   return (d as unknown as { $client: Database }).$client;
+}
+
+export type DbStorageStats = {
+  path: string;
+  database_bytes: number;
+  wal_bytes: number;
+  page_count: number;
+  /** Pages allocated to the file but not used by a table or index. */
+  freelist_count: number;
+  /** 0 = none, 1 = full, 2 = incremental. */
+  auto_vacuum: number;
+};
+
+function fileSize(path: string): number {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+}
+
+/** Size and page accounting for the open database. */
+export function dbStorageStats(
+  sqlite: Database = getSqlite(),
+  path = loadConfig().db.path,
+): DbStorageStats {
+  const onDisk = path !== ":memory:";
+  return {
+    path,
+    database_bytes: onDisk ? fileSize(path) : 0,
+    wal_bytes: onDisk ? fileSize(`${path}-wal`) : 0,
+    page_count:
+      sqlite.query<{ page_count: number }, []>("PRAGMA page_count").get()?.page_count ?? 0,
+    freelist_count:
+      sqlite.query<{ freelist_count: number }, []>("PRAGMA freelist_count").get()?.freelist_count ??
+      0,
+    auto_vacuum:
+      sqlite.query<{ auto_vacuum: number }, []>("PRAGMA auto_vacuum").get()?.auto_vacuum ?? 0,
+  };
+}
+
+/**
+ * Reads storage stats without creating or migrating the database, so `orc
+ * doctor` can inspect an install that is not running. Returns null when the
+ * file is absent or cannot be opened read-only.
+ */
+export function readDbStorageStats(path = loadConfig().db.path): DbStorageStats | null {
+  if (path === ":memory:" || !existsSync(path)) return null;
+  let sqlite: Database | null = null;
+  try {
+    sqlite = new Database(path, { readonly: true });
+    return dbStorageStats(sqlite, path);
+  } catch {
+    return null;
+  } finally {
+    sqlite?.close();
+  }
 }
 
 // Force a WAL checkpoint and truncate the -wal file. Safe to call periodically;

@@ -411,19 +411,26 @@ test("notification and audit retention save in Settings with defaults and an aud
 }) => {
   await request.patch(`${API_BASE}/settings`, {
     headers: AUTH_HEADERS,
-    data: { notification_retention_days: 30, audit_retention_days: 90 },
+    data: {
+      notification_retention_days: 30,
+      audit_retention_days: 90,
+      history_retention_days: 7,
+    },
   });
   await gotoView(page, "settings");
   await page.goto("/settings?settingsSection=notifications");
   await expect(page.getByTestId("notification-retention-days")).toHaveValue("30");
   await expect(page.getByTestId("audit-retention-days")).toHaveValue("90");
+  await expect(page.getByTestId("history-retention-days")).toHaveValue("7");
   await page.getByTestId("notification-retention-days").fill("2");
   await page.getByTestId("audit-retention-days").fill("7");
+  await page.getByTestId("history-retention-days").fill("3");
   await page.getByTestId("retention-save").click();
   await expect(page.getByRole("status")).toContainText("Retention saved.");
   await page.reload();
   await expect(page.getByTestId("notification-retention-days")).toHaveValue("2");
   await expect(page.getByTestId("audit-retention-days")).toHaveValue("7");
+  await expect(page.getByTestId("history-retention-days")).toHaveValue("3");
   const audit = await apiGet<{ entries: { action: string }[] }>(
     request,
     "/audit?scope=all&entity_type=settings&snapshot=preview",
@@ -431,6 +438,10 @@ test("notification and audit retention save in Settings with defaults and an aud
   expect(audit.entries.some((entry) => entry.action === "settings.retention_changed")).toBe(true);
   await request.patch(`${API_BASE}/settings`, {
     headers: AUTH_HEADERS,
-    data: { notification_retention_days: 30, audit_retention_days: 90 },
+    data: {
+      notification_retention_days: 30,
+      audit_retention_days: 90,
+      history_retention_days: 7,
+    },
   });
 });

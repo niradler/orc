@@ -1,10 +1,16 @@
+import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { type CallToolRequest, ResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { resetConfig } from "@orc/core/config";
 import { closeDb, createTestDb, getSqlite } from "@orc/db/client";
-import { clampTaskTtl, MCP_TASK_MAX_TTL_MS, McpTaskStore } from "@orc/db/mcp-tasks";
+import {
+  clampTaskTtl,
+  installMcpTasks,
+  MCP_TASK_MAX_TTL_MS,
+  McpTaskStore,
+} from "@orc/db/mcp-tasks";
 import { maybeAugmentCallTool, TASKS_EXTENSION_ID } from "../mcp-tasks.js";
 import type { ToolResult } from "../meta-tools.js";
 import { createMcpServer } from "../server.js";
@@ -498,6 +504,36 @@ describe("MCP Tasks: protocol (v2, io.modelcontextprotocol/tasks)", () => {
 });
 
 describe("MCP Tasks: owner isolation", () => {
+  test("should keep only the newest terminal tasks when the row cap is set", () => {
+    const sqlite = new Database(":memory:");
+    installMcpTasks(sqlite);
+    const store = new McpTaskStore(sqlite);
+    const ids: string[] = [];
+    const terminalBase = Date.now() - 5_000;
+    for (let index = 0; index < 5; index++) {
+      const task = store.create({
+        flavor: "v2",
+        owner: "cap-test",
+        toolName: "project_list",
+        ttlMs: MCP_TASK_MAX_TTL_MS,
+      });
+      store.complete(task.task_id, { index });
+      // Distinct terminal times make "newest" deterministic across fast creates.
+      sqlite
+        .query("UPDATE mcp_tasks SET terminal_at=? WHERE task_id=?")
+        .run(terminalBase + index, task.task_id);
+      ids.push(task.task_id);
+    }
+    expect(store.pruneTerminal(0)).toBe(0);
+    expect(store.pruneTerminal(2)).toBe(3);
+    const remaining = sqlite
+      .query<{ task_id: string }, []>("SELECT task_id FROM mcp_tasks WHERE owner='cap-test'")
+      .all()
+      .map((row) => row.task_id)
+      .sort();
+    expect(remaining).toEqual(ids.slice(-2).sort());
+  });
+
   test("a scoped connection cannot read a global task", async () => {
     const global = await connectClient();
     const created = (await request(global.client, "tools/call", {

@@ -28,6 +28,10 @@ import { ProjectSecretStore } from "./project-secrets.js";
 import { RuleStore } from "./rules.js";
 import { defaultSecretVault, type SecretDeliveryVault } from "./secret-vault.js";
 
+/** A request in one of these states will never become pending again. */
+const TERMINAL_STATUSES = ["answered", "delivered", "cancelled", "expired", "unavailable"] as const;
+const TERMINAL_SQL = `(${TERMINAL_STATUSES.map((status) => `'${status}'`).join(",")})`;
+
 export const SECRET_REQUEST_MAX_TTL_SECONDS = 1800;
 export const SECRET_PAYLOAD_TTL_MS = 5 * 60 * 1000;
 export const SECRET_RATE_LIMIT_MAX = 10;
@@ -946,6 +950,35 @@ export class HumanRequestStore {
           version,
         );
         return this.get(id);
+      })
+      .immediate();
+  }
+
+  /**
+   * Removes terminal requests older than the retention window. Pending,
+   * running and snoozed requests are never touched; a request's notification
+   * rows go with it so no stale "needs you" item outlives the request.
+   */
+  pruneTerminal(retentionDays: number, at = this.now()): number {
+    if (!Number.isFinite(retentionDays) || retentionDays < 0)
+      throw new ValidationError("Retention must be a non-negative number of days");
+    const cutoff = at - retentionDays * 86_400_000;
+    const due = `SELECT id FROM human_requests WHERE status IN ${TERMINAL_SQL} AND COALESCE(responded_at, answered_at, created_at) < ?`;
+    return this.db
+      .transaction(() => {
+        this.db
+          .query(`DELETE FROM human_request_notifications WHERE request_id IN (${due})`)
+          .run(cutoff);
+        if (tableExists(this.db, "notifications")) {
+          this.db
+            .query(`DELETE FROM notifications WHERE type='human.request' AND source_id IN (${due})`)
+            .run(cutoff);
+        }
+        return this.db
+          .query(
+            `DELETE FROM human_requests WHERE status IN ${TERMINAL_SQL} AND COALESCE(responded_at, answered_at, created_at) < ?`,
+          )
+          .run(cutoff).changes;
       })
       .immediate();
   }

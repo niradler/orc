@@ -1,7 +1,9 @@
+import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { type LongTimeout, setLongTimeout } from "@orc/core/timers";
 import { checkpointWal, getDb, getSqlite } from "@orc/db/client";
+import { pruneRetention } from "@orc/db/retention";
 import { comments, job_runs, jobs } from "@orc/db/schema";
 import { Cron } from "croner";
 import { desc, eq } from "drizzle-orm";
@@ -148,6 +150,17 @@ export function pruneHistory(): void {
     });
 
     prune();
+
+    // Terminal requests and MCP tasks are not tied to a job run; prune them in
+    // the same daily pass, then reclaim a bounded number of freed pages.
+    const retention = pruneRetention(sqlite, {
+      historyRetentionDays:
+        loadConfig().preferences.history_retention_days ?? HISTORY_RETENTION_DAYS,
+    });
+    if (retention.human_requests || retention.mcp_tasks)
+      logger.info(
+        `Pruned ${retention.human_requests} terminal requests and ${retention.mcp_tasks} MCP tasks; reclaimed ${retention.vacuumed_pages} pages`,
+      );
   } catch (err) {
     logger.warn("Failed to prune job history", err);
   }

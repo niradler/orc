@@ -51,7 +51,9 @@ export function installMcpTasks(sqlite: Database): void {
     updated_at INTEGER NOT NULL,
     terminal_at INTEGER
   );
-  CREATE INDEX IF NOT EXISTS mcp_tasks_owner_idx ON mcp_tasks(owner, created_at);`);
+  CREATE INDEX IF NOT EXISTS mcp_tasks_owner_idx ON mcp_tasks(owner, created_at);
+  CREATE INDEX IF NOT EXISTS mcp_tasks_terminal_idx ON mcp_tasks(terminal_at)
+    WHERE terminal_at IS NOT NULL;`);
 }
 
 export function clampTaskTtl(requested: number | null | undefined): number {
@@ -236,13 +238,33 @@ export class McpTaskStore {
     };
   }
 
-  prune(): void {
+  prune(): number {
     const now = Date.now();
-    this.sqlite
+    return this.sqlite
       .query(
         "DELETE FROM mcp_tasks WHERE terminal_at IS NOT NULL AND ttl_ms IS NOT NULL AND terminal_at + ttl_ms < ?",
       )
-      .run(now);
+      .run(now).changes;
+  }
+
+  /**
+   * Keeps the newest `maxRows` terminal tasks. TTL expiry alone is unbounded:
+   * clients can request a 24h TTL, and a busy install creates rows faster than
+   * they age out. Returns how many rows this cap removed.
+   */
+  pruneTerminal(maxRows: number): number {
+    if (!Number.isInteger(maxRows) || maxRows < 1) return 0;
+    return this.sqlite
+      .query(
+        `DELETE FROM mcp_tasks
+         WHERE terminal_at IS NOT NULL AND task_id NOT IN (
+           SELECT task_id FROM mcp_tasks
+           WHERE terminal_at IS NOT NULL
+           ORDER BY terminal_at DESC, task_id DESC
+           LIMIT ?
+         )`,
+      )
+      .run(maxRows).changes;
   }
 
   /** A restart kills in-flight executions; surface that honestly to pollers. */
