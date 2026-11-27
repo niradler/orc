@@ -101,9 +101,14 @@ Stdio `orc mcp` defaults to meta mode; pass `--mode full` to list every domain
 tool directly. HTTP `/mcp` also defaults to meta; `/mcp?mode=full` explicitly lists all domain tools. Meta mode exposes `tool_search`, `tool_describe`, `tool_invoke`, and `tool_execute`:
 search by intent, describe unknown arguments, then invoke the selected tool.
 Reach `context` and other named tools through `tool_invoke` in meta mode.
-Use `tool_execute` to run a short JavaScript async snippet that combines independent calls in parallel and filters large results before they reach the conversation; prefer `tool_invoke` for a single small result. Execution is enabled by default for authenticated HTTP and local stdio and can be disabled with `mcp.code_execution: false`.
+Use `tool_execute` to run a short JavaScript async snippet that combines independent calls in parallel and filters large results before they reach the conversation; prefer `tool_invoke` for a single small result. Inside `tool_execute`, `await tools.elicit(message, requestedSchema)` asks a non-secret form question and returns `{ action, content }` (`accept`, `decline`, or `cancel`); live stdio connections use native MCP `elicitation/create`, while stateless HTTP and background tasks create a durable Attention question (Web UI + Telegram/Slack, `deliver_to_session: false`) and pause the sandbox clock (default 2m, max 5m via `ORC_MCP_ELICIT_WAIT_MS`; channels via `ORC_MCP_ELICIT_NOTIFY`). Execution is enabled by default for authenticated HTTP and local stdio and can be disabled with `mcp.code_execution: false`.
 Connectors, loaded skills and installed hooks do not establish equal enforcement
 across agent clients. Disclose when MCP is unavailable; never claim a context read ran.
+
+### MCP Tasks and Skills over MCP
+
+- **Durable MCP Tasks (`mcp_tasks`):** Long-running tool calls support both SDK 2025-11-25 task-augmented requests (`params.task` on `tools/call` → `tasks/get`, `tasks/result`, `tasks/list`, `tasks/cancel`) and the `io.modelcontextprotocol/tasks` extension (`_meta["io.modelcontextprotocol/clientCapabilities"]` opt-in, server-directed `resultType: "task"` for `session_start`, `session_wait`, `job_run`, and `tool_execute`, inline results in `tasks/get`, `input_required` + `tasks/update` when form elicitation is advertised, and `tasks/cancel`). Tasks survive disconnects/restarts (in-flight tasks mark `failed` on restart), are scoped to the connection's project owner, and expire by TTL. Pi/porc exposes v1 tasks via `task_start`, `task_status`, `task_result`, and `task_cancel`.
+- **Skills over MCP (`io.modelcontextprotocol/skills`):** Spec-compliant clients can discover and load ORC skills through `skills/list`, `skills/get`, `resources/list`, `resources/read` (`skill://<name>/...`), and `resources/directory/read`, with complete SHA-256 + byte-size manifests respecting project scope and overlays. Legacy `skill_list` / `skill_read` tools remain supported.
 
 ### External Spec tools
 
