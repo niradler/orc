@@ -78,7 +78,7 @@ export type ArchiveSession = {
   id: string;
   project_id: string | null;
   source_id: string;
-  agent: "claude" | "codex";
+  agent: string;
   native_id: string;
   title: string;
   metadata: ArchiveMetadata;

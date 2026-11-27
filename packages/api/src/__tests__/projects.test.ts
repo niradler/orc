@@ -1,5 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { getSqlite } from "@orc/db/client";
+import { MemoryStore } from "@orc/db/memories";
 import type { createApp } from "../server.js";
+import { purgeExpiredTtl } from "../ttl.js";
 import { req, setupTestApp, teardownTestApp } from "./helpers.js";
 
 let app: ReturnType<typeof createApp>;
@@ -278,17 +281,74 @@ describe("Projects CRUD", () => {
   });
 
   describe("DELETE /projects/:id", () => {
-    test("deletes a project", async () => {
+    test("archives a project and schedules deletion by default", async () => {
       const createRes = await req(app, "POST", "/projects", {
         name: "to-delete",
       });
       const created = await createRes.json();
 
       const res = await req(app, "DELETE", `/projects/${created.id}`);
+      expect(res.status).toBe(202);
+      const body = await res.json();
+      expect(body.status).toBe("archived");
+      expect(typeof body.archived_at).toBe("string");
+      const days = (Date.parse(body.delete_after) - Date.now()) / 86_400_000;
+      expect(days).toBeGreaterThan(29);
+      expect(days).toBeLessThanOrEqual(30);
+
+      // Still present and restorable until the purge.
+      const archived = await req(app, "GET", `/projects/${created.id}`);
+      expect(archived.status).toBe(200);
+      expect((await archived.json()).status).toBe("archived");
+      const restored = await req(app, "PATCH", `/projects/${created.id}`, { status: "active" });
+      const restoredBody = await restored.json();
+      expect(restoredBody.status).toBe("active");
+      expect(restoredBody.delete_after).toBeNull();
+      expect(restoredBody.archived_at).toBeNull();
+
+      // The shared restore endpoint is what MCP and clients use.
+      expect((await req(app, "DELETE", `/projects/${created.id}`)).status).toBe(202);
+      const restoredAgain = await req(app, "POST", `/projects/${created.id}/restore`);
+      expect(restoredAgain.status).toBe(200);
+      expect(await restoredAgain.json()).toMatchObject({
+        status: "active",
+        archived_at: null,
+        delete_after: null,
+      });
+    });
+
+    test("deletes immediately with ttl_days=0", async () => {
+      const createRes = await req(app, "POST", "/projects", {
+        name: "to-delete-now",
+      });
+      const created = await createRes.json();
+
+      const res = await req(app, "DELETE", `/projects/${created.id}?ttl_days=0`);
       expect(res.status).toBe(204);
 
       const getRes = await req(app, "GET", `/projects/${created.id}`);
       expect(getRes.status).toBe(404);
+    });
+
+    test("the maintenance sweep purges a project once its delete_after passes", async () => {
+      const created = await (await req(app, "POST", "/projects", { name: "sweep-me" })).json();
+      new MemoryStore(getSqlite()).create({
+        project_id: created.id,
+        name: "sweep-memory",
+        description: "goes with the project",
+        content: "purge fixture",
+      });
+      expect((await req(app, "DELETE", `/projects/${created.id}`)).status).toBe(202);
+      getSqlite()
+        .query("UPDATE projects SET delete_after=unixepoch()-60 WHERE id=?")
+        .run(created.id);
+      expect(purgeExpiredTtl().purged).toContainEqual({
+        resource: "project",
+        id: created.id,
+        label: "sweep-me",
+      });
+      expect((await req(app, "GET", `/projects/${created.id}`)).status).toBe(404);
+      expect(new MemoryStore(getSqlite()).list(created.id)).toHaveLength(0);
     });
 
     test("returns 404 for non-existent project", async () => {

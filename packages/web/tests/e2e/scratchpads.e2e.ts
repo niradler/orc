@@ -28,6 +28,7 @@ interface Scratchpad {
   author: string;
   session_id: string | null;
   tags: string[];
+  delete_after?: number | null;
 }
 
 const DIAGRAM = JSON.stringify({
@@ -141,7 +142,7 @@ for (const width of [1280, 390]) {
         HTML_KIT_COMPONENT_EXAMPLE,
       );
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
     }
   });
 
@@ -160,7 +161,7 @@ for (const width of [1280, 390]) {
         HTML_KIT_EXAMPLE,
       );
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
     }
   });
 }
@@ -210,11 +211,27 @@ test.describe("Scratchpads", () => {
       await page.getByTestId("scratchpad-delete").click();
       await page.getByTestId("confirm-dialog-confirm").click();
       await expect(page).toHaveURL(/\/scratchpad(\?|$)/);
-      const gone = await request.get(`${API_BASE}/scratchpads/${id}`, { headers: AUTH_HEADERS });
-      expect(gone.status()).toBe(404);
+      // Deleting schedules a purge; the pad stays available with its deadline.
+      const scheduled = await request.get(`${API_BASE}/scratchpads/${id}`, {
+        headers: AUTH_HEADERS,
+      });
+      expect(scheduled.status()).toBe(200);
+      expect((await scheduled.json()).delete_after).toBeGreaterThan(0);
+
+      const scheduledRow = page.locator(
+        `[data-testid="scratchpad-row"][data-scratchpad-id="${id}"]`,
+      );
+      await expect(scheduledRow).toBeVisible();
+      await scheduledRow.click();
+      await expect(page.getByTestId("scratchpad-deletes")).toBeVisible();
+      await page.getByTestId("scratchpad-restore").click();
+      await expect(page.getByTestId("scratchpad-delete")).toBeVisible();
+      expect((await apiGet<Scratchpad>(request, `/scratchpads/${id}`)).delete_after).toBeNull();
+
+      await apiDelete(request, `/scratchpads/${id}?ttl_days=0`);
       id = undefined;
     } finally {
-      if (id) await apiDelete(request, `/scratchpads/${id}`);
+      if (id) await apiDelete(request, `/scratchpads/${id}?ttl_days=0`);
     }
   });
 
@@ -245,7 +262,7 @@ test.describe("Scratchpads", () => {
       expect(saved.revision).toBe(pad.revision + 1);
       expect(saved.author).toBe("human");
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
     }
   });
 
@@ -297,7 +314,7 @@ test.describe("Scratchpads", () => {
       await expect(frame).not.toHaveAttribute("data-trusted");
       await expect(preview(page).locator("h1")).toHaveText("no access");
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
     }
   });
 
@@ -337,7 +354,7 @@ test.describe("Scratchpads", () => {
       );
       expect(runs).toMatchObject([{ status: "success", trigger_by: "api" }]);
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
       await apiDelete(request, `/jobs/${job.id}`);
     }
   });
@@ -377,7 +394,7 @@ test.describe("Scratchpads", () => {
       await expect(preview(page).locator("h1")).toHaveText("theirs");
       await expect(frame).not.toHaveAttribute("data-trusted");
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
     }
   });
 
@@ -438,7 +455,7 @@ test.describe("Scratchpads", () => {
         "<p>keep me</p>",
       );
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
     }
   });
 
@@ -500,7 +517,7 @@ test.describe("Scratchpads", () => {
       for (const font of fonts) expect(new URL(font).origin).toBe(new URL(page.url()).origin);
       expect(requests.some((url) => url.includes("esm.sh"))).toBe(false);
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
     }
   });
 
@@ -551,7 +568,7 @@ test.describe("Scratchpads", () => {
         .poll(async () => (await apiGet<Scratchpad>(request, `/scratchpads/${pad.id}`)).session_id)
         .toBeNull();
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
       rmSync(join(LIVE_REGISTRY_DIR, `claude-${externalId}.json`), { force: true });
       rmSync(transcriptPath, { force: true });
     }
@@ -584,7 +601,7 @@ test.describe("Scratchpads", () => {
       await page.getByTestId("scratchpad-exit-fullscreen").click();
       await expect(stage).not.toHaveAttribute("data-fullscreen");
     } finally {
-      await apiDelete(request, `/scratchpads/${pad.id}`);
+      await apiDelete(request, `/scratchpads/${pad.id}?ttl_days=0`);
     }
   });
 

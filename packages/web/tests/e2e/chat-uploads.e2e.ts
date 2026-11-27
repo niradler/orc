@@ -106,7 +106,7 @@ for (const width of [1440, 390]) {
       );
     } finally {
       await page.goto("about:blank");
-      await apiDelete(request, `/projects/${project.id}`);
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
       rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     }
   });
@@ -140,7 +140,7 @@ test("project upload directory saves, reopens and clears to the workspace defaul
       await page.keyboard.press("Escape");
     }
   } finally {
-    await apiDelete(request, `/projects/${project.id}`);
+    await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
   }
 });
 

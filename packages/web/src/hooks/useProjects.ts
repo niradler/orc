@@ -55,8 +55,21 @@ export function useUpdateProject() {
 export function useDeleteProject() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.projects.delete(id),
+    mutationFn: ({ id, ttlDays }: { id: string; ttlDays?: number }) =>
+      api.projects.delete(id, ttlDays),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["projects"] }),
+  });
+}
+
+export function useRestoreProject() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.projects.restore(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project"] });
+      qc.invalidateQueries({ queryKey: ["project-summary"] });
+    },
   });
 }
 

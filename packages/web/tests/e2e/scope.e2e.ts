@@ -70,7 +70,7 @@ test.describe("Sidebar project scope", () => {
     } finally {
       await apiDelete(request, `/tasks/${scoped.id}`);
       await apiDelete(request, `/tasks/${unscoped.id}`);
-      await apiDelete(request, `/projects/${project.id}`);
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 
@@ -119,7 +119,7 @@ test.describe("Sidebar project scope", () => {
       await select.click();
       await expect(page.getByTestId(`project-option-${project.id}`)).toHaveCount(0);
     } finally {
-      await apiDelete(request, `/projects/${project.id}`);
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 });

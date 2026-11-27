@@ -243,6 +243,6 @@ test.describe("Autonomous Project Lifecycle Demo", () => {
     for (const id of taskIds) {
       await apiDelete(request, `/tasks/${id}`);
     }
-    await apiDelete(request, `/projects/${projectId}`);
+    await apiDelete(request, `/projects/${projectId}?ttl_days=0`);
   });
 });

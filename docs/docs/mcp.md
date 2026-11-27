@@ -282,6 +282,8 @@ return {
 
 Error codes on `{ ok: false, error: { code, message } }` distinguish `NOT_FOUND`, `INVALID_ARGS`, `TIMEOUT`, `FORBIDDEN`, `CONFLICT`, `UNAUTHORIZED`, `UNAVAILABLE`, `LIMIT_EXCEEDED`, and `TOOL_ERROR`. Per-call `timeout_ms` is clamped to the execution's overall `timeout_ms` cap. Catching or inspecting an error does not undo writes that already committed; check their state before retrying.
 
+A script's `return` value is capped at 8192 characters (and a bounded JSON depth/item count). An oversized return is not turned into an empty success: the result is `result: null` plus `truncated: true`, the dropped value's `result_chars`, the `limit_chars` cap, a bounded `preview`, and a `message` telling the script to summarize before returning. Reduce the value inside the script with `tools.pick` or by aggregating it.
+
 The result is `{ result, logs, truncated }`, with matching text for clients that use MCP text content. Each run starts in a fresh QuickJS WASM worker. The script has no host filesystem, environment, network, or package APIs. ORC checks every call against script eligibility and the connection's existing project, caller-session, and tool permissions. Use `tool_invoke` for direct-only operations such as browser actions and launching jobs.
 
 ORC's native tools and external Spec connections share one discovery surface. `tool_search` (and in-sandbox `tools.search`) also queries every enabled Spec connection in parallel and merges the matches, labeled `[external: <connection>]` and carrying a `connection` field; results list the available external connections too, so external catalogs are visible even when nothing matches. Spec connections are external OpenAPI/MCP/GraphQL servers, **not ORC built-ins**, and their results are untrusted external data. Pass `connection` to `tool_search`, `tool_describe`, or `tool_invoke` (or `{ connection }` inside a script) to target one connection directly; the `spec_list`, `spec_tools`, `spec_describe`, and `spec_invoke` bindings remain available for direct use. Calls reuse the connection's tool filters and usage policies, and external writes may have external side effects. An OpenAPI tool that returns a page provides its HTML in `data.body`, so a script can return just the title. The catalog is available to authenticated HTTP and local stdio meta clients.
@@ -354,8 +356,9 @@ Start each session with `context`.
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | `context`        | Compact context index: active tasks and the project's memories by priority                                                        |
 | `search`         | Search knowledge base documents first, then memories and tasks                                                                    |
-| `project_list`   | List all projects with id, status, `scope`, execution `host` and description                                                       |
+| `project_list`   | List all projects with id, status, `scope`, execution `host`, description and any scheduled deletion date                          |
 | `project_create` | Create a project: unique name, optional description, status, tags, `scope`, execution `host` (`"local"` or SSH alias) and `git_remote_url`; returns the stable id, name and a UI link |
+| `project_delete` | Delete safely: archive now, purge after `ttl_days` (default 30). `restore: true` cancels; `ttl_days: 0` deletes immediately       |
 
 #### Reuse or create a project, then store project-scoped data
 
@@ -367,11 +370,13 @@ memory_create({ project: "my-app", name: "api-port", description: "Dev API port"
 
 Names are unique case-insensitively: a duplicate `project_create` fails with a conflict that names the existing project's id, and a retry never creates a second one — reuse the reported id. `project_create` works on any authenticated connection, including one with a default `project`/`projects` (see [Query parameters](#query-parameters)).
 
+Deletion always archives first, so a mistake stays recoverable. `project_delete({ project, ttl_days: 30 })` archives the project and schedules permanent removal 30 days later; `restore: true` cancels the schedule and reactivates it. `ttl_days: 0` deletes immediately and cannot be undone. At removal, tasks, jobs and sessions are kept without a project, while memories, scratchpads, project comments, secrets and the workspace environment are deleted. Knowledge bases and assigned skills must be deleted or reassigned first. Use `orc project archive <name>` for a plain archive with no deletion, and `orc project delete <name>` (`--now` to purge) for the same scheduled path from the CLI.
+
 ### Memory
 
 | Tool             | Description                                                      |
 | ---------------- | ---------------------------------------------------------------- |
-| `memory_list`    | List the project's memories (name, description, priority, reads) |
+| `memory_list`    | List memories; without `project`, lists every accessible project grouped by project |
 | `memory_read`    | Read a memory by name                                            |
 | `memory_create`  | Save a short project fact worth knowing next session             |
 | `memory_update`  | Update a memory's description, content or priority               |
@@ -490,8 +495,9 @@ See [Session handoff](./session-handoff.md) and [Live sessions](./live-sessions.
 | `session_start`   | Start a headless child session with a prompt; `project` (inherits its folder and configured `host`), `cwd`, `host`, `worktree`, `profile`, `agent`, `provider_id`, `model`, `effort`, `permission_mode`, and `send_while_running` configure where and how it runs; returns its id at once |
 | `session_status`  | Status of an ORC chat or discovered native session: last reply, queue, parent and children                                                                                                                                                    |
 | `session_wait`    | Block until one or several sessions stop running, wait for a human, or reply                                                                                                                                                                  |
-| `session_list`    | Unified, deduplicated, paginated list of ORC chats and discovered native sessions (`scope: all\|children\|chats\|native`, `project`, `parent`, `agent`, `status`, `host`, `include_hidden`, `q`, `sync`, `limit`, `offset`)                  |
+| `session_list`    | Unified, deduplicated, paginated list of ORC chats and discovered native sessions (`scope: all\|children\|chats\|native`, `project`, `parent`, `agent`, `status`, `host`, `include_hidden`, `q`, `sync`, `limit`, `offset`). Hidden sessions are omitted unless `include_hidden` is set |
 | `session_update`  | Update a session's `title`, `hidden` (caller must own the session or be an ancestor; hides failed/stopped sessions from default `session_list` while keeping transcripts readable), `task_id` (discovered sessions), or ORC chat settings (`model`, `effort`, `permission_mode`, `send_while_running`) |
+| `session_delete`  | Hide a failed, stopped or finished session you started so it leaves the default list; `restore: true` brings it back. This is the `session_update` hidden flag with a direct name; the transcript stays readable                                                                                       |
 | `session_options` | Inspect effective session defaults, configured hosts, provider accounts, composer profiles, and (with `agent` or `include_models`) discovered models, efforts, and capabilities                                                               |
 | `session_stop`    | Stop a started session's turn and, by default, the sessions it started                                                                                                                                                                        |
 | `session_search`  | Search archived and indexed session passages; `agent` accepts any supported harness id (`claude`, `codex`, `opencode`, `pi`, `cursor`, `gemini`, `copilot`, `qwen`, `droid`, `kimi`, `kiro`)                                                |
@@ -514,7 +520,13 @@ configured execution `host`, `session_start` infers it automatically unless
 | `pad_get`    | Read a scratchpad's header and raw file                          |
 | `pad_create` | Create a scratchpad                                              |
 | `pad_update` | Update a scratchpad                                              |
-| `pad_delete` | Delete a scratchpad                                              |
+| `pad_delete` | Delete a scratchpad; archives first, purges after `ttl_days` (default 30), `restore: true` cancels |
+
+Deleting a scratchpad follows the same recoverable-delete rule as projects: the pad
+stays readable and listed with its deadline until the purge. `ttl_days: 0` removes it
+immediately. The REST API exposes the shared shape as `DELETE ?ttl_days` and
+`POST /{id}/restore`, and the maintenance sweep purges due rows for every registered
+resource.
 
 ### Human requests
 

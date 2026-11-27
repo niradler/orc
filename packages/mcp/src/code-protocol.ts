@@ -4,6 +4,7 @@ export const CODE_LIMITS = {
   responseBytes: 512 * 1024,
   totalResponseBytes: 4 * 1024 * 1024,
   resultChars: 8192,
+  resultPreviewChars: 2048,
   jsonDepth: 32,
   jsonItems: 2048,
   logChars: 256,
@@ -21,6 +22,13 @@ export interface CodeOutput {
   result: unknown;
   logs: string[];
   truncated: boolean;
+  /** Why a truncated result was dropped, so it never reads as an empty success. */
+  message?: string;
+  /** Characters the script returned before the result limit dropped it. */
+  result_chars?: number;
+  limit_chars?: number;
+  /** Bounded start of the dropped value, for orientation only. */
+  preview?: string;
 }
 
 export type WorkerInput =

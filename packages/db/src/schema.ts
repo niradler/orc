@@ -54,6 +54,10 @@ export const projects = sqliteTable(
     max_workers: integer("max_workers"),
     upload_directory: text("upload_directory"),
     workspace: text("workspace", { mode: "json" }).$type<WorkspaceEnvironment>(),
+    /** When the project last moved to archived; null while active or paused. */
+    archived_at: integer("archived_at", { mode: "timestamp" }),
+    /** Scheduled permanent deletion; the maintenance sweep purges it once reached. */
+    delete_after: integer("delete_after", { mode: "timestamp" }),
     ...timestamps,
   },
   (t) => [uniqueIndex("projects_name_idx").on(t.name)],

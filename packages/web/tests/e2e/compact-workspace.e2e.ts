@@ -260,7 +260,7 @@ test("populated workspaces fit desktop, tablet and phones in both themes", async
     // A retry must not collide with the previous attempt's fixtures (jobs key 409).
     await apiDelete(request, `/jobs/${previewJob.id}`);
     await apiDelete(request, `/jobs/${backgroundJob.id}`);
-    for (const id of pads) await apiDelete(request, `/scratchpads/${id}`);
-    await apiDelete(request, `/projects/${project.id}`);
+    for (const id of pads) await apiDelete(request, `/scratchpads/${id}?ttl_days=0`);
+    await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
   }
 });

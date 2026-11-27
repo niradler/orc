@@ -158,7 +158,8 @@ All paths below are under `/api` unless shown otherwise. `GET /openapi.json` lis
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` `POST` | `/projects` | List (`status`, `tag`, `limit`, `offset`) / create |
-| `GET` `PATCH` `DELETE` | `/projects/{id}` | Read / update / delete |
+| `GET` `PATCH` `DELETE` | `/projects/{id}` | Read / update / delete (archives first; `?ttl_days=30` default, `0` deletes now) |
+| `POST` | `/projects/{id}/restore` | Restore an archived project and cancel its scheduled deletion |
 | `GET` | `/projects/by-name/{name}` | Look up by name (case-insensitive) |
 | `GET` | `/projects/{id}/summary` | Task, memory and job counts |
 | `GET` `POST` | `/projects/{id}/comments` | Project comments |
@@ -489,7 +490,8 @@ live records that have no backing chat thread.
 | `GET` | `/rules/catalog` | Rule templates |
 | `POST` | `/rules/check`, `/rules/activate`, `/rules/revert` | Validate / activate / revert |
 | `GET` `POST` | `/scratchpads` | List / create |
-| `GET` `PATCH` `DELETE` | `/scratchpads/{id}` | Read / update / delete |
+| `GET` `PATCH` `DELETE` | `/scratchpads/{id}` | Read / update / delete (archives first; `?ttl_days=30` default, `0` deletes now) |
+| `POST` | `/scratchpads/{id}/restore` | Cancel a scheduled deletion |
 
 ### System
 

@@ -13611,10 +13611,15 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Delete project */
+        /**
+         * Delete project (archive now, purge after ttl_days)
+         * @description Deleting archives the project and schedules permanent removal after ttl_days (default 30). PATCH status active before then restores it. ttl_days=0 purges immediately, which cannot be undone.
+         */
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    ttl_days?: number | null;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -13623,14 +13628,23 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Deleted */
+                /** @description Archived; permanent deletion is scheduled */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Project"];
+                    };
+                };
+                /** @description Deleted immediately (ttl_days=0) */
                 204: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
                 };
-                /** @description Project still owns knowledge bases */
+                /** @description Project still owns knowledge bases or assigned skills */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -13668,6 +13682,51 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/api/projects/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore an archived project and cancel its scheduled deletion */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Restored */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Project"];
+                    };
+                };
+                /** @description Project not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/projects/{id}/comments": {
@@ -19172,6 +19231,8 @@ export interface paths {
                                 revision: number;
                                 created_at: number;
                                 updated_at: number;
+                                archived_at: number | null;
+                                delete_after: number | null;
                                 size_bytes: number;
                             }[];
                             total: number;
@@ -19223,6 +19284,8 @@ export interface paths {
                             revision: number;
                             created_at: number;
                             updated_at: number;
+                            archived_at: number | null;
+                            delete_after: number | null;
                         };
                     };
                 };
@@ -19293,6 +19356,8 @@ export interface paths {
                             revision: number;
                             created_at: number;
                             updated_at: number;
+                            archived_at: number | null;
+                            delete_after: number | null;
                         };
                     };
                 };
@@ -19307,10 +19372,15 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        /** Delete a scratchpad */
+        /**
+         * Delete a scratchpad (archive now, purge after ttl_days)
+         * @description Deleting keeps the pad readable and listed with its deadline, then permanently removes it after ttl_days (default 30). Restore before then with POST /scratchpads/{id}/restore. ttl_days=0 removes it immediately.
+         */
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    ttl_days?: number | null;
+                };
                 header?: never;
                 path: {
                     id: string;
@@ -19319,7 +19389,31 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Deleted */
+                /** @description Archived; permanent deletion is scheduled */
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            /** @enum {string} */
+                            kind: "doc" | "diagram" | "html";
+                            title: string;
+                            content: string;
+                            project_id: string | null;
+                            session_id: string | null;
+                            tags: string[];
+                            author: string;
+                            revision: number;
+                            created_at: number;
+                            updated_at: number;
+                            archived_at: number | null;
+                            delete_after: number | null;
+                        };
+                    };
+                };
+                /** @description Deleted immediately (ttl_days=0) */
                 204: {
                     headers: {
                         [name: string]: unknown;
@@ -19380,6 +19474,8 @@ export interface paths {
                             revision: number;
                             created_at: number;
                             updated_at: number;
+                            archived_at: number | null;
+                            delete_after: number | null;
                         };
                     };
                 };
@@ -19413,6 +19509,66 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/api/scratchpads/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Restore a scratchpad whose deletion was scheduled */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Restored */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: string;
+                            /** @enum {string} */
+                            kind: "doc" | "diagram" | "html";
+                            title: string;
+                            content: string;
+                            project_id: string | null;
+                            session_id: string | null;
+                            tags: string[];
+                            author: string;
+                            revision: number;
+                            created_at: number;
+                            updated_at: number;
+                            archived_at: number | null;
+                            delete_after: number | null;
+                        };
+                    };
+                };
+                /** @description Scratchpad not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/scratchpads/{id}/content-url": {
@@ -27640,6 +27796,10 @@ export interface components {
                     secret: boolean;
                 }[];
             };
+            /** Format: date-time */
+            archived_at: string | null;
+            /** Format: date-time */
+            delete_after: string | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */

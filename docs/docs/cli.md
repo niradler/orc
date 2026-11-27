@@ -65,7 +65,8 @@ use the existing task commands and reach GitHub on the next sync cycle.
 | `orc project use <name>` | `--clear` unsets the active project |
 | `orc project update <name>` | `--name`, `-d`, `--status active\|paused\|archived`, `--scope`, `--git-remote-url`, `--clear-git-remote-url`, `--tags` |
 | `orc project archive <name>` | |
-| `orc project delete <name>` | |
+| `orc project restore <name>` | Cancel a scheduled deletion and reactivate |
+| `orc project delete <name>` | `--now` to delete permanently instead of scheduling it after 30 days |
 
 ## Tasks
 
@@ -188,7 +189,8 @@ New jobs are disabled until `--enable` or `orc job update <job> --enabled`.
 | `orc pad new <kind> <title>` | `-f, --file`, `-p`, `-t, --tag` (repeatable), `--no-session` |
 | `orc pad pull <id> [file]` | Write the pad to disk |
 | `orc pad push <id> <file>` | `-r, --if-revision <n>` |
-| `orc pad rm <id>` | |
+| `orc pad rm <id>` | `--now` to delete permanently instead of scheduling it after 30 days |
+| `orc pad restore <id>` | |
 
 ## Skills
 

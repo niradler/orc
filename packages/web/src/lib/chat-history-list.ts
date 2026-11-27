@@ -108,7 +108,6 @@ export function chatHistoryList(
   query = "",
   projectScope = "all",
   terminals: readonly Terminal[] = [],
-  includeShells = false,
   projectFolders: readonly { id: string; scope?: string | null }[] = [],
 ): ChatHistoryEntry[] {
   const matches = (text: string) => text.toLowerCase().includes(query.trim().toLowerCase());
@@ -300,7 +299,9 @@ export function chatHistoryList(
   };
   for (const entry of entries) if (!nested.has(entry)) rollup(entry);
   for (const terminal of terminals) {
-    if (terminal.status !== "running" || (terminal.kind === "shell" && !includeShells)) continue;
+    // A plain shell terminal is a workspace pane, not a conversation; only
+    // coding-agent terminals belong in session history.
+    if (terminal.status !== "running" || terminal.kind === "shell") continue;
     const linked = terminal.live_session_id ? liveEntries.get(terminal.live_session_id) : undefined;
     if (linked) {
       if (linked.kind === "native") linked.terminalId ??= terminal.id;

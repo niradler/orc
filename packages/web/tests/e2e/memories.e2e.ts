@@ -127,7 +127,7 @@ test.describe("Memories", () => {
       await expect(page).toHaveURL(new RegExp(`/knowledge/memories\\?project=${project.id}$`));
       await expect(row(page, name)).toHaveCount(0);
     } finally {
-      await apiDelete(request, `/projects/${project.id}`);
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 
@@ -205,7 +205,7 @@ test.describe("Memories", () => {
       await expect(page.getByTestId("memory-row")).toHaveCount(1);
       await expect(row(page, unscored)).toBeVisible();
     } finally {
-      await apiDelete(request, `/projects/${project.id}`);
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 
@@ -265,8 +265,8 @@ test.describe("Memories", () => {
       await openFinalFormStep(page);
       await expect(dialog.getByTestId("memory-submit")).toBeEnabled();
     } finally {
-      await apiDelete(request, `/projects/${first.id}`);
-      await apiDelete(request, `/projects/${second.id}`);
+      await apiDelete(request, `/projects/${first.id}?ttl_days=0`);
+      await apiDelete(request, `/projects/${second.id}?ttl_days=0`);
     }
   });
 
@@ -291,7 +291,7 @@ test.describe("Memories", () => {
       expect(res.ok()).toBe(true);
       await expect(row(page, name).getByTestId("memory-read-count")).toHaveText("1");
     } finally {
-      await apiDelete(request, `/projects/${project.id}`);
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 });

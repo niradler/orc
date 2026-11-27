@@ -16,7 +16,7 @@ import { FolderPickerDialog } from "@/components/FolderPickerDialog";
 import { RecentFolders } from "@/components/RecentFolders";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAgentCapabilities } from "@/hooks/useAgentCapabilities";
-import { useComposerPreferences, useProviders } from "@/hooks/useAgents";
+import { useProviders } from "@/hooks/useAgents";
 import { useFolderPickerSession } from "@/hooks/useFolderPickerSession";
 import { useRemoveWorktree, useWorktrees } from "@/hooks/useGit";
 import { useSsh } from "@/hooks/useSsh";
@@ -30,7 +30,6 @@ import {
   readLaunchPrefs,
   saveLaunchPref,
   terminalModes,
-  terminalProfileOptions,
   WORKTREE_KEY,
 } from "@/lib/terminal-launch";
 import { cn } from "@/lib/utils";
@@ -256,7 +255,6 @@ export function NewTerminalMenu({
   const [localError, setLocalError] = useState<string | null>(null);
   const [removal, setRemoval] = useState<Removal | null>(null);
   const [optionsFor, setOptionsFor] = useState<string | null>(null);
-  const { profiles } = useComposerPreferences();
   const rootRef = useRef<HTMLDivElement>(null);
   const folderTrigger = useRef<HTMLButtonElement>(null);
   const { data: ssh, error: hostsError } = useSsh();
@@ -628,35 +626,6 @@ export function NewTerminalMenu({
                   </div>
                 );
               })}
-              {profiles
-                .filter((profile) => launchers.includes(profile.agent))
-                .map((profile) => {
-                  const { icon: Icon } = terminalKind(profile.agent);
-                  const provider = providerSettings.data?.providers.find(
-                    (item) => item.id === profile.providerId && item.enabled,
-                  );
-                  return (
-                    <button
-                      key={profile.id}
-                      type="button"
-                      data-testid={`terminal-profile-${profile.id}`}
-                      disabled={busy}
-                      onClick={() =>
-                        void launch(
-                          profile.agent,
-                          provider?.id,
-                          profile.name,
-                          terminalProfileOptions(profile),
-                        )
-                      }
-                      className="w-full flex items-center gap-2 min-h-11 px-2 py-1.5 rounded-md font-label text-xs text-on-surface-variant hover:bg-surface hover:text-on-surface disabled:opacity-50"
-                    >
-                      <Icon size={14} />
-                      <span className="truncate">{profile.name}</span>
-                      <span className="ml-auto shrink-0">Profile</span>
-                    </button>
-                  );
-                })}
               {launchers.length === 0 && (
                 <p className="min-h-11 px-2 py-1 font-body text-base sm:text-sm text-on-surface-variant">
                   No launchers available

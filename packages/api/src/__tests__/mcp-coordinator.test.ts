@@ -196,6 +196,54 @@ describe("MCP coordinator identity", () => {
     }
   });
 
+  test("session_delete hides a stopped child without losing its transcript", async () => {
+    const client = await connect({ client: "cleanup-bot" });
+    const listed = async (args: Record<string, unknown> = {}) =>
+      (
+        (await call(client, "session_list", { scope: "children", ...args })).data
+          .sessions as SessionStatus[]
+      ).map((session) => session.session_id);
+
+    const finished = await call(client, "session_start", {
+      prompt: "Reply with exactly: cleanup child",
+    });
+    const finishedId = finished.data.session_id as string;
+    await call(client, "session_wait", { session_id: finishedId, timeout_s: 15 });
+    expect(await listed()).toContain(finishedId);
+
+    const hidden = await call(client, "session_delete", { session_id: finishedId });
+    expect(hidden.isError).toBe(false);
+    expect(hidden.data.hidden).toBe(true);
+    expect(await listed()).not.toContain(finishedId);
+    expect(await listed({ include_hidden: true })).toContain(finishedId);
+    // Hiding keeps the transcript readable by id.
+    expect((await call(client, "session_read", { id: finishedId })).text).toContain(
+      "cleanup child",
+    );
+    const restored = await call(client, "session_delete", {
+      session_id: finishedId,
+      restore: true,
+    });
+    expect(restored.data.hidden).toBe(false);
+    expect(await listed()).toContain(finishedId);
+
+    // A stopped child can be hidden the same way.
+    const held = await call(client, "session_start", { prompt: "hold after 8000ms" });
+    const heldId = held.data.session_id as string;
+    await statusUntil(client, heldId, "running");
+    await call(client, "session_stop", { session_id: heldId });
+    await statusUntil(client, heldId, "stopped");
+    expect((await call(client, "session_delete", { session_id: heldId })).data.hidden).toBe(true);
+    expect(await listed()).not.toContain(heldId);
+    expect(await listed({ include_hidden: true })).toContain(heldId);
+
+    // Only the session that started it (or an ancestor) may hide it.
+    const other = await connect({ client: "cleanup-other" });
+    const forbidden = await call(other, "session_delete", { session_id: finishedId });
+    expect(forbidden.isError).toBe(true);
+    expect(forbidden.text).toContain("Only a session or its ancestor");
+  });
+
   test("the coordinator is reused per client name, distinct across clients, and listed", async () => {
     const grok = await connect({ client: "grok-bot" });
     const first = await call(grok, "session_list");

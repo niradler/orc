@@ -150,7 +150,7 @@ test("@sanity should run a command with a picked saved project secret without ec
     await expect(card).not.toContainText(secretValue);
     await snap(page, "command-secret-result-desktop");
   } finally {
-    await apiDelete(request, `/projects/${project.id}`).catch(() => {});
+    await apiDelete(request, `/projects/${project.id}?ttl_days=0`).catch(() => {});
   }
 });
 

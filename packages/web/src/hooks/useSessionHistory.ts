@@ -310,7 +310,6 @@ export function useSessionHistory({
     search,
     projectScope,
     terminals,
-    !!home,
     activeProjects,
   );
   /** Display and filter by the coding agent, so Cursor CLI and Cursor IDE are one choice. */

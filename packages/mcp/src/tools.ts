@@ -82,10 +82,12 @@ import {
   type SkillRefContent,
 } from "@orc/core/skill-service";
 import { SkillUpdateSchema } from "@orc/core/skill-update";
+import { DEFAULT_TTL_DAYS, TtlDaysSchema, ttlDaysLeft } from "@orc/core/ttl";
 import type { TaskStatus } from "@orc/core/types";
 import { AgentBackendSchema, TaskLinkTypeSchema, TaskStatusSchema } from "@orc/core/types";
 import { AuditLog } from "@orc/db/audit";
 import { getDb, getSqlite } from "@orc/db/client";
+import { projectKbCount } from "@orc/db/kb";
 import { KbDigestStore } from "@orc/db/kb-digest";
 import {
   MEMORY_DESCRIPTION_MAX,
@@ -548,7 +550,7 @@ export const toolDefinitions = [
   {
     name: "session_list",
     description:
-      'List ORC chat sessions and discovered native coding-agent sessions (deduplicated, paginated). Defaults to scope "all" (filtered by connection default project if set; pass project "all" to see every project, or scope "children" for sessions this session started). Returns canonical session_id, source ("chat" | "native"), status, waiting_for, project_id, cwd, host, total, has_more, and next_offset.',
+      'List ORC chat sessions and discovered native coding-agent sessions (deduplicated, paginated). Defaults to scope "all" (filtered by connection default project if set; pass project "all" to see every project, or scope "children" for sessions this session started). Hidden sessions stay out unless include_hidden is true; use session_delete to hide a failed or stopped probe. Returns canonical session_id, source ("chat" | "native"), status, waiting_for, project_id, cwd, host, total, has_more, and next_offset.',
     inputSchema: sessionListToolSchema,
   },
   {
@@ -562,6 +564,24 @@ export const toolDefinitions = [
     description:
       "Inspect effective session defaults, configured execution hosts, provider accounts, composer profiles, and (when agent or include_models is set) discovered models, supported effort levels, and permission modes.",
     inputSchema: sessionOptionsToolSchema,
+  },
+  {
+    name: "session_delete",
+    description:
+      "Remove a failed, stopped or finished session you started from the default session_list. It hides the session instead of destroying it: the transcript stays readable with session_read, session_status still finds it by id, and restore true brings it back. Only the session that started it (or an ancestor) can delete it.",
+    inputSchema: z
+      .object({
+        session_id: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("Session id from session_start or session_list"),
+        restore: z
+          .boolean()
+          .default(false)
+          .describe("Bring a hidden session back into the default list"),
+      })
+      .strict(),
   },
   {
     name: "session_stop",
@@ -609,7 +629,8 @@ export const toolDefinitions = [
   {
     name: "memory_list",
     description:
-      "List this project's memories (name, description, priority, reads). Defaults to the 30 most read; " +
+      "List memories (name, description, priority, reads). Pass project to scope to one project; without " +
+      "it, lists every project you can access, grouped by project. Defaults to the 30 most read; " +
       "q searches name and description. Read one with memory_read. Memories are short project facts; " +
       "procedures and long guidance are skills.",
     inputSchema: z.object({
@@ -773,8 +794,15 @@ export const toolDefinitions = [
   },
   {
     name: "pad_delete",
-    description: "Delete a scratchpad. This cannot be undone.",
-    inputSchema: z.object({ id: z.string().min(1).max(64) }),
+    description:
+      "Delete a scratchpad safely: it stays readable and listed with its deadline, then is " +
+      "permanently removed after ttl_days (default 30). restore true cancels the deletion; " +
+      "ttl_days 0 removes it immediately and cannot be undone.",
+    inputSchema: z.object({
+      id: z.string().min(1).max(64),
+      ttl_days: TtlDaysSchema.describe("Days before permanent removal; 0 deletes immediately"),
+      restore: z.boolean().default(false).describe("Cancel a scheduled deletion"),
+    }),
   },
   {
     name: "task_list",
@@ -1025,7 +1053,7 @@ export const toolDefinitions = [
   {
     name: "project_list",
     description:
-      "List all projects. Returns name, status, id, scope, execution host and description for each.",
+      "List all projects. Returns name, status, id, scope, execution host, description and any scheduled deletion date for each.",
     inputSchema: z.object({
       status: z.enum(["active", "archived", "paused"]).optional(),
     }),
@@ -1073,6 +1101,30 @@ export const toolDefinitions = [
           'Optional execution host for this project: an SSH alias, "local", or null to inherit Settings default',
         ),
     }),
+  },
+  {
+    name: "project_delete",
+    description:
+      "Delete a project safely: it is archived now and permanently removed after ttl_days (default 30). " +
+      "Until then restore true cancels the deletion and reactivates it. ttl_days 0 removes it immediately and cannot be undone. " +
+      "At removal, tasks, jobs and sessions are kept but unassigned; memories, scratchpads, comments, project secrets and its workspace environment go with it. " +
+      "Knowledge bases and assigned skills must be deleted or reassigned first. " +
+      "Name the project explicitly: this tool never falls back to the active project.",
+    inputSchema: z
+      .object({
+        project: projectParam.describe(
+          "Project name to delete or restore; required (no activeProject fallback)",
+        ),
+        project_id: z.string().min(1).max(100).optional().describe("Explicit project id"),
+        ttl_days: TtlDaysSchema.describe(
+          "Days to keep the archived project restorable; 0 deletes it immediately",
+        ),
+        restore: z
+          .boolean()
+          .default(false)
+          .describe("Cancel a scheduled deletion and reactivate the project"),
+      })
+      .strict(),
   },
   {
     name: "skill_list",
@@ -1490,7 +1542,10 @@ function padProjectName(projectId: string | null): string {
 function formatPadLine(pad: ScratchpadListItem): string {
   const tags = pad.tags.length ? ` #${pad.tags.join(" #")}` : "";
   const updated = new Date(pad.updated_at * 1000).toISOString();
-  return `${pad.id} [${pad.kind}] ${pad.title} - rev ${pad.revision}, ${pad.size_bytes} B, project ${padProjectName(pad.project_id)}, updated ${updated} by ${pad.author}${tags}`;
+  const deletes = pad.delete_after
+    ? `, deletes ${new Date(pad.delete_after * 1000).toISOString().slice(0, 10)}`
+    : "";
+  return `${pad.id} [${pad.kind}] ${pad.title} - rev ${pad.revision}, ${pad.size_bytes} B, project ${padProjectName(pad.project_id)}, updated ${updated} by ${pad.author}${tags}${deletes}`;
 }
 
 function padHeader(pad: Scratchpad, options: ToolOptions): string {
@@ -1498,6 +1553,11 @@ function padHeader(pad: Scratchpad, options: ToolOptions): string {
     `# ${pad.title}`,
     `id: ${pad.id} | kind: ${pad.kind} | revision: ${pad.revision} | author: ${pad.author}`,
     `project: ${padProjectName(pad.project_id)} | session: ${pad.session_id ?? "none"} | tags: ${pad.tags.join(", ") || "none"}`,
+    ...(pad.delete_after
+      ? [
+          `deletes: ${new Date(pad.delete_after * 1000).toISOString().slice(0, 10)} (${ttlDaysLeft(pad.delete_after)} days left; pad_delete restore true cancels)`,
+        ]
+      : []),
     `link: ${padLink(pad.id, options)}`,
   ].join("\n");
 }
@@ -1515,11 +1575,39 @@ function padProject(project: string): string {
 /** Memories belong to a project; there is no global memory. */
 function memoryProject(project: string | undefined, options: ToolOptions): string {
   const resolved = resolveProjectId(project ?? options.projectScopes?.[0]?.name);
-  if (!resolved)
+  if (!resolved) {
+    const names = getSqlite()
+      .query<{ name: string }, []>(
+        "SELECT name FROM projects WHERE status != 'archived' ORDER BY name LIMIT 25",
+      )
+      .all()
+      .map((row) => row.name);
     throw new ValidationError(
-      "Memories belong to a project: pass project or set activeProject in ORC config",
+      names.length
+        ? `Memories belong to a project: pass project (available: ${names.join(", ")}) or set activeProject in ORC config. project_list shows each id.`
+        : "Memories belong to a project: no projects exist yet, so create one with project_create or pass project once it exists.",
     );
+  }
   return resolved.id;
+}
+
+/** Linked resources a project delete would detach or destroy, for the safety gate. */
+function projectResourceCounts(projectId: string) {
+  const sqlite = getSqlite();
+  const count = (sql: string) => sqlite.query<{ n: number }, [string]>(sql).get(projectId)?.n ?? 0;
+  return {
+    task: count("SELECT count(*) AS n FROM tasks WHERE project_id=?"),
+    session:
+      count("SELECT count(*) AS n FROM gateway_sessions WHERE project_id=?") +
+      count(
+        "SELECT count(*) AS n FROM chat_threads WHERE json_valid(data) AND json_extract(data, '$.projectId')=?",
+      ),
+    memory: count("SELECT count(*) AS n FROM memories WHERE project_id=?"),
+    job: count("SELECT count(*) AS n FROM jobs WHERE project_id=?"),
+    pad: count("SELECT count(*) AS n FROM scratchpads WHERE project_id=?"),
+    "knowledge base": projectKbCount(sqlite, projectId),
+    skill: count("SELECT count(*) AS n FROM skill_projects WHERE project_id=?"),
+  };
 }
 
 function formatMemoryLine(memory: MemoryListItem): string {
@@ -2071,6 +2159,7 @@ async function runTool(
     name === "session_start" ||
     name === "session_status" ||
     name === "session_wait" ||
+    name === "session_delete" ||
     name === "session_stop"
   ) {
     if (!options.agentSessionId && name !== "session_status") {
@@ -2131,6 +2220,19 @@ async function runTool(
       );
       return current;
     };
+    if (name === "session_delete") {
+      const input = z
+        .object({ session_id: z.string().min(1).max(200), restore: z.boolean().default(false) })
+        .strict()
+        .parse(args);
+      await scoped(input.session_id);
+      return JSON.stringify(
+        await orcApi("PATCH", `/sessions/live/${encodeURIComponent(input.session_id)}`, {
+          body: { hidden: !input.restore },
+          ...(headers ? { headers } : {}),
+        }),
+      );
+    }
     if (name === "session_wait") {
       const input = SessionWaitSchema.extend({
         session_id: z.string().min(1).max(200).optional(),
@@ -2282,10 +2384,27 @@ async function runTool(
         limit?: number;
         project?: string;
       };
-      const projectIds = selectedProjectIds(project, options) ?? [memoryProject(project, options)];
-      const matched = new MemoryStore(getSqlite(db)).list(projectIds, { q, sort });
+      // A project-less caller (for example an external coordinator with no
+      // activeProject) gets every memory it can already access, grouped by
+      // project, instead of the dead-end "pass project" error.
+      // A connection scoped to several projects keeps that scope (the server also
+      // fills project with the first one); otherwise project is authoritative.
+      const projectIds =
+        project !== undefined
+          ? [memoryProject(project, options)]
+          : options.projectScopes
+            ? options.projectScopes.map((item) => item.id)
+            : undefined;
+      const matched = new MemoryStore(getSqlite(db)).list(projectIds ?? null, { q, sort });
       const shown = matched.slice(0, limit ?? MEMORY_LIST_LIMIT);
       setData?.({ memories: shown, total: matched.length });
+      const projectNames = new Map(
+        getSqlite(db)
+          .query<{ id: string; name: string }, []>("SELECT id, name FROM projects")
+          .all()
+          .map((row) => [row.id, row.name]),
+      );
+      const groupByProject = !projectIds || projectIds.length > 1;
       const more =
         matched.length > shown.length
           ? [`Showing ${shown.length} of ${matched.length}; use q to search or raise limit.`]
@@ -2293,10 +2412,9 @@ async function runTool(
       return [
         shown
           .map((memory) => {
-            const label =
-              projectIds.length > 1
-                ? ` [project: ${options.projectScopes?.find((p) => p.id === memory.project_id)?.name ?? memory.project_id}]`
-                : "";
+            const label = groupByProject
+              ? ` [project: ${projectNames.get(memory.project_id) ?? memory.project_id}]`
+              : "";
             return `${formatMemoryLine(memory)}${label}`;
           })
           .join("\n") || "No memories found.",
@@ -2512,11 +2630,21 @@ async function runTool(
     }
 
     case "pad_delete": {
-      const { id } = args as { id: string };
+      const { id, ttl_days, restore } = args as {
+        id: string;
+        ttl_days?: number;
+        restore?: boolean;
+      };
       const store = new ScratchpadStore(getSqlite(db));
       padById(store, id);
-      store.remove(id);
-      return `Deleted scratchpad ${id}`;
+      if (restore) {
+        store.restore(id);
+        return `Restored scratchpad ${id}; active with no scheduled deletion`;
+      }
+      const deleted = store.delete(id, ttl_days ?? DEFAULT_TTL_DAYS);
+      if (!deleted) return `Deleted scratchpad ${id}`;
+      const until = new Date((deleted.delete_after ?? 0) * 1000).toISOString().slice(0, 10);
+      return `Scheduled deletion of scratchpad ${id} in ${ttlDaysLeft(deleted.delete_after ?? 0)} days (${until}); pad_list shows it until then. pad_delete restore true cancels.`;
     }
 
     case "task_list": {
@@ -3126,14 +3254,18 @@ async function runTool(
           tags: p.tags,
           scope: p.scope ?? null,
           host: p.host ?? null,
+          delete_after: p.delete_after?.toISOString() ?? null,
         })),
       });
       if (rows.length === 0) return "No projects found.";
       return rows
         .map((p) => {
           const hostTag = p.host ? ` [host: ${p.host}]` : "";
+          const deletes = p.delete_after
+            ? ` [deletes: ${p.delete_after.toISOString().slice(0, 10)}]`
+            : "";
           const desc = p.description ? `  ${p.description.slice(0, 60)}` : "";
-          return `${p.name.padEnd(24)} ${p.status} [id: ${p.id}]${hostTag}${desc}`;
+          return `${p.name.padEnd(24)} ${p.status} [id: ${p.id}]${hostTag}${deletes}${desc}`;
         })
         .join("\n");
     }
@@ -3197,6 +3329,61 @@ async function runTool(
         options.publicApiBaseUrl ?? orcApiBase(),
       ).toString();
       return `Created project ${name} [id: ${id}]\nlink: ${link}`;
+    }
+
+    case "project_delete": {
+      const input = args as {
+        project?: string;
+        project_id?: string;
+        ttl_days?: number;
+        restore?: boolean;
+      };
+      if (!input.project_id && !input.project)
+        throw new ValidationError(
+          "Pass project (name) or project_id; project_delete never uses the active project implicitly",
+        );
+      const id = input.project_id ?? resolveProjectId(input.project)?.id;
+      if (!id) throw new ValidationError("Pass project (name) or project_id");
+      const row = getSqlite()
+        .query<{ id: string; name: string; status: string }, [string]>(
+          "SELECT id, name, status FROM projects WHERE id=?",
+        )
+        .get(id);
+      if (!row) throw new NotFoundError("Project", id);
+      const link = new URL(
+        `/tasks?project=${encodeURIComponent(row.name)}`,
+        options.publicApiBaseUrl ?? orcApiBase(),
+      ).toString();
+      if (input.restore) {
+        await orcApi("POST", `/projects/${encodeURIComponent(id)}/restore`);
+        options.projectsChanged?.();
+        return `${
+          row.status === "archived" ? "Restored" : "Kept"
+        } project ${row.name} [id: ${id}]; active with no scheduled deletion\nlink: ${link}`;
+      }
+      const ttlDays = input.ttl_days ?? DEFAULT_TTL_DAYS;
+      const resources = projectResourceCounts(id);
+      const linked = Object.entries(resources).filter(([, n]) => n > 0) as [string, number][];
+      const describe = linked.map(([kind, n]) => `${n} ${kind}${n === 1 ? "" : "s"}`).join(", ");
+      if (ttlDays === 0) {
+        await orcApi("DELETE", `/projects/${encodeURIComponent(id)}?ttl_days=0`);
+        options.projectsChanged?.();
+        return `Deleted project ${row.name} [id: ${id}]${
+          linked.length ? `; removed or detached ${describe}` : ""
+        }`;
+      }
+      const scheduled = (await orcApi(
+        "DELETE",
+        `/projects/${encodeURIComponent(id)}?ttl_days=${ttlDays}`,
+      )) as { delete_after?: string } | null;
+      options.projectsChanged?.();
+      const until = scheduled?.delete_after ? new Date(scheduled.delete_after) : null;
+      return (
+        `Scheduled deletion of project ${row.name} [id: ${id}] in ${ttlDays} days` +
+        `${until ? ` (${until.toISOString().slice(0, 10)})` : ""}; it is archived now.` +
+        `${linked.length ? ` Kept until then: ${describe}.` : ""} ` +
+        `Use project_delete restore true to cancel.\nlink: ${link}`
+      );
     }
 
     case "task_batch_create": {

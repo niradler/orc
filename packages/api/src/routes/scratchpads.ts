@@ -11,6 +11,7 @@ import {
   ScratchpadUpdateSchema,
   scratchpadFilename,
 } from "@orc/core/scratchpad";
+import { TtlDaysSchema } from "@orc/core/ttl";
 import { getSqlite } from "@orc/db/client";
 import { ScratchpadStore } from "@orc/db/scratchpads";
 import type { Context } from "hono";
@@ -163,17 +164,44 @@ app.openapi(
     method: "delete",
     path: "/scratchpads/{id}",
     tags: ["Scratchpads"],
-    summary: "Delete a scratchpad",
-    request: { params: IdParam },
+    summary: "Delete a scratchpad (archive now, purge after ttl_days)",
+    description:
+      "Deleting keeps the pad readable and listed with its deadline, then permanently removes it " +
+      "after ttl_days (default 30). Restore before then with POST /scratchpads/{id}/restore. " +
+      "ttl_days=0 removes it immediately.",
+    request: {
+      params: IdParam,
+      query: z.object({ ttl_days: TtlDaysSchema }),
+    },
     responses: {
-      204: { description: "Deleted" },
+      202: {
+        description: "Archived; permanent deletion is scheduled",
+        content: { "application/json": { schema: Pad } },
+      },
+      204: { description: "Deleted immediately (ttl_days=0)" },
       404: { description: "Scratchpad not found" },
     },
   }),
   (c) => {
-    store().remove(c.req.valid("param").id);
-    return c.body(null, 204);
+    const { id } = c.req.valid("param");
+    const pad = store().delete(id, c.req.valid("query").ttl_days);
+    return pad ? c.json(pad, 202) : c.body(null, 204);
   },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/scratchpads/{id}/restore",
+    tags: ["Scratchpads"],
+    summary: "Restore a scratchpad whose deletion was scheduled",
+    request: { params: IdParam },
+    responses: {
+      200: { description: "Restored", content: { "application/json": { schema: Pad } } },
+      404: { description: "Scratchpad not found" },
+    },
+  }),
+  (c) => c.json(store().restore(c.req.valid("param").id)),
 );
 
 app.openapi(

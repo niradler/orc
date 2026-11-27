@@ -240,6 +240,6 @@ test("@sanity should answer multi-field secret requests without echoing values a
     await page.getByTestId("confirm-dialog-confirm").click();
     await expect(page.getByTestId("project-secret-row-stripe-webhook-secret")).toHaveCount(0);
   } finally {
-    await apiDelete(request, `/projects/${project.id}`).catch(() => {});
+    await apiDelete(request, `/projects/${project.id}?ttl_days=0`).catch(() => {});
   }
 });

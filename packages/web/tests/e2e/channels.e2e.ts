@@ -268,7 +268,7 @@ for (const width of [1440, 390]) {
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
       expect(failures).toEqual([]);
     } finally {
-      await apiDelete(request, `/projects/${project.id}`);
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`);
     }
   });
 }
@@ -408,7 +408,7 @@ for (const width of [1440, 390]) {
       expect(failures).toEqual([]);
     } finally {
       await apiDelete(request, `/channels/${id}`).catch(() => {});
-      await apiDelete(request, `/projects/${project.id}`).catch(() => {});
+      await apiDelete(request, `/projects/${project.id}?ttl_days=0`).catch(() => {});
     }
   });
 }

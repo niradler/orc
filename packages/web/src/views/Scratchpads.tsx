@@ -4,6 +4,7 @@ import {
   type ScratchpadKind,
   scratchpadFilename,
 } from "@orc/core/scratchpad";
+import { ttlDaysLeft } from "@orc/core/ttl";
 import {
   ArrowLeft,
   Check,
@@ -12,6 +13,7 @@ import {
   Maximize2,
   Minimize2,
   Plus,
+  RotateCcw,
   Search,
   Settings2,
   Trash2,
@@ -45,7 +47,12 @@ import {
 import { ViewHeader } from "@/components/ViewHeader";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
 import { useProjects } from "@/hooks/useProjects";
-import { useDeleteScratchpad, useScratchpad, useScratchpads } from "@/hooks/useScratchpads";
+import {
+  useDeleteScratchpad,
+  useRestoreScratchpad,
+  useScratchpad,
+  useScratchpads,
+} from "@/hooks/useScratchpads";
 import { formatWhen } from "@/lib/live-sessions";
 import { saveFile } from "@/lib/save-file";
 import { KIND_META } from "@/lib/scratchpad-kinds";
@@ -286,6 +293,11 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
                           {pad.tags.map((t) => `#${t}`).join(" ")}
                         </span>
                       )}
+                      {pad.delete_after && (
+                        <span className="ml-2 font-label text-xs text-destructive">
+                          deletes in {ttlDaysLeft(pad.delete_after)} days
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <KindLabel kind={pad.kind} />
@@ -333,6 +345,11 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
                     {pad.tags.length > 0 && (
                       <span>{pad.tags.map((tag) => `#${tag}`).join(" ")}</span>
                     )}
+                    {pad.delete_after && (
+                      <span className="text-destructive">
+                        deletes in {ttlDaysLeft(pad.delete_after)} days
+                      </span>
+                    )}
                   </div>
                 </Link>
               ))}
@@ -362,6 +379,7 @@ function ScratchpadPage({ id }: { id: string }) {
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
   const [fullscreen, setFullscreen] = useState(false);
   const remove = useDeleteScratchpad();
+  const restore = useRestoreScratchpad();
   const back = `${SCRATCHPADS_PATH}${location.search}`;
 
   useEffect(() => {
@@ -444,6 +462,11 @@ function ScratchpadPage({ id }: { id: string }) {
               </span>
             )}
             {pad.tags.length > 0 && <span>{pad.tags.map((t) => `#${t}`).join(" ")}</span>}
+            {pad.delete_after && (
+              <span data-testid="scratchpad-deletes" className="text-destructive">
+                deletes in {ttlDaysLeft(pad.delete_after)} days
+              </span>
+            )}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -490,14 +513,26 @@ function ScratchpadPage({ id }: { id: string }) {
           >
             <Settings2 size={12} className="mr-1" /> Properties
           </Button>
-          <Button
-            data-testid="scratchpad-delete"
-            size="sm"
-            variant="outline"
-            onClick={() => setDeleting(true)}
-          >
-            <Trash2 size={12} className="mr-1" /> Delete
-          </Button>
+          {pad.delete_after ? (
+            <Button
+              data-testid="scratchpad-restore"
+              size="sm"
+              variant="outline"
+              disabled={restore.isPending}
+              onClick={() => restore.mutate(pad.id)}
+            >
+              <RotateCcw size={12} className="mr-1" /> Restore
+            </Button>
+          ) : (
+            <Button
+              data-testid="scratchpad-delete"
+              size="sm"
+              variant="outline"
+              onClick={() => setDeleting(true)}
+            >
+              <Trash2 size={12} className="mr-1" /> Delete
+            </Button>
+          )}
         </div>
       </div>
       {copy === "failed" && (
@@ -539,24 +574,27 @@ function ScratchpadPage({ id }: { id: string }) {
         <ConfirmDialog
           open
           title="Delete scratchpad"
-          description={`Delete "${pad.title}"? This cannot be undone.`}
+          description={`Delete "${pad.title}"? It stays readable and is permanently removed after 30 days; restore it before then.`}
           confirmLabel="Delete"
           variant="destructive"
           isPending={remove.isPending}
           onConfirm={() =>
-            remove.mutate(pad.id, {
-              onSuccess: () => {
-                setDeleting(false);
-                navigate(back);
+            remove.mutate(
+              { id: pad.id },
+              {
+                onSuccess: () => {
+                  setDeleting(false);
+                  navigate(back);
+                },
               },
-            })
+            )
           }
           onCancel={() => setDeleting(false)}
         />
       )}
-      {remove.error && (
+      {(remove.error || restore.error) && (
         <p role="alert" className="mt-2 text-sm text-destructive">
-          {remove.error.message}
+          {(remove.error ?? restore.error)?.message}
         </p>
       )}
     </div>

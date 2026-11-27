@@ -415,7 +415,7 @@ Browser terminals for shells and coding agents, with split panes and Files and G
 
 ## Projects
 
-Create, edit and archive projects. A project has a name, description, tags and an optional Git remote URL. Deleting a project deletes its memories and scratchpads and keeps its tasks, jobs and sessions without a project.
+Create, edit and archive projects. A project has a name, description, tags and an optional Git remote URL. Deleting a project archives it and permanently removes it after 30 days; set its status back to active before then to restore it. Its memories, scratchpads, comments and secrets are deleted with it, while its tasks, jobs and sessions are kept without a project.
 
 ## Memories
 
@@ -559,6 +559,8 @@ Applied rules and their outcomes per workspace, plus rule settings for enforceme
 
 Working documents, diagrams and HTML pages that you or an agent create and come back to. Agents use the `pad_*` MCP tools. Share one by copying its link.
 
+Deleting a scratchpad is recoverable: it stays readable and listed with a **deletes in N days** marker, and is permanently removed after 30 days. Use **Restore** before then. This is the same archive-then-purge lifecycle as project deletion.
+
 HTML pads receive the **ORC HTML kit** in both the editor preview and chat artifacts:
 dashboard theme tokens, base styles, cards, tables, stats, badges, tabs and chart
 wrappers. Use `orc-*` classes to build a native-looking page without a custom
@@ -662,7 +664,8 @@ effort and permission mode under a name (**Save current**). Clicking a profile
 restores all of them; in a started chat, a profile for another agent or provider
 opens a new chat. The pencil beside a profile renames it in place; tick **Use current**
 to also replace its agent, provider, model, effort and mode with the composer's current ones. Profiles are saved in workspace preferences
-(`composer_profiles`) and also appear in the **New terminal** launcher.
+(`composer_profiles`) and belong to the chat composer; the terminal launcher uses its
+own model, effort and mode controls.
 
 ## Chat turn progress
 

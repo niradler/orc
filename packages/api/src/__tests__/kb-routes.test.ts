@@ -117,7 +117,7 @@ describe("/api/kb", () => {
       sqlite.run("INSERT INTO knowledge_collections (name, project_id) VALUES ('old', ?)", [
         project.id,
       ]);
-      expect((await req(app, "DELETE", `/projects/${project.id}`)).status).toBe(204);
+      expect((await req(app, "DELETE", `/projects/${project.id}?ttl_days=0`)).status).toBe(204);
       expect(sqlite.query("SELECT name, project_id FROM knowledge_collections").all()).toEqual([
         { name: "old", project_id: null },
       ]);
@@ -365,6 +365,6 @@ describe("/api/kb", () => {
     expect((await call("DELETE", `/kb/bases/${kbId}`)).status).toBe(204);
     expect((await call("DELETE", `/kb/bases/${learnId}`)).status).toBe(204);
     expect(existsSync(join(home, "knowledge", "bases", kbId))).toBe(false);
-    expect((await req(app, "DELETE", `/projects/${projectId}`)).status).toBe(204);
+    expect((await req(app, "DELETE", `/projects/${projectId}?ttl_days=0`)).status).toBe(204);
   });
 });

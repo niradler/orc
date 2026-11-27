@@ -366,17 +366,36 @@ export function projectCommand() {
     });
 
   cmd
-    .command("delete <name>")
-    .description("Delete a project")
+    .command("restore <name>")
+    .description("Restore an archived project and cancel its scheduled deletion")
     .action(async (name: string) => {
       const client = createOrcClient();
       const { data: project, error: findErr } = await client.projects.getByName(name);
       if (findErr || !project) return console.error(`Project not found: ${name}`);
 
-      const { error } = await client.projects.delete(project.id);
+      const { data, error } = await client.projects.restore(project.id);
       if (error) return console.error("Error:", error);
-      if (isJson()) return jsonOut({ deleted: project.id, name });
-      console.log(`Deleted project: ${name} [${shortId(project.id)}]`);
+      if (isJson()) return jsonOut(data);
+      console.log(`Restored: ${data?.name} [${shortId(data?.id)}]`);
+    });
+
+  cmd
+    .command("delete <name>")
+    .description("Archive a project and schedule its permanent deletion (30 days by default)")
+    .option("--now", "Delete permanently now instead of scheduling it")
+    .action(async (name: string, opts: { now?: boolean }) => {
+      const client = createOrcClient();
+      const { data: project, error: findErr } = await client.projects.getByName(name);
+      if (findErr || !project) return console.error(`Project not found: ${name}`);
+
+      const { data, error } = await client.projects.delete(project.id, opts.now ? 0 : 30);
+      if (error) return console.error("Error:", error);
+      if (isJson()) return jsonOut(opts.now ? { deleted: project.id, name } : data);
+      if (opts.now) return console.log(`Deleted project: ${name} [${shortId(project.id)}]`);
+      console.log(
+        `Scheduled deletion of ${name} [${shortId(project.id)}] in 30 days; ` +
+          `restore with: orc project update ${name} --status active`,
+      );
     });
 
   return cmd;

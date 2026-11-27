@@ -60,12 +60,15 @@ const writable: ReadonlySet<ToolName> = new Set<ToolName>([
   "task_update",
   "task_batch_create",
   "task_link",
+  "project_delete",
   "memory_create",
   "memory_update",
   "pad_create",
   "pad_update",
+  "pad_delete",
   "session_send",
   "session_update",
+  "session_delete",
   "spec_invoke",
 ]);
 
@@ -103,6 +106,10 @@ const outputSchema = z.object({
   result: z.json(),
   logs: z.array(z.string()),
   truncated: z.boolean(),
+  message: z.string().optional().describe("Why a truncated result was dropped"),
+  result_chars: z.number().int().optional().describe("Size of the dropped result"),
+  limit_chars: z.number().int().optional().describe("The result size limit"),
+  preview: z.string().optional().describe("Bounded start of the dropped result"),
 });
 
 export const codeToolListing = {
@@ -122,7 +129,8 @@ export const codeToolListing = {
     "Executions are fresh and can commit writes before failing. Avoid automatic retries of writes. " +
     "await tools.elicit(message, requestedSchema) asks the user a non-secret form question and " +
     "returns { action, content } where action is accept, decline or cancel; handle decline/cancel explicitly. " +
-    "Only the JSON return value and bounded console logs are returned.",
+    "Only the JSON return value and bounded console logs are returned; a return value over " +
+    `${CODE_LIMITS.resultChars} characters is dropped and reported with its size, the limit and a preview, so summarize inside the script instead.`,
   inputSchema: z.toJSONSchema(inputSchema, { target: "draft-7", io: "input" }),
   outputSchema: z.toJSONSchema(outputSchema, { target: "draft-7" }),
   annotations: {

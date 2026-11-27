@@ -637,7 +637,9 @@ describe("native session handoff", () => {
     const handoff = await create("claude", { project: "handoff-deleted-project" });
     const ready = await handoffResponse(await upload(handoff.upload_url, bundle()));
     expect(ready.status).toBe("ready");
-    expect((await req(app, "DELETE", "/projects/handoff-deleted-project")).status).toBe(204);
+    expect((await req(app, "DELETE", "/projects/handoff-deleted-project?ttl_days=0")).status).toBe(
+      204,
+    );
     const retained = await service.get(handoff.id);
     expect(retained.project_id).toBeNull();
     expect(retained.live_session_id).toBe(ready.live_session_id);

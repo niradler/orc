@@ -645,7 +645,15 @@ export function createOrcClient(options?: OrcClientOptions) {
       update: (id: string, input: ScratchpadUpdate) =>
         c<Scratchpad>("PATCH", `/scratchpads/${encodeURIComponent(id)}`, input),
 
-      delete: (id: string) => c<null>("DELETE", `/scratchpads/${encodeURIComponent(id)}`),
+      // Archives the pad and schedules permanent removal; ttlDays 0 deletes now.
+      delete: (id: string, ttlDays = 30) =>
+        c<Scratchpad | null>(
+          "DELETE",
+          `/scratchpads/${encodeURIComponent(id)}?ttl_days=${ttlDays}`,
+        ),
+
+      restore: (id: string) =>
+        c<Scratchpad>("POST", `/scratchpads/${encodeURIComponent(id)}/restore`),
 
       contentUrl: (
         id: string,
@@ -925,7 +933,11 @@ export function createOrcClient(options?: OrcClientOptions) {
       update: (id: string, input: UpdateProjectInput) =>
         c<Project>("PATCH", `/projects/${id}`, input),
 
-      delete: (id: string) => c<null>("DELETE", `/projects/${id}`),
+      // Archives immediately and schedules permanent deletion; ttlDays 0 deletes now.
+      delete: (id: string, ttlDays = 30) =>
+        c<Project | null>("DELETE", `/projects/${id}?ttl_days=${ttlDays}`),
+
+      restore: (id: string) => c<Project>("POST", `/projects/${id}/restore`),
 
       addComment: (id: string, content: string, author = "human") =>
         c<{

@@ -30,11 +30,25 @@ afterAll(() => {
 const store = () => new MemoryStore(getSqlite());
 
 describe("MCP memory tools", () => {
-  test("should require a project", async () => {
-    await expect(executeTool("memory_list", {})).rejects.toThrow("Memories belong to a project");
+  test("lists across projects without one, but writes still require a project", async () => {
+    // A project-less caller gets every accessible memory instead of a dead end.
+    expect(await executeTool("memory_list", {})).toBe("No memories found.");
     await expect(
       executeTool("memory_create", { name: "no-project", description: "d", content: "c" }),
     ).rejects.toThrow("Memories belong to a project");
+  });
+
+  test("an explicit project wins over the connection's scoped projects", async () => {
+    await executeTool("memory_create", {
+      name: "beta-memory",
+      description: "d",
+      content: "c",
+      project: "mem-b",
+    });
+    const scoped = { projectScopes: [{ id: "scope-a", name: "scope-a" }] };
+    expect(await executeTool("memory_list", {}, scoped)).not.toContain("beta-memory");
+    expect(await executeTool("memory_list", { project: "mem-b" }, scoped)).toContain("beta-memory");
+    await executeTool("memory_delete", { name: "beta-memory", project: "mem-b" });
   });
 
   test("should create, read and list a memory, counting mcp reads", async () => {
