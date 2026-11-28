@@ -20,6 +20,11 @@ test("Knowledge has two canonical destinations and knowledge-base state is share
       /\/knowledge\/base/,
     );
     await expect(page.getByTestId("nav-memories")).toHaveAttribute("href", /\/knowledge\/memories/);
+    // Choosing a workspace section gives the page the room: the app rail folds to icons.
+    await page.getByTestId("nav-knowledge").click();
+    await expect(
+      page.getByTestId("workspace-sidebar").getByRole("button", { name: "Expand sidebar" }),
+    ).toBeVisible();
     await page.getByTestId("section-knowledge").click();
     await expect(page.getByTestId("view-title")).toHaveText("Knowledge bases");
     await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();

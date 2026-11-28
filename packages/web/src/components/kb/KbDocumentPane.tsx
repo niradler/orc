@@ -140,6 +140,7 @@ export function KbDocumentPane({
   const invalidate = useInvalidateKb();
   const [params] = useSearchParams();
   const editorMode = params.get("editorMode");
+  const writing = editorMode === "edit" || editorMode === "split";
   const openComments = useKbComments(doc.kb_id, { document_id: doc.id }).data?.counts.open ?? 0;
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -236,7 +237,13 @@ export function KbDocumentPane({
         data-testid="kb-document"
         className="min-w-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
       >
-        <div className="mx-auto w-full min-w-0 max-w-[68ch] px-4 pb-16 pt-4 text-[16px] leading-[1.65] sm:px-6 sm:pt-6">
+        <div
+          className={cn(
+            "w-full min-w-0 px-4 pb-16 pt-4 text-[16px] leading-[1.65] sm:px-6 sm:pt-6",
+            // Reading keeps the 68ch measure; writing uses the pane so long code and tables fit.
+            writing ? "" : "mx-auto max-w-[68ch]",
+          )}
+        >
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <nav
               aria-label="Breadcrumb"
@@ -501,7 +508,9 @@ export function KbDocumentPane({
           />
         </div>
       </article>
-      {detailsOpen && wide && <DocumentDetails doc={doc} onOpen={onOpen} />}
+      {detailsOpen && wide && (
+        <DocumentDetails doc={doc} openComments={openComments} onOpen={onOpen} />
+      )}
       {!wide && (
         <Sheet open={detailsOpen} onOpenChange={onDetailsOpenChange}>
           <SheetContent defaultWidth={360} resizeKey="kb-properties" aria-describedby={undefined}>
@@ -511,6 +520,7 @@ export function KbDocumentPane({
             <SheetBody className="p-0 sm:p-0">
               <DocumentDetails
                 doc={doc}
+                openComments={openComments}
                 onOpen={(id, heading) => {
                   onDetailsOpenChange(false);
                   onOpen(id, heading);
@@ -561,7 +571,7 @@ export function KbDocumentPane({
 function DetailsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-1.5">
-      <h2 className="text-sm font-medium text-outline">{title}</h2>
+      <h2 className="text-[11px] font-medium uppercase tracking-wide text-outline">{title}</h2>
       {children}
     </section>
   );
@@ -570,9 +580,11 @@ function DetailsSection({ title, children }: { title: string; children: ReactNod
 /** Navigation and conversation around the document; bookkeeping stays folded away. */
 function DocumentDetails({
   doc,
+  openComments,
   onOpen,
 }: {
   doc: KbDocumentWithContent;
+  openComments: number;
   onOpen: (documentId: string, heading?: string) => void;
 }) {
   const usage = useKbDocumentUsage(doc.id);
@@ -582,8 +594,40 @@ function DocumentDetails({
     <aside
       data-testid="kb-document-details"
       aria-label="Document details"
-      className="w-full shrink-0 space-y-6 p-4 text-sm lg:min-h-0 lg:w-[264px] lg:overflow-y-auto lg:border-l lg:border-outline-variant"
+      className="w-full shrink-0 space-y-5 p-4 text-sm lg:min-h-0 lg:w-[300px] lg:overflow-y-auto lg:border-l lg:border-outline-variant"
     >
+      <div className="space-y-1.5 border-b border-outline-variant pb-3">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-outline">Document</p>
+        <p className="wrap-break-word text-sm font-medium">{doc.title}</p>
+        <p className="truncate font-mono text-[11px] text-outline" title={doc.path}>
+          {doc.path}
+        </p>
+        <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px]">
+          <span className="rounded-full bg-surface px-2 py-0.5 text-outline">
+            Revision {doc.revision}
+          </span>
+          <span
+            className={cn(
+              "rounded-full border px-2 py-0.5",
+              doc.properties.verified
+                ? "border-secondary/40 text-secondary"
+                : "border-outline-variant text-outline",
+            )}
+          >
+            {doc.properties.verified ? "Verified" : "Not verified"}
+          </span>
+          {doc.stale && (
+            <span className="rounded-full border border-warning/40 px-2 py-0.5 text-warning">
+              Stale
+            </span>
+          )}
+          {openComments > 0 && (
+            <span className="rounded-full border border-warning/40 px-2 py-0.5 text-warning">
+              {openComments} open {openComments === 1 ? "comment" : "comments"}
+            </span>
+          )}
+        </div>
+      </div>
       {doc.outline.length > 0 && (
         <DetailsSection title="On this page">
           <nav aria-label="Outline" className="space-y-0.5">

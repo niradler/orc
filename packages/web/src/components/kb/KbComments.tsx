@@ -20,6 +20,34 @@ function StatusDot({ status }: { status: KbCommentStatus }) {
   return <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", STATUS_DOT[status])} />;
 }
 
+function StatusPill({ status }: { status: KbCommentStatus }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        status === "open" && "border-warning/40 text-warning",
+        status === "resolved" && "border-secondary/40 text-secondary",
+        status === "dismissed" && "border-outline-variant text-outline",
+      )}
+    >
+      <StatusDot status={status} />
+      {status}
+    </span>
+  );
+}
+
+/** A compact author mark keeps comment threads scannable without avatars to fetch. */
+function initials(name: string): string {
+  return (
+    name
+      .split(/[\s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase() ?? "")
+      .join("") || "?"
+  );
+}
+
 /**
  * Comments on a knowledge base, or on one document when `documentId` is set. Collapsed to a
  * row with a count per status; a count opens the list filtered to that status. Closing a
@@ -200,113 +228,126 @@ function CommentRow({
   }
 
   return (
-    <li data-testid="kb-comment" data-status={c.status} className="min-w-0 space-y-1 py-2">
-      <p className="flex min-w-0 flex-wrap items-center gap-x-2 text-xs text-outline">
-        <span className="inline-flex items-center gap-1.5 text-on-surface">
-          <StatusDot status={c.status} />
-          <span data-testid="kb-comment-status">{c.status}</span>
-        </span>
-        <span className="min-w-0 wrap-break-word">
-          {/* The source only adds information when it differs from the author, e.g. "ui". */}
-          {c.source === c.author ? c.author : `${c.author} via ${c.source}`} ·{" "}
-          {new Date(c.created_at).toLocaleString()}
-          {showDocument && c.document_id && (
-            <>
-              {" · on "}
-              {onOpenDocument ? (
-                <button
-                  type="button"
-                  className="text-primary hover:underline"
-                  onClick={() => c.document_id && onOpenDocument(c.document_id)}
-                >
-                  {c.document_title ?? "a deleted document"}
-                </button>
-              ) : (
-                (c.document_title ?? "a deleted document")
-              )}
-            </>
-          )}
-        </span>
-      </p>
-      <p className="whitespace-pre-wrap wrap-break-word">{c.body}</p>
-      {c.reply && (
-        <p className="wrap-break-word text-xs" data-testid="kb-comment-reply-text">
-          <span className="text-outline">
-            {c.status === "dismissed" ? "Dismissed" : "Resolved"}
-            {c.resolved_by ? ` by ${c.resolved_by}` : ""}:
-          </span>{" "}
-          {c.reply}
-        </p>
-      )}
-      {closing ? (
-        <form onSubmit={close} className="flex flex-wrap items-center gap-2">
-          <Input
-            aria-label={closing === "resolved" ? "Resolution reply" : "Reason for dismissing"}
-            placeholder={closing === "resolved" ? "What changed" : "Why not"}
-            data-testid="kb-comment-reply"
-            value={reply}
-            onChange={(e) => setReply(e.target.value)}
-            maxLength={4000}
-            autoFocus
-            className="min-w-0 flex-1 basis-48"
-          />
-          <Button
-            type="submit"
-            size="sm"
-            data-testid="kb-comment-close-submit"
-            disabled={!reply.trim() || action.pending}
-          >
-            {closing === "resolved" ? "Resolve" : "Dismiss"}
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setClosing(null);
-              setReply("");
-              action.setError(null);
-            }}
-          >
-            Cancel
-          </Button>
-        </form>
-      ) : c.status === "open" ? (
-        <div className="-ml-2 flex flex-wrap">
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="kb-comment-resolve"
-            onClick={() => setClosing("resolved")}
-          >
-            Resolve
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            data-testid="kb-comment-dismiss"
-            onClick={() => setClosing("dismissed")}
-          >
-            Dismiss
-          </Button>
-        </div>
-      ) : (
-        <Button
-          size="sm"
-          variant="ghost"
-          className="-ml-2"
-          data-testid="kb-comment-reopen"
-          onClick={reopen}
-          disabled={action.pending}
+    <li
+      data-testid="kb-comment"
+      data-status={c.status}
+      className="min-w-0 rounded-lg border border-outline-variant bg-surface p-3"
+    >
+      <div className="flex min-w-0 items-start gap-2.5">
+        <span
+          aria-hidden
+          className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-highest text-[10px] font-medium text-outline"
         >
-          Reopen
-        </Button>
-      )}
-      {action.error && (
-        <p role="alert" className="text-xs text-error" data-testid="kb-comment-error">
-          {action.error}
-        </p>
-      )}
+          {initials(c.author)}
+        </span>
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span className="font-medium text-on-surface">{c.author}</span>
+            {c.source !== c.author && <span className="text-outline">via {c.source}</span>}
+            <span className="text-outline">{new Date(c.created_at).toLocaleString()}</span>
+            <span data-testid="kb-comment-status">
+              <StatusPill status={c.status} />
+            </span>
+            {showDocument && c.document_id && (
+              <span className="min-w-0 wrap-break-word text-outline">
+                on{" "}
+                {onOpenDocument ? (
+                  <button
+                    type="button"
+                    className="text-primary hover:underline"
+                    onClick={() => c.document_id && onOpenDocument(c.document_id)}
+                  >
+                    {c.document_title ?? "a deleted document"}
+                  </button>
+                ) : (
+                  (c.document_title ?? "a deleted document")
+                )}
+              </span>
+            )}
+          </div>
+          <p className="whitespace-pre-wrap wrap-break-word text-[13px] leading-relaxed">
+            {c.body}
+          </p>
+          {c.reply && (
+            <p className="wrap-break-word text-xs" data-testid="kb-comment-reply-text">
+              <span className="text-outline">
+                {c.status === "dismissed" ? "Dismissed" : "Resolved"}
+                {c.resolved_by ? ` by ${c.resolved_by}` : ""}:
+              </span>{" "}
+              {c.reply}
+            </p>
+          )}
+          {closing ? (
+            <form onSubmit={close} className="flex flex-wrap items-center gap-2">
+              <Input
+                aria-label={closing === "resolved" ? "Resolution reply" : "Reason for dismissing"}
+                placeholder={closing === "resolved" ? "What changed" : "Why not"}
+                data-testid="kb-comment-reply"
+                value={reply}
+                onChange={(e) => setReply(e.target.value)}
+                maxLength={4000}
+                autoFocus
+                className="min-w-0 flex-1 basis-48"
+              />
+              <Button
+                type="submit"
+                size="sm"
+                data-testid="kb-comment-close-submit"
+                disabled={!reply.trim() || action.pending}
+              >
+                {closing === "resolved" ? "Resolve" : "Dismiss"}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setClosing(null);
+                  setReply("");
+                  action.setError(null);
+                }}
+              >
+                Cancel
+              </Button>
+            </form>
+          ) : c.status === "open" ? (
+            <div className="-ml-2 flex flex-wrap">
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="kb-comment-resolve"
+                onClick={() => setClosing("resolved")}
+              >
+                Resolve
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="kb-comment-dismiss"
+                onClick={() => setClosing("dismissed")}
+              >
+                Dismiss
+              </Button>
+            </div>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="-ml-2"
+              data-testid="kb-comment-reopen"
+              onClick={reopen}
+              disabled={action.pending}
+            >
+              Reopen
+            </Button>
+          )}
+          {action.error && (
+            <p role="alert" className="text-xs text-error" data-testid="kb-comment-error">
+              {action.error}
+            </p>
+          )}
+        </div>
+      </div>
     </li>
   );
 }

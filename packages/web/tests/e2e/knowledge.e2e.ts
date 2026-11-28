@@ -51,6 +51,14 @@ test.describe("Knowledge bases", () => {
     await page.getByTestId("kb-doc-create-submit").click();
     await expect(page.getByTestId("kb-document-title")).toHaveText("Deploy runbook");
     expect(new URL(page.url()).searchParams.get("editorMode")).toBe("edit");
+    // The editor uses the pane while writing; only the reading view keeps the prose measure.
+    const paneWidth = await page
+      .getByTestId("kb-document")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    const editorWidth = await page
+      .getByTestId("kb-document-content")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    expect(editorWidth).toBeGreaterThan(paneWidth - 80);
     // Escape leaves fullscreen on a page with no dialog around the editor.
     await page.getByTestId("markdown-expand").click();
     await expect(page.getByTestId("markdown-editor")).toHaveAttribute("data-expanded", "true");

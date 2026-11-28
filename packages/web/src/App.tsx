@@ -332,6 +332,10 @@ function AppShell({
             onProjectChange={setProjectId}
             collapsed={sidebarCollapsed}
             onToggle={toggleSidebar}
+            onSectionNavigate={() => {
+              sidebarAutoCollapsed.current = false;
+              setSidebarCollapsed(true);
+            }}
           />
         </div>
 
