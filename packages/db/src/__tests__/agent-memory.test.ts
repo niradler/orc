@@ -9,9 +9,21 @@ import { createDb, getSqlite } from "../client.js";
 import { MemoryStore } from "../memories.js";
 
 const tempDirs: string[] = [];
-afterEach(() => {
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+afterEach(async () => {
+  // Windows lags SQLite handle release after close and Bun ignores rmSync maxRetries.
+  Bun.gc(true);
+  for (const dir of tempDirs.splice(0)) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 100) throw error;
+        await Bun.sleep(100);
+      }
+    }
+  }
+}, 15_000);
 
 test("should refuse source escapes and large files without reading arbitrary files", () => {
   const root = mkdtempSync(join(tmpdir(), "orc-memory-path-"));

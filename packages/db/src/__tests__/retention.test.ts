@@ -14,9 +14,22 @@ import {
 } from "../retention.js";
 
 const dirs: string[] = [];
-afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
+afterEach(async () => {
+  // Windows lags SQLite handle release after close and Bun ignores rmSync
+  // maxRetries; force finalization and retry the removal (same as changes.test).
+  Bun.gc(true);
+  for (const dir of dirs.splice(0)) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt >= 100) throw error;
+        await Bun.sleep(100);
+      }
+    }
+  }
+}, 15_000);
 
 test("should enable incremental auto-vacuum on a new database and report storage", () => {
   const path = join(mkdtempSync(join(tmpdir(), "orc-retention-")), "orc.db");
