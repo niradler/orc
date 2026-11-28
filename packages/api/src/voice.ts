@@ -25,6 +25,11 @@ export interface VoiceSocketData {
   epoch?: number;
   queue?: Promise<unknown>;
   turns?: Promise<unknown>;
+  /** Clip ids sent for the current reply and still playing on the client. */
+  clips?: Set<string>;
+  clip?: number;
+  sending?: boolean;
+  guard?: ReturnType<typeof setTimeout>;
 }
 
 const tickets = new Map<string, { threadId: string; expiresAt: number }>();
@@ -62,6 +67,34 @@ function send(ws: ServerWebSocket<VoiceSocketData>, message: Record<string, unkn
   ws.send(JSON.stringify(message));
 }
 
+// A reply is "playing" from the first clip until the client confirms it played
+// the last one. Barge-in is only evaluated during that window, and a stuck
+// client must not leave the detector armed forever.
+const REPLY_GUARD_MS = 600_000;
+
+function endReply(ws: ServerWebSocket<VoiceSocketData>) {
+  if (ws.data.guard) clearTimeout(ws.data.guard);
+  delete ws.data.guard;
+  ws.data.clips?.clear();
+  ws.data.sending = false;
+  ws.data.detector?.setSpeaking(false);
+}
+
+function maybeEndReply(ws: ServerWebSocket<VoiceSocketData>) {
+  if (ws.data.sending) return;
+  if (!ws.data.clips?.size) endReply(ws);
+}
+
+function beginReply(ws: ServerWebSocket<VoiceSocketData>) {
+  const wasPlaying = ws.data.sending === true || (ws.data.clips?.size ?? 0) > 0;
+  ws.data.clips ??= new Set();
+  ws.data.sending = true;
+  if (!wasPlaying) ws.data.detector?.setSpeaking(true);
+  if (ws.data.guard) clearTimeout(ws.data.guard);
+  ws.data.guard = setTimeout(() => endReply(ws), REPLY_GUARD_MS);
+  ws.data.guard.unref?.();
+}
+
 function serial<T>(
   ws: ServerWebSocket<VoiceSocketData>,
   lane: "queue" | "turns",
@@ -74,42 +107,107 @@ function serial<T>(
 
 function enqueueSpeech(ws: ServerWebSocket<VoiceSocketData>, text: string): Promise<boolean> {
   const epoch = ws.data.epoch;
-  return serial(ws, "queue", async () =>
-    ws.data.epoch === epoch && !ws.data.listening ? speakTo(ws, text) : false,
-  );
+  return serial(ws, "queue", async () => {
+    if (ws.data.epoch !== epoch) {
+      logger.debug("voice: dropped speech replaced by a newer turn", {
+        threadId: ws.data.threadId,
+      });
+      return false;
+    }
+    if (ws.data.listening) {
+      logger.debug("voice: skipped speech while the user is talking", {
+        threadId: ws.data.threadId,
+      });
+      return false;
+    }
+    return speakTo(ws, text);
+  });
 }
 
 async function hear(ws: ServerWebSocket<VoiceSocketData>, audio: Int16Array) {
   const stt = speechToText(loadConfig(), "voice_mode");
   if (!stt) return send(ws, { type: "error", message: "Speech is not configured on this server." });
   const text = (await stt.transcribe({ audio: pcm16Wav(audio), format: "wav" })).trim();
-  ws.data.listening = false;
-  if (!text || isFillerOnly(text)) return send(ws, { type: "ignored" });
+  if (!text || isFillerOnly(text)) {
+    logger.debug("voice: transcript empty or filler", {
+      threadId: ws.data.threadId,
+      text: text.slice(0, 80),
+    });
+    return send(ws, { type: "ignored" });
+  }
+  logger.debug("voice: transcript", { threadId: ws.data.threadId, text: text.slice(0, 120) });
   send(ws, { type: "transcript", text });
-  if ((await voiceTurn(ws.data.threadId, text)) === "waiting") await enqueueSpeech(ws, ON_SCREEN);
+  const outcome = await voiceTurn(ws.data.threadId, text);
+  if (outcome === "waiting") await enqueueSpeech(ws, ON_SCREEN);
+  // The turn belongs to this socket: point the chat view at its live stream so
+  // the words land on screen as they are spoken, not only after a refresh.
+  else send(ws, { type: "turn_started" });
 }
 
 async function speakTo(ws: ServerWebSocket<VoiceSocketData>, text: string): Promise<boolean> {
   const controller = new AbortController();
   ws.data.speaking = controller;
-  const tts = textToSpeech(loadConfig(), "voice_mode");
-  const sentences = speechSentences(text);
-  const synth = (sentence?: string) =>
-    sentence && tts ? tts.synthesize(sentence, controller.signal) : Promise.resolve(null);
-  let next = synth(sentences[0]);
-  for (const [index, sentence] of sentences.entries()) {
-    const speech = await next.catch((err) => {
-      if (controller.signal.aborted) return null;
-      logger.warn("Voice synthesis failed", err);
-      send(ws, { type: "error", message: errorText(err) });
-      return null;
+  // The barge rule follows playback, not a synthesis wait: until the first clip
+  // is on its way, the user is simply talking.
+  let playing = false;
+  const arm = () => {
+    if (playing) return;
+    playing = true;
+    beginReply(ws);
+  };
+  try {
+    const tts = textToSpeech(loadConfig(), "voice_mode");
+    const sentences = speechSentences(text);
+    const synth = (sentence?: string) =>
+      sentence && tts ? tts.synthesize(sentence, controller.signal) : Promise.resolve(null);
+    let next = synth(sentences[0]);
+    for (const [index, sentence] of sentences.entries()) {
+      const speech = await next.catch((err) => {
+        if (controller.signal.aborted) return null;
+        logger.warn("Voice synthesis failed", err);
+        send(ws, { type: "error", message: errorText(err) });
+        return null;
+      });
+      if (controller.signal.aborted || ws.readyState !== WebSocket.OPEN) return false;
+      next = synth(sentences[index + 1]);
+      let id: string | undefined;
+      if (speech) {
+        arm();
+        ws.data.clip = (ws.data.clip ?? 0) + 1;
+        id = String(ws.data.clip);
+        ws.data.clips?.add(id);
+      }
+      send(ws, {
+        type: "speak",
+        ...(id ? { id } : {}),
+        text: sentence,
+        ...(speech ? { format: speech.format } : {}),
+      });
+      if (speech) ws.sendBinary(speech.audio);
+    }
+    logger.debug("voice: reply spoken", {
+      threadId: ws.data.threadId,
+      sentences: sentences.length,
+      interrupted: controller.signal.aborted,
     });
-    if (controller.signal.aborted || ws.readyState !== WebSocket.OPEN) return false;
-    next = synth(sentences[index + 1]);
-    send(ws, { type: "speak", text: sentence, ...(speech ? { format: speech.format } : {}) });
-    if (speech) ws.sendBinary(speech.audio);
+    return true;
+  } finally {
+    if (playing) {
+      ws.data.sending = false;
+      maybeEndReply(ws);
+    }
+    if (ws.data.speaking === controller) delete ws.data.speaking;
   }
-  return true;
+}
+
+/** Load the TTS backend while the microphone is already open, so the first
+ *  reply does not pay for a cold model load. */
+function warmSpeech(): void {
+  const tts = textToSpeech(loadConfig(), "voice_mode");
+  if (!tts) return;
+  tts.synthesize("Ready.", AbortSignal.timeout(30_000)).catch((err) => {
+    logger.debug("Voice warm-up failed", err);
+  });
 }
 
 export async function speak(
@@ -135,41 +233,85 @@ export const voiceWebsocket: WebSocketHandler<VoiceSocketData> = {
     ws.data.detector = createTurnDetector({
       silenceMs: voice_mode.silence_ms,
       thresholdDb: voice_mode.threshold_db,
+      bargeMs: voice_mode.barge_ms,
+      bargeMarginDb: voice_mode.barge_margin_db,
+    });
+    logger.debug("voice: connected", {
+      threadId: ws.data.threadId,
+      thresholdDb: voice_mode.threshold_db,
+      bargeMs: voice_mode.barge_ms,
+      bargeMarginDb: voice_mode.barge_margin_db,
     });
     send(ws, { type: "ready" });
+    warmSpeech();
   },
   message(ws, message) {
-    if (typeof message === "string" || message.byteLength % 2) return;
+    if (typeof message === "string") {
+      try {
+        const event = JSON.parse(message) as { type?: unknown; id?: unknown };
+        if (event.type === "played" && typeof event.id === "string") {
+          ws.data.clips?.delete(event.id);
+          maybeEndReply(ws);
+        }
+      } catch {}
+      return;
+    }
+    if (message.byteLength % 2) return;
     const pcm = new Int16Array(
       message.buffer.slice(message.byteOffset, message.byteOffset + message.byteLength),
     );
     for (const event of ws.data.detector?.push(pcm) ?? []) {
       if (event.type === "start") {
-        ws.data.epoch = (ws.data.epoch ?? 0) + 1;
         ws.data.listening = true;
-        ws.data.speaking?.abort();
+        logger.debug("voice: mic turn started", {
+          threadId: ws.data.threadId,
+          replyPlaying: ws.data.sending === true || !!ws.data.clips?.size,
+        });
         send(ws, { type: "speech_start" });
         continue;
       }
-      send(ws, { type: "speech_end" });
+      if (event.type === "barge") {
+        // The user is really talking over the reply: stop it now.
+        ws.data.epoch = (ws.data.epoch ?? 0) + 1;
+        ws.data.speaking?.abort();
+        endReply(ws);
+        logger.debug("voice: barge-in", { threadId: ws.data.threadId });
+        send(ws, { type: "barge" });
+        continue;
+      }
       const audio = event.audio;
       if (!audio) {
         ws.data.listening = false;
-        send(ws, { type: "ignored" });
+        logger.debug("voice: mic turn dropped", {
+          threadId: ws.data.threadId,
+          peakDb: event.peakDb,
+          reason: event.bargeBlocked ? "held by the barge gate" : "too short",
+        });
+        send(ws, { type: "speech_cancelled" });
         continue;
       }
-      void serial(ws, "turns", () =>
-        hear(ws, audio).finally(() => {
-          ws.data.listening = false;
-        }),
-      ).catch((err) => {
+      logger.debug("voice: mic turn captured", {
+        threadId: ws.data.threadId,
+        peakDb: event.peakDb,
+        seconds: Math.round((audio.length / 16_000) * 10) / 10,
+      });
+      // A confirmed request replaces whatever the agent was saying, including
+      // speech queued but not yet played.
+      ws.data.listening = false;
+      ws.data.epoch = (ws.data.epoch ?? 0) + 1;
+      ws.data.speaking?.abort();
+      endReply(ws);
+      send(ws, { type: "speech_end" });
+      void serial(ws, "turns", () => hear(ws, audio)).catch((err) => {
         logger.warn("Voice turn failed", err);
         send(ws, { type: "error", message: errorText(err) });
       });
     }
   },
   close(ws) {
+    logger.debug("voice: disconnected", { threadId: ws.data.threadId });
     ws.data.speaking?.abort();
+    endReply(ws);
     if (sockets.get(ws.data.threadId) === ws) sockets.delete(ws.data.threadId);
   },
 };

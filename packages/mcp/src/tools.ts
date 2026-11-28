@@ -2065,7 +2065,7 @@ async function runTool(
     return spoken
       ? "Spoken."
       : posted
-        ? "Posted to the chat; voice mode is off."
+        ? "Posted to the chat; it was not spoken aloud."
         : "Not delivered: this conversation is not responding.";
   }
   if (name === "session_send") {

@@ -869,6 +869,23 @@ function useChatStore(desktopViewport: boolean) {
     [attach, find, update],
   );
 
+  /** Follow a turn this browser did not start, such as one dictated in voice mode. */
+  const followTurn = useCallback(
+    (threadId?: string) => {
+      const tab = threadId
+        ? tabsRef.current.find((entry) => entry.thread?.id === threadId)
+        : find(activeRef.current);
+      if (!tab?.thread) return;
+      const previous = streams.current.get(tab.key);
+      if (previous) {
+        streams.current.delete(tab.key);
+        previous.controller.abort();
+      }
+      void attach(tab.key, tab.thread.id);
+    },
+    [attach, find],
+  );
+
   const openThread = useCallback(
     (
       surface: ChatSurface,
@@ -1936,6 +1953,7 @@ function useChatSurfaceController(store: ChatStore, surface: ChatSurface) {
     reconnecting: tab.reconnecting,
     refreshing: tab.refreshing,
     refresh,
+    followTurn,
     setChildWork,
     streamText: tab.streamText,
     activity: tab.activity,

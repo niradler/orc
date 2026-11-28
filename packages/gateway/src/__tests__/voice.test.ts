@@ -95,7 +95,12 @@ test("a config written before use sites existed resolves every site to the share
     speech: { enabled: true, provider: "openai", openai: { api_key: "sk-test" } },
     tts: { enabled: true, provider: "openai", voice: "nova" },
   });
-  expect(settings.speech.voice_mode).toEqual({ silence_ms: 800, threshold_db: -45 });
+  expect(settings.speech.voice_mode).toEqual({
+    silence_ms: 1200,
+    threshold_db: -45,
+    barge_ms: 320,
+    barge_margin_db: 0,
+  });
   expect(speechToText(settings, "dictation")).not.toBeNull();
   expect(speechToText(settings, "voice_mode")).not.toBeNull();
   expect(textToSpeech(settings, "voice_mode")).not.toBeNull();
@@ -183,7 +188,129 @@ test("silence never starts a turn and a short click ends one without audio", () 
   expect(detect(new Int16Array(48_000), 320)).toEqual([]);
   const click = new Int16Array(16_000 + 1600 + 16_000);
   click.fill(8000, 16_000, 16_000 + 1600);
-  expect(detect(click, 320)).toEqual([{ type: "start" }, { type: "end", audio: null }]);
+  expect(detect(click, 320)).toEqual([
+    { type: "start" },
+    { type: "end", audio: null, peakDb: expect.any(Number), bargeBlocked: false },
+  ]);
+});
+
+function burst(ms: number, amplitude: number) {
+  const samples = new Int16Array((ms / 20) * 320);
+  samples.fill(amplitude);
+  return samples;
+}
+
+function concatPcm(...parts: Int16Array[]) {
+  return Int16Array.from(parts.flatMap((part) => [...part]));
+}
+
+function detectSpeaking(
+  chunks: Int16Array[],
+  options: { bargeMs?: number; marginDb?: number } = {},
+) {
+  const detector = createTurnDetector({
+    silenceMs: 800,
+    thresholdDb: -45,
+    ...(options.bargeMs === undefined ? {} : { bargeMs: options.bargeMs }),
+    ...(options.marginDb === undefined ? {} : { bargeMarginDb: options.marginDb }),
+  });
+  detector.setSpeaking(true);
+  const events: TurnEvent[] = [];
+  for (const chunk of chunks) events.push(...detector.push(chunk));
+  return [...events, ...detector.flush()];
+}
+
+test("a brief burst while a reply plays is not a barge-in", () => {
+  // Opens a turn, but stops well short of speech.voice_mode.barge_ms.
+  const events = detectSpeaking([concatPcm(burst(200, 3000), new Int16Array(16_000))]);
+  expect(events).toEqual([
+    { type: "start" },
+    { type: "end", audio: null, peakDb: expect.any(Number), bargeBlocked: true },
+  ]);
+});
+
+test("sustained speech interrupts a reply once, and its turn survives", () => {
+  const detector = createTurnDetector({ silenceMs: 800, thresholdDb: -45 });
+  detector.setSpeaking(true);
+  const events = detector.push(concatPcm(burst(600, 1000), new Int16Array(16_000)));
+  expect(events.map((event) => event.type)).toEqual(["start", "barge", "end"]);
+  const end = events[2] as Extract<TurnEvent, { type: "end" }>;
+  expect((end.audio?.length ?? 0) / 16_000).toBeGreaterThan(0.5);
+  expect(events.filter((event) => event.type === "barge")).toHaveLength(1);
+});
+
+test("barge_margin_db raises the bar for a quieter room", () => {
+  // -40.8 dBFS is speech above the -45 floor but under a +10 dB margin.
+  const events = detectSpeaking([concatPcm(burst(600, 300), new Int16Array(16_000))], {
+    marginDb: 10,
+  });
+  expect(events).toEqual([
+    { type: "start" },
+    { type: "end", audio: null, peakDb: expect.any(Number), bargeBlocked: true },
+  ]);
+});
+
+test("speech with syllable gaps still interrupts a reply", () => {
+  // Measured in the field: 2 s of speech that peaks at -32 dBFS never barged,
+  // because every dip between syllables erased the progress it had made.
+  const gap = () => new Int16Array(120 * 16);
+  const events = detectSpeaking([
+    concatPcm(
+      burst(120, 3000),
+      gap(),
+      burst(120, 3000),
+      gap(),
+      burst(160, 3000),
+      new Int16Array(16_000),
+    ),
+  ]);
+  expect(events.map((event) => event.type)).toEqual(["start", "barge", "end"]);
+});
+
+test("the end event reports the loudest frame, so a room can be tuned", () => {
+  const quiet = detectSpeaking([concatPcm(burst(600, 300), new Int16Array(16_000))]);
+  const loud = detectSpeaking([concatPcm(burst(600, 9000), new Int16Array(16_000))]);
+  const peak = (events: TurnEvent[]) =>
+    (events.find((event) => event.type === "end") as Extract<TurnEvent, { type: "end" }>).peakDb;
+  expect(peak(loud)).toBeGreaterThan(peak(quiet));
+});
+
+test("a stray pre-turn spike does not inflate peakDb of the next turn", () => {
+  const strayAndQuiet = detectSpeaking([
+    concatPcm(burst(20, 20_000), new Int16Array(8_000), burst(600, 300), new Int16Array(16_000)),
+  ]);
+  const quietOnly = detectSpeaking([concatPcm(burst(600, 300), new Int16Array(16_000))]);
+  const peak = (events: TurnEvent[]) =>
+    (events.find((event) => event.type === "end") as Extract<TurnEvent, { type: "end" }>).peakDb;
+  expect(peak(strayAndQuiet)).toBe(peak(quietOnly));
+});
+
+test("barge_ms 0 keeps voice mode half-duplex", () => {
+  const events = detectSpeaking([concatPcm(burst(600, 3000), new Int16Array(16_000))], {
+    bargeMs: 0,
+  });
+  expect(events).toEqual([
+    { type: "start" },
+    { type: "end", audio: null, peakDb: expect.any(Number), bargeBlocked: true },
+  ]);
+});
+
+test("a turn started before playback is not dropped if playback begins mid-turn", () => {
+  const detector = createTurnDetector({ silenceMs: 800, thresholdDb: -45 });
+  const before = detector.push(burst(220, 3000));
+  detector.setSpeaking(true);
+  const after = detector.push(concatPcm(burst(60, 3000), new Int16Array(16_000)));
+  const events = [...before, ...after, ...detector.flush()];
+  expect(events.map((event) => event.type)).toEqual(["start", "end"]);
+  const end = events[1] as Extract<TurnEvent, { type: "end" }>;
+  expect(end.audio).not.toBeNull();
+  expect(end.bargeBlocked).toBe(false);
+});
+
+test("the same sustained speech is a normal turn when nothing is playing", () => {
+  const events = detect(concatPcm(burst(600, 3000), new Int16Array(16_000)), 320);
+  expect(events.map((event) => event.type)).toEqual(["start", "end"]);
+  expect((events[1] as Extract<TurnEvent, { type: "end" }>).audio).not.toBeNull();
 });
 
 test("a turn audio becomes a 16 kHz mono 16-bit WAV with the samples intact", () => {

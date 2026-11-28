@@ -52,10 +52,15 @@ describe("voice input selection", () => {
   });
 
   test("constraints pin the chosen device and otherwise stay unconstrained", () => {
-    expect(voiceInputConstraints("")).toEqual({ echoCancellation: true, noiseSuppression: true });
+    expect(voiceInputConstraints("")).toEqual({
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: false,
+    });
     expect(voiceInputConstraints("mic-2")).toEqual({
       echoCancellation: true,
       noiseSuppression: true,
+      autoGainControl: false,
       deviceId: { exact: "mic-2" },
     });
   });
@@ -133,8 +138,8 @@ describe("voice input selection", () => {
     expect(calls).toBe(1);
   });
 
-  test("without getUserMedia the microphone needs HTTPS", async () => {
+  test("without getUserMedia the microphone needs a secure page", async () => {
     mockMediaDevices({});
-    await expect(openMicrophone("")).rejects.toThrow("Microphone needs HTTPS.");
+    await expect(openMicrophone("")).rejects.toThrow("Microphone needs HTTPS or localhost.");
   });
 });
