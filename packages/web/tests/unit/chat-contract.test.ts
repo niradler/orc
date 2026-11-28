@@ -64,6 +64,49 @@ describe("chat preferences", () => {
     expect(parseChatTabs("broken")).toEqual({ threads: [], active: null });
   });
 
+  test("unsent drafts survive reload for threads and local draft tabs", () => {
+    const id = "3f0c831c-500d-4ae5-9c83-0d2bc6c431fa";
+    const draftKey = "4f0c831c-500d-4ae5-9c83-0d2bc6c431fb";
+    const stored = {
+      threads: [id],
+      active: null,
+      threadDrafts: { [id]: "Keep my unsent local draft", other: "ignored", [draftKey]: "" },
+      draftTabs: [
+        {
+          key: draftKey,
+          draft: "Unsaved conversation",
+          projectId: "project-a",
+          createdAt: 1760000000000,
+        },
+        { key: "not-a-uuid", draft: "ignored" },
+        { key: "5f0c831c-500d-4ae5-9c83-0d2bc6c431fc", draft: "  " },
+        {
+          key: "6f0c831c-500d-4ae5-9c83-0d2bc6c431fd",
+          draft: "No project",
+          projectId: "all",
+          createdAt: -1,
+        },
+      ],
+      activeKey: draftKey,
+      sideActiveKey: "5f0c831c-500d-4ae5-9c83-0d2bc6c431fc",
+    };
+    expect(parseChatTabs(JSON.stringify(stored))).toEqual({
+      threads: [id],
+      active: null,
+      threadDrafts: { [id]: "Keep my unsent local draft" },
+      draftTabs: [
+        {
+          key: draftKey,
+          draft: "Unsaved conversation",
+          projectId: "project-a",
+          createdAt: 1760000000000,
+        },
+        { key: "6f0c831c-500d-4ae5-9c83-0d2bc6c431fd", draft: "No project" },
+      ],
+      activeKey: draftKey,
+    });
+  });
+
   test("surface URL targeting keeps Chat page and side chat thread params independent", () => {
     const pageId = "3f0c831c-500d-4ae5-9c83-0d2bc6c431fa";
     const sideId = "4f0c831c-500d-4ae5-9c83-0d2bc6c431fb";
