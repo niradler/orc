@@ -561,16 +561,18 @@ Working documents, diagrams and HTML pages that you or an agent create and come 
 
 Deleting a scratchpad is recoverable: it stays readable and listed with a **deletes in N days** marker, and is permanently removed after 30 days. Use **Restore** before then. This is the same archive-then-purge lifecycle as project deletion.
 
+Pads can also **expire**. Set an expiry in the pad's properties (or `ttl` / `expires_at` through the API and `pad_*` tools) for one-off drafts and intermediate reports; leave long-lived pads and human notes without one. When an expiry is due the pad is archived like a delete, shown with its delete deadline, and purged after a 7-day grace period. **Pin** a pad to exempt it, and pads referenced by another pad, task, comment, knowledge-base document or memory are kept with an **expiry skipped** note. `keep_alive` extends the expiry on every edit. The list filters **Expiring soon** and **Archived**, and each row shows its expiry or pin state.
+
 HTML pads receive the **ORC HTML kit** in both the editor preview and chat artifacts:
-dashboard theme tokens, base styles, cards, tables, stats, badges, tabs and chart
-wrappers. Use `orc-*` classes to build a native-looking page without a custom
-`<style>` block. The kit is inlined at render time, needs no network request, and
-does not change the saved HTML. Custom CSS and JavaScript still work.
+dashboard theme tokens, base styles, cards, tables, stats, badges, tabs and charts.
+Use `orc-*` classes to build a native-looking page without a custom `<style>` block.
+The kit is inlined at render time, needs no network request, and does not change the
+saved HTML. Custom CSS and JavaScript still work.
 
 Pin the kit stylesheet in your HTML head to keep its version as the kit evolves:
 
 ```html
-<meta name="orc-kit" content="2">
+<meta name="orc-kit" content="3">
 ```
 
 Bundled older versions remain available. A missing or unknown version uses the
@@ -589,8 +591,10 @@ For concise component markup, use built-in custom elements such as
 `<orc-card>`, `<orc-stat label="Open tasks" value="12">`,
 `<orc-badge tone="success">`, `<orc-table>` and `<orc-chart>`.
 `<orc-tabs>` generates accessible tab controls from labeled `<orc-tab>` panels.
-These components reuse the kit with no additional dependencies or network
-requests; ordinary HTML with `orc-*` classes remains supported.
+`<orc-chart kind="bar|line|area|sparkline" data='[…]'>` draws a themed chart with
+labeled axes and hover values. These components reuse the kit with no additional
+dependencies or network requests, so a chart renders identically in the editor
+preview and a chat artifact; ordinary HTML with `orc-*` classes remains supported.
 
 Agents can load the component list, copy-paste skeleton and chart guidance with
 `skill_read` for `orc-platform`, ref `references/html-kit.md`. See [Skills](./skills.md).

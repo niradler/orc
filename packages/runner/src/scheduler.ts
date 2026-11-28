@@ -1,7 +1,14 @@
+import { loadConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { createLogger } from "@orc/core/logger";
 import { type LongTimeout, setLongTimeout } from "@orc/core/timers";
 import { checkpointWal, getDb, getSqlite } from "@orc/db/client";
+import {
+  DEFAULT_DATABASE_SIZE_LIMIT_MB,
+  DEFAULT_REQUEST_RETENTION_DAYS,
+  databaseSizeBytes,
+  pruneRetention,
+} from "@orc/db/retention";
 import { comments, job_runs, jobs } from "@orc/db/schema";
 import { Cron } from "croner";
 import { desc, eq } from "drizzle-orm";
@@ -21,7 +28,8 @@ let ruleInterval: ReturnType<typeof setInterval> | null = null;
 const WAL_CHECKPOINT_INTERVAL_MS = 60 * 60 * 1000; // hourly
 
 const CIRCUIT_BREAKER_THRESHOLD = 3;
-const HISTORY_RETENTION_DAYS = 7;
+/** Finished job, flow and gateway history. Jobs keep their runs much longer than requests. */
+const DEFAULT_JOB_HISTORY_RETENTION_DAYS = 90;
 
 export async function startScheduler(): Promise<void> {
   running = true;
@@ -71,7 +79,26 @@ export async function startScheduler(): Promise<void> {
 export function pruneHistory(): void {
   try {
     const sqlite = getSqlite();
-    const cutoffTs = Math.floor((Date.now() - HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000) / 1000);
+    const preferences = loadConfig().preferences;
+    // A soft size cap: "warn" keeps normal windows and reports; "prune" drops
+    // the windows to zero for terminal rows so the database shrinks in one pass.
+    const sizeLimitMb = preferences.database_size_limit_mb ?? DEFAULT_DATABASE_SIZE_LIMIT_MB;
+    const sizeAction = preferences.database_size_action ?? "warn";
+    const sizeMb = databaseSizeBytes(sqlite) / (1024 * 1024);
+    const overLimit = sizeLimitMb > 0 && sizeMb > sizeLimitMb;
+    const pruneAll = overLimit && sizeAction === "prune";
+    if (overLimit)
+      logger.warn(
+        `Database is ${sizeMb.toFixed(1)} MB, over the ${sizeLimitMb} MB limit; ${
+          pruneAll ? "pruning all terminal history" : "warning only (database_size_action=warn)"
+        }`,
+      );
+    const jobDays = pruneAll
+      ? 0
+      : (preferences.job_history_retention_days ?? DEFAULT_JOB_HISTORY_RETENTION_DAYS);
+    const cutoffTs = Math.floor((Date.now() - jobDays * 24 * 60 * 60 * 1000) / 1000);
+    // Only finished runs are history; a long-running job must survive any cutoff.
+    const finishedRuns = "created_at < ? AND status IN ('success','failed','cancelled','skipped')";
 
     // Run as one transaction: nulling/deleting referrers and then the parent
     // rows must commit together. Otherwise a FK error on the parent delete
@@ -84,26 +111,30 @@ export function pruneHistory(): void {
       // but ended after it would otherwise dangle and trip the FK.
       sqlite
         .query(
-          "DELETE FROM sessions WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
+          `DELETE FROM sessions WHERE job_run_id IN (SELECT id FROM job_runs WHERE ${finishedRuns})`,
         )
         .run(cutoffTs);
 
       // Nullify the remaining FK refs to job_runs before deleting the runs.
       sqlite
         .query(
-          "UPDATE bridge_messages SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
+          `UPDATE bridge_messages SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE ${finishedRuns})`,
         )
         .run(cutoffTs);
       sqlite
         .query(
-          "UPDATE bridge_permissions SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE created_at < ?)",
+          `UPDATE bridge_permissions SET job_run_id = NULL WHERE job_run_id IN (SELECT id FROM job_runs WHERE ${finishedRuns})`,
         )
         .run(cutoffTs);
 
       // Deleting job_runs cascades to job_run_logs.
-      const result = sqlite.query("DELETE FROM job_runs WHERE created_at < ?").run(cutoffTs);
+      const result = sqlite.query(`DELETE FROM job_runs WHERE ${finishedRuns}`).run(cutoffTs);
       if (result.changes > 0) {
-        logger.info(`Pruned ${result.changes} job runs older than ${HISTORY_RETENTION_DAYS} days`);
+        logger.info(
+          pruneAll
+            ? `Pruned ${result.changes} terminal job runs to stay under the size limit`
+            : `Pruned ${result.changes} job runs older than ${jobDays} days`,
+        );
       }
 
       // Finished flow runs accumulate one row per run plus one per node visit,
@@ -118,7 +149,9 @@ export function pruneHistory(): void {
         .run(cutoffTs);
       if (flowResult.changes > 0) {
         logger.info(
-          `Pruned ${flowResult.changes} finished flow runs older than ${HISTORY_RETENTION_DAYS} days`,
+          pruneAll
+            ? `Pruned ${flowResult.changes} finished flow runs to stay under the size limit`
+            : `Pruned ${flowResult.changes} finished flow runs older than ${jobDays} days`,
         );
       }
 
@@ -148,6 +181,25 @@ export function pruneHistory(): void {
     });
 
     prune();
+
+    // Terminal requests and MCP tasks are not tied to a job run; prune them in
+    // the same daily pass, then reclaim a bounded number of freed pages.
+    const retention = pruneRetention(sqlite, {
+      requestRetentionDays: pruneAll
+        ? 0
+        : (preferences.request_retention_days ?? DEFAULT_REQUEST_RETENTION_DAYS),
+    });
+    if (retention.human_requests || retention.mcp_tasks)
+      logger.info(
+        `Pruned ${retention.human_requests} terminal requests and ${retention.mcp_tasks} MCP tasks; reclaimed ${retention.vacuumed_pages} pages`,
+      );
+    if (overLimit) {
+      const remainingMb = databaseSizeBytes(sqlite) / (1024 * 1024);
+      logger.warn(
+        `Database is ${remainingMb.toFixed(1)} MB after cleanup (limit ${sizeLimitMb} MB); ` +
+          "pads, tasks, knowledge and memories are never deleted automatically",
+      );
+    }
   } catch (err) {
     logger.warn("Failed to prune job history", err);
   }

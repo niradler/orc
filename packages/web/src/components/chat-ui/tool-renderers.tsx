@@ -67,6 +67,7 @@ function toolIcon(view: ToolView): LucideIcon {
   if (view.kind === "todo") return ListChecks;
   if (view.kind === "plan") return ListTodo;
   if (view.kind === "question") return MessageCircle;
+  if (view.kind === "task") return ListChecks;
   return Wrench;
 }
 

@@ -25,6 +25,7 @@
     "./scratchpads": "./src/scratchpads.ts",
     "./mcp-prompts": "./src/mcp-prompts.ts",
     "./mcp-tasks": "./src/mcp-tasks.ts",
+    "./retention": "./src/retention.ts",
     "./skill-history": "./src/skill-history.ts",
     "./read-usage": "./src/read-usage.ts",
     "./agent-memory": "./src/agent-memory.ts",

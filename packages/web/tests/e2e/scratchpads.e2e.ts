@@ -29,6 +29,13 @@ interface Scratchpad {
   session_id: string | null;
   tags: string[];
   delete_after?: number | null;
+  expires_at?: number | null;
+  ttl_seconds?: number | null;
+  pinned?: boolean;
+  keep_alive?: boolean;
+  expiry_skipped_reason?: string | null;
+  /** Create/update input only. */
+  ttl?: string;
 }
 
 const DIAGRAM = JSON.stringify({
@@ -232,6 +239,53 @@ test.describe("Scratchpads", () => {
       id = undefined;
     } finally {
       if (id) await apiDelete(request, `/scratchpads/${id}?ttl_days=0`);
+    }
+  });
+
+  test("pad expiry is visible, filterable, pinnable and clearable", async ({ page, request }) => {
+    const expiring = await createPad(request, { kind: "doc", ttl: "1h" });
+    const pinned = await createPad(request, { kind: "doc", ttl: "1h", pinned: true });
+    const row = (id: string) =>
+      page.locator(`[data-testid="scratchpad-row"][data-scratchpad-id="${id}"]`);
+    try {
+      await gotoView(page, "scratchpads");
+      await expect(row(expiring.id)).toContainText("expires in 1d");
+      await expect(row(pinned.id)).toContainText("pinned");
+
+      await page.getByTestId("scratchpad-expiry-filter").click();
+      await page.getByRole("option", { name: "Expiring soon" }).click();
+      await expect(row(expiring.id)).toBeVisible();
+
+      await page.goto(`/scratchpad/${expiring.id}`);
+      await expect(page.getByTestId("scratchpad-expires")).toContainText("expires in");
+      await page.getByTestId("scratchpad-pin").click();
+      await expect(page.getByTestId("scratchpad-pinned")).toHaveText("pinned");
+
+      await page.getByTestId("scratchpad-properties").click();
+      await page.getByTestId("scratchpad-form-expiry").click();
+      await page.getByRole("option", { name: "Never" }).click();
+      await page.getByTestId("scratchpad-form-submit").click();
+      await expect(page.getByTestId("scratchpad-expires")).toHaveCount(0);
+      expect(
+        (await apiGet<Scratchpad>(request, `/scratchpads/${expiring.id}`)).expires_at,
+      ).toBeNull();
+
+      await page.getByTestId("scratchpad-properties").click();
+      await page.getByTestId("scratchpad-form-expiry").click();
+      await page.getByRole("option", { name: "After 1 day" }).click();
+      await page.getByTestId("scratchpad-form-submit").click();
+      await expect(page.getByTestId("scratchpad-expires")).toContainText("expires in 1 days");
+
+      // Archived pads are reachable from the same filter.
+      await page.getByTestId("scratchpad-delete").click();
+      await page.getByTestId("confirm-dialog-confirm").click();
+      await gotoView(page, "scratchpads");
+      await page.getByTestId("scratchpad-expiry-filter").click();
+      await page.getByRole("option", { name: "Archived" }).click();
+      await expect(row(expiring.id)).toBeVisible();
+    } finally {
+      await apiDelete(request, `/scratchpads/${expiring.id}?ttl_days=0`);
+      await apiDelete(request, `/scratchpads/${pinned.id}?ttl_days=0`);
     }
   });
 

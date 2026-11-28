@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   emptyScratchpadContent,
+  MAX_EXPIRES_AT,
   ScratchpadCreateSchema,
   ScratchpadUpdateSchema,
   scratchpadFilename,
@@ -14,6 +15,20 @@ describe("scratchpad schemas", () => {
     expect(ScratchpadCreateSchema.safeParse({ kind: "note", title: "t" }).success).toBe(false);
     expect(ScratchpadCreateSchema.safeParse({ kind: "doc", title: "  " }).success).toBe(false);
     expect(ScratchpadUpdateSchema.safeParse({ revision: 2 }).success).toBe(false);
+    expect(
+      ScratchpadCreateSchema.safeParse({
+        kind: "doc",
+        title: "t",
+        expires_at: MAX_EXPIRES_AT,
+      }).success,
+    ).toBe(true);
+    expect(
+      ScratchpadCreateSchema.safeParse({
+        kind: "doc",
+        title: "t",
+        expires_at: MAX_EXPIRES_AT + 1,
+      }).success,
+    ).toBe(false);
   });
 
   test("should give every kind content its editor opens", () => {

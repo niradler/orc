@@ -61,6 +61,16 @@ export async function checkHtmlKitElements(
     await expect(frame.locator("orc-table > table")).toHaveClass("orc-table");
     await expect(frame.locator("orc-table")).toHaveCSS("overflow-x", "auto");
     await expect(frame.locator("orc-chart")).toHaveCSS("display", "grid");
+    // The bundled chart runtime draws themed SVG with no network and no CSP change.
+    const bars = frame.locator("orc-chart .orc-chart-bar");
+    await expect(frame.locator("orc-chart svg")).toBeVisible();
+    await expect(bars).toHaveCount(3);
+    await expect(frame.locator("orc-chart .orc-chart-text").first()).toBeVisible();
+    expect(await bars.first().locator("title").textContent()).toContain("Mon: 12 runs");
+    await expect(bars.first()).toHaveCSS(
+      "fill",
+      theme === "light" ? "rgb(49, 87, 151)" : "rgb(138, 180, 248)",
+    );
     await page.screenshot({ path: info.outputPath(`${frameTestId}-components-${theme}.png`) });
     const now = frame.getByRole("tab", { name: "Now", exact: true });
     const next = frame.getByRole("tab", { name: "Next", exact: true });
@@ -86,6 +96,24 @@ export async function checkHtmlKitElements(
     );
     await expect(frame.locator("orc-stat img")).toHaveCount(0);
     await expect(frame.locator("orc-badge")).toHaveClass(/orc-badge-warning/);
+    // The chart redraws from its data attribute and degrades to a hint when empty.
+    await contentFrame.evaluate(() => {
+      document.querySelector("orc-chart")?.setAttribute("data", "[1,2,3,4]");
+    });
+    await expect(bars).toHaveCount(4);
+    await contentFrame.evaluate(() => {
+      document.querySelector("orc-chart")?.setAttribute("data", "[]");
+    });
+    await expect(frame.getByText("No chart data")).toBeVisible();
+    await expect(bars).toHaveCount(0);
+    // Pre-v3 pads used <orc-chart> as a plain container; their authored SVG must survive.
+    await contentFrame.evaluate(() => {
+      const legacy = document.createElement("orc-chart");
+      legacy.id = "legacy-chart";
+      legacy.innerHTML = '<svg data-authored="1"><rect width="10" height="10"></rect></svg>';
+      document.body.append(legacy);
+    });
+    await expect(frame.locator('#legacy-chart svg[data-authored="1"]')).toHaveCount(1);
     await contentFrame.evaluate(() => {
       const tabs = document.createElement("orc-tabs");
       tabs.setAttribute("label", "Independent tabs");
@@ -167,7 +195,7 @@ export async function checkHtmlKit(page: Page, frameTestId: string, info: TestIn
       await contentFrame.evaluate(() =>
         document.querySelector("style#orc-kit")?.getAttribute("data-orc-kit-version"),
       ),
-    ).toBe("2");
+    ).toBe("3");
     expect(
       await contentFrame.evaluate(() => {
         let parentBlocked = false;

@@ -57,6 +57,38 @@ describe("scratchpad MCP tools", () => {
     expect(await executeTool("pad_list", { unassigned: true }, options)).toContain(unlinked);
   });
 
+  test("should set, list and clear a pad expiry", async () => {
+    const created = await executeTool(
+      "pad_create",
+      { kind: "doc", title: "Scratch TTL", ttl: "1h" },
+      options,
+    );
+    const id = idOf(created);
+    const listed = await executeTool("pad_list", { q: "Scratch TTL" }, options);
+    expect(listed).toContain(id);
+    expect(listed).toContain("expires ");
+    expect(
+      await executeTool("pad_list", { expiry: "expiring", q: "Scratch TTL" }, options),
+    ).toContain(id);
+    expect(await executeTool("pad_get", { id }, options)).toContain("expiry: expires ");
+
+    await executeTool("pad_update", { id, expires_at: null }, options);
+    expect(await executeTool("pad_get", { id }, options)).not.toContain("expiry:");
+    await executeTool("pad_delete", { id, ttl_days: 0 }, options);
+
+    const pinned = idOf(
+      await executeTool(
+        "pad_create",
+        { kind: "doc", title: "Pinned TTL", ttl: "1h", pinned: true },
+        options,
+      ),
+    );
+    expect(await executeTool("pad_list", { pinned: true, q: "Pinned TTL" }, options)).toContain(
+      pinned,
+    );
+    await executeTool("pad_delete", { id: pinned, ttl_days: 0 }, options);
+  });
+
   test("should update with if_revision, unlink a project and delete", async () => {
     const id = idOf(
       await executeTool("pad_create", { kind: "html", title: "Page", project: "pad-mcp" }, options),

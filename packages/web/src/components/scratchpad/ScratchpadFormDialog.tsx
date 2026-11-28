@@ -7,6 +7,7 @@ import {
 import { useRef, useState } from "react";
 import type { LiveSession } from "@/api/client";
 import { FormDialog } from "@/components/FormDialog";
+import { HelpPopover } from "@/components/HelpPopover";
 import { TagInput } from "@/components/TagInput";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -81,7 +82,13 @@ export function ScratchpadFormDialog({
   const [sessionId, setSessionId] = useState(pad?.session_id ?? defaultSessionId ?? NO_SESSION);
   const [tags, setTags] = useState<string[]>(pad?.tags ?? []);
   const [tagDraft, setTagDraft] = useState("");
-  const initialFields = useRef(JSON.stringify([kind, title, projectId, sessionId, tags]));
+  const [pinned, setPinned] = useState(pad?.pinned ?? false);
+  const [keepAlive, setKeepAlive] = useState(pad?.keep_alive ?? false);
+  // "keep" leaves an existing expiry alone; a new pad starts without one.
+  const [expiry, setExpiry] = useState(pad?.expires_at ? "keep" : "none");
+  const initialFields = useRef(
+    JSON.stringify([kind, title, projectId, sessionId, tags, pinned, keepAlive, expiry]),
+  );
   const { data: projects } = useProjects({ status: "active" });
   const { data: sessions } = useLiveSessions(false, undefined, true);
   const sessionOptions = sessionChoices(sessions, projectId, sessionId);
@@ -95,6 +102,9 @@ export function ScratchpadFormDialog({
       project_id: projectId === NO_PROJECT ? null : projectId,
       session_id: sessionId === NO_SESSION ? null : sessionId,
       tags,
+      pinned,
+      keep_alive: expiry === "none" ? false : keepAlive,
+      ...(expiry === "keep" ? {} : expiry === "none" ? { expires_at: null } : { ttl: expiry }),
     };
     const done = (saved: Scratchpad) => {
       afterSave();
@@ -119,7 +129,8 @@ export function ScratchpadFormDialog({
       busy={mutation.isPending}
       dirty={
         Boolean(tagDraft.trim()) ||
-        JSON.stringify([kind, title, projectId, sessionId, tags]) !== initialFields.current
+        JSON.stringify([kind, title, projectId, sessionId, tags, pinned, keepAlive, expiry]) !==
+          initialFields.current
       }
       testId="scratchpad-form"
     >
@@ -229,6 +240,53 @@ export function ScratchpadFormDialog({
                   aria-label="Tags"
                   data-testid="scratchpad-form-tags"
                 />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="scratchpad-expiry">Expiry</Label>
+                  <HelpPopover label="expiry" testId="scratchpad-expiry-help">
+                    Expiring pads are archived for a grace period before deletion. Pinned or
+                    referenced pads are kept.
+                  </HelpPopover>
+                </div>
+                <Select value={expiry} onValueChange={setExpiry}>
+                  <SelectTrigger
+                    id="scratchpad-expiry"
+                    data-testid="scratchpad-form-expiry"
+                    className="w-full"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-surface border-outline-variant">
+                    {pad?.expires_at && <SelectItem value="keep">Keep current</SelectItem>}
+                    <SelectItem value="none">Never</SelectItem>
+                    <SelectItem value="1h">After 1 hour</SelectItem>
+                    <SelectItem value="1d">After 1 day</SelectItem>
+                    <SelectItem value="7d">After 7 days</SelectItem>
+                    <SelectItem value="30d">After 30 days</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    data-testid="scratchpad-form-pinned"
+                    checked={pinned}
+                    onChange={(event) => setPinned(event.target.checked)}
+                  />
+                  Pin (never auto-expire)
+                </label>
+                <label className="flex min-h-11 items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    data-testid="scratchpad-form-keep-alive"
+                    checked={keepAlive}
+                    disabled={expiry === "none"}
+                    onChange={(event) => setKeepAlive(event.target.checked)}
+                  />
+                  Extend on edit
+                </label>
               </div>
               {mutation.error && (
                 <p role="alert" className="text-sm text-destructive md:col-span-2">

@@ -5,6 +5,7 @@ import {
   SCRATCHPAD_FILES,
   ScratchpadContentUrlSchema,
   ScratchpadCreateSchema,
+  ScratchpadExpiryFilterSchema,
   ScratchpadKindSchema,
   ScratchpadListItemSchema,
   ScratchpadSchema,
@@ -63,6 +64,10 @@ app.openapi(
         session_id: z.string().min(1).optional(),
         tag: z.string().min(1).optional(),
         q: z.string().optional().openapi({ description: "Search title and content" }),
+        expiry: ScratchpadExpiryFilterSchema.optional().openapi({
+          description: "expiring = due within two days; expired = archived pads",
+        }),
+        pinned: z.enum(["true", "false"]).optional(),
         limit: z.coerce.number().int().min(1).max(500).optional().default(100),
       }),
     },
@@ -78,11 +83,13 @@ app.openapi(
     },
   }),
   (c) => {
-    const { limit, unassigned, project_id, include_global, ...query } = c.req.valid("query");
+    const { limit, unassigned, project_id, include_global, pinned, ...query } =
+      c.req.valid("query");
     const pads = store().list({
       ...query,
       project_id: unassigned === "true" ? null : project_id,
       include_global: include_global === "true",
+      pinned: pinned === undefined ? undefined : pinned === "true",
     });
     return c.json({ scratchpads: pads.slice(0, limit), total: pads.length });
   },

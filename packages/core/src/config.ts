@@ -104,6 +104,16 @@ export const OrcConfigSchema = z.object({
       theme: z.enum(["dark", "light"]).optional(),
       terminal_font: z.string().max(200).optional(),
       attention_retention_hours: z.number().int().min(1).max(8760).optional(),
+      /** Days of finished job, flow and stopped gateway history to keep. */
+      job_history_retention_days: z.number().int().min(1).max(3650).optional(),
+      /** Days of answered human requests and finished MCP tasks to keep. */
+      request_retention_days: z.number().int().min(1).max(3650).optional(),
+      /** Soft database size limit in MB; 0 disables the check. */
+      database_size_limit_mb: z.number().int().min(0).max(1_000_000).optional(),
+      /** Over the limit: "warn" only, or "prune" terminal history in one pass. */
+      database_size_action: z.enum(["warn", "prune"]).optional(),
+      /** Grace days between a pad's expiry and its permanent purge. */
+      scratchpad_expiry_grace_days: z.number().int().min(1).max(3650).optional(),
       notification_retention_days: z.number().int().min(1).max(3650).optional(),
       audit_retention_days: z.number().int().min(1).max(3650).optional(),
       chat: ChatSettingsSchema.optional(),

@@ -12,7 +12,7 @@ import { ORC_KIT_ELEMENTS_JS } from "./orc-kit-elements";
 import type { DarkBackground, Theme } from "./theme";
 
 export const ORC_KIT_META_NAME = "orc-kit";
-export const ORC_KIT_VERSION = 2;
+export const ORC_KIT_VERSION = 3;
 
 const ORC_KIT_1_CSS = `
 :root {
@@ -241,9 +241,32 @@ const ORC_KIT_2_CSS = ORC_KIT_1_CSS.replace(
 * {`,
   );
 
+/** `orc-chart` draws inline SVG, so its marks are plain classes the theme tokens can fill. */
+const ORC_KIT_3_CSS = `${ORC_KIT_2_CSS}
+.orc-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.orc-chart-grid { stroke: var(--chart-grid); stroke-width: 1; }
+.orc-chart-text { fill: var(--chart-text); font-size: 11px; font-family: inherit; }
+.orc-chart-series {
+  fill: none;
+  stroke: var(--chart-line);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.orc-chart-area { fill: var(--chart-line); stroke: none; opacity: 0.14; }
+.orc-chart-bar { fill: var(--chart-line); opacity: 0.85; }
+.orc-chart-point { fill: var(--chart-line); stroke: rgb(var(--surface)); stroke-width: 1.5; }
+`;
+
 export const ORC_KIT_STYLESHEETS: Readonly<Record<number, string>> = {
   1: ORC_KIT_1_CSS,
   2: ORC_KIT_2_CSS,
+  3: ORC_KIT_3_CSS,
 };
 
 /** Selects tabs by pointer or keyboard; initialization waits for the head-injected markup. */

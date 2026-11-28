@@ -355,20 +355,46 @@ quota data does not prevent usage from loading.
 
 Where ORC keeps its config and data, every config key and environment variable you are likely to set, logs, running as a background service, and authentication.
 
-## Notification and audit retention
+## Notification, audit and history retention
 
 Set these server-wide preferences in **Settings → Notifications → Automatic cleanup** or the JSON config:
 
-| Config key                                | Default | Allowed days |
+| Config key                                | Default | Allowed |
 | ----------------------------------------- | ------- | ------------ |
 | `preferences.notification_retention_days` | 30      | 1–3650       |
 | `preferences.audit_retention_days`        | 90      | 1–3650       |
+| `preferences.job_history_retention_days`  | 90      | 1–3650       |
+| `preferences.request_retention_days`      | 7       | 1–3650       |
+| `preferences.database_size_limit_mb`      | 500     | 0–1,000,000 (0 disables) |
+| `preferences.database_size_action`        | `warn`  | `warn`, `prune` |
 
 All notifications expire, including unresolved requests' alerts. Audit history
 retains the notification title and message independently until the audit event
 expires. The audit log is also capped at 200,000 rows, oldest removed first. Expiry filters apply immediately; the API performs bounded cleanup at
-startup and every minute. Freed SQLite pages are reusable but the file may not
-shrink. See [Notifications](./notifications.md).
+startup and every minute.
+
+The daily maintenance pass deletes terminal history in two independent windows.
+`job_history_retention_days` (default 90) covers finished job and flow runs and
+stopped gateway sessions. `request_retention_days` (default 7) covers
+answered/expired/cancelled human requests and finished MCP tasks. Pending,
+running and snoozed work is never touched, and MCP task results still honour
+their own per-task TTL (default 1h, max 24h).
+
+The pass also compares the database size with `database_size_limit_mb` (default
+500; 0 disables). Over the limit, `database_size_action: "warn"` logs a warning
+and leaves both windows alone. `"prune"` clears all terminal history in that
+pass — finished job and flow runs, stopped gateway sessions, answered requests
+and finished MCP tasks — then vacuums a bounded number of pages. Pads, tasks,
+knowledge, memories and active work are never deleted automatically, so a
+database dominated by them stays over the limit and keeps warning. Auto-vacuum
+runs after each daily prune (bounded to 200 pages by default). New databases use
+incremental auto-vacuum; an existing database keeps its current mode until a
+one-time `VACUUM`, and `orc doctor` reports the size, free pages and mode. See
+[Notifications](./notifications.md).
+
+`preferences.scratchpad_expiry_grace_days` (default 7, JSON config) controls how long
+an expired scratchpad stays restorable before it is purged. See
+[Scratchpads](./desktop-and-web.md#scratchpads).
 
 ## Files and directories
 

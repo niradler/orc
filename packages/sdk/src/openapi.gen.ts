@@ -10498,6 +10498,12 @@ export interface paths {
                             attention_retention_hours?: number;
                             notification_retention_days?: number;
                             audit_retention_days?: number;
+                            job_history_retention_days?: number;
+                            request_retention_days?: number;
+                            database_size_limit_mb?: number;
+                            /** @enum {string} */
+                            database_size_action?: "warn" | "prune";
+                            scratchpad_expiry_grace_days?: number;
                             chat?: {
                                 providerId?: string;
                                 /** @default codex */
@@ -10650,6 +10656,12 @@ export interface paths {
                         attention_retention_hours?: number;
                         notification_retention_days?: number;
                         audit_retention_days?: number;
+                        job_history_retention_days?: number;
+                        request_retention_days?: number;
+                        database_size_limit_mb?: number;
+                        /** @enum {string} */
+                        database_size_action?: "warn" | "prune";
+                        scratchpad_expiry_grace_days?: number;
                         chat?: {
                             providerId?: string;
                             /** @default codex */
@@ -10792,6 +10804,12 @@ export interface paths {
                             attention_retention_hours?: number;
                             notification_retention_days?: number;
                             audit_retention_days?: number;
+                            job_history_retention_days?: number;
+                            request_retention_days?: number;
+                            database_size_limit_mb?: number;
+                            /** @enum {string} */
+                            database_size_action?: "warn" | "prune";
+                            scratchpad_expiry_grace_days?: number;
                             chat?: {
                                 providerId?: string;
                                 /** @default codex */
@@ -19204,6 +19222,9 @@ export interface paths {
                     tag?: string;
                     /** @description Search title and content */
                     q?: string;
+                    /** @description expiring = due within two days; expired = archived pads */
+                    expiry?: "expiring" | "expired";
+                    pinned?: "true" | "false";
                     limit?: number;
                 };
                 header?: never;
@@ -19233,6 +19254,11 @@ export interface paths {
                                 updated_at: number;
                                 archived_at: number | null;
                                 delete_after: number | null;
+                                expires_at: number | null;
+                                ttl_seconds: number | null;
+                                pinned: boolean;
+                                keep_alive: boolean;
+                                expiry_skipped_reason: string | null;
                                 size_bytes: number;
                             }[];
                             total: number;
@@ -19261,6 +19287,10 @@ export interface paths {
                         session_id?: string | null;
                         tags?: string[];
                         author?: string;
+                        ttl?: string | null;
+                        expires_at?: number | null;
+                        pinned?: boolean;
+                        keep_alive?: boolean;
                     };
                 };
             };
@@ -19286,6 +19316,11 @@ export interface paths {
                             updated_at: number;
                             archived_at: number | null;
                             delete_after: number | null;
+                            expires_at: number | null;
+                            ttl_seconds: number | null;
+                            pinned: boolean;
+                            keep_alive: boolean;
+                            expiry_skipped_reason: string | null;
                         };
                     };
                 };
@@ -19358,6 +19393,11 @@ export interface paths {
                             updated_at: number;
                             archived_at: number | null;
                             delete_after: number | null;
+                            expires_at: number | null;
+                            ttl_seconds: number | null;
+                            pinned: boolean;
+                            keep_alive: boolean;
+                            expiry_skipped_reason: string | null;
                         };
                     };
                 };
@@ -19410,6 +19450,11 @@ export interface paths {
                             updated_at: number;
                             archived_at: number | null;
                             delete_after: number | null;
+                            expires_at: number | null;
+                            ttl_seconds: number | null;
+                            pinned: boolean;
+                            keep_alive: boolean;
+                            expiry_skipped_reason: string | null;
                         };
                     };
                 };
@@ -19451,6 +19496,10 @@ export interface paths {
                         tags?: string[];
                         author?: string;
                         if_revision?: number;
+                        ttl?: string | null;
+                        expires_at?: number | null;
+                        pinned?: boolean;
+                        keep_alive?: boolean;
                     };
                 };
             };
@@ -19476,6 +19525,11 @@ export interface paths {
                             updated_at: number;
                             archived_at: number | null;
                             delete_after: number | null;
+                            expires_at: number | null;
+                            ttl_seconds: number | null;
+                            pinned: boolean;
+                            keep_alive: boolean;
+                            expiry_skipped_reason: string | null;
                         };
                     };
                 };
@@ -19553,6 +19607,11 @@ export interface paths {
                             updated_at: number;
                             archived_at: number | null;
                             delete_after: number | null;
+                            expires_at: number | null;
+                            ttl_seconds: number | null;
+                            pinned: boolean;
+                            keep_alive: boolean;
+                            expiry_skipped_reason: string | null;
                         };
                     };
                 };

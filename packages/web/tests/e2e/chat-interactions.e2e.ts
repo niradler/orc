@@ -200,6 +200,25 @@ for (const width of [390, 1440]) {
       "echo harmless",
     );
     await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeVisible();
+    // Collapsing only folds the card: the request stays pending and the transcript is readable.
+    await page.getByTestId("chat-question-collapse").filter({ visible: true }).click();
+    await expect(page.getByTestId("chat-question-collapsed")).toBeVisible();
+    await expect(page.getByTestId("chat-question")).toBeHidden();
+    await expect(page.getByTestId("chat-question-expand")).toBeFocused();
+    // The bar and the expanded card sit below the transcript instead of over it.
+    const messagesBox = await page.getByTestId("chat-messages").boundingBox();
+    const barBox = await page.getByTestId("chat-question-collapsed").boundingBox();
+    expect(messagesBox && barBox && barBox.y >= messagesBox.y + messagesBox.height - 2).toBe(true);
+    await page.getByTestId("chat-question-expand").click();
+    await expect(page.getByTestId("chat-question").filter({ visible: true })).toBeVisible();
+    await expect(page.getByTestId("chat-question-collapsed")).toHaveCount(0);
+    const expandedBox = await page.getByTestId("chat-question").boundingBox();
+    const expandedMessages = await page.getByTestId("chat-messages").boundingBox();
+    expect(
+      expandedMessages &&
+        expandedBox &&
+        expandedBox.y >= expandedMessages.y + expandedMessages.height - 2,
+    ).toBe(true);
     await expect(page.getByTestId("chat-send-outcome").filter({ visible: true })).toHaveText(
       "command permission pending · sends queue",
     );
@@ -210,11 +229,30 @@ for (const width of [390, 1440]) {
     ).toBeDisabled();
     await page.keyboard.press("Escape");
     await page.getByTestId("chat-permission-allow").filter({ visible: true }).click();
-    await page.getByTestId("chat-question-answer").filter({ visible: true }).first().fill("Blue");
+    // Several questions become a tabbed wizard: one step at a time, answers kept.
+    await expect(page.getByTestId("chat-question-step")).toHaveText("Question 1 of 2");
+    await expect(page.getByTestId("chat-question-tab-0")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("chat-question-submit")).toBeDisabled();
+    await page.getByTestId("chat-question-answer").filter({ visible: true }).fill("Blue");
+    const next = page.getByTestId("chat-question-next");
+    await expect(next).toBeEnabled();
+    await next.click();
+    await expect(page.getByTestId("chat-question-step")).toHaveText("Question 2 of 2");
+    await expect(page.getByTestId("chat-question-tab-1")).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByTestId("chat-question-next")).toHaveCount(0);
     const checkboxes = page.locator('input[type="checkbox"]').filter({ visible: true });
     await expect(checkboxes).toHaveCount(2);
     await checkboxes.nth(0).check();
     await checkboxes.nth(1).check();
+    // Tabs jump back and forth without losing the answers; arrows move between tabs.
+    await page.getByTestId("chat-question-tab-0").click();
+    await expect(page.getByTestId("chat-question-answer").filter({ visible: true })).toBeVisible();
+    await page.getByTestId("chat-question-tab-0").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByTestId("chat-question-tab-1")).toBeFocused();
+    await expect(page.getByTestId("chat-question-tab-1")).toHaveAttribute("aria-selected", "true");
+    await expect(checkboxes.nth(0)).toBeChecked();
+    await expect(checkboxes.nth(1)).toBeChecked();
     await page.screenshot({ path: testInfo.outputPath(`chat-question-${width}.png`) });
     await page.getByTestId("chat-question-submit").filter({ visible: true }).click();
     await expect(page.getByTestId("chat-input").filter({ visible: true })).toBeEnabled();

@@ -759,3 +759,58 @@ test("should wake due snoozes exactly once across database restarts", () => {
   expect(store.wakeDueSnoozes()).toEqual([]);
   db.close();
 });
+
+test("should prune terminal requests after retention and keep active work", () => {
+  const { db, store } = fixture();
+  new NotificationStore(db);
+  const insert = db.query(
+    `INSERT INTO human_requests(id,origin_key,input_hash,payload,status,version,created_at,expires_at,responded_at)
+     VALUES(?,?,?,?,?,?,?,?,?)`,
+  );
+  const day = 86_400_000;
+  const now = 30 * day;
+  const old = now - 10 * day;
+  const recent = now - day;
+  for (const [id, status, createdAt] of [
+    ["pending-old", "pending", old],
+    ["running-old", "running", old],
+    ["answered-old", "answered", old],
+    ["cancelled-old", "cancelled", old],
+    ["delivered-old", "delivered", old],
+    ["expired-old", "expired", old],
+    ["unavailable-old", "unavailable", old],
+    ["answered-recent", "answered", recent],
+  ] as const)
+    insert.run(id, id, "hash", "{}", status, 1, createdAt, createdAt + day, createdAt + 1000);
+
+  db.query(
+    "INSERT INTO human_request_notifications(request_id,channel,destination,version,can_reply,leased_until) VALUES(?,?,?,?,?,?)",
+  ).run("answered-old", "telegram", "chat", 1, 1, now);
+  db.query(
+    "INSERT INTO notifications(id,source_key,type,source_id,title,body,level,path,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+  ).run(
+    "note-1",
+    "human:answered-old",
+    "human.request",
+    "answered-old",
+    "T",
+    "B",
+    "info",
+    "/",
+    now,
+    now + day,
+  );
+
+  expect(store.pruneTerminal(7, now)).toBe(5);
+  const ids = db
+    .query<{ id: string }, []>("SELECT id FROM human_requests ORDER BY id")
+    .all()
+    .map((row) => row.id);
+  expect(ids).toEqual(["answered-recent", "pending-old", "running-old"]);
+  expect(
+    db.query("SELECT 1 FROM human_request_notifications WHERE request_id=?").get("answered-old"),
+  ).toBeNull();
+  expect(db.query("SELECT 1 FROM notifications WHERE source_id=?").get("answered-old")).toBeNull();
+  expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+  expect(() => store.pruneTerminal(-1, now)).toThrow("non-negative");
+});

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { loadConfig, resetConfig } from "@orc/core/config";
 import { ulid } from "@orc/core/ids";
 import { createTestDb } from "@orc/db/client";
 import {
@@ -163,8 +164,8 @@ describe("Scheduler - pruneHistory", () => {
   test("prunes old runs and terminal gateway sessions, nulling FK referrers without errors", async () => {
     const { getDb } = await import("@orc/db/client");
     const db = getDb();
-    // Older than the 7-day retention window.
-    const old = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    // Older than the 90-day job history window.
+    const old = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
 
     const jobId = ulid();
     await db.insert(jobs).values({
@@ -177,6 +178,11 @@ describe("Scheduler - pruneHistory", () => {
     await db
       .insert(job_runs)
       .values({ id: runId, job_id: jobId, status: "success", created_at: old });
+    // A very long run is active work, not history: age alone must not delete it.
+    const runningRunId = ulid();
+    await db
+      .insert(job_runs)
+      .values({ id: runningRunId, job_id: jobId, status: "running", created_at: old });
     // A runner session and bridge rows that reference the run / a terminal
     // gateway session — the exact FK web that previously made the prune fail.
     await db.insert(sessions).values({
@@ -225,6 +231,9 @@ describe("Scheduler - pruneHistory", () => {
     // The run and terminal gateway session are gone.
     expect(await db.query.job_runs.findFirst({ where: eq(job_runs.id, runId) })).toBeUndefined();
     expect(
+      await db.query.job_runs.findFirst({ where: eq(job_runs.id, runningRunId) }),
+    ).toBeDefined();
+    expect(
       await db.query.gateway_sessions.findFirst({
         where: eq(gateway_sessions.id, gwId),
       }),
@@ -241,5 +250,33 @@ describe("Scheduler - pruneHistory", () => {
     });
     expect(perm?.job_run_id).toBeNull();
     expect(perm?.gateway_session_id).toBeNull();
+  });
+
+  test("prune action clears terminal runs inside the window when the database is over the limit", async () => {
+    const { getDb } = await import("@orc/db/client");
+    const db = getDb();
+    const jobId = ulid();
+    await db.insert(jobs).values({
+      id: jobId,
+      name: `size-job-${jobId}`,
+      command: "echo x",
+      trigger_type: "manual",
+    });
+    const runId = ulid();
+    await db.insert(job_runs).values({
+      id: runId,
+      job_id: jobId,
+      status: "success",
+      created_at: new Date(Date.now() - 1_000),
+      // Push the in-memory database past the 1 MB test limit.
+      stdout: "x".repeat(2_000_000),
+    });
+    loadConfig({ preferences: { database_size_limit_mb: 1, database_size_action: "prune" } });
+    try {
+      expect(() => pruneHistory()).not.toThrow();
+    } finally {
+      resetConfig();
+    }
+    expect(await db.query.job_runs.findFirst({ where: eq(job_runs.id, runId) })).toBeUndefined();
   });
 });

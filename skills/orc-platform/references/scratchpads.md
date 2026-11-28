@@ -49,11 +49,13 @@ sequences, ER). Use `diagram` when layout matters or the human will draw on it.
 
 ## Create, read, update
 
-- MCP: `pad_create({kind, title, content?, project?, tags?})` → id, revision, link.
+- MCP: `pad_create({kind, title, content?, project?, tags?, ttl?})` → id, revision, link.
   Give the human the link. Pads link to the current agent session by default
-  (`link_session:false` to skip); `project` is optional.
-- `pad_list({project?, session:"current", kind?, q?})` finds pads; `pad_get({id})`
-  returns the header then the raw file.
+  (`link_session:false` to skip); `project` is optional. `ttl` (`1h`, `7d`, `4w`)
+  or `expires_at` makes the pad temporary; pass one for most working pads.
+- `pad_list({project?, session:"current", kind?, q?, expiry?, pinned?})` finds pads;
+  `expiry:"expiring"` is due within two days, `expiry:"expired"` is archived.
+  `pad_get({id})` returns the header then the raw file, including any expiry.
 - `pad_update({id, content, if_revision})` replaces the whole file. Always pass the
   revision from your last `pad_get`: the human may have edited it. On a mismatch,
   re-read, merge their change and retry; never drop their edit.
@@ -65,6 +67,24 @@ sequences, ER). Use `diagram` when layout matters or the human will draw on it.
 - CLI: `orc pad ls|show|new <kind> <title> -f file|pull <id> [file]|push <id> <file> -r <rev>|rm`.
   `pull` then `push -r` is the safe edit loop for a local file.
 - Deleting is permanent; delete only pads you created or were told to remove.
+
+## Lifetime and cleanup
+
+There is no implicit default: a pad without a `ttl` or `expires_at` lives until it is
+deleted. In practice most pads are temporary working surfaces, so create them with a
+`ttl` (`1h`, `1d`, `7d`) and omit it only for a living plan, a design note the human
+will keep, or a human-owned pad. `pad_update({id, ttl:null})` clears
+it, `ttl:"7d"` restarts it, `pinned:true` exempts the pad, and `keep_alive:true` slides
+the expiry forward on every edit.
+
+When an expiry is due ORC archives the pad (still readable, with a `delete_after`
+deadline) and purges it after a default 7-day grace period. Restoring cancels both
+and makes the pad permanent. A pinned pad, or a pad whose id appears in another pad,
+a task body, a comment, a knowledge-base document or a memory, is not archived: its
+expiry is cleared and `pad_get` / `pad_list` show **expiry skipped** with the reason.
+`pad_list` returns `expires_at`, so an agent can clean up or extend its own pads.
+
+Quick check: create with `ttl:"1h"`, then `pad_list({expiry:"expiring"})` includes it.
 
 ## Plans and docs (`doc`)
 

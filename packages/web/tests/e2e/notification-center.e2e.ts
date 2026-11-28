@@ -411,19 +411,38 @@ test("notification and audit retention save in Settings with defaults and an aud
 }) => {
   await request.patch(`${API_BASE}/settings`, {
     headers: AUTH_HEADERS,
-    data: { notification_retention_days: 30, audit_retention_days: 90 },
+    data: {
+      notification_retention_days: 30,
+      audit_retention_days: 90,
+      job_history_retention_days: 90,
+      request_retention_days: 7,
+      database_size_limit_mb: 500,
+      database_size_action: "warn",
+    },
   });
   await gotoView(page, "settings");
   await page.goto("/settings?settingsSection=notifications");
   await expect(page.getByTestId("notification-retention-days")).toHaveValue("30");
   await expect(page.getByTestId("audit-retention-days")).toHaveValue("90");
+  await expect(page.getByTestId("job-history-retention-days")).toHaveValue("90");
+  await expect(page.getByTestId("request-retention-days")).toHaveValue("7");
+  await expect(page.getByTestId("database-size-limit-mb")).toHaveValue("500");
+  await expect(page.getByTestId("database-size-action")).toHaveValue("warn");
   await page.getByTestId("notification-retention-days").fill("2");
   await page.getByTestId("audit-retention-days").fill("7");
+  await page.getByTestId("job-history-retention-days").fill("120");
+  await page.getByTestId("request-retention-days").fill("3");
+  await page.getByTestId("database-size-limit-mb").fill("700");
+  await page.getByTestId("database-size-action").selectOption("prune");
   await page.getByTestId("retention-save").click();
   await expect(page.getByRole("status")).toContainText("Retention saved.");
   await page.reload();
   await expect(page.getByTestId("notification-retention-days")).toHaveValue("2");
   await expect(page.getByTestId("audit-retention-days")).toHaveValue("7");
+  await expect(page.getByTestId("job-history-retention-days")).toHaveValue("120");
+  await expect(page.getByTestId("request-retention-days")).toHaveValue("3");
+  await expect(page.getByTestId("database-size-limit-mb")).toHaveValue("700");
+  await expect(page.getByTestId("database-size-action")).toHaveValue("prune");
   const audit = await apiGet<{ entries: { action: string }[] }>(
     request,
     "/audit?scope=all&entity_type=settings&snapshot=preview",
@@ -431,6 +450,13 @@ test("notification and audit retention save in Settings with defaults and an aud
   expect(audit.entries.some((entry) => entry.action === "settings.retention_changed")).toBe(true);
   await request.patch(`${API_BASE}/settings`, {
     headers: AUTH_HEADERS,
-    data: { notification_retention_days: 30, audit_retention_days: 90 },
+    data: {
+      notification_retention_days: 30,
+      audit_retention_days: 90,
+      job_history_retention_days: 90,
+      request_retention_days: 7,
+      database_size_limit_mb: 500,
+      database_size_action: "warn",
+    },
   });
 });

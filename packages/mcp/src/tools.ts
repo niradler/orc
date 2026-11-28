@@ -50,6 +50,7 @@ import {
 } from "@orc/core/package-service";
 import { providerChatDefaults } from "@orc/core/provider-service";
 import {
+  MAX_EXPIRES_AT,
   SCRATCHPAD_KINDS,
   SCRATCHPAD_TAGS_MAX,
   SCRATCHPAD_TITLE_MAX,
@@ -722,7 +723,8 @@ export const toolDefinitions = [
       "List scratchpads (newest first, without content): working docs (markdown + mermaid), " +
       "Excalidraw diagrams and HTML pages a human or agent keeps and revisits. Omit project to list " +
       "every pad; unassigned:true lists pads without a project; session:'current' lists pads " +
-      "linked to this agent session. Read one with pad_get.",
+      "linked to this agent session. expiry:'expiring' lists pads due within two days and " +
+      "expiry:'expired' lists archived pads; pinned:true lists pinned pads. Read one with pad_get.",
     inputSchema: z.object({
       kind: z.enum(SCRATCHPAD_KINDS).optional(),
       project: z.string().min(1).optional().describe("Project name; omit for every project"),
@@ -733,6 +735,11 @@ export const toolDefinitions = [
         .describe("A native session id, or 'current' for this agent session"),
       tag: z.string().optional(),
       q: z.string().optional().describe("Search title and content"),
+      expiry: z
+        .enum(["expiring", "expired"])
+        .optional()
+        .describe("expiring = due within two days; expired = archived pads"),
+      pinned: z.boolean().optional().describe("true lists pinned pads only"),
       limit: z.number().int().min(1).max(500).optional().describe("Max pads (default 50)"),
     }),
   },
@@ -756,8 +763,9 @@ export const toolDefinitions = [
       "render it with ORC access, `window.orc.fetch(path, init)` calls the ORC API as them " +
       "(check `window.orc` and fall back to sample data; pin CDN scripts with integrity). " +
       "Linked to this agent session " +
-      "by default. Returns the id, revision and a deep link to share with the human. For large " +
-      "content create it empty, then pad_update with via:'url'.",
+      "by default. Returns the id, revision and a deep link to share with the human. Most pads " +
+      "are temporary: pass a ttl (1h, 7d); omit it only for a durable pad. pinned:true " +
+      "exempts a pad from its expiry. For large content create it empty, then pad_update with via:'url'.",
     inputSchema: z.object({
       kind: z.enum(SCRATCHPAD_KINDS),
       title: z.string().trim().min(1).max(SCRATCHPAD_TITLE_MAX),
@@ -772,6 +780,24 @@ export const toolDefinitions = [
         .boolean()
         .optional()
         .describe("Link to this agent session (default true when the session is known)"),
+      ttl: z
+        .string()
+        .trim()
+        .min(1)
+        .max(16)
+        .optional()
+        .describe("Expire after a duration such as 1h, 7d or 4w; omit for no expiry"),
+      expires_at: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Expire at an epoch-seconds deadline instead of a ttl"),
+      pinned: z.boolean().optional().describe("Never auto-expire this pad"),
+      keep_alive: z
+        .boolean()
+        .optional()
+        .describe("Extend the expiry from now on every edit (sliding ttl)"),
     }),
   },
   {
@@ -780,14 +806,32 @@ export const toolDefinitions = [
       "Update a scratchpad. Pass if_revision (from pad_get) so a human's concurrent edit is not " +
       "overwritten: it fails if the file changed since then (or, when you also set title, project " +
       "or tags, if anything changed), and you should re-read. content replaces the whole file. " +
-      "project null removes the project link. via:'url' instead returns an upload_url: PUT the raw " +
-      "file to it (curl -T file URL), valid for one write at the current revision.",
+      "project null removes the project link. ttl or expires_at sets an expiry; null clears it. " +
+      "via:'url' instead returns an upload_url: PUT the raw file to it (curl -T file URL), " +
+      "valid for one write at the current revision.",
     inputSchema: z.object({
       id: z.string().min(1).max(64),
       title: z.string().trim().min(1).max(SCRATCHPAD_TITLE_MAX).optional(),
       content: z.string().optional(),
       project: z.string().min(1).nullable().optional().describe("Project name, or null to unlink"),
       tags: z.array(z.string().min(1).max(64)).max(SCRATCHPAD_TAGS_MAX).optional(),
+      ttl: z
+        .string()
+        .trim()
+        .min(1)
+        .max(16)
+        .nullable()
+        .optional()
+        .describe("Expire after a duration such as 1h or 7d; null clears the expiry"),
+      expires_at: z
+        .number()
+        .int()
+        .positive()
+        .nullable()
+        .optional()
+        .describe("Epoch-seconds deadline; null clears the expiry"),
+      pinned: z.boolean().optional().describe("Never auto-expire this pad"),
+      keep_alive: z.boolean().optional().describe("Extend the expiry on each edit"),
       if_revision: z.number().int().min(1).optional(),
       via: z.enum(["inline", "url"]).optional().describe("url: return an upload_url instead"),
     }),
@@ -1539,20 +1583,39 @@ function padProjectName(projectId: string | null): string {
   );
 }
 
+/** Expiry state shown in pad lists and headers; stale deletes still show their own deadline. */
+function padExpiryParts(
+  pad: Pick<
+    Scratchpad,
+    "expires_at" | "pinned" | "keep_alive" | "expiry_skipped_reason" | "archived_at"
+  >,
+): string[] {
+  const parts: string[] = [];
+  if (pad.pinned) parts.push("pinned");
+  if (pad.expires_at && !pad.archived_at && pad.expires_at <= MAX_EXPIRES_AT)
+    parts.push(`expires ${new Date(pad.expires_at * 1000).toISOString().slice(0, 10)}`);
+  if (pad.keep_alive) parts.push("keep-alive");
+  if (pad.expiry_skipped_reason) parts.push(`expiry skipped: ${pad.expiry_skipped_reason}`);
+  return parts;
+}
+
 function formatPadLine(pad: ScratchpadListItem): string {
   const tags = pad.tags.length ? ` #${pad.tags.join(" #")}` : "";
   const updated = new Date(pad.updated_at * 1000).toISOString();
   const deletes = pad.delete_after
     ? `, deletes ${new Date(pad.delete_after * 1000).toISOString().slice(0, 10)}`
     : "";
-  return `${pad.id} [${pad.kind}] ${pad.title} - rev ${pad.revision}, ${pad.size_bytes} B, project ${padProjectName(pad.project_id)}, updated ${updated} by ${pad.author}${tags}${deletes}`;
+  const expiry = padExpiryParts(pad);
+  return `${pad.id} [${pad.kind}] ${pad.title} - rev ${pad.revision}, ${pad.size_bytes} B, project ${padProjectName(pad.project_id)}, updated ${updated} by ${pad.author}${tags}${deletes}${expiry.length ? `, ${expiry.join(", ")}` : ""}`;
 }
 
 function padHeader(pad: Scratchpad, options: ToolOptions): string {
+  const expiry = padExpiryParts(pad);
   return [
     `# ${pad.title}`,
     `id: ${pad.id} | kind: ${pad.kind} | revision: ${pad.revision} | author: ${pad.author}`,
     `project: ${padProjectName(pad.project_id)} | session: ${pad.session_id ?? "none"} | tags: ${pad.tags.join(", ") || "none"}`,
+    ...(expiry.length ? [`expiry: ${expiry.join(" | ")}`] : []),
     ...(pad.delete_after
       ? [
           `deletes: ${new Date(pad.delete_after * 1000).toISOString().slice(0, 10)} (${ttlDaysLeft(pad.delete_after)} days left; pad_delete restore true cancels)`,
@@ -2536,6 +2599,8 @@ async function runTool(
         session?: string;
         tag?: string;
         q?: string;
+        expiry?: "expiring" | "expired";
+        pinned?: boolean;
         limit?: number;
       };
       const session =
@@ -2554,6 +2619,8 @@ async function runTool(
           session_id: session,
           tag: input.tag,
           q: input.q,
+          expiry: input.expiry,
+          pinned: input.pinned,
         })
         // A project-scoped connection sees its projects' pads and pads without a project.
         .filter((pad) => !scopes || !pad.project_id || scopes.includes(pad.project_id));
@@ -2581,6 +2648,10 @@ async function runTool(
         project?: string;
         tags?: string[];
         link_session?: boolean;
+        ttl?: string;
+        expires_at?: number;
+        pinned?: boolean;
+        keep_alive?: boolean;
       };
       const writer = memoryWriter(options);
       const pad = new ScratchpadStore(getSqlite(db)).create({
@@ -2591,6 +2662,10 @@ async function runTool(
         session_id: input.link_session === false ? null : writer.session_id,
         tags: input.tags,
         author: writer.author,
+        ttl: input.ttl,
+        expires_at: input.expires_at,
+        pinned: input.pinned,
+        keep_alive: input.keep_alive,
       });
       return `Created ${pad.kind} scratchpad ${pad.id} (revision ${pad.revision}): ${padLink(pad.id, options)}`;
     }
@@ -2602,6 +2677,10 @@ async function runTool(
         content?: string;
         project?: string | null;
         tags?: string[];
+        ttl?: string | null;
+        expires_at?: number | null;
+        pinned?: boolean;
+        keep_alive?: boolean;
         if_revision?: number;
         via?: "inline" | "url";
       };
@@ -2612,10 +2691,14 @@ async function runTool(
           fields.content !== undefined ||
           fields.title !== undefined ||
           fields.tags !== undefined ||
+          fields.ttl !== undefined ||
+          fields.expires_at !== undefined ||
+          fields.pinned !== undefined ||
+          fields.keep_alive !== undefined ||
           project !== undefined
         )
           throw new ValidationError(
-            "via:'url' only returns an upload URL; update title, tags or project in a separate call",
+            "via:'url' only returns an upload URL; update metadata in a separate call",
           );
         return JSON.stringify(await padContentUrl(id, "upload", options, fields.if_revision));
       }

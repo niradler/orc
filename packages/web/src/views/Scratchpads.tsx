@@ -2,6 +2,7 @@ import {
   SCRATCHPAD_FILES,
   SCRATCHPAD_KINDS,
   type ScratchpadKind,
+  type ScratchpadListItem,
   scratchpadFilename,
 } from "@orc/core/scratchpad";
 import { ttlDaysLeft } from "@orc/core/ttl";
@@ -12,6 +13,7 @@ import {
   Link2,
   Maximize2,
   Minimize2,
+  Pin,
   Plus,
   RotateCcw,
   Search,
@@ -52,6 +54,7 @@ import {
   useRestoreScratchpad,
   useScratchpad,
   useScratchpads,
+  useUpdateScratchpad,
 } from "@/hooks/useScratchpads";
 import { formatWhen } from "@/lib/live-sessions";
 import { saveFile } from "@/lib/save-file";
@@ -95,6 +98,24 @@ function KindLabel({ kind }: { kind: ScratchpadKind }) {
   );
 }
 
+/** Expiry and pin state in a list row; archived pads show their delete deadline instead. */
+function ExpiryNote({ pad }: { pad: ScratchpadListItem }) {
+  const parts: string[] = [];
+  if (pad.pinned) parts.push("pinned");
+  if (pad.expires_at && !pad.archived_at) parts.push(`expires in ${ttlDaysLeft(pad.expires_at)}d`);
+  if (pad.expiry_skipped_reason) parts.push("expiry skipped");
+  if (!parts.length) return null;
+  return (
+    <span
+      data-testid="scratchpad-expiry-note"
+      title={pad.expiry_skipped_reason ?? undefined}
+      className="ml-2 font-label text-xs text-warning"
+    >
+      {parts.join(" · ")}
+    </span>
+  );
+}
+
 function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
   const desktop = useBreakpoint("lg");
   const navigate = useNavigate();
@@ -112,6 +133,11 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
   const [kind, setKind] = useViewParam<ScratchpadKind | typeof ALL>("padKind", ALL, [
     ALL,
     ...SCRATCHPAD_KINDS,
+  ]);
+  const [expiry, setExpiry] = useViewParam<"all" | "expiring" | "expired">("padExpiry", "all", [
+    "all",
+    "expiring",
+    "expired",
   ]);
   const [query, setQuery] = useViewParam<string>("padQuery", "");
   const [searchInput, setSearchInput] = useState(query);
@@ -138,12 +164,13 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
     include_global: project !== ALL && project !== UNASSIGNED ? "true" : undefined,
     unassigned: project === UNASSIGNED ? "true" : undefined,
     q: query || undefined,
+    expiry: expiry === "all" ? undefined : expiry,
     limit: LIST_LIMIT,
   });
   const pads = list.data?.scratchpads ?? [];
   const projectName = (id: string | null) =>
     id ? (projects?.find((p) => p.id === id)?.name ?? id) : "Global";
-  const filtered = Boolean(query) || kind !== ALL || project !== ALL;
+  const filtered = Boolean(query) || kind !== ALL || project !== ALL || expiry !== "all";
 
   return (
     <div>
@@ -187,7 +214,9 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
             className="h-11 pl-9 text-base lg:h-9 lg:text-sm"
           />
         </div>
-        <ResponsiveFilters activeCount={Number(kind !== ALL) + Number(project !== ALL)}>
+        <ResponsiveFilters
+          activeCount={Number(kind !== ALL) + Number(project !== ALL) + Number(expiry !== "all")}
+        >
           <Select value={project} onValueChange={(value) => setProject(value)}>
             <SelectTrigger
               aria-label="Project"
@@ -213,6 +242,29 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
                   {p.name}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={expiry}
+            onValueChange={(value) => setExpiry(value as "all" | "expiring" | "expired")}
+          >
+            <SelectTrigger
+              aria-label="Expiry"
+              data-testid="scratchpad-expiry-filter"
+              className="h-11 w-40 max-w-full bg-background font-body text-base text-on-surface lg:h-9 lg:text-sm"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-surface border-outline-variant">
+              <SelectItem value="all" className="font-body text-sm">
+                All pads
+              </SelectItem>
+              <SelectItem value="expiring" className="font-body text-sm">
+                Expiring soon
+              </SelectItem>
+              <SelectItem value="expired" className="font-body text-sm">
+                Archived
+              </SelectItem>
             </SelectContent>
           </Select>
           <div className="flex shrink-0 flex-wrap gap-1.5">
@@ -298,6 +350,7 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
                           deletes in {ttlDaysLeft(pad.delete_after)} days
                         </span>
                       )}
+                      <ExpiryNote pad={pad} />
                     </TableCell>
                     <TableCell>
                       <KindLabel kind={pad.kind} />
@@ -350,6 +403,7 @@ function ScratchpadList({ defaultProjectId }: { defaultProjectId: string }) {
                         deletes in {ttlDaysLeft(pad.delete_after)} days
                       </span>
                     )}
+                    <ExpiryNote pad={pad} />
                   </div>
                 </Link>
               ))}
@@ -380,6 +434,7 @@ function ScratchpadPage({ id }: { id: string }) {
   const [fullscreen, setFullscreen] = useState(false);
   const remove = useDeleteScratchpad();
   const restore = useRestoreScratchpad();
+  const pin = useUpdateScratchpad();
   const back = `${SCRATCHPADS_PATH}${location.search}`;
 
   useEffect(() => {
@@ -462,6 +517,26 @@ function ScratchpadPage({ id }: { id: string }) {
               </span>
             )}
             {pad.tags.length > 0 && <span>{pad.tags.map((t) => `#${t}`).join(" ")}</span>}
+            {pad.pinned && (
+              <span data-testid="scratchpad-pinned" className="text-warning">
+                pinned
+              </span>
+            )}
+            {pad.expires_at && !pad.archived_at && (
+              <span data-testid="scratchpad-expires" className="text-warning">
+                expires in {ttlDaysLeft(pad.expires_at)} days
+              </span>
+            )}
+            {pad.keep_alive && pad.expires_at && <span>extends on edit</span>}
+            {pad.expiry_skipped_reason && (
+              <span
+                data-testid="scratchpad-expiry-skipped"
+                title={pad.expiry_skipped_reason}
+                className="text-warning"
+              >
+                expiry skipped
+              </span>
+            )}
             {pad.delete_after && (
               <span data-testid="scratchpad-deletes" className="text-destructive">
                 deletes in {ttlDaysLeft(pad.delete_after)} days
@@ -504,6 +579,16 @@ function ScratchpadPage({ id }: { id: string }) {
             }
           >
             <Download size={12} className="mr-1" /> Download
+          </Button>
+          <Button
+            data-testid="scratchpad-pin"
+            size="sm"
+            variant="outline"
+            aria-pressed={pad.pinned}
+            disabled={pin.isPending}
+            onClick={() => pin.mutate({ id: pad.id, pinned: !pad.pinned })}
+          >
+            <Pin size={12} className="mr-1" /> {pad.pinned ? "Unpin" : "Pin"}
           </Button>
           <Button
             data-testid="scratchpad-properties"

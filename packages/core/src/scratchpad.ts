@@ -80,6 +80,25 @@ const TitleSchema = z.string().trim().min(1).max(SCRATCHPAD_TITLE_MAX);
 const TagsSchema = z.array(z.string().min(1).max(64)).max(SCRATCHPAD_TAGS_MAX);
 const SessionIdSchema = z.string().min(1).max(200);
 
+/** Furthest accepted absolute deadline (2100-01-01); keeps dates printable and sweeps bounded. */
+export const MAX_EXPIRES_AT = 4_102_444_800;
+
+/** `ttl` is a duration (`1h`, `7d`) and `expires_at` an absolute epoch-seconds deadline. */
+const ExpiryFields = {
+  ttl: z.string().trim().min(1).max(16).nullable().optional(),
+  expires_at: z.number().int().positive().max(MAX_EXPIRES_AT).nullable().optional(),
+  pinned: z.boolean().optional(),
+  keep_alive: z.boolean().optional(),
+};
+function hasOneExpiry(value: {
+  ttl?: string | null | undefined;
+  expires_at?: number | null | undefined;
+}): boolean {
+  return !(typeof value.ttl === "string" && typeof value.expires_at === "number");
+}
+export const ScratchpadExpiryFilterSchema = z.enum(["expiring", "expired"]);
+export type ScratchpadExpiryFilter = z.infer<typeof ScratchpadExpiryFilterSchema>;
+
 export const ScratchpadSchema = z.object({
   id: z.string(),
   kind: ScratchpadKindSchema,
@@ -97,6 +116,16 @@ export const ScratchpadSchema = z.object({
   archived_at: z.number().int().nullable(),
   /** Epoch seconds after which the maintenance sweep purges the pad; null when active. */
   delete_after: z.number().int().nullable(),
+  /** Epoch seconds when the pad expires; null means it never expires. */
+  expires_at: z.number().int().nullable(),
+  /** The original TTL window used to slide `expires_at` on edit; null without a TTL. */
+  ttl_seconds: z.number().int().nullable(),
+  /** A pinned pad is never archived by its expiry. */
+  pinned: z.boolean(),
+  /** Extend the expiry from now on every edit. */
+  keep_alive: z.boolean(),
+  /** Why an expiry did not archive the pad (for example, a task references it). */
+  expiry_skipped_reason: z.string().nullable(),
 });
 export type Scratchpad = z.infer<typeof ScratchpadSchema>;
 
@@ -114,8 +143,10 @@ export const ScratchpadCreateSchema = z
     session_id: SessionIdSchema.nullable().optional(),
     tags: TagsSchema.optional(),
     author: z.string().min(1).max(200).optional(),
+    ...ExpiryFields,
   })
-  .strict();
+  .strict()
+  .refine(hasOneExpiry, { message: "Supply either ttl or expires_at, not both", path: ["ttl"] });
 export type ScratchpadCreate = z.infer<typeof ScratchpadCreateSchema>;
 
 export const ScratchpadUpdateSchema = z
@@ -128,8 +159,10 @@ export const ScratchpadUpdateSchema = z
     author: z.string().min(1).max(200).optional(),
     /** Optimistic concurrency: the write fails with 409 unless the pad is still at this revision. */
     if_revision: z.number().int().min(1).optional(),
+    ...ExpiryFields,
   })
-  .strict();
+  .strict()
+  .refine(hasOneExpiry, { message: "Supply either ttl or expires_at, not both", path: ["ttl"] });
 export type ScratchpadUpdate = z.infer<typeof ScratchpadUpdateSchema>;
 
 export type ScratchpadListQuery = {
@@ -142,6 +175,9 @@ export type ScratchpadListQuery = {
   tag?: string | undefined;
   /** Case-insensitive match on title and content. */
   q?: string | undefined;
+  /** `expiring` = due within two days and not archived; `expired` = archived pads. */
+  expiry?: ScratchpadExpiryFilter | undefined;
+  pinned?: boolean | undefined;
 };
 
 export const ScratchpadContentUrlSchema = z.object({

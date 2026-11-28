@@ -41,6 +41,32 @@ describe("kit tokens track the dashboard", () => {
     expect(tokens(kit, ":root\\.dark").get("color-scheme")).toBe("dark");
   });
 
+  test("should keep retired kit versions bundled", () => {
+    expect(ORC_KIT_STYLESHEETS[1]).toContain(".orc-chart {");
+    expect(ORC_KIT_STYLESHEETS[2]).toContain(".orc-chart {");
+    expect(ORC_KIT_STYLESHEETS[2]).not.toContain(".orc-chart-series");
+    for (const retired of [1, 2]) {
+      expect(requestedKitVersion(`<meta name="orc-kit" content="${retired}">`)).toEqual({
+        version: retired,
+        pinned: true,
+      });
+    }
+  });
+
+  test("should theme orc-chart marks with the chart tokens", () => {
+    for (const cls of [
+      ".orc-chart-grid",
+      ".orc-chart-text",
+      ".orc-chart-series",
+      ".orc-chart-area",
+      ".orc-chart-bar",
+      ".orc-chart-point",
+    ]) {
+      expect(kit).toContain(cls);
+    }
+    expect(ORC_KIT_STYLESHEETS[ORC_KIT_VERSION]).toContain("var(--chart-line)");
+  });
+
   test("should define the components the issue lists", () => {
     for (const cls of [
       ".orc-page",
@@ -124,6 +150,16 @@ describe("withOrcKit injection", () => {
     const script = injectedScript(page, "dark");
     expect(script.startsWith('document.documentElement.classList.add("dark");')).toBe(true);
     expect(() => new Function(script)).not.toThrow();
+  });
+
+  test("should define orc-chart and redraw when its data changes", () => {
+    const script = injectedScript(page, "light");
+    expect(script).toContain('define("orc-chart"');
+    expect(script).toContain("observedAttributes");
+    expect(script).toContain("ResizeObserver");
+    // Data is parsed as JSON and written as SVG text, never as markup.
+    expect(script).toContain("createElementNS");
+    expect(script).not.toContain("innerHTML");
   });
 
   test("should carry the tabs script once, and stay bridge-compatible", () => {

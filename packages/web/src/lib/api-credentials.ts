@@ -17,6 +17,10 @@ export type WorkspacePreferences = {
   attention_retention_hours?: number;
   notification_retention_days?: number;
   audit_retention_days?: number;
+  job_history_retention_days?: number;
+  request_retention_days?: number;
+  database_size_limit_mb?: number;
+  database_size_action?: "warn" | "prune";
   theme?: "dark" | "light";
   terminal_font?: string;
   chat?: ChatSettings;

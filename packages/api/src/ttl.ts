@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { loadConfig } from "@orc/core/config";
 import { getSqlite } from "@orc/db/client";
 import { ScratchpadStore } from "@orc/db/scratchpads";
 import { sweepTtl, type TtlSweep, type TtlSweepOutcome } from "@orc/db/ttl";
@@ -27,5 +28,11 @@ function sweepsFor(sqlite: Database): TtlSweep[] {
 }
 
 export function purgeExpiredTtl(sqlite: Database = getSqlite()): TtlSweepOutcome {
+  // Expiry archives the pad and schedules its purge; the sweep below then
+  // removes pads whose grace period has ended.
+  new ScratchpadStore(sqlite).expireDue(
+    new Date(),
+    loadConfig().preferences.scratchpad_expiry_grace_days ?? 7,
+  );
   return sweepTtl(sqlite, sweepsFor(sqlite));
 }

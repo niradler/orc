@@ -213,6 +213,11 @@ const PreferencesSchema = z
     attention_retention_hours: z.number().int().min(1).max(8760).optional(),
     notification_retention_days: z.number().int().min(1).max(3650).optional(),
     audit_retention_days: z.number().int().min(1).max(3650).optional(),
+    job_history_retention_days: z.number().int().min(1).max(3650).optional(),
+    request_retention_days: z.number().int().min(1).max(3650).optional(),
+    database_size_limit_mb: z.number().int().min(0).max(1_000_000).optional(),
+    database_size_action: z.enum(["warn", "prune"]).optional(),
+    scratchpad_expiry_grace_days: z.number().int().min(1).max(3650).optional(),
     chat: ChatSettingsSchema.optional(),
     favorite_models: FavoriteModelsSchema.optional(),
     composer_profiles: ComposerProfilesSchema.optional(),
@@ -290,22 +295,42 @@ app.openapi(
     const before = {
       notification_retention_days: previous.notification_retention_days ?? 30,
       audit_retention_days: previous.audit_retention_days ?? 90,
+      job_history_retention_days: previous.job_history_retention_days ?? 90,
+      request_retention_days: previous.request_retention_days ?? 7,
+      database_size_limit_mb: previous.database_size_limit_mb ?? 500,
+      database_size_action: previous.database_size_action ?? "warn",
     };
     const after = {
       notification_retention_days: config.preferences.notification_retention_days ?? 30,
       audit_retention_days: config.preferences.audit_retention_days ?? 90,
+      job_history_retention_days: config.preferences.job_history_retention_days ?? 90,
+      request_retention_days: config.preferences.request_retention_days ?? 7,
+      database_size_limit_mb: config.preferences.database_size_limit_mb ?? 500,
+      database_size_action: config.preferences.database_size_action ?? "warn",
     };
     if (
       before.notification_retention_days !== after.notification_retention_days ||
-      before.audit_retention_days !== after.audit_retention_days
+      before.audit_retention_days !== after.audit_retention_days ||
+      before.job_history_retention_days !== after.job_history_retention_days ||
+      before.request_retention_days !== after.request_retention_days ||
+      before.database_size_limit_mb !== after.database_size_limit_mb ||
+      before.database_size_action !== after.database_size_action
     )
       recordAudit(c, {
         action: "settings.retention_changed",
         subject_ids: [],
         snapshot: { before, after },
       });
+    const retentionKeys = new Set([
+      "notification_retention_days",
+      "audit_retention_days",
+      "job_history_retention_days",
+      "request_retention_days",
+      "database_size_limit_mb",
+      "database_size_action",
+    ]);
     const others = Object.fromEntries(
-      Object.entries(preferences).filter(([key]) => !key.endsWith("_retention_days")),
+      Object.entries(preferences).filter(([key]) => !retentionKeys.has(key)),
     );
     const diff = diffSummary(
       previous as Record<string, unknown>,
