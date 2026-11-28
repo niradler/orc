@@ -99,7 +99,7 @@ export function UsageTable({ usage, testId }: { usage: KbUsageStats; testId: str
               data-testid={`${testId}-${source}`}
               className="border-t border-outline-variant/50"
             >
-              <td className="py-1 uppercase">{source}</td>
+              <td className="py-1">{source.toUpperCase()}</td>
               {KB_READ_KINDS.map((k) => (
                 <td key={k} className="py-1 text-right tabular-nums">
                   {usage.totals[source][k]}
@@ -504,7 +504,7 @@ export function KbDocumentPane({
 function DetailsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-1.5">
-      <h2 className="text-[11px] font-medium uppercase tracking-wide text-outline">{title}</h2>
+      <h2 className="text-xs font-medium text-outline">{title}</h2>
       {children}
     </section>
   );
@@ -534,9 +534,9 @@ function DocumentDetails({
       <div className="space-y-2 border-b border-outline-variant pb-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 space-y-0.5">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-outline">Document</p>
+            <p className="text-xs font-medium text-outline">Document</p>
             <p className="wrap-break-word text-sm font-medium">{doc.title}</p>
-            <p className="truncate font-mono text-[11px] text-outline" title={doc.path}>
+            <p className="truncate font-mono text-xs text-outline" title={doc.path}>
               {doc.path}
             </p>
           </div>
@@ -554,7 +554,7 @@ function DocumentDetails({
             ))}
           </div>
         )}
-        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
           <span className="rounded-full bg-surface px-2 py-0.5 text-outline">
             Revision {doc.revision}
           </span>
@@ -579,7 +579,7 @@ function DocumentDetails({
             </span>
           )}
         </div>
-        <p className="text-[11px] text-outline">
+        <p className="text-xs text-outline">
           Updated {new Date(doc.updated_at).toLocaleDateString()} by {doc.updated_by}
         </p>
       </div>

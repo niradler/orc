@@ -244,11 +244,11 @@ function NodeBox({
 
 export function FlowGraphLegend() {
   const items: Array<[NodeVisualState, string]> = [
-    ["active", "running"],
-    ["awaiting_human", "awaiting human"],
-    ["succeeded", "done"],
-    ["failed", "failed"],
-    ["idle", "not visited"],
+    ["active", "Running"],
+    ["awaiting_human", "Awaiting human"],
+    ["succeeded", "Done"],
+    ["failed", "Failed"],
+    ["idle", "Not visited"],
   ];
   return (
     <div className="flex flex-wrap items-center gap-3 mt-2">
@@ -263,9 +263,7 @@ export function FlowGraphLegend() {
               className={STATE_STYLE[state].box}
             />
           </svg>
-          <span className="font-label text-[10px] uppercase tracking-widest text-outline">
-            {label}
-          </span>
+          <span className="font-label text-xs text-outline">{label}</span>
         </span>
       ))}
       <span className="flex items-center gap-1.5">
@@ -280,9 +278,7 @@ export function FlowGraphLegend() {
             className="stroke-tertiary/70"
           />
         </svg>
-        <span className="font-label text-[10px] uppercase tracking-widest text-outline">
-          loopback
-        </span>
+        <span className="font-label text-xs text-outline">Loopback</span>
       </span>
     </div>
   );

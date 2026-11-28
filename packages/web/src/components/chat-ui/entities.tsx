@@ -310,9 +310,7 @@ export function ScratchpadCard({ id }: { id: string }) {
             <span className="sr-only">Scratchpad: </span>
             <span className="min-w-0 break-words">{pad.title}</span>
           </UiLink>
-          <span className="shrink-0 text-[10px] font-normal uppercase tracking-wide text-on-surface-variant">
-            Scratchpad
-          </span>
+          <span className="shrink-0 text-xs font-normal text-on-surface-variant">Scratchpad</span>
         </div>
       }
       canExpand={pad.kind !== "doc" || hasLongContent(pad.content)}

@@ -326,14 +326,14 @@ export function ChatSessionPicker({
             </ActionHelp>
           </div>
           {deepSearching && searchMeta && (
-            <p data-testid="chat-session-search-meta" className="text-[11px] text-muted-foreground">
+            <p data-testid="chat-session-search-meta" className="text-xs text-muted-foreground">
               {searchMeta.rg
                 ? `Searched conversation content in ${(searchMeta.ms / 1000).toFixed(1)}s`
                 : "Titles and summaries only. Install ripgrep to search conversation content."}
             </p>
           )}
           {archive.data?.degraded && (
-            <p data-testid="chat-session-degraded" className="text-[11px] text-outline">
+            <p data-testid="chat-session-degraded" className="text-xs text-outline">
               {archive.data.degraded}
             </p>
           )}
@@ -417,7 +417,7 @@ export function ChatSessionPicker({
                         data-testid={`chat-session-agent-group-${group.agent}`}
                         className="min-w-0"
                       >
-                        <p className="flex min-w-0 items-center gap-1.5 px-2 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-wide text-outline">
+                        <p className="flex min-w-0 items-center gap-1.5 px-2 pb-0.5 pt-2 text-xs font-medium text-outline">
                           <AgentIcon
                             agent={group.agent}
                             title={agentDisplayName(group.agent)}
@@ -886,7 +886,7 @@ export function HistoryRow({
               marker={
                 <>
                   {entry.kind === "native" && entry.session.handoff?.status === "ready" && (
-                    <span data-testid="handoff-ready" className="shrink-0 text-[10px] text-primary">
+                    <span data-testid="handoff-ready" className="shrink-0 text-xs text-primary">
                       Ready to resume
                     </span>
                   )}
@@ -895,7 +895,7 @@ export function HistoryRow({
                     entry.session.send.status !== "error" && (
                       <span
                         data-testid="session-sent"
-                        className="shrink-0 text-[10px] text-outline"
+                        className="shrink-0 text-xs text-outline"
                         title={`Continue this session on ${entry.session.send.host_label}`}
                       >
                         Sent to {entry.session.send.host_label}
@@ -904,7 +904,7 @@ export function HistoryRow({
                   {hidden && (
                     <span
                       data-testid="chat-session-hidden-badge"
-                      className="shrink-0 text-[10px] text-outline"
+                      className="shrink-0 text-xs text-outline"
                     >
                       Hidden
                     </span>
@@ -956,7 +956,7 @@ export function HistoryRow({
       {entry.snippets?.[0] && (
         <p
           data-testid="chat-session-snippet"
-          className="truncate pl-8 pr-2 pb-1 text-[11px] text-muted-foreground"
+          className="truncate pl-8 pr-2 pb-1 text-xs text-muted-foreground"
           title={entry.snippets[0]}
         >
           <Highlight text={entry.snippets[0]} query={query} />
@@ -989,7 +989,7 @@ export function SubagentList({
         aria-expanded={open}
         aria-label={`${open ? "Hide" : "Show"} ${label}`}
         onClick={() => setOpen(!open)}
-        className="inline-flex min-h-6 items-center gap-1 rounded-md px-1.5 text-[11px] text-muted-foreground hover:bg-surface-highest hover:text-on-surface max-sm:min-h-11 pointer-coarse:min-h-11"
+        className="inline-flex min-h-6 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-surface-highest hover:text-on-surface max-sm:min-h-11 pointer-coarse:min-h-11"
       >
         <ChevronRight
           size={12}

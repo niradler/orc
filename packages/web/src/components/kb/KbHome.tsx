@@ -186,13 +186,13 @@ export function KbHome({
           />
         )}
         {doc.parse_state === "failed" && (
-          <span className="shrink-0 text-[11px] text-error">Parse failed</span>
+          <span className="shrink-0 text-xs text-error">Parse failed</span>
         )}
         {doc.parse_state === "pending" && (
-          <span className="shrink-0 text-[11px] text-outline">Parsing…</span>
+          <span className="shrink-0 text-xs text-outline">Parsing…</span>
         )}
       </span>
-      <span className="block truncate font-mono text-[11px] text-outline">{doc.path}</span>
+      <span className="block truncate font-mono text-xs text-outline">{doc.path}</span>
     </>
   );
 
@@ -553,7 +553,7 @@ export function KbHome({
                       {doc.labels.slice(0, 4).map((item) => (
                         <span
                           key={item}
-                          className="rounded-full border border-outline-variant px-1.5 text-[10px] text-outline"
+                          className="rounded-full border border-outline-variant px-1.5 text-xs text-outline"
                         >
                           {item}
                         </span>
@@ -633,7 +633,7 @@ export function KbHome({
                         {doc.labels.length > 0 && (
                           <span className="mt-0.5 flex flex-wrap gap-1 md:hidden">
                             {doc.labels.slice(0, 3).map((item) => (
-                              <span key={item} className="text-[10px] text-outline">
+                              <span key={item} className="text-xs text-outline">
                                 {item}
                               </span>
                             ))}
@@ -693,7 +693,7 @@ function Shelf({
     >
       <div className="flex items-baseline gap-2">
         <h2 className="text-sm font-medium text-outline">{title}</h2>
-        {hint && <span className="text-[11px] text-outline">{hint}</span>}
+        {hint && <span className="text-xs text-outline">{hint}</span>}
         <button
           type="button"
           className="ml-auto text-xs text-primary hover:underline"
@@ -727,7 +727,7 @@ function ShelfRow({
         <FilePlus size={13} className="shrink-0 text-outline" aria-hidden />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm">{doc.title}</span>
-          <span className="block truncate font-mono text-[10px] text-outline">{doc.path}</span>
+          <span className="block truncate font-mono text-xs text-outline">{doc.path}</span>
         </span>
         <span className="shrink-0 text-xs text-outline">{detail}</span>
       </button>

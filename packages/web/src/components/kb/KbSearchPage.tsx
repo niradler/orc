@@ -275,7 +275,7 @@ export function KbSearchPage({
               );
             })}
           {labels.length > 1 && (
-            <span className="text-[11px] text-outline">all selected labels must match</span>
+            <span className="text-xs text-outline">all selected labels must match</span>
           )}
         </div>
       )}
@@ -334,7 +334,7 @@ export function KbSearchPage({
                 <span
                   key={match}
                   data-testid="kb-search-matched"
-                  className="rounded-full bg-surface-high px-2 text-[10px] text-outline"
+                  className="rounded-full bg-surface-high px-2 text-xs text-outline"
                 >
                   {MATCH_LABEL[match] ?? match}
                 </span>
@@ -342,7 +342,7 @@ export function KbSearchPage({
               {hit.labels.map((label) => (
                 <span
                   key={label}
-                  className="rounded-full border border-outline-variant px-2 text-[10px] text-outline"
+                  className="rounded-full border border-outline-variant px-2 text-xs text-outline"
                 >
                   {label}
                 </span>

@@ -360,7 +360,7 @@ export function AgentSettings() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm">{item.name}</span>
                     {["claude", "codex"].includes(item.agent) && (
-                      <span className="block truncate text-[11px] text-muted-foreground">
+                      <span className="block truncate text-xs text-muted-foreground">
                         {accountFor(item.id)?.label ??
                           (accountFor(item.id)?.status === "signed_out"
                             ? "Not signed in"
@@ -489,7 +489,7 @@ export function AgentSettings() {
                 )}
                 {account?.sign_in_command && (
                   <div className="flex items-start gap-2">
-                    <code className="min-w-0 flex-1 break-all rounded bg-surface-highest px-2 py-1 font-mono text-[11px]">
+                    <code className="min-w-0 flex-1 break-all rounded bg-surface-highest px-2 py-1 font-mono text-xs">
                       {account.sign_in_command}
                     </code>
                     <Button

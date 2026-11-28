@@ -223,7 +223,7 @@ export function FirstRunSetup({ onHoldChange }: { onHoldChange?: (hold: boolean)
               {openFix === agent.agent && agent.fix && (
                 <span className="flex w-full items-start gap-2">
                   <code
-                    className="min-w-0 flex-1 rounded bg-surface-highest px-2 py-1 break-all font-mono text-[11px]"
+                    className="min-w-0 flex-1 rounded bg-surface-highest px-2 py-1 break-all font-mono text-xs"
                     data-testid={`first-run-fix-command-${agent.agent}`}
                   >
                     {agent.fix.command}

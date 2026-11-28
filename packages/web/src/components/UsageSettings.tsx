@@ -1188,7 +1188,7 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
                 className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs"
               >
                 <div className="min-w-0">
-                  <p className="truncate font-mono text-[11px]">{modelId}</p>
+                  <p className="truncate font-mono text-xs">{modelId}</p>
                   <p className="text-muted-foreground tabular-nums">
                     In {formatRate(price.inputPerMillion)} · Out{" "}
                     {formatRate(price.outputPerMillion)} · Cache R{" "}
@@ -1234,7 +1234,7 @@ function ModelPricingSection({ observedModels }: { observedModels: string[] }) {
                 className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-xs"
               >
                 <div className="min-w-0">
-                  <p className="truncate font-mono text-[11px]">{modelId}</p>
+                  <p className="truncate font-mono text-xs">{modelId}</p>
                   <p className="text-muted-foreground tabular-nums">
                     In {formatRate(price.inputPerMillion)} · Out{" "}
                     {formatRate(price.outputPerMillion)} · Cache R{" "}

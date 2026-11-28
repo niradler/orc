@@ -583,7 +583,7 @@ function SubagentRow({
         <span className="min-w-0 flex-1 truncate text-on-surface">{item.title || "Subagent"}</span>
         <span
           className={cn(
-            "shrink-0 text-[11px]",
+            "shrink-0 text-xs",
             failed ? "text-error" : running ? "text-progress" : "text-outline",
           )}
         >

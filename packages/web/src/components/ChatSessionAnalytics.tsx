@@ -622,7 +622,7 @@ function ModelSplitTable({
                 data-highlighted={highlighted ? "true" : undefined}
                 className={cn("border-t border-border/60", highlighted && "bg-surface-highest")}
               >
-                <td className="max-w-52 truncate py-1.5 font-mono text-[11px]" title={name}>
+                <td className="max-w-52 truncate py-1.5 font-mono text-xs" title={name}>
                   {name}
                 </td>
                 <td className="py-1.5 text-right">{count.format(row.turns)}</td>
@@ -668,7 +668,7 @@ function ModelSplitTable({
               )}
             >
               <div className="flex min-w-0 items-center justify-between gap-2">
-                <span className="min-w-0 truncate font-mono text-[11px]" title={name}>
+                <span className="min-w-0 truncate font-mono text-xs" title={name}>
                   {name}
                 </span>
                 <span className="inline-flex shrink-0 items-center gap-0.5 font-medium">
@@ -749,7 +749,7 @@ function TurnTable({ turns }: { turns: ChatTurnStat[] }) {
                     {turn.outcome}
                   </td>
                   <td
-                    className="max-w-36 truncate py-1.5 pr-2 font-mono text-[11px]"
+                    className="max-w-36 truncate py-1.5 pr-2 font-mono text-xs"
                     title={turn.model ?? undefined}
                   >
                     {turn.model ?? "—"}
@@ -832,7 +832,7 @@ function TurnTable({ turns }: { turns: ChatTurnStat[] }) {
               </div>
               <div className="mt-0.5 flex min-w-0 items-center justify-between gap-2 text-muted-foreground">
                 <span
-                  className="min-w-0 truncate font-mono text-[11px]"
+                  className="min-w-0 truncate font-mono text-xs"
                   title={turn.model ?? undefined}
                 >
                   {turn.model ?? "—"}
@@ -911,7 +911,7 @@ function SkillTable({ skills }: { skills: ChatSkillStat[] }) {
       <tbody>
         {skills.map((skill) => (
           <tr key={skill.name} data-testid="chat-skill-row" className="border-t border-border/60">
-            <td className="max-w-56 truncate py-1 font-mono text-[11px]" title={skill.name}>
+            <td className="max-w-56 truncate py-1 font-mono text-xs" title={skill.name}>
               {skill.name}
             </td>
             <td className="py-1 text-right">{count.format(skill.loads)}</td>
@@ -936,7 +936,7 @@ function ToolTable({ tools }: { tools: ChatToolStat[] }) {
       <tbody>
         {tools.slice(0, 8).map((tool) => (
           <tr key={tool.name} className="border-t border-border/60">
-            <td className="max-w-40 truncate py-1 font-mono text-[11px]" title={tool.name}>
+            <td className="max-w-40 truncate py-1 font-mono text-xs" title={tool.name}>
               {tool.name}
             </td>
             <td className="py-1 text-right">{count.format(tool.calls)}</td>

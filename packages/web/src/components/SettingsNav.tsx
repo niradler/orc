@@ -17,9 +17,7 @@ export function SettingsSidebar({ active, onSelect }: SettingsNavProps) {
     <nav aria-label="Settings sections" className="hidden md:block">
       {SETTINGS_DOMAINS.map((domain) => (
         <div key={domain.id} className="mb-5 last:mb-0">
-          <p className="mb-1 px-3 text-xs font-medium uppercase tracking-wide text-outline">
-            {domain.label}
-          </p>
+          <p className="mb-1 px-3 text-xs font-medium text-outline">{domain.label}</p>
           <div className="space-y-1">
             {settingsGroupsFor(domain.id).map((group) => (
               <Button
@@ -48,7 +46,7 @@ export function SettingsList({ onSelect }: Pick<SettingsNavProps, "onSelect">) {
         <section key={domain.id} aria-labelledby={`settings-domain-${domain.id}`}>
           <h2
             id={`settings-domain-${domain.id}`}
-            className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-outline"
+            className="mb-2 px-1 text-xs font-medium text-outline"
           >
             {domain.label}
           </h2>

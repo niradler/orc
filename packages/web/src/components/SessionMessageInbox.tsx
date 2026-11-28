@@ -16,12 +16,12 @@ import {
 import { formatWhen } from "@/lib/live-sessions";
 
 const STATE_LABEL: Record<SessionMessage["state"], string> = {
-  queued: "queued",
-  delivering: "delivering",
-  delivered: "delivered",
-  cancelled: "cancelled",
-  interrupted: "interrupted",
-  failed: "failed",
+  queued: "Queued",
+  delivering: "Delivering",
+  delivered: "Delivered",
+  cancelled: "Cancelled",
+  interrupted: "Interrupted",
+  failed: "Failed",
 };
 
 const STATE_STYLE: Record<SessionMessage["state"], string> = {
@@ -133,7 +133,7 @@ export function SessionMessageInbox({
                 className="min-h-[72px] w-full resize-y rounded-lg border border-control-border bg-background px-2 py-2 font-body text-xs text-on-surface"
               />
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-label text-[10px] text-outline tabular-nums">
+                <span className="font-label text-xs text-outline tabular-nums">
                   {draft.length}/{SESSION_MESSAGE_MAX_BODY}
                 </span>
                 <button
@@ -183,7 +183,7 @@ export function SessionMessageInbox({
                   className="flex items-start gap-2 py-2"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-label text-[10px] uppercase tracking-wide">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-label text-xs">
                       <span
                         data-testid="session-message-state"
                         className={STATE_STYLE[message.state]}
@@ -192,7 +192,7 @@ export function SessionMessageInbox({
                       </span>
                       <span className="text-outline">{message.sender_label}</span>
                       {message.hop > 0 && <span className="text-outline">hop {message.hop}</span>}
-                      <span className="text-outline normal-case tracking-normal">
+                      <span className="text-outline">
                         {formatWhen(new Date(message.created_at).toISOString())}
                       </span>
                     </div>

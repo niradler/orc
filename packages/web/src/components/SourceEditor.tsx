@@ -272,7 +272,7 @@ export function SourceEditor({
           <Markdown>{value}</Markdown>
         </div>
       )}
-      <footer className="shrink-0 border-t border-surface-highest px-3 py-1 text-[10px] text-outline">
+      <footer className="shrink-0 border-t border-surface-highest px-3 py-1 text-xs text-outline">
         {lines} {lines === 1 ? "line" : "lines"} · UTF-8
       </footer>
     </div>

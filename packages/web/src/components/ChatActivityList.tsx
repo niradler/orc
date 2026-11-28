@@ -146,7 +146,7 @@ function SubagentNodeRow({
         className={cn("shrink-0", tone, spin && "motion-safe:animate-spin")}
       />
       <span className="min-w-0 truncate text-on-surface">{node.title}</span>
-      <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-outline">
+      <span className="flex shrink-0 items-center gap-1.5 text-xs text-outline">
         {node.tokens ? (
           <span className="tabular-nums">{formatTokenCount(node.tokens, false)} tokens</span>
         ) : null}

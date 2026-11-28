@@ -32,7 +32,7 @@ export function ChatTurnDivider({
             >
               <ArrowRightLeft aria-hidden="true" size={12} className="shrink-0" />
               <span data-testid="chat-turn-divider-label" className="truncate">
-                Model changed to <span className="font-mono text-[11px]">{divider.model}</span>
+                Model changed to <span className="font-mono text-xs">{divider.model}</span>
               </span>
               <span className="shrink-0 underline underline-offset-2">View split</span>
             </button>
@@ -40,7 +40,7 @@ export function ChatTurnDivider({
             <>
               <ArrowRightLeft aria-hidden="true" size={12} className="shrink-0" />
               <span data-testid="chat-turn-divider-label" className="truncate">
-                Model changed to <span className="font-mono text-[11px]">{divider.model}</span>
+                Model changed to <span className="font-mono text-xs">{divider.model}</span>
               </span>
             </>
           )
@@ -121,7 +121,7 @@ export const ChatTurnMeta = memo(function ChatTurnMeta({
         <span
           data-testid="chat-turn-model"
           title="Model that produced this turn"
-          className="min-w-0 max-w-56 truncate font-mono text-[11px]"
+          className="min-w-0 max-w-56 truncate font-mono text-xs"
         >
           {model}
         </span>

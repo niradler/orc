@@ -485,8 +485,10 @@ export function CommandPalette({
         onClick={() => changeOpen(true)}
       >
         <Search className="size-4" />
-        <span className="hidden lg:inline">Search anything…</span>
-        <kbd className="hidden sm:inline pointer-coarse:hidden text-xs text-outline">⌘/Ctrl K</kbd>
+        <span className="hidden lg:inline">Search</span>
+        <kbd className="hidden sm:inline pointer-coarse:hidden rounded border border-outline-variant bg-surface-high px-1.5 font-mono text-xs text-outline">
+          ⌘/Ctrl K
+        </kbd>
       </Button>
       <Dialog open={open} onOpenChange={changeOpen}>
         <DialogContent
@@ -538,7 +540,7 @@ export function CommandPalette({
               placeholder={
                 filter === "Terminals"
                   ? "Find terminal by name, folder, agent or host…"
-                  : "Search anything, or run a command…"
+                  : "Search or run a command…"
               }
               maxLength={200}
               value={query}
