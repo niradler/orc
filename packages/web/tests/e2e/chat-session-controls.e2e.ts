@@ -239,6 +239,9 @@ for (const width of [1440, 390]) {
       await page.getByTestId("nav-tasks").click();
       await toggleThemeInPlace(page);
       await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+      // The composer draft is user content: a full reload restores it with the tab.
+      await page.goto("/tasks?chat=full");
+      await expect(page.getByTestId("chat-input")).toHaveValue("Keep my unsent local draft");
     }
   });
 }

@@ -366,6 +366,10 @@ function useChatStore(desktopViewport: boolean) {
     (from: ChatSurface, to: ChatSurface) => {
       if (from === to) return;
       const fromKey = activeKeysRef.current[from];
+      const fromTab = tabsRef.current.find((tab) => tab.key === fromKey);
+      // Expanding an empty surface has nothing to carry over; keep the destination
+      // tab (and its unsent draft) instead of replacing it with a blank one.
+      if (!fromTab || isBlank(fromTab)) return;
       activate(to, fromKey);
       const detached = blankTab(defaults.current, creationProject.current);
       mutate((current) => [...current, detached]);
@@ -1023,6 +1027,17 @@ function useChatStore(desktopViewport: boolean) {
   const initialLinks = useRef(initialChatSurfaceLinks(pathname, search, desktopViewport));
   useEffect(() => {
     const stored = parseChatTabs(readStorage(CHAT_TABS_KEY));
+    const restoredDrafts = (stored.draftTabs ?? []).map((saved) => ({
+      ...blankTab(defaults.current, saved.projectId),
+      key: saved.key,
+      draft: saved.draft,
+      ...(saved.createdAt ? { createdAt: saved.createdAt } : {}),
+    }));
+    if (restoredDrafts.length) mutate((current) => [...current, ...restoredDrafts]);
+    if (stored.activeKey && !stored.active && !initialLinks.current.pageLinked)
+      activate("page", stored.activeKey);
+    if (stored.sideActiveKey && !stored.sideActive && !initialLinks.current.sideLinked)
+      activate("side", stored.sideActiveKey);
     const restoreSideId =
       stored.sideActive !== undefined
         ? stored.sideActive
@@ -1038,14 +1053,18 @@ function useChatStore(desktopViewport: boolean) {
           activate: activatePage,
           projectId: stored.projectIds?.[result.value.id],
         });
+        const draft = stored.threadDrafts?.[result.value.id];
+        if (draft) update(key, (tab) => ({ draft: tab.draft || draft }));
         if (activateSide) activate("side", key);
       }
     });
-  }, [activate, openThread]);
+  }, [activate, mutate, openThread, update]);
   useEffect(() => {
     const threads = tabs.flatMap((tab) => (tab.thread && !tab.hidden ? [tab.thread.id] : []));
-    const active = tabs.find((tab) => tab.key === activeKeys.page)?.thread?.id ?? null;
-    const sideActive = tabs.find((tab) => tab.key === activeKeys.side)?.thread?.id ?? null;
+    const activeTab = tabs.find((tab) => tab.key === activeKeys.page);
+    const sideTab = tabs.find((tab) => tab.key === activeKeys.side);
+    const active = activeTab?.thread?.id ?? null;
+    const sideActive = sideTab?.thread?.id ?? null;
     const projectIds = Object.fromEntries(
       tabs.flatMap((tab) =>
         tab.thread && !tab.hidden && tab.projectId !== undefined
@@ -1053,13 +1072,36 @@ function useChatStore(desktopViewport: boolean) {
           : [],
       ),
     );
+    const threadDrafts = Object.fromEntries(
+      tabs.flatMap((tab) =>
+        tab.thread && !tab.hidden && tab.draft.trim() ? [[tab.thread.id, tab.draft]] : [],
+      ),
+    );
+    const draftTabs = tabs
+      .flatMap((tab) =>
+        !tab.thread && !tab.hidden && tab.draft.trim()
+          ? [
+              {
+                key: tab.key,
+                draft: tab.draft,
+                ...(tab.projectId !== undefined ? { projectId: tab.projectId } : {}),
+                ...(tab.createdAt ? { createdAt: tab.createdAt } : {}),
+              },
+            ]
+          : [],
+      )
+      .slice(0, 20);
     writeStorage(
       CHAT_TABS_KEY,
       JSON.stringify({
         threads,
         active,
         sideActive,
+        ...(activeTab && !activeTab.thread ? { activeKey: activeTab.key } : {}),
+        ...(sideTab && !sideTab.thread ? { sideActiveKey: sideTab.key } : {}),
         ...(Object.keys(projectIds).length ? { projectIds } : {}),
+        ...(Object.keys(threadDrafts).length ? { threadDrafts } : {}),
+        ...(draftTabs.length ? { draftTabs } : {}),
       }),
     );
   }, [tabs, activeKeys]);
