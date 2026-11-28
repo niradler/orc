@@ -125,7 +125,12 @@ for (const width of [1440, 390]) {
       await expect(icon).toBeVisible();
       await expect(icon).toHaveAttribute("data-agent-mark", provider);
       await expect(icon).toHaveAttribute("role", "img");
-      await expect(icon.locator("svg")).toHaveAttribute("stroke", "currentColor");
+      // Official marks are fill-based paths: monochrome brands inherit currentColor,
+      // coloured brands (Claude) keep their brand fill.
+      await expect(icon.locator("svg path").first()).toHaveAttribute(
+        "fill",
+        /^(currentColor|#[0-9a-fA-F]{6})$/,
+      );
     }
     await expect(list.locator("details,summary,h2,h3")).toHaveCount(0);
     await captureState(page, {
