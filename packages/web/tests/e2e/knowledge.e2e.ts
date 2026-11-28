@@ -50,6 +50,8 @@ test.describe("Knowledge bases", () => {
     await labels.fill("runbook");
     await page.getByTestId("kb-doc-create-submit").click();
     await expect(page.getByTestId("kb-document-title")).toHaveText("Deploy runbook");
+    // The rail owns search; there is no second search above the document.
+    await expect(page.getByTestId("kb-top-search")).toHaveCount(0);
     expect(new URL(page.url()).searchParams.get("editorMode")).toBe("edit");
     // The editor uses the pane while writing; only the reading view keeps the prose measure.
     const paneWidth = await page
@@ -243,7 +245,8 @@ test.describe("Knowledge bases", () => {
         timeout: 30_000,
       });
       await expect(page.getByTestId("kb-parse-state")).toHaveCount(0);
-      // Original-file actions live in the document menu.
+      // Original-file actions live in the document menu in Details.
+      await page.getByTestId("kb-details-toggle").click();
       await page.getByTestId("kb-doc-menu").click();
       await expect(page.getByTestId("kb-doc-download")).toBeVisible();
       await expect(page.getByTestId("kb-doc-reparse")).toBeVisible();

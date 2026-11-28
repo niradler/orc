@@ -1,6 +1,6 @@
 import type { KbScope, KbSearchMode } from "@orc/core/kb";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ArrowLeft, ChevronRight, Menu, PanelRight, Plus, Search, Settings } from "lucide-react";
+import { ArrowLeft, ChevronRight, Menu, PanelRight, Plus, Settings } from "lucide-react";
 import { type DragEvent, type ReactNode, useEffect, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { confirmDocumentClose } from "@/components/DocumentWorkspace";
@@ -258,11 +258,9 @@ function KnowledgeBases({
     doc.data && kb && doc.data.kb_id === kb.id ? (
       <KbDocumentPane
         key={doc.data.id}
-        kb={kb}
         doc={doc.data}
         detailsOpen={extraWide ? contextOpen : contextSheetOpen}
         onDetailsOpenChange={(open) => (extraWide ? setContext(open) : setContextSheetOpen(open))}
-        onHome={() => selectKb(kb.id)}
         onOpen={openDocument}
         onDeleted={() => update({ document: null })}
         onReplaceFile={(file) =>
@@ -451,21 +449,41 @@ function KnowledgeBases({
             >
               <button
                 type="button"
-                className="shrink-0 text-outline hover:text-on-surface"
+                className="hidden shrink-0 text-outline hover:text-on-surface sm:block"
                 onClick={() => go("home")}
               >
                 Knowledge
               </button>
               {kb && (
                 <>
-                  <ChevronRight size={13} className="shrink-0 text-outline" aria-hidden />
+                  <ChevronRight
+                    size={13}
+                    className="hidden shrink-0 text-outline sm:block"
+                    aria-hidden
+                  />
                   <button
                     type="button"
-                    className="min-w-0 truncate text-outline hover:text-on-surface"
+                    data-testid="kb-breadcrumb-kb"
+                    className="hidden min-w-0 truncate text-outline hover:text-on-surface sm:block"
                     onClick={() => update({ document: null, q: null, view: null, label: null })}
                   >
                     {kb.name}
                   </button>
+                </>
+              )}
+              {documentId && doc.data && (
+                <>
+                  <ChevronRight
+                    size={13}
+                    className="hidden shrink-0 text-outline sm:block"
+                    aria-hidden
+                  />
+                  <span
+                    className="min-w-0 truncate text-on-surface"
+                    data-testid="kb-document-title"
+                  >
+                    {doc.data.title}
+                  </span>
                 </>
               )}
               {view === "search" && (
@@ -481,15 +499,20 @@ function KnowledgeBases({
                 </>
               )}
             </nav>
-            <Button
-              size="sm"
-              variant="ghost"
-              data-testid="kb-top-search"
-              onClick={() => go("search")}
-            >
-              <Search size={14} />
-              <span className="hidden sm:inline">Search</span>
-            </Button>
+            {documentId && kb && (
+              <Button
+                size="icon"
+                variant={(extraWide ? contextOpen : contextSheetOpen) ? "secondary" : "ghost"}
+                aria-label="Document details"
+                aria-pressed={extraWide ? contextOpen : contextSheetOpen}
+                data-testid="kb-details-toggle"
+                onClick={() =>
+                  extraWide ? setContext(!contextOpen) : setContextSheetOpen(!contextSheetOpen)
+                }
+              >
+                <PanelRight size={16} />
+              </Button>
+            )}
             {!documentId && kb && (
               <Button
                 size="sm"
