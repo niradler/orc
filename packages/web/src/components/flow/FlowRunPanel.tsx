@@ -257,7 +257,7 @@ function FlowRunBody({
 function RunFact({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-0.5">
-      <div className="font-label text-[10px] font-medium text-outline">{label}</div>
+      <div className="font-label text-xs font-medium text-outline">{label}</div>
       <div className="font-body text-sm text-on-surface-variant">{children}</div>
     </div>
   );
@@ -424,7 +424,7 @@ function NodeDetail({ definition, nodeId }: { definition: FlowGraphDefinition; n
       )}
       {outgoing.length > 0 && (
         <div className="space-y-0.5">
-          <div className="font-label text-[10px] font-medium text-outline">
+          <div className="font-label text-xs font-medium text-outline">
             Outgoing edges (first match wins)
           </div>
           {outgoing.map(({ edge, index }, i) => (
@@ -481,26 +481,26 @@ function Ledger({
               }`}
             >
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-label text-[10px] text-outline">{index + 1}</span>
+                <span className="font-label text-xs text-outline">{index + 1}</span>
                 <span className="font-body text-sm text-on-surface">{nodeRun.node_id}</span>
-                <span className="font-label text-[10px] text-outline">
+                <span className="font-label text-xs text-outline">
                   visit {nodeRun.attempt}
                   {nodeRun.retry > 0 ? ` · retry ${nodeRun.retry}` : ""}
                 </span>
                 <span
-                  className={`font-label text-[10px]  ${
+                  className={`font-label text-xs  ${
                     NODE_STATUS_COLORS[nodeRun.status] ?? "text-outline"
                   }`}
                 >
                   {nodeRun.status.replace(/_/g, " ")}
                 </span>
                 {nodeRun.outcome && (
-                  <span className="font-label text-[10px] text-primary">→ {nodeRun.outcome}</span>
+                  <span className="font-label text-xs text-primary">→ {nodeRun.outcome}</span>
                 )}
                 {/* A queued or parked node has no started_at, so fall back to
                     when the row was written - the same COALESCE the runner uses
                     to decide how long a gate has been waiting. */}
-                <span className="font-label text-[10px] text-outline ml-auto">
+                <span className="font-label text-xs text-outline ml-auto">
                   {formatDuration(nodeRun.started_at ?? nodeRun.created_at, nodeRun.ended_at)}
                   {nodeRun.started_at === null && isLive(nodeRun.status) ? " waiting" : ""}
                 </span>

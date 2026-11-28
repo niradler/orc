@@ -283,8 +283,8 @@ export function TaskDetailSheet({
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-2 bg-surface-highest rounded-lg overflow-hidden">
                         <div
-                          className="h-full bg-primary rounded-lg transition-all"
-                          style={{ width: `${Math.min(100, task.progress)}%` }}
+                          className="h-full w-full origin-left bg-primary transition-transform"
+                          style={{ transform: `scaleX(${Math.min(100, task.progress) / 100})` }}
                         />
                       </div>
                       <span className="font-label text-xs text-outline">{task.progress}%</span>
@@ -335,7 +335,7 @@ export function TaskDetailSheet({
                     <div className="space-y-2">
                       {Object.entries(linksByType).map(([type, typeLinks]) => (
                         <div key={type} className="space-y-1">
-                          <div className="font-label text-[10px] font-medium text-outline">
+                          <div className="font-label text-xs font-medium text-outline">
                             {type.replace(/_/g, " ")}
                           </div>
                           {typeLinks.map((link) => (
@@ -442,7 +442,7 @@ export function TaskDetailSheet({
                         <div key={c.id} className="py-2 border-b border-border space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="font-label text-xs  text-primary">{c.author}</span>
-                            <span className="font-label text-[10px] text-outline">
+                            <span className="font-label text-xs text-outline">
                               {new Date(c.created_at).toLocaleString()}
                             </span>
                           </div>

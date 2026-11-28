@@ -307,7 +307,7 @@ export function MarkdownEditor({
                 {body}
               </Markdown>
             ) : (
-              <p className="text-sm text-outline">This document is empty.</p>
+              <p className="text-sm text-outline">This document is empty</p>
             )}
           </div>
         </article>

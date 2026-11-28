@@ -144,14 +144,14 @@ function EventRow({ event }: { event: SessionEvent }) {
           <span className="w-[10px] shrink-0" />
         )}
         <span
-          className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-label font-medium  ${getEventColor(event.type)}`}
+          className={`inline-flex items-center px-1.5 py-0.5 text-xs font-label font-medium  ${getEventColor(event.type)}`}
         >
           {event.type}
         </span>
         <span className="flex-1 font-body text-xs text-outline truncate">
           {summarizeEventData(event.data)}
         </span>
-        <span className="font-label text-[10px] text-outline shrink-0">
+        <span className="font-label text-xs text-outline shrink-0">
           {new Date(event.created_at).toLocaleTimeString()}
         </span>
       </button>

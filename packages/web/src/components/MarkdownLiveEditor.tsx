@@ -994,7 +994,7 @@ export function MarkdownLiveEditor({
               onClick={() => choose(command.id)}
             >
               <span className="flex-1">{command.label}</span>
-              <span className="font-mono text-[10px] text-outline">{command.hint}</span>
+              <span className="font-mono text-xs text-outline">{command.hint}</span>
             </button>
           ))}
         </div>

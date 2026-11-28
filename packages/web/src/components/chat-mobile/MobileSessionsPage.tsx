@@ -404,7 +404,7 @@ export function MobileSessionsPage({ home }: { home: SessionHomeNav }) {
                         key={group.agent}
                         data-testid={`chat-session-agent-group-${group.agent}`}
                       >
-                        <p className="flex items-center gap-1.5 px-2 pb-0.5 pt-2 text-[11px] font-medium uppercase tracking-wide text-outline">
+                        <p className="flex items-center gap-1.5 px-2 pb-0.5 pt-2 text-xs font-medium text-outline">
                           <AgentIcon
                             agent={group.agent}
                             title={agentDisplayName(group.agent)}
@@ -598,7 +598,7 @@ function MobileHistoryRow({
         {entry.snippets?.[0] && (
           <span
             data-testid="chat-session-snippet"
-            className="w-full truncate pl-7 text-[11px] text-muted-foreground"
+            className="w-full truncate pl-7 text-xs text-muted-foreground"
           >
             <Highlight text={entry.snippets[0]} query={query} />
           </span>

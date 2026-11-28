@@ -141,7 +141,7 @@ function RemoteHostRows() {
         >
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="shrink-0 font-mono text-[10px] tracking-wide">
+              <Badge variant="outline" className="shrink-0 font-mono text-xs">
                 ORC
               </Badge>
               <span className="truncate text-sm font-medium">{host.label}</span>
@@ -327,7 +327,7 @@ function ExecutionHostRow({ openOn = false }: { openOn?: boolean }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             {alias && (
-              <Badge variant="outline" className="shrink-0 font-mono text-[10px] tracking-wide">
+              <Badge variant="outline" className="shrink-0 font-mono text-xs">
                 SSH
               </Badge>
             )}

@@ -65,7 +65,7 @@ export function WorkspaceStatus({
       {showOutput && workspace.setup_output && (
         <details data-testid="workspace-setup-output">
           <summary className="cursor-pointer text-on-surface-variant">Setup output</summary>
-          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-surface-highest p-2 text-[11px]">
+          <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap break-all rounded bg-surface-highest p-2 text-xs">
             {workspace.setup_output}
           </pre>
         </details>

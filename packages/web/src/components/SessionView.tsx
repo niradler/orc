@@ -140,13 +140,13 @@ function ToolBox({
         </span>
       </summary>
       <div className="space-y-2 border-t border-border px-2 py-2">
-        <div className="font-label text-[10px] font-medium text-outline">input</div>
+        <div className="font-label text-xs font-medium text-outline">Input</div>
         <pre className="max-h-72 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap wrap-break-word">
           {prettyInput(block.input)}
         </pre>
         {done && (
           <>
-            <div className="font-label text-[10px] font-medium text-outline">result</div>
+            <div className="font-label text-xs font-medium text-outline">Result</div>
             <pre className="max-h-96 overflow-auto rounded-lg bg-background p-2 font-mono text-xs text-on-surface-variant whitespace-pre-wrap wrap-break-word">
               {block.result}
             </pre>

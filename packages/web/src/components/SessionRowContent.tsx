@@ -62,7 +62,7 @@ export function SubagentChip({ count }: { count: number | undefined }): ReactNod
         role="img"
         aria-label={label}
         data-testid="chat-session-subagent-count"
-        className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-outline"
+        className="inline-flex shrink-0 items-center gap-0.5 text-xs text-outline"
       >
         <Bot size={11} aria-hidden="true" />
         {count}
@@ -140,7 +140,7 @@ export function SessionRowContent({
       {mode || model || badge ? (
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px]">{title}</span>
-          <span className="flex min-w-0 items-center gap-1 text-[11px] text-muted-foreground">
+          <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
             <SessionModeIcon mode={mode} />
             {model && (
               <span data-testid="chat-session-run" className="min-w-0 truncate">

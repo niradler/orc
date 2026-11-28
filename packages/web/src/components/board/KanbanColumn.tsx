@@ -40,7 +40,7 @@ export function KanbanColumn({
       className={`
         flex flex-col w-full md:min-w-[260px] md:max-w-[300px] md:flex-1
         bg-background border rounded-lg
-        transition-all duration-200
+        transition-colors duration-200
         ${borderClass}
       `}
     >

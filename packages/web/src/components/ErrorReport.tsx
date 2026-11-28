@@ -26,7 +26,7 @@ export function ErrorReport({ error, title, hint, onReload, testId }: Props) {
       data-testid={testId}
       className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-6 text-center"
     >
-      <p className="text-error font-label text-sm uppercase tracking-widest">{title}</p>
+      <p className="text-error font-label text-sm">{title}</p>
       {hint && <p className="max-w-md text-sm text-muted-foreground">{hint}</p>}
       <pre
         data-testid={`${testId}-message`}

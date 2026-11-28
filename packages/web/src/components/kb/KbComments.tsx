@@ -24,7 +24,7 @@ function StatusPill({ status }: { status: KbCommentStatus }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide",
+        "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs font-medium capitalize",
         status === "open" && "border-warning/40 text-warning",
         status === "resolved" && "border-secondary/40 text-secondary",
         status === "dismissed" && "border-outline-variant text-outline",
@@ -236,7 +236,7 @@ function CommentRow({
       <div className="flex min-w-0 items-start gap-2.5">
         <span
           aria-hidden
-          className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-highest text-[10px] font-medium text-outline"
+          className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-highest text-xs font-medium text-outline"
         >
           {initials(c.author)}
         </span>

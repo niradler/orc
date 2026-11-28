@@ -149,7 +149,7 @@ export function KbRail({
                   )}
                   onClick={() => onSelectKb(base.id)}
                 >
-                  <BookOpen size={15} className="shrink-0 text-outline" aria-hidden />
+                  <BookOpen size={14} className="shrink-0 text-outline" aria-hidden />
                   <span className="min-w-0 flex-1 truncate">{base.name}</span>
                   <span className="text-xs font-normal tabular-nums text-outline">
                     {base.document_count}
@@ -173,7 +173,7 @@ export function KbRail({
           <section aria-label="Folders">
             <div className="flex items-center justify-between px-2 pb-1">
               <h2 className="text-xs font-medium text-outline">Folders</h2>
-              <FolderTree size={13} className="text-outline" aria-hidden />
+              <FolderTree size={14} className="text-outline" aria-hidden />
             </div>
             <button
               type="button"
@@ -219,10 +219,10 @@ export function KbRail({
             <div className="flex items-center justify-between px-2 pb-1">
               <h2 className="text-xs font-medium text-outline">Labels</h2>
               <div className="flex items-center">
-                <Tag size={13} className="text-outline" aria-hidden />
+                <Tag size={14} className="text-outline" aria-hidden />
                 <button
                   type="button"
-                  className="ml-1 text-[11px] text-primary hover:underline"
+                  className="ml-1 text-xs text-primary hover:underline"
                   onClick={onLabels}
                 >
                   Manage
@@ -289,12 +289,12 @@ function KbSwitcher({
           className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left hover:bg-surface-high"
           aria-label="Choose knowledge base"
         >
-          <span className="flex size-6 shrink-0 items-center justify-center rounded bg-surface-highest text-[11px] font-medium">
+          <span className="flex size-6 shrink-0 items-center justify-center rounded bg-surface-highest text-xs font-medium">
             {kb ? kb.name.slice(0, 1).toUpperCase() : "K"}
           </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-medium">{kb?.name ?? "Knowledge"}</span>
-            <span className="block truncate text-[11px] text-outline">
+            <span className="block truncate text-xs text-outline">
               {kb ? projectName(kb.project_id) : "All workspaces"}
             </span>
           </span>

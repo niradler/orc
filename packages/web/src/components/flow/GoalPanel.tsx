@@ -37,7 +37,7 @@ function Fact({
 }) {
   return (
     <div className="space-y-0.5">
-      <div className="font-label text-[10px] font-medium text-outline">{label}</div>
+      <div className="font-label text-xs font-medium text-outline">{label}</div>
       <div className="font-body text-sm text-on-surface-variant" data-testid={testId}>
         {children}
       </div>
