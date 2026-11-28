@@ -137,6 +137,23 @@ export class KnowledgeStorage {
     return existsSync(this.projectionPath(kbId, docId));
   }
 
+  /** Inline image for a knowledge document; same-origin URL served by the KB asset route. */
+  putAsset(kbId: string, name: string, bytes: Uint8Array): { file: string; path: string } {
+    if (!ID.test(kbId)) throw new Error("Invalid ID");
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    const safeExt = EXT.test(ext) ? ext : "bin";
+    const file = `${Date.now().toString(36)}-${KnowledgeStorage.sha256(bytes).slice(0, 12)}.${safeExt}`;
+    const full = this.inside("assets", kbId, file);
+    this.writeAtomic(full, bytes);
+    return { file, path: `/api/kb/assets/${kbId}/${file}` };
+  }
+
+  readAsset(kbId: string, file: string): Buffer {
+    if (!ID.test(kbId) || !/^[A-Za-z0-9_.-]{1,128}$/.test(file))
+      throw new Error("Invalid asset path");
+    return readFileSync(this.inside("assets", kbId, file));
+  }
+
   removeDocument(kbId: string, docId: string) {
     rmSync(this.inside("originals", kbId, docId), { recursive: true, force: true });
     rmSync(this.inside("artifacts", docId), { recursive: true, force: true });
@@ -148,6 +165,7 @@ export class KnowledgeStorage {
     for (const id of docIds) rmSync(this.inside("artifacts", id), { recursive: true, force: true });
     rmSync(this.inside("originals", kbId), { recursive: true, force: true });
     rmSync(this.inside("documents", kbId), { recursive: true, force: true });
+    rmSync(this.inside("assets", kbId), { recursive: true, force: true });
   }
 
   /** Writes upload bytes for a parser job; parsers read a stable file path. */

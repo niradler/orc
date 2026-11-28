@@ -312,6 +312,74 @@ describe("/api/kb", () => {
     await call("PATCH", `/kb/bases/${kbId}`, { editable_by: ["ui", "cli", "api"] });
   });
 
+  test("OKF ingest, trust properties, bulk labels/move, label management, export and assets", async () => {
+    const res = await call("POST", `/kb/bases/${kbId}/documents`, {
+      title: "Release runbook",
+      path: "okf/release.md",
+      content:
+        "---\ntype: runbook\ntags: [release, ops]\nverified: true\nstatus: active\nstale_after: 2027-01-01\nsources: [git:docs/release.md]\n---\n\n# Release\n",
+    });
+    expect(res.status).toBe(201);
+    const okf = await res.json();
+    expect(okf.labels.sort()).toEqual(["ops", "release", "runbook"]);
+    const read = await (
+      await call("GET", `/kb/documents/${okf.id}`, undefined, { "X-Orc-Source": "ui" })
+    ).json();
+    expect(read.properties).toMatchObject({
+      type: "runbook",
+      verified: true,
+      status: "active",
+      stale_after: "2027-01-01",
+    });
+    expect(read.properties.extra.sources).toEqual(["git:docs/release.md"]);
+
+    const asset = new FormData();
+    asset.set(
+      "file",
+      new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], "paste.png", {
+        type: "image/png",
+      }),
+    );
+    const uploaded = await call("POST", `/kb/bases/${kbId}/assets`, asset);
+    expect(uploaded.status).toBe(201);
+    const image = await uploaded.json();
+    expect(image.path).toMatch(/^\/api\/kb\/assets\//);
+    const bytes = await call("GET", image.path.replace(/^\/api/, ""));
+    expect(bytes.status).toBe(200);
+    expect(bytes.headers.get("content-type")).toBe("image/png");
+
+    const bulk = await call("POST", `/kb/bases/${kbId}/bulk`, {
+      ids: [docId, okf.id],
+      action: "label",
+      labels: ["bulk"],
+    });
+    expect(bulk.status).toBe(200);
+    expect((await bulk.json()).updated).toBe(2);
+    const renamed = await call("POST", `/kb/bases/${kbId}/labels/manage`, {
+      action: "rename",
+      label: "bulk",
+      to: "bulk-renamed",
+    });
+    expect((await renamed.json()).updated).toBe(2);
+    const labels = await (await call("GET", `/kb/bases/${kbId}/documents`)).json();
+    expect(labels.labels.map((l: { label: string }) => l.label)).toContain("bulk-renamed");
+
+    const moved = await call("POST", `/kb/bases/${kbId}/bulk`, {
+      ids: [okf.id],
+      action: "move",
+      folder: "archive",
+    });
+    expect((await moved.json()).updated).toBe(1);
+    const after = await (await call("GET", `/kb/documents/${okf.id}`)).json();
+    expect(after.path).toBe("archive/release.md");
+
+    const bundle = await call("GET", `/kb/bases/${kbId}/export/okf`);
+    expect(bundle.status).toBe(200);
+    expect(bundle.headers.get("content-type")).toBe("application/zip");
+    const zip = new Uint8Array(await bundle.arrayBuffer());
+    expect(String.fromCharCode(...zip.slice(0, 2))).toBe("PK");
+  });
+
   test("status, parsers and settings; MCP cannot change settings; the key is stored encrypted", async () => {
     const status = await call("GET", "/kb/status");
     expect(status.status).toBe(200);

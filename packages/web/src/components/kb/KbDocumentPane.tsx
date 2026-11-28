@@ -17,7 +17,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, type ReactNode, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -236,7 +236,7 @@ export function KbDocumentPane({
         data-testid="kb-document"
         className="min-w-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
       >
-        <div className="w-full min-w-0 px-4 pb-16 pt-4 sm:px-8 sm:pt-6">
+        <div className="mx-auto w-full min-w-0 max-w-[68ch] px-4 pb-16 pt-4 text-[16px] leading-[1.65] sm:px-6 sm:pt-6">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <nav
               aria-label="Breadcrumb"
@@ -478,6 +478,9 @@ export function KbDocumentPane({
             layout="page"
             pageTitle={doc.title}
             hideFrontmatter
+            onUploadImage={(file) =>
+              api.kb.uploadAsset(doc.kb_id, file).then((asset) => asset.path)
+            }
             onSave={
               doc.editable
                 ? async (content, base) => {
@@ -579,7 +582,7 @@ function DocumentDetails({
     <aside
       data-testid="kb-document-details"
       aria-label="Document details"
-      className="w-full shrink-0 space-y-6 p-4 text-sm lg:min-h-0 lg:w-80 lg:overflow-y-auto lg:border-l lg:border-outline-variant"
+      className="w-full shrink-0 space-y-6 p-4 text-sm lg:min-h-0 lg:w-[264px] lg:overflow-y-auto lg:border-l lg:border-outline-variant"
     >
       {doc.outline.length > 0 && (
         <DetailsSection title="On this page">
@@ -598,6 +601,65 @@ function DocumentDetails({
           </nav>
         </DetailsSection>
       )}
+      <DetailsSection title="Properties">
+        <dl
+          data-testid="kb-document-properties"
+          className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs"
+        >
+          {doc.properties.type && (
+            <>
+              <dt className="text-outline">Type</dt>
+              <dd>{doc.properties.type}</dd>
+            </>
+          )}
+          <dt className="text-outline">Origin</dt>
+          <dd>{doc.origin === "upload" ? "uploaded file" : doc.origin}</dd>
+          <dt className="text-outline">Search</dt>
+          <dd data-testid="kb-index-state">{STATE_LABEL[doc.index_state] ?? doc.index_state}</dd>
+          <dt className="text-outline">Revision</dt>
+          <dd>{doc.revision}</dd>
+          <dt className="text-outline">Verified</dt>
+          <dd className={doc.properties.verified ? "text-success" : "text-outline"}>
+            {doc.properties.verified
+              ? `Verified${doc.properties.generated ? ` · ${doc.properties.generated}` : ""}`
+              : "Not verified"}
+          </dd>
+          {doc.properties.status && (
+            <>
+              <dt className="text-outline">Status</dt>
+              <dd>{doc.properties.status}</dd>
+            </>
+          )}
+          {doc.properties.stale_after && (
+            <>
+              <dt className="text-outline">Review after</dt>
+              <dd
+                className={
+                  doc.properties.stale_after < new Date().toISOString().slice(0, 10)
+                    ? "text-warning"
+                    : ""
+                }
+              >
+                {doc.properties.stale_after}
+              </dd>
+            </>
+          )}
+          {doc.properties.timestamp && (
+            <>
+              <dt className="text-outline">Timestamp</dt>
+              <dd>{doc.properties.timestamp}</dd>
+            </>
+          )}
+          {Object.entries(doc.properties.extra).map(([key, value]) => (
+            <Fragment key={key}>
+              <dt className="text-outline">{key}</dt>
+              <dd className="min-w-0 break-words">
+                {typeof value === "string" ? value : JSON.stringify(value)}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      </DetailsSection>
       {doc.links.length > 0 && (
         <DetailsSection title={`Links to (${doc.links.length})`}>
           {doc.links.map((l) =>
@@ -667,11 +729,7 @@ function DocumentDetails({
             ))}
           </ol>
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-outline">
-            <dt>Search</dt>
-            <dd data-testid="kb-index-state">{STATE_LABEL[doc.index_state] ?? doc.index_state}</dd>
-            <dt>Origin</dt>
-            <dd>{doc.origin}</dd>
-            <dt>Type</dt>
+            <dt>Media</dt>
             <dd>{doc.media_type}</dd>
             <dt>Size</dt>
             <dd>{formatBytes(doc.size_bytes)}</dd>

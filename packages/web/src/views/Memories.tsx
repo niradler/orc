@@ -15,7 +15,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { FormDialog } from "@/components/FormDialog";
 import { Markdown } from "@/components/Markdown";
-import { MarkdownField } from "@/components/MarkdownField";
+import { MarkdownFormField } from "@/components/MarkdownFormField";
 import { MemoryTransferDialog } from "@/components/MemoryTransferDialog";
 import { ResponsiveFilters } from "@/components/ResponsiveFilters";
 import { Button } from "@/components/ui/button";
@@ -932,7 +932,7 @@ function MemoryFormDialog({
                   )}
                 </FormStepPanel>
                 <FormStepPanel steps={steps} id="content" className="flex min-h-0 flex-1 flex-col">
-                  <MarkdownField
+                  <MarkdownFormField
                     label="Content"
                     aria-label="Content"
                     data-testid="memory-content-input"

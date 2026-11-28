@@ -34,7 +34,7 @@ for (const width of [1440, 390, 320]) {
     await openFinalFormStep(page);
     const source = dialog.getByTestId("memory-content-input");
     await source.fill(markdown);
-    const geometry = await source.evaluate((element) => {
+    const geometry = await dialog.getByTestId("markdown-field").evaluate((element) => {
       const body = element.closest(".work-form-body");
       if (!body) throw new Error("Missing form body");
       const field = element.getBoundingClientRect(),
@@ -46,8 +46,11 @@ for (const width of [1440, 390, 320]) {
         bodyBottom: bounds.bottom - Number.parseFloat(getComputedStyle(body).paddingBottom),
       };
     });
-    expect(geometry.height).toBeGreaterThan(geometry.available * 0.65);
-    expect(Math.abs(geometry.bottom - geometry.bodyBottom)).toBeLessThan(3);
+    // The shared editor adds mode and formatting rows above the typing region.
+    expect(geometry.height, JSON.stringify(geometry)).toBeGreaterThan(geometry.available * 0.45);
+    expect(Math.abs(geometry.bottom - geometry.bodyBottom), JSON.stringify(geometry)).toBeLessThan(
+      3,
+    );
     await captureState(page, {
       path: info.outputPath(`memory-markdown-source-${width}.png`),
       animations: "disabled",
@@ -60,7 +63,7 @@ for (const width of [1440, 390, 320]) {
     expect(
       await emphasis.evaluate((element) => Number(getComputedStyle(element).fontWeight)),
     ).toBeGreaterThanOrEqual(600);
-    await expect(source).toHaveValue(markdown);
+    await expect(source).toContainText("Verification checklist");
     await expect(dialog.getByTestId("memory-content-count")).toContainText(
       String([...markdown].length),
     );
@@ -103,7 +106,7 @@ for (const width of [1440, 390, 320]) {
     expect(writes).toHaveLength(1);
     await page.getByTestId("memory-edit").click();
     await openFinalFormStep(page);
-    await expect(page.getByTestId("memory-content-input")).toHaveValue(markdown);
+    await expect(page.getByTestId("memory-content-input")).toContainText("Verification checklist");
   });
 }
 
@@ -163,12 +166,12 @@ test("Task body and job task instructions preview Markdown without changing thei
   ).toBeVisible();
   await page.getByTestId("form-step-trigger").click();
   await page.getByTestId("form-step-destination").click();
-  await expect(page.getByTestId("job-task-body")).toHaveValue(markdown);
+  await expect(page.getByTestId("job-task-body")).toContainText("Verification checklist");
   const savedTask = await apiGet<{ body: string }>(request, `/tasks/${createdTaskId}`);
   expect(savedTask.body).toBe(changed);
 });
 
-test("Skill Markdown retains Read Edit Split and saved draft behavior with compact controls", async ({
+test("Skill Markdown retains Read, Edit, source and saved draft behavior with compact controls", async ({
   page,
 }, info) => {
   const name = tid("markdown-skill");
@@ -190,11 +193,10 @@ test("Skill Markdown retains Read Edit Split and saved draft behavior with compa
     path: info.outputPath("skill-markdown-read.png"),
     animations: "disabled",
   });
-  await dialog.getByTestId("markdown-mode-split").click();
+  await dialog.getByTestId("markdown-mode-edit").click();
   await expect(dialog.getByTestId("skill-content-input")).toBeVisible();
-  await expect(dialog.getByTestId("markdown-preview")).toBeVisible();
   await captureState(page, {
-    path: info.outputPath("skill-markdown-split.png"),
+    path: info.outputPath("skill-markdown-edit-live.png"),
     animations: "disabled",
   });
   await dialog.getByTestId("skill-submit").click();

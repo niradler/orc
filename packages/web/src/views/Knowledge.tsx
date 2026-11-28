@@ -1,25 +1,27 @@
-import type { KnowledgeBase } from "@orc/core/kb";
+import type { KbScope, KbSearchMode } from "@orc/core/kb";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
-import { ArrowLeft, BookOpen, ChevronRight, FileText, Menu, Plus, Search, X } from "lucide-react";
-import { type DragEvent, Fragment, type ReactNode, useEffect, useState } from "react";
+import { ArrowLeft, ChevronRight, Menu, PanelRight, Plus, Search, Settings } from "lucide-react";
+import { type DragEvent, type ReactNode, useEffect, useState } from "react";
 import { useLocation, useSearchParams } from "react-router-dom";
 import { confirmDocumentClose } from "@/components/DocumentWorkspace";
 import { ErrorState } from "@/components/ErrorState";
-import { HelpPopover } from "@/components/HelpPopover";
+import { KbContextRail } from "@/components/kb/KbContextRail";
 import { CreateKbDialog, KbSettingsDialog, NewDocumentDialog } from "@/components/kb/KbDialogs";
 import { KbDocumentPane, kbWorkspaceId } from "@/components/kb/KbDocumentPane";
 import { KbHome } from "@/components/kb/KbHome";
+import { KbLabelsPage } from "@/components/kb/KbLabelsPage";
+import { KbRail } from "@/components/kb/KbRail";
+import { KbSearchPage } from "@/components/kb/KbSearchPage";
 import type { KbUpload } from "@/components/kb/useKbUploads";
 import { useKbUploads } from "@/components/kb/useKbUploads";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  useInvalidateKb,
   useKbDocument,
   useKbDocuments,
   useKbSearch,
-  useKbStatus,
   useKnowledgeBases,
 } from "@/hooks/useKnowledge";
 import { useBreakpoint } from "@/hooks/useMediaQuery";
@@ -29,6 +31,7 @@ import { cn } from "@/lib/utils";
 import Memories from "@/views/Memories";
 
 type Dialog = "create" | "settings" | "new-document" | null;
+type View = "home" | "search" | "labels";
 
 export default function Knowledge({ projectId: savedProjectId }: { projectId: string }) {
   const projectId = useProjectScope(savedProjectId);
@@ -50,46 +53,6 @@ export default function Knowledge({ projectId: savedProjectId }: { projectId: st
   );
 }
 
-/** Markdown syntax in a search snippet becomes the plain text a reader sees. */
-function plainText(markdown: string): string {
-  return markdown
-    .replace(/```[\w-]*/g, " ")
-    .replace(/<\/?[a-z][^>]*>/gi, " ")
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/(^|\s)#{1,6}\s+/g, "$1")
-    .replace(/(^|\n)\s*(?:>\s*)+/g, "$1")
-    .replace(/(^|\n)\s*(?:[-*+]|\d+[.)])\s+/g, "$1")
-    .replace(/\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)*\|?/g, " ")
-    .replace(/(^|\s)(?:\*{3,}|_{3,})(?=\s|$)/g, "$1")
-    .replace(/`/g, "")
-    .replace(/(^|[\s(«])[*_~]+(?=\S)/g, "$1")
-    .replace(/(\S)[*_~]+(?=$|[\s).,;:!?»])/g, "$1")
-    .replace(/\s*\|[\s|]*/g, " · ")
-    .replace(/\s+/g, " ")
-    .replace(/^ · | · $/g, "")
-    .trim();
-}
-
-/** «term» marks from the search snippet become highlights. */
-function Snippet({ text }: { text: string }) {
-  const parts = plainText(text).split(/«([^»]*)»/g);
-  return (
-    <>
-      {parts.map((part, i) =>
-        i % 2 ? (
-          // biome-ignore lint/suspicious/noArrayIndexKey: parts are positional
-          <mark key={i} className="rounded-xs bg-primary/20 px-0.5 text-on-surface">
-            {part}
-          </mark>
-        ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: parts are positional
-          <Fragment key={i}>{part}</Fragment>
-        ),
-      )}
-    </>
-  );
-}
-
 function KnowledgeBases({
   projectId,
   globalOnly = false,
@@ -102,17 +65,34 @@ function KnowledgeBases({
   const kbId = params.get("kb");
   const documentId = params.get("document");
   const label = params.get("label") ?? "";
+  const folder = params.get("folder") ?? "";
   const query = params.get("q") ?? "";
-  const searchAll = params.get("searchAll") === "1";
+  const viewParam = params.get("view");
+  const view: View =
+    viewParam === "labels" || viewParam === "search" ? viewParam : query ? "search" : "home";
+  const searchMode = (params.get("mode") as KbSearchMode | null) ?? "auto";
+  const searchScope = (params.get("scope") as KbScope | null) ?? (projectId ? "default" : "all");
+  const searchLabels = (params.get("labels") ?? "").split(",").filter(Boolean);
+  const mediaType = params.get("media") ?? "";
   const [queryInput, setQueryInput] = useState(query);
   useEffect(() => setQueryInput(query), [query]);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [navOpen, setNavOpen] = useState(false);
   const wide = useBreakpoint("lg");
-  // The details column fits beside a readable document only on wide screens.
-  const [detailsOpen, setDetailsOpen] = useState(
-    () => typeof window !== "undefined" && window.innerWidth >= 1600,
-  );
+  const extraWide = useBreakpoint("xl");
+  const contextView = documentId ? "document" : view;
+  const [contextOpen, setContextOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const stored = window.localStorage.getItem(`kb-context:${contextView}`);
+    return stored === "1";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(`kb-context:${contextView}`);
+    setContextOpen(stored === "1");
+  }, [contextView]);
+  // The desktop rail remembers its state; the phone sheet opens on demand and never from a resize.
+  const [contextSheetOpen, setContextSheetOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [pendingHeading, setPendingHeading] = useState<string | null>(null);
   const [droppedFile, setDroppedFile] = useState<File>();
@@ -123,7 +103,7 @@ function KnowledgeBases({
 
   const projects = useProjects();
   const bases = useKnowledgeBases(projectId, globalOnly);
-  const kb = bases.data?.find((b) => b.id === kbId) ?? null;
+  const kb = bases.data?.find((base) => base.id === kbId) ?? null;
   const listing = useKbDocuments(kb?.id ?? null);
   const doc = useKbDocument(bases.data === undefined ? null : documentId);
   // The URL's KB resolves once the bases load (or defaults to the first one); searching before
@@ -133,14 +113,18 @@ function KnowledgeBases({
     query && scopeSettled
       ? {
           query,
-          ...(kb && !searchAll ? { kb_ids: [kb.id] } : {}),
-          scope: projectId ? "default" : globalOnly ? "global" : "all",
+          scope: searchScope,
+          ...(kb ? { kb_ids: [kb.id] } : {}),
+          ...(searchLabels.length ? { labels: searchLabels } : {}),
+          ...(mediaType ? { media_types: [mediaType] } : {}),
+          mode: searchMode,
           limit: 20,
         }
       : null,
     projectId,
   );
   const uploads = useKbUploads();
+  const invalidate = useInvalidateKb();
 
   function update(changes: Record<string, string | null>, replace = false) {
     // setParams resolves against this page, so a late effect would pull the user back here.
@@ -149,9 +133,9 @@ function KnowledgeBases({
       () => {
         // Another workspace action may navigate before this render's effects run.
         const next = new URLSearchParams(window.location.search);
-        for (const [k, v] of Object.entries(changes)) {
-          if (v) next.set(k, v);
-          else next.delete(k);
+        for (const [key, value] of Object.entries(changes)) {
+          if (value) next.set(key, value);
+          else next.delete(key);
         }
         return next;
       },
@@ -160,21 +144,32 @@ function KnowledgeBases({
   }
   const leaveDocument = () => !documentId || confirmDocumentClose(kbWorkspaceId(documentId));
 
-  function selectKb(id: string | null) {
+  function setContext(open: boolean) {
+    setContextOpen(open);
+    if (typeof window !== "undefined")
+      window.localStorage.setItem(`kb-context:${contextView}`, open ? "1" : "0");
+  }
+  function closeNav() {
     setNavOpen(false);
-    // Choosing the open KB again leaves the document for its home page.
+    // The dialog unmounts its own focused button; return focus to the trigger that opened it.
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>('[data-testid="kb-browser-open"]')?.focus(),
+    );
+  }
+  function selectKb(id: string) {
+    setNavOpen(false);
+    setContextSheetOpen(false);
     if ((id === kbId && !documentId && !query) || !leaveDocument()) return;
-    // Finished uploads belong to the KB being left.
     if (id !== kbId) uploads.clearFinished();
-    update({ kb: id, document: null, label: null, q: null });
+    update({ kb: id, document: null, label: null, folder: null, q: null, view: null });
   }
   function openDocument(id: string, heading?: string) {
     setNavOpen(false);
+    setContextSheetOpen(false);
     if (id !== documentId && !leaveDocument()) return;
-    update({ document: id, q: null });
+    update({ document: id, q: null, view: null });
     setPendingHeading(heading ?? null);
   }
-  /** A result opens with the query kept, so going back shows the same results. */
   function openResult(id: string, heading?: string) {
     update({ document: id });
     setPendingHeading(heading ?? null);
@@ -182,9 +177,13 @@ function KnowledgeBases({
   function submitSearch() {
     setNavOpen(false);
     const next = queryInput.trim();
-    if (!next) return update({ q: null });
+    if (!next) return update({ q: null, view: "search" });
     if (!leaveDocument()) return;
-    update({ q: next, document: null });
+    update({ q: next, document: null, view: "search" });
+  }
+  function go(next: View) {
+    if (!leaveDocument()) return;
+    update({ view: next === "home" ? null : next, q: next === "search" ? query : null });
   }
 
   useEffect(() => {
@@ -194,22 +193,29 @@ function KnowledgeBases({
   // Default to the first visible KB; drop a KB that no longer exists (deleted elsewhere).
   useEffect(() => {
     if (!bases.data) return;
-    if (documentId && doc.data && !bases.data.some((b) => b.id === doc.data.kb_id)) {
-      update({ kb: bases.data[0]?.id ?? null, document: null, label: null, q: null }, true);
-    } else if (kbId && !bases.data.some((b) => b.id === kbId) && (!documentId || doc.error))
+    if (documentId && doc.data && !bases.data.some((base) => base.id === doc.data?.kb_id)) {
+      update(
+        { kb: bases.data[0]?.id ?? null, document: null, label: null, q: null, view: null },
+        true,
+      );
+    } else if (kbId && !bases.data.some((base) => base.id === kbId) && (!documentId || doc.error))
       update({ kb: null, document: null }, true);
     else if (!kbId && bases.data[0]) update({ kb: bases.data[0].id }, true);
   });
   // Links and search results can open a document in another KB; follow it.
   useEffect(() => {
-    if (doc.data && doc.data.kb_id !== kbId && bases.data?.some((b) => b.id === doc.data.kb_id))
+    if (
+      doc.data &&
+      doc.data.kb_id !== kbId &&
+      bases.data?.some((base) => base.id === doc.data?.kb_id)
+    )
       update({ kb: doc.data.kb_id, label: null }, true);
   });
   useEffect(() => {
     if (!pendingHeading || !doc.data) return;
     const root = document.querySelector('[data-testid="kb-document"]');
     const target = [...(root?.querySelectorAll("h1,h2,h3,h4,h5,h6") ?? [])].find(
-      (h) => h.textContent?.trim() === pendingHeading,
+      (heading) => heading.textContent?.trim() === pendingHeading,
     );
     if (target) {
       target.scrollIntoView({ block: "start" });
@@ -218,10 +224,10 @@ function KnowledgeBases({
   });
 
   // One dropped file opens for review in the new document dialog; several upload together.
-  function onDrop(e: DragEvent) {
-    e.preventDefault();
+  function onDrop(event: DragEvent) {
+    event.preventDefault();
     setDragging(false);
-    const files = [...e.dataTransfer.files];
+    const files = [...event.dataTransfer.files];
     if (!kb || files.length === 0) return;
     if (files.length > 1) uploads.add(kb.id, files);
     else {
@@ -231,10 +237,22 @@ function KnowledgeBases({
   }
 
   const projectName = (id: string | null) =>
-    id === null ? "Global" : (projects.data?.find((p) => p.id === id)?.name ?? "Project");
+    id === null
+      ? "Global"
+      : (projects.data?.find((project) => project.id === id)?.name ?? "Project");
 
   if (bases.error)
     return <ErrorState message={(bases.error as Error).message} onRetry={() => bases.refetch()} />;
+
+  const docs = listing.data?.documents ?? [];
+  const intake = {
+    processing:
+      docs.filter((doc) => doc.parse_state === "pending").length +
+      uploads.uploads.filter((upload) => upload.status === "uploading").length,
+    failed:
+      docs.filter((doc) => doc.parse_state === "failed").length +
+      uploads.uploads.filter((upload) => upload.status === "failed").length,
+  };
 
   const content = documentId ? (
     doc.data && kb && doc.data.kb_id === kb.id ? (
@@ -242,8 +260,8 @@ function KnowledgeBases({
         key={doc.data.id}
         kb={kb}
         doc={doc.data}
-        detailsOpen={detailsOpen}
-        onDetailsOpenChange={setDetailsOpen}
+        detailsOpen={extraWide ? contextOpen : contextSheetOpen}
+        onDetailsOpenChange={(open) => (extraWide ? setContext(open) : setContextSheetOpen(open))}
         onHome={() => selectKb(kb.id)}
         onOpen={openDocument}
         onDeleted={() => update({ document: null })}
@@ -270,13 +288,45 @@ function KnowledgeBases({
         </p>
       </Centered>
     )
-  ) : query ? (
+  ) : view === "search" ? (
     <Scroll>
-      <SearchResults
+      <KbSearchPage
         query={query}
+        queryInput={queryInput}
+        onQueryInput={setQueryInput}
+        onQuery={(next) => {
+          if (next !== query && !leaveDocument()) return;
+          update({ q: next || null, document: null, view: "search" });
+        }}
+        mode={searchMode}
+        onMode={(mode) => update({ mode })}
+        scope={searchScope}
+        onScope={(scope) => update({ scope })}
+        labels={searchLabels}
+        onLabels={(labels) => update({ labels: labels.length ? labels.join(",") : null })}
+        kbId={kb?.id ?? null}
+        kbName={kb?.name ?? "all knowledge"}
+        onKb={(id) => {
+          if (id) update({ kb: id });
+          else update({ kb: null });
+        }}
+        bases={bases.data ?? []}
+        listing={listing.data}
+        mediaType={mediaType}
+        onMediaType={(type) => update({ media: type || null })}
         search={search}
         onOpen={openResult}
-        onClear={() => update({ q: null })}
+        onClear={() => update({ q: null, labels: null, media: null, view: null })}
+      />
+    </Scroll>
+  ) : view === "labels" && kb ? (
+    <Scroll>
+      <KbLabelsPage
+        kbId={kb.id}
+        kbName={kb.name}
+        listing={listing.data}
+        onBack={() => go("home")}
+        onOpenLabel={(next) => update({ view: null, label: next, document: null, q: null })}
       />
     </Scroll>
   ) : kb ? (
@@ -286,10 +336,16 @@ function KnowledgeBases({
         owner={projectName(kb.project_id)}
         listing={listing.data}
         label={label}
+        folder={folder}
+        intake={intake}
         onLabel={(next) => update({ label: next })}
+        onFolder={(next) => update({ folder: next || null })}
         onOpen={openDocument}
         onNewDocument={() => setDialog("new-document")}
-        onSettings={() => setDialog("settings")}
+        onIntake={() => setDialog("new-document")}
+        onLabels={() => go("labels")}
+        onBulkDone={() => void invalidate()}
+        onNavigate={go}
       />
     </Scroll>
   ) : bases.data?.length === 0 ? (
@@ -300,96 +356,44 @@ function KnowledgeBases({
         New knowledge base
       </Button>
     </Centered>
-  ) : null;
+  ) : (
+    <Centered>
+      <Skeleton className="h-6 w-56" />
+      <Skeleton className="h-24 w-full max-w-md" />
+    </Centered>
+  );
 
   const sidebar = (
-    <nav
-      id="kb-sidebar-panel"
-      aria-label="Knowledge bases"
-      data-testid="kb-sidebar"
-      className="flex h-full min-h-0 flex-col border-outline-variant bg-background lg:w-72 lg:shrink-0 lg:border-r"
-    >
-      <form
-        className="flex shrink-0 items-center gap-1.5 border-b border-outline-variant p-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          submitSearch();
-        }}
-      >
-        <Input
-          aria-label="Search knowledge"
-          data-testid="kb-search-input"
-          value={queryInput}
-          onChange={(e) => setQueryInput(e.target.value)}
-          placeholder={kb && !searchAll ? `Search ${kb.name}` : "Search everything"}
-          className="h-9 min-w-0 flex-1"
-        />
-        <Button
-          type="submit"
-          size="icon"
-          variant="ghost"
-          data-testid="kb-search-submit"
-          aria-label="Search"
-        >
-          <Search size={16} />
-        </Button>
-        {navOpen && (
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            data-testid="kb-browser-close"
-            aria-label="Close knowledge browser"
-            onClick={() => setNavOpen(false)}
-          >
-            <X size={16} />
-          </Button>
-        )}
-      </form>
-      {kb && (
-        <label className="flex shrink-0 items-center gap-2 border-b border-outline-variant px-3 py-2 text-xs text-outline">
-          <input
-            type="checkbox"
-            data-testid="kb-search-all"
-            checked={searchAll}
-            onChange={(e) => update({ searchAll: e.target.checked ? "1" : null })}
-          />
-          Search all knowledge bases
-        </label>
-      )}
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        <div className="flex items-center justify-between px-2 pb-1">
-          <div className="flex min-w-0 items-center gap-1">
-            <h2 className="text-sm font-medium text-outline">Knowledge bases</h2>
-            <HelpPopover label="Knowledge bases">
-              Upload documents, write Markdown or sync a folder. Agents search this knowledge with
-              citations, and document details show what they read.
-            </HelpPopover>
-          </div>
-          <Button
-            size="icon"
-            variant="ghost"
-            aria-label="New knowledge base"
-            data-testid="kb-create"
-            onClick={() => setDialog("create")}
-          >
-            <Plus size={16} />
-          </Button>
-        </div>
-        {bases.isLoading && <Skeleton className="mx-2 h-9" />}
-        <KbTree
-          bases={bases.data ?? []}
-          projectName={projectName}
-          kbId={kbId}
-          documentId={documentId}
-          documents={listing.data?.documents ?? []}
-          onSelectKb={selectKb}
-          onOpenDocument={openDocument}
-        />
-      </div>
-      <KbStatusLine />
-    </nav>
+    <KbRail
+      bases={bases.data ?? []}
+      kb={kb}
+      projectName={projectName}
+      listing={listing.data}
+      projectId={projectId}
+      folder={folder}
+      label={label}
+      queryInput={queryInput}
+      onQueryInput={setQueryInput}
+      onSearch={submitSearch}
+      onSelectKb={selectKb}
+      onCreateKb={() => setDialog("create")}
+      onFolder={(next) => update({ folder: next || null, document: null, view: null })}
+      onLabel={(next) => update({ label: next || null, document: null, view: null })}
+      onLabels={() => go("labels")}
+      onClose={navOpen && !wide ? closeNav : undefined}
+    />
   );
+
+  const context =
+    kb && !documentId ? (
+      <KbContextRail
+        kb={kb}
+        owner={projectName(kb.project_id)}
+        onSettings={() => setDialog("settings")}
+        onSearch={() => go("search")}
+        onOpenDocument={openDocument}
+      />
+    ) : null;
 
   return (
     <DialogPrimitive.Root open={navOpen && !wide} onOpenChange={setNavOpen}>
@@ -420,29 +424,108 @@ function KnowledgeBases({
             "relative flex min-h-0 min-w-0 flex-1 flex-col",
             dragging && "outline-2 -outline-offset-4 outline-dashed outline-primary",
           )}
-          onDragOver={(e) => {
+          onDragOver={(event) => {
             if (!kb) return;
-            e.preventDefault();
+            event.preventDefault();
             setDragging(true);
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
         >
-          <div className="flex shrink-0 items-center gap-2 border-b border-outline-variant px-3 py-2 lg:hidden">
-            <DialogPrimitive.Trigger asChild>
-              <Button
-                data-testid="kb-browser-open"
-                variant="ghost"
-                size="sm"
-                aria-expanded={navOpen}
-                aria-controls="kb-sidebar-panel"
-                onClick={() => setNavOpen(true)}
+          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-outline-variant px-3">
+            <Button
+              data-testid="kb-browser-open"
+              variant="ghost"
+              size="sm"
+              aria-expanded={navOpen}
+              aria-controls="kb-sidebar-panel"
+              className="lg:hidden"
+              onClick={() => setNavOpen(true)}
+            >
+              <Menu size={16} />
+              Browse
+            </Button>
+            <nav
+              aria-label="Knowledge location"
+              className="flex min-w-0 flex-1 items-center gap-1 text-sm"
+            >
+              <button
+                type="button"
+                className="shrink-0 text-outline hover:text-on-surface"
+                onClick={() => go("home")}
               >
-                <Menu size={16} />
-                Browse
+                Knowledge
+              </button>
+              {kb && (
+                <>
+                  <ChevronRight size={13} className="shrink-0 text-outline" aria-hidden />
+                  <button
+                    type="button"
+                    className="min-w-0 truncate text-outline hover:text-on-surface"
+                    onClick={() => update({ document: null, q: null, view: null, label: null })}
+                  >
+                    {kb.name}
+                  </button>
+                </>
+              )}
+              {view === "search" && (
+                <>
+                  <ChevronRight size={13} className="shrink-0 text-outline" aria-hidden />
+                  <span className="text-on-surface">Search</span>
+                </>
+              )}
+              {view === "labels" && (
+                <>
+                  <ChevronRight size={13} className="shrink-0 text-outline" aria-hidden />
+                  <span className="text-on-surface">Labels</span>
+                </>
+              )}
+            </nav>
+            <Button
+              size="sm"
+              variant="ghost"
+              data-testid="kb-top-search"
+              onClick={() => go("search")}
+            >
+              <Search size={14} />
+              <span className="hidden sm:inline">Search</span>
+            </Button>
+            {!documentId && kb && (
+              <Button
+                size="sm"
+                variant="ghost"
+                data-testid="kb-top-add"
+                onClick={() => setDialog("new-document")}
+              >
+                <Plus size={14} />
+                <span className="hidden sm:inline">Add</span>
               </Button>
-            </DialogPrimitive.Trigger>
-            {kb && <span className="min-w-0 truncate text-sm text-outline">{kb.name}</span>}
+            )}
+            {!documentId && kb && (
+              <Button
+                size="icon"
+                variant="ghost"
+                aria-label="Knowledge settings"
+                data-testid="kb-settings"
+                onClick={() => setDialog("settings")}
+              >
+                <Settings size={16} />
+              </Button>
+            )}
+            {!documentId && kb && (
+              <Button
+                size="icon"
+                variant={(extraWide ? contextOpen : contextSheetOpen) ? "secondary" : "ghost"}
+                aria-label="Knowledge details"
+                aria-pressed={extraWide ? contextOpen : contextSheetOpen}
+                data-testid="kb-context-toggle"
+                onClick={() =>
+                  extraWide ? setContext(!contextOpen) : setContextSheetOpen(!contextSheetOpen)
+                }
+              >
+                <PanelRight size={16} />
+              </Button>
+            )}
           </div>
           {documentId && query && (
             <div className="flex shrink-0 items-center border-b border-outline-variant px-3 py-1">
@@ -451,7 +534,7 @@ function KnowledgeBases({
                 size="sm"
                 data-testid="kb-search-back"
                 className="min-w-0"
-                onClick={() => leaveDocument() && update({ document: null })}
+                onClick={() => leaveDocument() && update({ document: null, view: "search" })}
               >
                 <ArrowLeft size={14} />
                 <span className="truncate">Back to results for “{query}”</span>
@@ -461,6 +544,21 @@ function KnowledgeBases({
           <div className="flex min-h-0 min-w-0 flex-1">{content}</div>
           <UploadQueue uploads={uploads} onOpen={openDocument} />
         </div>
+        {context && extraWide && contextOpen && (
+          <div className="hidden w-[264px] shrink-0 border-l border-outline-variant xl:block">
+            {context}
+          </div>
+        )}
+        {context && !extraWide && (
+          <Sheet open={contextSheetOpen} onOpenChange={setContextSheetOpen}>
+            <SheetContent defaultWidth={320} resizeKey="kb-context" aria-describedby={undefined}>
+              <SheetHeader className="py-3">
+                <SheetTitle>Knowledge details</SheetTitle>
+              </SheetHeader>
+              <SheetBody className="p-0 sm:p-0">{context}</SheetBody>
+            </SheetContent>
+          </Sheet>
+        )}
         {dialog === "create" && (
           <CreateKbDialog
             open
@@ -469,7 +567,7 @@ function KnowledgeBases({
             onCreated={(created) => {
               setDialog(null);
               setNavOpen(false);
-              update({ kb: created.id, document: null, label: null, q: null });
+              update({ kb: created.id, document: null, label: null, q: null, view: null });
             }}
           />
         )}
@@ -479,7 +577,7 @@ function KnowledgeBases({
             onClose={() => setDialog(null)}
             onDeleted={() => {
               setDialog(null);
-              update({ kb: null, document: null, label: null });
+              update({ kb: null, document: null, label: null, view: null });
             }}
           />
         )}
@@ -495,157 +593,12 @@ function KnowledgeBases({
             onCreated={(created, written) => {
               closeNewDocument();
               // An empty document opens ready to write; a pasted one opens to read.
-              update({ document: created.id, editorMode: written ? null : "edit" });
+              update({ document: created.id, editorMode: written ? null : "edit", view: null });
             }}
           />
         )}
       </div>
     </DialogPrimitive.Root>
-  );
-}
-
-/** Knowledge bases grouped by owner; the open one lists its documents beneath it. */
-function KbTree({
-  bases,
-  projectName,
-  kbId,
-  documentId,
-  documents,
-  onSelectKb,
-  onOpenDocument,
-}: {
-  bases: KnowledgeBase[];
-  projectName: (id: string | null) => string;
-  kbId: string | null;
-  documentId: string | null;
-  documents: { id: string; title: string }[];
-  onSelectKb: (id: string) => void;
-  onOpenDocument: (id: string) => void;
-}) {
-  // Clicking the open knowledge base again folds its document list; opening a document unfolds it.
-  const [folded, setFolded] = useState<string | null>(null);
-  useEffect(() => {
-    if (documentId) setFolded(null);
-  }, [documentId]);
-  const groups = new Map<string, KnowledgeBase[]>();
-  for (const b of bases) {
-    const name = projectName(b.project_id);
-    groups.set(name, [...(groups.get(name) ?? []), b]);
-  }
-  const ordered = [...groups.entries()].sort(([a], [b]) =>
-    a === "Global" ? -1 : b === "Global" ? 1 : a.localeCompare(b),
-  );
-  return (
-    <div data-testid="kb-list" className="space-y-3">
-      {ordered.map(([group, list]) => (
-        <section key={group} aria-label={group}>
-          {ordered.length > 1 && (
-            <h3 className="truncate px-2 pb-0.5 pt-1 text-xs text-outline">{group}</h3>
-          )}
-          <ul className="space-y-0.5">
-            {list.map((b) => {
-              const open = b.id === kbId;
-              const listed = open && folded !== b.id && documents.length > 0;
-              return (
-                <li key={b.id}>
-                  <button
-                    type="button"
-                    data-testid="kb-row"
-                    data-kb-name={b.name}
-                    aria-current={open && !documentId ? "page" : undefined}
-                    aria-expanded={listed}
-                    className={cn(
-                      "flex min-h-9 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high",
-                      open && "font-medium",
-                      open && !documentId && "bg-surface-high",
-                    )}
-                    onClick={() => {
-                      if (open) setFolded((f) => (f === b.id ? null : b.id));
-                      onSelectKb(b.id);
-                    }}
-                  >
-                    <ChevronRight
-                      size={14}
-                      aria-hidden
-                      className={cn(
-                        "-mr-1 shrink-0 text-outline transition-transform motion-reduce:transition-none",
-                        listed && "rotate-90",
-                        b.document_count === 0 && "invisible",
-                      )}
-                    />
-                    <BookOpen size={15} className="shrink-0 text-outline" aria-hidden />
-                    <span className="min-w-0 flex-1 truncate">{b.name}</span>
-                    <span className="text-xs font-normal tabular-nums text-outline">
-                      {b.document_count}
-                    </span>
-                  </button>
-                  {listed && (
-                    <ul className="ml-4 mt-0.5 space-y-0.5 border-l border-outline-variant pl-2">
-                      {documents.map((d) => (
-                        <li key={d.id}>
-                          <button
-                            type="button"
-                            data-testid="kb-nav-document"
-                            data-document-title={d.title}
-                            aria-current={d.id === documentId ? "page" : undefined}
-                            className={cn(
-                              "flex min-h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm hover:bg-surface-high",
-                              d.id === documentId
-                                ? "bg-surface-high text-on-surface"
-                                : "text-outline",
-                            )}
-                            onClick={() => onOpenDocument(d.id)}
-                          >
-                            <FileText size={14} className="shrink-0" aria-hidden />
-                            <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ))}
-    </div>
-  );
-}
-
-/** The search mode and background work, at the foot of the navigation. Each KB row shows its
- * own document count. */
-function KbStatusLine() {
-  const status = useKbStatus();
-  const s = status.data;
-  const searchMode = !s
-    ? null
-    : s.embedding.provider === "none"
-      ? {
-          text: "Keyword search only",
-          title: "Configure embeddings in Settings to also search by meaning",
-        }
-      : s.embedding.ready
-        ? { text: "Hybrid search", title: s.embedding.model ?? undefined }
-        : { text: "Embeddings not ready", title: s.embedding.detail ?? "" };
-  const jobs = s ? s.jobs.queued + s.jobs.running : 0;
-  return (
-    <p
-      role="status"
-      data-testid="kb-status"
-      className="shrink-0 border-t border-outline-variant px-4 py-2 text-xs text-outline"
-    >
-      {s ? (
-        <>
-          <span title={searchMode?.title}>{searchMode?.text}</span>
-          {jobs ? ` · ${jobs} processing` : ""}
-        </>
-      ) : status.error ? (
-        "Knowledge status unavailable"
-      ) : (
-        "Loading…"
-      )}
-    </p>
   );
 }
 
@@ -657,115 +610,15 @@ function Centered({ children, testId }: { children: ReactNode; testId?: string }
   return (
     <div
       data-testid={testId}
-      className="mx-auto flex max-w-lg flex-1 flex-col items-start justify-center gap-4 p-6"
+      className="mx-auto flex w-full max-w-lg flex-1 flex-col items-start justify-center gap-4 p-6"
     >
       {children}
     </div>
   );
 }
 
-function SearchResults({
-  query,
-  search,
-  onOpen,
-  onClear,
-}: {
-  query: string;
-  search: ReturnType<typeof useKbSearch>;
-  onOpen: (documentId: string, heading?: string) => void;
-  onClear: () => void;
-}) {
-  const result = search.data;
-  return (
-    <section
-      data-testid="kb-search-results"
-      aria-label="Search results"
-      className="w-full min-w-0 space-y-4 p-4 sm:p-8"
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="mr-auto text-lg font-medium">Results for “{query}”</h2>
-        {result && result.hits.length > 0 && (
-          <span className="text-xs text-outline" data-testid="kb-search-count">
-            {result.hits.length} {result.hits.length === 1 ? "result" : "results"}
-          </span>
-        )}
-        <Button variant="ghost" size="sm" onClick={onClear} data-testid="kb-search-clear">
-          <X size={14} />
-          Clear
-        </Button>
-      </div>
-      {result?.degraded && (
-        <p role="status" className="text-sm text-warning">
-          {result.degraded}
-        </p>
-      )}
-      {search.isLoading && <p className="text-sm text-outline">Searching…</p>}
-      {search.error && (
-        <p role="alert" className="text-sm text-error">
-          {(search.error as Error).message}
-        </p>
-      )}
-      {result?.hits.length === 0 && (
-        <p className="text-sm text-outline" data-testid="kb-search-empty">
-          Nothing matched. Try other words or search all knowledge bases.
-        </p>
-      )}
-      {result?.hits.map((hit) => (
-        <article
-          key={hit.document_id}
-          data-testid="kb-search-result"
-          className="space-y-2 border-b border-outline-variant pb-4"
-        >
-          <button
-            type="button"
-            className="block text-left"
-            onClick={() => onOpen(hit.document_id, lastHeading(hit.passages[0]?.heading_path))}
-          >
-            <span className="block font-medium text-primary hover:underline">{hit.title}</span>
-            <span className="block break-all text-xs text-outline">
-              {hit.kb_name} · {hit.path}
-            </span>
-          </button>
-          {hit.labels.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {hit.labels.map((l) => (
-                <Badge key={l} variant="secondary">
-                  {l}
-                </Badge>
-              ))}
-            </div>
-          )}
-          {hit.passages.map((p) => (
-            // biome-ignore lint/a11y/useKeyWithClickEvents: the title button is the keyboard path
-            // biome-ignore lint/a11y/noStaticElementInteractions: passage is a secondary click target
-            <div
-              key={p.chunk_id}
-              data-testid="kb-search-passage"
-              className="cursor-pointer space-y-1 rounded-md p-2 hover:bg-surface-high"
-              onClick={() => onOpen(hit.document_id, lastHeading(p.heading_path))}
-            >
-              {(p.heading_path.length > 0 || p.locator?.page || p.locator?.sheet) && (
-                <div className="text-xs text-outline">
-                  {[
-                    ...p.heading_path.map(plainText),
-                    ...(p.locator?.page ? [`page ${p.locator.page}`] : []),
-                    ...(p.locator?.sheet ? [`sheet ${p.locator.sheet}`] : []),
-                  ].join(" › ")}
-                </div>
-              )}
-              <p className="text-sm leading-relaxed">
-                <Snippet text={p.snippet} />
-              </p>
-            </div>
-          ))}
-        </article>
-      ))}
-    </section>
-  );
-}
-
 /** Floats over the content so it never pushes the page down; finished items stay until dismissed
- * or the user moves to another knowledge base. */
+ * or the user moves to another KB. */
 function UploadQueue({
   uploads,
   onOpen,
@@ -774,7 +627,7 @@ function UploadQueue({
   onOpen: (documentId: string) => void;
 }) {
   if (!uploads.uploads.length) return null;
-  const finished = uploads.uploads.some((u) => u.status !== "uploading");
+  const finished = uploads.uploads.some((upload) => upload.status !== "uploading");
   return (
     <section
       data-testid="kb-upload-queue"
@@ -795,8 +648,13 @@ function UploadQueue({
         )}
       </div>
       <div className="min-h-0 space-y-1 overflow-y-auto px-3 pb-2">
-        {uploads.uploads.map((u) => (
-          <UploadItem key={u.id} upload={u} onOpen={onOpen} onRetry={() => uploads.retry(u.id)} />
+        {uploads.uploads.map((upload) => (
+          <UploadItem
+            key={upload.id}
+            upload={upload}
+            onOpen={onOpen}
+            onRetry={() => uploads.retry(upload.id)}
+          />
         ))}
       </div>
     </section>
@@ -811,7 +669,7 @@ const PARSE_LABEL = {
 };
 
 function UploadItem({
-  upload: u,
+  upload: item,
   onOpen,
   onRetry,
 }: {
@@ -820,30 +678,31 @@ function UploadItem({
   onRetry: () => void;
 }) {
   // The upload response is a snapshot taken before background parsing; the KB listing is live.
-  const listing = useKbDocuments(u.status === "done" ? u.kbId : null);
-  const document = listing.data?.documents.find((d) => d.id === u.document?.id) ?? u.document;
+  const listing = useKbDocuments(item.status === "done" ? item.kbId : null);
+  const document =
+    listing.data?.documents.find((doc) => doc.id === item.document?.id) ?? item.document;
   return (
     <div
       data-testid="kb-upload-item"
-      data-status={u.status}
+      data-status={item.status}
       data-parse-state={document?.parse_state}
       className="flex flex-wrap items-center gap-2"
     >
-      <span className="min-w-0 flex-1 truncate">{u.file.name}</span>
-      {u.status === "uploading" && (
+      <span className="min-w-0 flex-1 truncate">{item.file.name}</span>
+      {item.status === "uploading" && (
         <span
           className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-high"
           role="progressbar"
           aria-label="Upload progress"
-          aria-valuenow={Math.round(u.progress * 100)}
+          aria-valuenow={Math.round(item.progress * 100)}
         >
           <span
             className="block h-full bg-primary"
-            style={{ width: `${Math.round(u.progress * 100)}%` }}
+            style={{ width: `${Math.round(item.progress * 100)}%` }}
           />
         </span>
       )}
-      {u.status === "done" && document && (
+      {item.status === "done" && document && (
         <button
           type="button"
           className={cn(
@@ -855,10 +714,10 @@ function UploadItem({
           {PARSE_LABEL[document.parse_state]}
         </button>
       )}
-      {u.status === "failed" && (
+      {item.status === "failed" && (
         <>
           <span role="alert" className="text-error">
-            {u.error}
+            {item.error}
           </span>
           <Button size="sm" variant="ghost" onClick={onRetry} data-testid="kb-upload-retry">
             Retry
@@ -867,8 +726,4 @@ function UploadItem({
       )}
     </div>
   );
-}
-
-function lastHeading(path: string[] | undefined): string | undefined {
-  return path?.[path.length - 1];
 }

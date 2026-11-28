@@ -5,6 +5,7 @@ import {
   KB_CALL_SOURCES,
   KB_COMMENT_STATUSES,
   KB_SCOPES,
+  KbBulkActionSchema,
   type KbCallContext,
   type KbCallSource,
   KbCommentCloseSchema,
@@ -15,6 +16,7 @@ import {
   KbDocumentEditSchema,
   KbDocumentUpdateSchema,
   KbEvidenceSchema,
+  KbLabelManageSchema,
   KbSearchSchema,
   KbUpdateSchema,
 } from "@orc/core/kb";
@@ -40,6 +42,12 @@ app.use("/kb/bases/:id/upload", (c, next) => {
   const max = loadConfig().knowledge.max_upload_bytes;
   return bodyLimit({ maxSize: max + 64 * 1024, onError: (c) => tooLarge(c, max) })(c, next);
 });
+app.use("/kb/bases/:id/assets", (c, next) =>
+  bodyLimit({
+    maxSize: 10 * 1024 * 1024 + 64 * 1024,
+    onError: (c) => tooLarge(c, 10 * 1024 * 1024),
+  })(c, next),
+);
 
 /**
  * Transport context. The source comes from the caller's transport header (the web UI sends `ui`,
@@ -244,6 +252,114 @@ app.openapi(
       ...(rev ? { expected_revision: Number(rev) } : {}),
     });
     return c.json(doc, 201);
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/kb/bases/{id}/bulk",
+    tags,
+    summary: "Label, move or delete the selected documents",
+    request: { params: idParam, ...json(KbBulkActionSchema) },
+    responses: ok("Bulk result"),
+  }),
+  async (c) =>
+    c.json((await svc()).bulk(kbContext(c), c.req.valid("param").id, c.req.valid("json"))),
+);
+
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/kb/bases/{id}/labels/manage",
+    tags,
+    summary: "Rename, merge or delete a label across the knowledge base",
+    request: { params: idParam, ...json(KbLabelManageSchema) },
+    responses: ok("Label change result"),
+  }),
+  async (c) =>
+    c.json((await svc()).manageLabel(kbContext(c), c.req.valid("param").id, c.req.valid("json"))),
+);
+
+const assetForm = z.object({ file: z.any().openapi({ type: "string", format: "binary" }) });
+app.openapi(
+  createRoute({
+    method: "post",
+    path: "/kb/bases/{id}/assets",
+    tags,
+    summary: "Store an image referenced by Markdown and return its same-origin URL",
+    request: {
+      params: idParam,
+      body: { content: { "multipart/form-data": { schema: assetForm } }, required: true },
+    },
+    responses: { 201: ok("Asset")[200], 413: { description: "File too large" } },
+  }),
+  async (c) => {
+    const form = await c.req.parseBody();
+    const file = form.file;
+    if (!(file instanceof File)) throw new ValidationError("Missing file field");
+    if (file.size > 10 * 1024 * 1024) return tooLarge(c, 10 * 1024 * 1024);
+    const asset = (await svc()).putAsset(
+      kbContext(c),
+      c.req.valid("param").id,
+      file.name || "image.png",
+      new Uint8Array(await file.arrayBuffer()),
+    );
+    return c.json(asset, 201);
+  },
+);
+
+const assetParam = z.object({ id: z.string().min(1).max(100), file: z.string().min(1).max(128) });
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/kb/assets/{id}/{file}",
+    tags,
+    summary: "Read an image asset referenced by a document",
+    request: { params: assetParam },
+    responses: {
+      200: {
+        description: "Image bytes",
+        content: { "image/*": { schema: z.string().openapi({ format: "binary" }) } },
+      },
+    },
+  }),
+  async (c) => {
+    const asset = (await svc()).readAsset(c.req.valid("param").id, c.req.valid("param").file);
+    return new Response(asset.bytes, {
+      headers: {
+        "Content-Type": asset.media_type,
+        "Cache-Control": "private, max-age=86400, immutable",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox",
+      },
+    });
+  },
+);
+
+app.openapi(
+  createRoute({
+    method: "get",
+    path: "/kb/bases/{id}/export/okf",
+    tags,
+    summary: "Download a knowledge base as a conformant OKF v0.3 bundle",
+    request: { params: idParam },
+    responses: {
+      200: {
+        description: "OKF bundle (zip)",
+        content: { "application/zip": { schema: z.string().openapi({ format: "binary" }) } },
+      },
+    },
+  }),
+  async (c) => {
+    const bundle = (await svc()).exportOkf(c.req.valid("param").id);
+    return new Response(bundle.bytes, {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(bundle.filename)}`,
+        "X-Content-Type-Options": "nosniff",
+      },
+    });
   },
 );
 

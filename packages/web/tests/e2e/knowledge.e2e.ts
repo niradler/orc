@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { settingsSection } from "./_chat-ui";
 import { API_BASE, AUTH_HEADERS, apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
-import { selectKnowledgeBase } from "./_knowledge-ui";
+import { openKbContext, selectKnowledgeBase } from "./_knowledge-ui";
 
 type Kb = { id: string; name: string };
 type Doc = { id: string; revision: number; title: string };
@@ -21,10 +21,6 @@ async function openKb(page: Page, name: string): Promise<void> {
 /** A row in the knowledge base home table. */
 const docRow = (page: Page, title: string) =>
   page.locator(`[data-testid="kb-document-row"][data-document-title="${title}"]`);
-
-/** The open knowledge base's document in the sidebar, reachable from any page of it. */
-const navDoc = (page: Page, title: string) =>
-  page.locator(`[data-testid="kb-nav-document"][data-document-title="${title}"]`);
 
 test.describe("Knowledge bases", () => {
   test("create a knowledge base, write a document, search it and delete the base", async ({
@@ -246,7 +242,8 @@ test.describe("Knowledge bases", () => {
       await page.keyboard.press("Escape");
 
       // An HTML page is titled from its own heading, like a Markdown upload.
-      await navDoc(page, "Html page").click();
+      await page.getByTestId("kb-breadcrumb-kb").click();
+      await docRow(page, "Html page").click();
       await expect(page.getByTestId("kb-document-content")).toContainText("htmluploadneedle", {
         timeout: 30_000,
       });
@@ -332,11 +329,12 @@ test.describe("Knowledge bases", () => {
       await expect(usage.getByTestId("kb-doc-usage-ui").locator("td").nth(1)).not.toHaveText("0");
       // The home table's Reads column totals every source.
       await page.getByTestId("kb-breadcrumb-kb").click();
+      await page.getByTestId("kb-view-table").click();
       await expect(
         page
           .locator("tr", { has: docRow(page, "Usage target") })
           .locator("td")
-          .nth(3),
+          .nth(4),
       ).toHaveText(/^[1-9]\d*$/);
     } finally {
       await apiDelete(request, `/kb/bases/${kb.id}`);
@@ -393,6 +391,7 @@ test.describe("Knowledge bases", () => {
     writeFileSync(file, original);
     try {
       await openKb(page, kb.name);
+      await openKbContext(page);
       await expect(page.getByTestId("kb-folders-none")).toBeVisible();
       await page.getByTestId("kb-folders-add").click();
       const path = page.getByTestId("kb-source-path-input");
@@ -463,7 +462,7 @@ test.describe("Knowledge bases", () => {
       const link = page.getByTestId("markdown-remote-image");
       await expect(link).toHaveText("status chart");
       await expect(link).toHaveAttribute("href", "https://tracker.invalid/pixel.gif?u=1");
-      await expect(page.getByTestId("kb-document").locator("img")).toHaveCount(0);
+      await expect(page.getByTestId("markdown-preview").locator("img")).toHaveCount(0);
       expect(requested).toEqual([]);
     } finally {
       await apiDelete(request, `/kb/bases/${kb.id}`);

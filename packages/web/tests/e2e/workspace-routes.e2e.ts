@@ -49,13 +49,13 @@ test("Knowledge base document modes restore from shared URLs and browser history
   });
   try {
     await gotoView(page, "knowledge");
-    await page.goto(`/knowledge/base?kb=${kb.id}&document=${doc.id}&project=all&editorMode=split`);
-    await expect(page.getByTestId("markdown-mode-split")).toHaveAttribute("aria-pressed", "true");
+    await page.goto(`/knowledge/base?kb=${kb.id}&document=${doc.id}&project=all&editorMode=read`);
+    await expect(page.getByTestId("markdown-mode-read")).toHaveAttribute("aria-pressed", "true");
     await page.getByTestId("markdown-mode-edit").click();
     expect(new URL(page.url()).searchParams.get("document")).toBe(doc.id);
     expect(new URL(page.url()).searchParams.get("editorMode")).toBe("edit");
     await page.goBack();
-    await expect(page.getByTestId("markdown-mode-split")).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByTestId("markdown-mode-read")).toHaveAttribute("aria-pressed", "true");
     await page.goForward();
     await expect(page.getByTestId("markdown-mode-edit")).toHaveAttribute("aria-pressed", "true");
     await page.reload();

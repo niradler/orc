@@ -1,6 +1,7 @@
-import { Maximize2, Minimize2 } from "lucide-react";
+import { Code2, Maximize2, Minimize2 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Markdown } from "@/components/Markdown";
+import { MarkdownLiveEditor } from "@/components/MarkdownLiveEditor";
 import { SourceCodeEditor } from "@/components/SourceCodeEditor";
 import { Button } from "@/components/ui/button";
 import { splitMarkdownFrontmatter } from "@/lib/document-display";
@@ -29,7 +30,7 @@ export type MarkdownEditorProps = {
   onExpandedChange?: (expanded: boolean) => void;
   /**
    * "frame" (default) is a fixed-height box. "page" flows with the surrounding scroll like an
-   * article in every mode: the toolbar sticks and the editor grows with its content.
+   * article: the toolbar sticks and the editor grows with its content.
    */
   layout?: "frame" | "page";
   /** Controls placed at the end of the toolbar, such as save state. */
@@ -44,6 +45,14 @@ export type MarkdownEditorProps = {
   compact?: boolean;
   line?: number;
   previewLinks?: boolean;
+  /** Field embeddings keep their established test ids for the mode buttons and preview. */
+  modeTestIdPrefix?: string;
+  previewTestId?: string;
+  className?: string;
+  /** A form field fills its panel instead of keeping the document frame height. */
+  fill?: boolean;
+  /** Stores pasted images (KB asset endpoint); otherwise images embed as data URLs. */
+  onUploadImage?: (file: File) => Promise<string>;
 };
 
 /** Drops a first-line `# Title` from the body when it repeats the page title. */
@@ -80,12 +89,20 @@ export function MarkdownEditor({
   compact = false,
   line,
   previewLinks = false,
+  modeTestIdPrefix,
+  previewTestId,
+  className,
+  fill = false,
+  onUploadImage,
 }: MarkdownEditorProps) {
   const markdown = isMarkdownFile(path);
+  const normalizedMode = (value: Mode | undefined): Mode =>
+    value === "split" ? "edit" : (value ?? "read");
   const [localMode, setLocalMode] = useState<Mode>(
-    initialMode ?? (readOnly && markdown ? "read" : "edit"),
+    normalizedMode(initialMode ?? (readOnly && markdown ? "read" : "edit")),
   );
-  const mode = controlledMode ?? localMode;
+  const mode = normalizedMode(controlledMode ?? localMode);
+  const [source, setSource] = useState(false);
   useEffect(() => {
     if (line && line > 0) setLocalMode("edit");
   }, [line]);
@@ -137,16 +154,23 @@ export function MarkdownEditor({
   const body = withoutRepeatedTitle(rendered.body, pageTitle);
   const flowing = layout === "page" && markdown && !expanded;
   const style =
-    expanded || flowing
+    expanded || flowing || fill
       ? undefined
-      : { height: height ?? "min(65dvh, 760px)", minHeight: height ? undefined : 280 };
+      : {
+          height: height ?? "min(65dvh, 760px)",
+          minHeight: height || compact ? undefined : 280,
+        };
+  const modeId = (item: "read" | "edit") =>
+    modeTestIdPrefix
+      ? `${modeTestIdPrefix}-${item === "read" ? "preview" : "edit"}`
+      : `markdown-mode-${item}`;
   return (
     <section
       ref={root}
       data-testid="markdown-editor"
       data-expanded={expanded}
       data-document-expanded={expanded}
-      className={`flex min-w-0 flex-col ${flowing ? "" : "min-h-0 rounded-md border border-surface-highest bg-surface"} ${expanded ? "fixed inset-2 z-60 sm:inset-6" : ""}`}
+      className={`flex min-w-0 flex-col ${flowing ? "" : "min-h-0 rounded-md border border-surface-highest bg-surface"} ${expanded ? "fixed inset-2 z-60 sm:inset-6" : ""} ${fill ? "min-h-0 flex-1 overflow-hidden" : ""} ${className ?? ""}`}
       style={style}
       aria-label={`Document ${path}`}
       onKeyDown={(event) => {
@@ -163,27 +187,34 @@ export function MarkdownEditor({
       >
         {markdown && (
           <fieldset className="flex gap-1" aria-label="Document mode">
-            {(["read", "edit", "split"] as const).map((item) => (
+            {(["read", "edit"] as const).map((item) => (
               <Button
                 key={item}
                 type="button"
                 size="sm"
                 variant={!compact && mode === item ? "default" : "ghost"}
-                // A page is read side by side only with room; phones switch between Read and Edit.
-                className={`${item === "split" && layout === "page" ? "hidden md:inline-flex" : ""} ${compact && mode === item ? "bg-surface-highest text-on-surface" : ""}`}
-                data-testid={`markdown-mode-${item}`}
+                className={`${compact && mode === item ? "bg-surface-highest text-on-surface" : ""}`}
+                data-testid={modeId(item)}
                 aria-pressed={mode === item}
                 onClick={() => setMode(item)}
               >
-                {item === "read"
-                  ? "Read"
-                  : item === "edit"
-                    ? readOnly
-                      ? "Source"
-                      : "Edit"
-                    : "Split"}
+                {item === "read" ? "Read" : readOnly ? "Source" : "Edit"}
               </Button>
             ))}
+            {mode === "edit" && (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                data-testid="markdown-mode-source"
+                aria-pressed={source}
+                className={compact && source ? "bg-surface-highest text-on-surface" : ""}
+                onClick={() => setSource(!source)}
+              >
+                <Code2 size={13} />
+                {source ? "Live preview" : "Source"}
+              </Button>
+            )}
           </fieldset>
         )}
         <span className="min-w-0 flex-1 truncate px-1 text-xs text-outline" title={path}>
@@ -215,57 +246,75 @@ export function MarkdownEditor({
         </div>
       )}
       <div
-        className={`grid min-h-0 min-w-0 flex-1 ${flowing ? "items-start gap-6 pt-4" : "overflow-hidden"} ${mode === "split" && markdown ? "grid-rows-2 md:grid-cols-2 md:grid-rows-1" : "grid-cols-1"}`}
+        className={`min-h-0 min-w-0 flex-1 ${flowing ? "pt-2" : "overflow-hidden"} ${mode === "read" && markdown ? "hidden" : ""}`}
       >
         <div
-          className={`min-h-0 min-w-0 ${flowing ? "[&_.cm-editor]:min-h-[50dvh]" : "overflow-hidden"} ${mode === "read" && markdown ? "hidden" : ""}`}
+          className={`min-h-0 min-w-0 h-full ${flowing ? "[&_.cm-editor]:min-h-[50dvh]" : "overflow-hidden"}`}
         >
-          <SourceCodeEditor
-            line={line}
-            path={path}
-            value={value}
-            onChange={onChange}
-            onSave={onSave}
-            readOnly={readOnly}
-            height={flowing ? "auto" : "100%"}
-            testId={testId}
-            hidePreview
-            defaultWrap
-            id={id}
-            label={label}
-            placeholder={placeholder}
-          />
+          {source ? (
+            <SourceCodeEditor
+              line={line}
+              path={path}
+              value={value}
+              onChange={onChange}
+              onSave={onSave}
+              readOnly={readOnly}
+              height="100%"
+              testId={testId}
+              hidePreview
+              defaultWrap
+              id={id}
+              label={label}
+              placeholder={placeholder}
+            />
+          ) : (
+            <MarkdownLiveEditor
+              path={path}
+              value={value}
+              onChange={onChange}
+              onSave={onSave}
+              readOnly={readOnly}
+              testId={testId}
+              id={id}
+              label={label}
+              placeholder={placeholder}
+              height={flowing ? undefined : "100%"}
+              compact={compact}
+              onUploadImage={onUploadImage}
+              className={flowing ? "min-h-[50dvh]" : fill ? "h-full" : undefined}
+            />
+          )}
         </div>
-        {markdown && mode !== "edit" && (
-          <article
-            data-testid="markdown-preview"
-            aria-label="Rendered Markdown"
-            className={`min-h-0 min-w-0 ${flowing ? "pb-6" : "overflow-auto p-4 sm:p-8"} ${mode === "split" && !flowing ? "border-t border-surface-highest md:border-l md:border-t-0" : ""}`}
-          >
-            {/* A page keeps prose at a reading measure while code, tables and images use the
-                column; a frame centers the whole document. */}
-            <div
-              className={`wrap-break-word ${flowing ? "[&_:is(p,ul,ol,blockquote,h1,h2,h3,h4,h5,h6)]:max-w-[72ch]" : "mx-auto max-w-[76ch]"}`}
-            >
-              {rendered.metadata !== null && !hideFrontmatter && (
-                <details className="mb-5 rounded border border-surface-highest p-3 text-sm text-outline">
-                  <summary className="cursor-pointer">Document metadata</summary>
-                  <pre className="mt-3 whitespace-pre-wrap wrap-break-word font-mono text-xs">
-                    {rendered.metadata}
-                  </pre>
-                </details>
-              )}
-              {value.trim() ? (
-                <Markdown readable wikiLinks={wikiLinks} previewLinks={previewLinks}>
-                  {body}
-                </Markdown>
-              ) : (
-                <p className="text-sm text-outline">This document is empty.</p>
-              )}
-            </div>
-          </article>
-        )}
       </div>
+      {markdown && mode !== "edit" && (
+        <article
+          data-testid={previewTestId ?? "markdown-preview"}
+          aria-label="Rendered Markdown"
+          className={`min-h-0 min-w-0 ${flowing ? "px-1 pb-6 pt-4" : "overflow-auto p-4 sm:p-8"}`}
+        >
+          {/* A page keeps prose at a reading measure while code, tables and images use the
+              column; a frame centers the whole document. */}
+          <div
+            className={`wrap-break-word ${flowing ? "[&_:is(p,ul,ol,blockquote,h1,h2,h3,h4,h5,h6)]:max-w-[68ch]" : "mx-auto max-w-[76ch]"}`}
+          >
+            {rendered.metadata !== null && !hideFrontmatter && (
+              <details className="mb-5 rounded border border-surface-highest p-3 text-sm text-outline">
+                <summary className="cursor-pointer">Document metadata</summary>
+                <pre className="mt-3 whitespace-pre-wrap wrap-break-word font-mono text-xs">
+                  {rendered.metadata}
+                </pre>
+              </details>
+            )}
+            {value.trim() ? (
+              <Markdown readable wikiLinks={wikiLinks} previewLinks={previewLinks}>
+                {body}
+              </Markdown>
+            ) : (
+              <p className="text-sm text-outline">This document is empty.</p>
+            )}
+          </div>
+        </article>
+      )}
     </section>
   );
 }

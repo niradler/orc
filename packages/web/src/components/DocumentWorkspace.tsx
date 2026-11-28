@@ -36,11 +36,13 @@ export function DocumentWorkspace({
   pageTitle,
   hideFrontmatter,
   compact,
+  onUploadImage,
 }: {
   documentId: string;
   content: string;
   path: string;
   onSave?: (content: string, expectedContent: string) => Promise<string | undefined>;
+  onUploadImage?: (file: File) => Promise<string>;
   testId?: string;
   wikiLinks?: MarkdownEditorProps["wikiLinks"];
   navigation?: ReactNode;
@@ -59,6 +61,7 @@ export function DocumentWorkspace({
   const [draft, setDraft] = useState(initial.current.content);
   const [original, setOriginal] = useState(initial.current.original);
   const [saving, setSaving] = useState(false);
+  const [draftVersion, setDraftVersion] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const pending = useRef(false);
   const currentDraft = useRef(initial.current.content);
@@ -73,6 +76,7 @@ export function DocumentWorkspace({
   function change(next: string): void {
     currentDraft.current = next;
     setDraft(next);
+    setDraftVersion((version) => version + 1);
     if (next === original) drafts.delete(documentId);
     else drafts.set(documentId, { original, content: next });
   }
@@ -100,6 +104,17 @@ export function DocumentWorkspace({
       setSaving(false);
     }
   }
+  const saveRef = useRef(save);
+  saveRef.current = save;
+  // Autosave after a quiet pause; explicit Save stays available and conflicts still stop the write.
+  useEffect(() => {
+    // Re-arm the timer on every accepted edit; the version is the effect's trigger.
+    void draftVersion;
+    if (!onSave || !dirty || saving) return;
+    const timer = window.setTimeout(() => void saveRef.current(), 2000);
+    return () => window.clearTimeout(timer);
+  }, [draftVersion, dirty, saving, onSave]);
+
   function changeMode(nextMode: string): void {
     const next = new URLSearchParams(window.location.search);
     next.set("editorMode", nextMode);
@@ -150,42 +165,41 @@ export function DocumentWorkspace({
           pageTitle={pageTitle}
           hideFrontmatter={hideFrontmatter}
           compact={compact}
+          onUploadImage={onUploadImage}
           notice={error || (dirty && content !== original) ? notices : undefined}
           actions={
-            (mode !== "read" || dirty || saving) && (
-              <>
-                <span
-                  data-testid="document-save-status"
-                  role="status"
-                  className="text-xs text-outline"
-                >
-                  {status}
-                </span>
-                {onSave && (dirty || saving) && (
-                  <>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      data-testid="document-discard"
-                      disabled={saving}
-                      onClick={discard}
-                    >
-                      Discard
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      data-testid="document-save"
-                      disabled={saving}
-                      onClick={() => void save()}
-                    >
-                      Save
-                    </Button>
-                  </>
-                )}
-              </>
-            )
+            <>
+              <span
+                data-testid="document-save-status"
+                role="status"
+                className="text-xs text-outline"
+              >
+                {status}
+              </span>
+              {onSave && (dirty || saving) && (
+                <>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    data-testid="document-discard"
+                    disabled={saving}
+                    onClick={discard}
+                  >
+                    Discard
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    data-testid="document-save"
+                    disabled={saving}
+                    onClick={() => void save()}
+                  >
+                    Save
+                  </Button>
+                </>
+              )}
+            </>
           }
         />
       </div>
@@ -207,6 +221,7 @@ export function DocumentWorkspace({
         onExpandedChange={onExpandedChange}
         layout={layout}
         compact={compact}
+        onUploadImage={onUploadImage}
         header={
           <div className="space-y-2">
             {navigation && <div className="mb-3 min-w-0">{navigation}</div>}

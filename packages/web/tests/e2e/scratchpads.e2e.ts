@@ -193,8 +193,9 @@ test.describe("Scratchpads", () => {
       await expect(page.getByTestId("scratchpad-title")).toHaveText(title);
       await expect(page.getByTestId("scratchpad-author")).toHaveText("human");
 
-      await page.getByTestId("markdown-mode-split").click();
+      await page.getByTestId("markdown-mode-edit").click();
       await page.getByTestId("scratchpad-doc").fill("# Plan\n\nShip the scratchpad.\n");
+      await page.getByTestId("markdown-mode-read").click();
       await expect(page.getByTestId("markdown-preview")).toContainText("Ship the scratchpad.");
       await page.getByTestId("document-save").click();
       await expect(page.getByTestId("document-save-status")).toHaveText("Saved");

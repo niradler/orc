@@ -425,7 +425,51 @@ Short project facts (ports, conventions, decisions) that agents load at session 
 
 ![Knowledge](/screens/knowledge.png)
 
-Knowledge bases: upload PDFs, Office files, HTML, CSV and Markdown, write Markdown in place, or register a folder to copy in. Search returns cited passages. Each knowledge base can have a digest agent that maintains it on a schedule. The digest asks for a tool whitelist; `claude` and `claude-cli` enforce it, while another backend runs the digest without it (the picker marks those and the run warns).
+![Knowledge reader with the context rail closed](/screens/knowledge-reader.png)
+
+The Knowledge base is a reading desk. Its navigation rail holds the KB switcher, folders,
+labels and Pads; the main pane has Recently updated, Most read and a label shelf above
+the full document list (List or Table). Open a document to read it at a 68-character
+measure; **Details** opens a context rail with outline, properties, links, backlinks,
+comments, usage and history. The rail is closed by default and its state is remembered
+per view; on phones it opens as a sheet.
+
+**One editor everywhere.** Every Markdown surface uses the same live-preview editor:
+KB documents, Skills instructions and `.md` terminal files, Pads documents, Memories,
+task bodies and job task fields. Syntax shows on the active line and renders as you
+write. The toolbar and `/` menu insert headings, lists, tasks, quotes, code, tables,
+callouts, dividers, links and images; task boxes are clickable; pasted HTML becomes
+Markdown; pasted images are stored through the KB asset endpoint and render inline.
+Raw **Source** is a toggle, Read/Edit remain the document modes, explicit Save stays
+available, and autosave plus revision-conflict protection keep drafts safe.
+
+![One live-preview editor with toolbar and rendered tables](/screens/knowledge-editor.png)
+
+**Intake** is one surface with **Write**, **Upload** and **Folder** tabs. Uploads move
+through parse, index and ready/failed states with retry. Labels are search facets:
+rename, merge or delete them from the label index without changing paths, links or
+citations. Search exposes Auto/Keyword/Semantic mode, scope and label facets, groups
+results by document and opens at the cited passage. Search views are URL-shareable.
+
+![Label index with rename, merge and delete](/screens/knowledge-labels.png)
+
+![Search with mode, scope and label facets](/screens/knowledge-search.png)
+
+Knowledge bases are portable through **OKF v0.3**. Folder and upload intake reads
+frontmatter: `title` and `description` become document fields, `tags` become labels,
+`type` becomes a label, and fields ORC does not model stay in the content. **Export OKF**
+downloads a bundle with per-document Markdown, folder `index.md` tables of contents, a
+root `index.md` with `okf_version`, and `log.md`. `verified`, `generated`, `status` and
+`stale_after` show in the reader and influence ranking; stale or archived knowledge is
+deprioritized. Use folder registration to bring in an Obsidian vault and Upload for a
+Notion Markdown export. Notion databases are not imported.
+
+Each knowledge base can have a digest agent that maintains it on a schedule, which makes
+the KB an active personal or company brain: personal brains are project KBs, company
+brains are global KBs every agent can read. The digest asks for a tool whitelist;
+`claude` and `claude-cli` enforce it, while another backend runs the digest without it
+(the picker marks those and the run warns). Pads remain a separate object; their list
+and reader grammar is handled separately.
 
 ## Jobs
 

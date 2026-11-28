@@ -8,7 +8,7 @@ import {
   type KnowledgeBase,
 } from "@orc/core/kb";
 import { useQueryClient } from "@tanstack/react-query";
-import { FileText, Trash2, Upload, X } from "lucide-react";
+import { FileText, FolderOpen, Trash2, Upload, X } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import {
@@ -470,6 +470,10 @@ export function NewDocumentDialog({
   // A file the server converts; its text is not editable before it is added.
   const [file, setFile] = useState<File | null>(null);
   const [reading, setReading] = useState(false);
+  const [tab, setTab] = useState<"write" | "upload" | "folder">(initialFile ? "upload" : "write");
+  const [folder, setFolder] = useState("");
+  const [pattern, setPattern] = useState("**/*.md");
+  const [scanned, setScanned] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const heading = file ? "" : firstHeading(content);
   const name = title.trim() || heading;
@@ -479,11 +483,13 @@ export function NewDocumentDialog({
   async function choose(chosen: File) {
     const stem = chosen.name.replace(/\.[^.]+$/, "");
     if (!TEXT_FILE.test(chosen.name)) {
+      setTab("upload");
       setFile(chosen);
       setTitle(stem);
       setPath("");
       return;
     }
+    setTab("write");
     setReading(true);
     const text = await action.run(() => chosen.text());
     setReading(false);
@@ -505,8 +511,21 @@ export function NewDocumentDialog({
     if (initialFile) void choose(initialFile);
   }, []);
 
+  async function addFolder(e: FormEvent) {
+    e.preventDefault();
+    const added = await action.run(() =>
+      api.kb.addSource(kb.id, { root_path: folder.trim(), pattern: pattern.trim() || "**/*.md" }),
+    );
+    if (!added) return;
+    setScanned(
+      `${added.scan.added} added · ${added.scan.updated} updated · ${added.scan.errors.length} errors`,
+    );
+    await invalidate();
+  }
+
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (tab === "folder") return addFolder(e);
     const doc = await action.run(() =>
       file
         ? api.kb.upload(kb.id, {
@@ -529,18 +548,45 @@ export function NewDocumentDialog({
   return (
     <Shell open onClose={onClose} title={`New document in ${kb.name}`} size="xl">
       <form onSubmit={submit} className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2 text-sm text-outline">
-          <span>Write or paste below, or start from a file.</span>
+        <div
+          className="flex flex-wrap items-center gap-1 border-b border-outline-variant"
+          role="tablist"
+          aria-label="Add knowledge"
+        >
+          {(
+            [
+              ["write", "Write"],
+              ["upload", "Upload"],
+              ["folder", "Folder"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              data-testid={`kb-intake-tab-${id}`}
+              className={`min-h-8 border-b-2 px-3 text-sm ${
+                tab === id
+                  ? "border-primary text-on-surface"
+                  : "border-transparent text-outline hover:text-on-surface"
+              }`}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </button>
+          ))}
           <Button
             type="button"
             size="sm"
             variant="outline"
+            className="ml-auto"
             data-testid="kb-doc-choose-file"
             disabled={reading || action.pending}
             onClick={() => fileInput.current?.click()}
           >
             <Upload size={16} />
-            {reading ? "Reading…" : "Upload file"}
+            {reading ? "Reading…" : "Choose file"}
           </Button>
           <input
             ref={fileInput}
@@ -554,98 +600,205 @@ export function NewDocumentDialog({
             }}
           />
         </div>
-        <Field
-          label="Title"
-          help="Taken from the first heading when you leave the title empty."
-          helpTestId="kb-doc-title-help"
-        >
-          <Input
-            aria-label="Title"
-            data-testid="kb-doc-title-input"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={heading || "e.g. Deploy runbook"}
-            autoFocus
-          />
-        </Field>
-        {file ? (
-          <Field
-            label="File"
-            help="Converted to searchable text after it is added. The original file is kept."
-            helpTestId="kb-doc-file-help"
-          >
-            <div
-              data-testid="kb-doc-file"
-              className="flex items-center gap-3 rounded-md border border-surface-highest bg-surface p-3"
-            >
-              <FileText size={20} className="shrink-0 text-outline" aria-hidden />
-              <span className="min-w-0 flex-1 truncate text-sm" title={file.name}>
-                {file.name}
-              </span>
-              <span className="shrink-0 text-xs text-outline">{formatBytes(file.size)}</span>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                aria-label={`Remove ${file.name}`}
-                data-testid="kb-doc-file-remove"
-                onClick={() => {
-                  setFile(null);
-                  setTitle("");
-                }}
-              >
-                <X size={16} />
+
+        {tab === "folder" ? (
+          <div className="space-y-4" data-testid="kb-intake-folder">
+            <p className="text-sm text-outline">
+              Register a folder on this machine. Matching files are copied in and follow their file
+              on each scan; ORC never writes the folder. OKF frontmatter adds labels and title.
+            </p>
+            <Field label="Folder path" help="A folder ORC can read on this machine.">
+              <Input
+                aria-label="Folder path"
+                data-testid="kb-intake-folder-path"
+                value={folder}
+                onChange={(event) => setFolder(event.target.value)}
+                placeholder="/home/you/vault"
+                className="font-mono text-sm"
+              />
+            </Field>
+            <Field label="Pattern" hint="Relative glob, for example **/*.md">
+              <Input
+                aria-label="Pattern"
+                data-testid="kb-intake-folder-pattern"
+                value={pattern}
+                onChange={(event) => setPattern(event.target.value)}
+                className="font-mono text-sm"
+              />
+            </Field>
+            {scanned && (
+              <p role="status" className="text-sm text-success">
+                {scanned}
+              </p>
+            )}
+            <ErrorLine error={action.error} />
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Close
               </Button>
+              <Button
+                type="submit"
+                data-testid="kb-intake-folder-add"
+                disabled={!folder.trim() || action.pending}
+              >
+                <FolderOpen size={16} />
+                Add folder
+              </Button>
+            </DialogFooter>
+          </div>
+        ) : tab === "upload" ? (
+          <div className="space-y-4" data-testid="kb-intake-upload">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={reading || action.pending}
+              onClick={() => fileInput.current?.click()}
+            >
+              <Upload size={16} />
+              {reading ? "Reading…" : "Choose file"}
+            </Button>
+            {file ? (
+              <div
+                data-testid="kb-doc-file"
+                className="flex items-center gap-3 rounded-md border border-surface-highest bg-surface p-3"
+              >
+                <FileText size={20} className="shrink-0 text-outline" aria-hidden />
+                <span className="min-w-0 flex-1 truncate text-sm" title={file.name}>
+                  {file.name}
+                </span>
+                <span className="shrink-0 text-xs text-outline">{formatBytes(file.size)}</span>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={`Remove ${file.name}`}
+                  data-testid="kb-doc-file-remove"
+                  onClick={() => {
+                    setFile(null);
+                    setTitle("");
+                  }}
+                >
+                  <X size={16} />
+                </Button>
+              </div>
+            ) : (
+              <p className="text-sm text-outline">
+                Markdown and text are added as editable documents. PDF, Word, PowerPoint, Excel and
+                HTML are converted to searchable Markdown; the original is kept.
+              </p>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Title">
+                <Input
+                  aria-label="Title"
+                  data-testid="kb-doc-title-input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Taken from the file name"
+                />
+              </Field>
+              <Field label="Path" hint="Optional. Stored as this relative path.">
+                <Input
+                  aria-label="Path"
+                  data-testid="kb-doc-path-input"
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                  placeholder={suggested}
+                  className="font-mono text-sm"
+                />
+              </Field>
             </div>
-          </Field>
+            <Field label="Labels" hint="Enter, comma or space adds a label.">
+              <TagInput
+                aria-label="Labels"
+                data-testid="kb-doc-labels-input"
+                value={labels}
+                onChange={setLabels}
+                suggestions={listing.data?.labels.map((l) => l.label)}
+              />
+            </Field>
+            <ErrorLine error={action.error} />
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                data-testid="kb-doc-create-submit"
+                disabled={!name || !file || action.pending}
+              >
+                Add file
+              </Button>
+            </DialogFooter>
+          </div>
         ) : (
-          <Field label="Content" hint="Markdown. Leave empty to start writing in the editor.">
-            <MarkdownEditor
-              path={path.trim() || suggested}
-              value={content}
-              onChange={setContent}
-              testId="kb-doc-content-input"
-              label="Content"
-              placeholder="Write or paste Markdown"
-              initialMode="edit"
-              height="45vh"
-            />
-          </Field>
+          <>
+            <Field
+              label="Title"
+              help="Taken from the first heading when you leave the title empty."
+              helpTestId="kb-doc-title-help"
+            >
+              <Input
+                aria-label="Title"
+                data-testid="kb-doc-title-input"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={heading || "e.g. Deploy runbook"}
+                autoFocus
+              />
+            </Field>
+            <Field label="Content" hint="Markdown. Leave empty to start writing in the editor.">
+              <MarkdownEditor
+                path={path.trim() || suggested}
+                value={content}
+                onChange={setContent}
+                testId="kb-doc-content-input"
+                label="Content"
+                placeholder="Write or paste Markdown"
+                initialMode="edit"
+                height="45vh"
+              />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Labels" hint="Enter, comma or space adds a label.">
+                <TagInput
+                  aria-label="Labels"
+                  data-testid="kb-doc-labels-input"
+                  value={labels}
+                  onChange={setLabels}
+                  suggestions={listing.data?.labels.map((l) => l.label)}
+                />
+              </Field>
+              <Field
+                label="Path"
+                hint="Optional. Folders come from the path, e.g. guides/setup.md."
+              >
+                <Input
+                  aria-label="Path"
+                  data-testid="kb-doc-path-input"
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                  placeholder={suggested}
+                  className="font-mono text-sm"
+                />
+              </Field>
+            </div>
+            <ErrorLine error={action.error} />
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                data-testid="kb-doc-create-submit"
+                disabled={!name || action.pending}
+              >
+                Create
+              </Button>
+            </DialogFooter>
+          </>
         )}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Labels" hint="Enter, comma or space adds a label.">
-            <TagInput
-              aria-label="Labels"
-              data-testid="kb-doc-labels-input"
-              value={labels}
-              onChange={setLabels}
-              suggestions={listing.data?.labels.map((l) => l.label)}
-            />
-          </Field>
-          <Field label="Path" hint="Optional. Folders come from the path, e.g. guides/setup.md.">
-            <Input
-              aria-label="Path"
-              data-testid="kb-doc-path-input"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-              placeholder={suggested}
-              className="font-mono text-sm"
-            />
-          </Field>
-        </div>
-        <ErrorLine error={action.error} />
-        <DialogFooter>
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            data-testid="kb-doc-create-submit"
-            disabled={!name || action.pending}
-          >
-            Create
-          </Button>
-        </DialogFooter>
       </form>
     </Shell>
   );

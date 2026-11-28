@@ -220,6 +220,10 @@ setup.
 | `GET` `PATCH` `DELETE` | `/kb/bases/{id}` | Read / update / delete |
 | `GET` `POST` | `/kb/bases/{id}/documents` | List / create Markdown documents |
 | `POST` | `/kb/bases/{id}/upload` | Upload a file |
+| `POST` | `/kb/bases/{id}/bulk` | Label, move or delete the selected documents |
+| `POST` | `/kb/bases/{id}/labels/manage` | Rename, merge or delete a label |
+| `POST` | `/kb/bases/{id}/assets` | Store a pasted image; returns its same-origin URL (`GET /kb/assets/{id}/{file}`) |
+| `GET` | `/kb/bases/{id}/export/okf` | Download a conformant OKF v0.3 bundle |
 | `GET` `PATCH` `DELETE` | `/kb/documents/{id}` | Read / update / delete a document |
 | `POST` | `/kb/documents/{id}/edit` | Partial edit against `expected_revision` |
 | `GET` | `/kb/documents/{id}/revisions` | Revision history |

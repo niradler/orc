@@ -17,6 +17,8 @@ import type {
   HumanRespondPayload,
 } from "@orc/core/human-requests";
 import type {
+  KbBulkAction,
+  KbBulkResult,
   KbComment,
   KbCommentClose,
   KbCommentCounts,
@@ -32,6 +34,7 @@ import type {
   KbDocumentListing,
   KbDocumentUpdate,
   KbDocumentWithContent,
+  KbLabelManage,
   KbMaintenanceQueue,
   KbParserInfo,
   KbRevision,
@@ -1788,6 +1791,29 @@ export const api = {
     documents: (kbId: string) => req<KbDocumentListing>("GET", `/kb/bases/${enc(kbId)}/documents`),
     createDocument: (kbId: string, input: KbDocumentCreate) =>
       req<KbDocument>("POST", `/kb/bases/${enc(kbId)}/documents`, input),
+    bulk: (kbId: string, input: KbBulkAction) =>
+      req<KbBulkResult>("POST", `/kb/bases/${enc(kbId)}/bulk`, input),
+    manageLabel: (kbId: string, input: KbLabelManage) =>
+      req<{ updated: number; failures: { id: string; error: string }[] }>(
+        "POST",
+        `/kb/bases/${enc(kbId)}/labels/manage`,
+        input,
+      ),
+    exportOkf: async (kbId: string): Promise<Blob> => {
+      const res = await apiFetch(`/kb/bases/${enc(kbId)}/export/okf`);
+      if (!res.ok) throw new ApiError(`HTTP ${res.status}`, res.status, null);
+      return res.blob();
+    },
+    uploadAsset: async (kbId: string, file: File): Promise<{ path: string; name: string }> => {
+      const form = new FormData();
+      form.set("file", file, file.name || "image.png");
+      const res = await apiFetch(`/kb/bases/${enc(kbId)}/assets`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) throw new ApiError(`HTTP ${res.status}`, res.status, null);
+      return (await res.json()) as { path: string; name: string };
+    },
     /** XHR rather than fetch so the UI can show per-file upload progress. */
     upload: (
       kbId: string,

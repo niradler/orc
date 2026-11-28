@@ -3,7 +3,7 @@ import { type ReactElement, useId } from "react";
 import { AgentRunAccessFields } from "@/components/AgentRunEditor";
 import { HelpPopover } from "@/components/HelpPopover";
 import { JobAgentPicker } from "@/components/JobAgentPicker";
-import { MarkdownField } from "@/components/MarkdownField";
+import { MarkdownFormField } from "@/components/MarkdownFormField";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -105,7 +105,7 @@ export function JobActionFields({
               maxLength={200}
             />
           </div>
-          <MarkdownField
+          <MarkdownFormField
             label="Task instructions"
             id={`${id}-body`}
             data-testid="job-task-body"

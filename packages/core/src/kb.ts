@@ -193,6 +193,18 @@ export type KbDocument = {
   updated_by: string;
 };
 
+/** OKF frontmatter ORC understands and surfaces; unknown fields stay in the content. */
+export type KbDocumentProperties = {
+  type?: string;
+  tags: string[];
+  timestamp?: string;
+  verified?: boolean;
+  generated?: string;
+  status?: string;
+  stale_after?: string;
+  extra: Record<string, unknown>;
+};
+
 export type KbDocumentWithContent = KbDocument & {
   /** Authored/external Markdown, or the parser's Markdown projection for uploads. */
   content: string;
@@ -200,6 +212,7 @@ export type KbDocumentWithContent = KbDocument & {
   backlinks: { document_id: string; title: string; kb_id: string }[];
   /** Outgoing links by normalized target; title is the linked document's when it resolves. */
   links: { target: string; document_id: string | null; title: string | null }[];
+  properties: KbDocumentProperties;
 };
 
 export type KbRevision = {
@@ -384,10 +397,46 @@ export type KbStatus = {
 
 // --- Wire types shared by the API, SDK, CLI and web ------------------------------------------
 
+export type KbLabelIndex = {
+  label: string;
+  count: number;
+  reads: number;
+  updated_at: number;
+};
+
 export type KbDocumentListing = {
   documents: (KbDocument & { reads: number; reads_by_source: Record<string, number> })[];
   folders: string[];
-  labels: { label: string; count: number }[];
+  labels: KbLabelIndex[];
+};
+
+/** Bulk actions apply to the displayed selection; every id must belong to the knowledge base. */
+export const KbBulkActionSchema = z
+  .object({
+    ids: z.array(z.string().min(1)).min(1).max(200),
+    action: z.enum(["label", "unlabel", "move", "delete"]),
+    labels: z.array(z.string().trim().min(1).max(60)).max(30).optional(),
+    /** Destination folder for move; "" is the root. */
+    folder: z.string().trim().max(400).optional(),
+  })
+  .strict();
+export type KbBulkAction = z.input<typeof KbBulkActionSchema>;
+
+/** Rename, merge (rename onto an existing label) or delete one label across a knowledge base. */
+export const KbLabelManageSchema = z
+  .object({
+    action: z.enum(["rename", "merge", "delete"]),
+    label: z.string().trim().min(1).max(60),
+    /** Target label for rename and merge. */
+    to: z.string().trim().min(1).max(60).optional(),
+  })
+  .strict();
+export type KbLabelManage = z.input<typeof KbLabelManageSchema>;
+
+export type KbBulkResult = {
+  updated: number;
+  removed: number;
+  failures: { id: string; error: string }[];
 };
 
 /** A registered local folder whose files are copied into the KB; ORC never writes it. */
