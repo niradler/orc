@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
 
-test("Knowledge has two canonical destinations and knowledge-base state is shareable", async ({
+test("Knowledge has three canonical destinations and knowledge-base state is shareable", async ({
   page,
   request,
 }) => {
@@ -20,6 +20,10 @@ test("Knowledge has two canonical destinations and knowledge-base state is share
       /\/knowledge\/base/,
     );
     await expect(page.getByTestId("nav-memories")).toHaveAttribute("href", /\/knowledge\/memories/);
+    await expect(page.getByTestId("nav-scratchpads")).toHaveAttribute(
+      "href",
+      /\/knowledge\/scratchpads/,
+    );
     // Choosing a workspace section gives the page the room: the app rail folds to icons.
     await page.getByTestId("nav-knowledge").click();
     await expect(
@@ -45,6 +49,9 @@ test("Knowledge has two canonical destinations and knowledge-base state is share
     await page.getByTestId("nav-memories").click();
     expect(new URL(page.url()).pathname).toBe("/knowledge/memories");
     await expect(page.getByTestId("new-memory-button")).toBeVisible();
+    await page.getByTestId("nav-scratchpads").click();
+    expect(new URL(page.url()).pathname).toBe("/knowledge/scratchpads");
+    await expect(page.getByTestId("new-scratchpad-button")).toBeVisible();
   } finally {
     await apiDelete(request, `/kb/bases/${kb.id}`);
   }

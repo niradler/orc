@@ -292,11 +292,8 @@ export function MarkdownEditor({
           aria-label="Rendered Markdown"
           className={`min-h-0 min-w-0 ${flowing ? "px-1 pb-6 pt-4" : "overflow-auto p-4 sm:p-8"}`}
         >
-          {/* A page keeps prose at a reading measure while code, tables and images use the
-              column; a frame centers the whole document. */}
-          <div
-            className={`wrap-break-word ${flowing ? "[&_:is(p,ul,ol,blockquote,h1,h2,h3,h4,h5,h6)]:max-w-[68ch]" : "mx-auto max-w-[76ch]"}`}
-          >
+          {/* A page uses the full column; a frame centers the document at a reading measure. */}
+          <div className={`wrap-break-word ${flowing ? "" : "mx-auto max-w-[76ch]"}`}>
             {rendered.metadata !== null && !hideFrontmatter && (
               <details className="mb-5 rounded border border-surface-highest p-3 text-sm text-outline">
                 <summary className="cursor-pointer">Document metadata</summary>

@@ -367,7 +367,6 @@ function KnowledgeBases({
       kb={kb}
       projectName={projectName}
       listing={listing.data}
-      projectId={projectId}
       folder={folder}
       label={label}
       queryInput={queryInput}

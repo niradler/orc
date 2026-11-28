@@ -134,7 +134,6 @@ export function KbDocumentPane({
   const invalidate = useInvalidateKb();
   const [params] = useSearchParams();
   const editorMode = params.get("editorMode");
-  const writing = editorMode === "edit" || editorMode === "split";
   const openComments = useKbComments(doc.kb_id, { document_id: doc.id }).data?.counts.open ?? 0;
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -300,13 +299,7 @@ export function KbDocumentPane({
         data-testid="kb-document"
         className="min-w-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
       >
-        <div
-          className={cn(
-            "w-full min-w-0 px-4 pb-16 pt-4 text-[16px] leading-[1.65] sm:px-6 sm:pt-6",
-            // Reading keeps the 68ch measure; writing uses the pane so long code and tables fit.
-            writing ? "" : "mx-auto max-w-[68ch]",
-          )}
-        >
+        <div className="w-full min-w-0 px-4 pb-16 pt-4 text-[16px] leading-[1.65] sm:px-6 sm:pt-6">
           {(doc.parse_state !== "ok" || doc.folder_sync || doc.stale) && (
             <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-outline">
               {doc.parse_state !== "ok" && (

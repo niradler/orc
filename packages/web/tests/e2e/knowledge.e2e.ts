@@ -53,7 +53,7 @@ test.describe("Knowledge bases", () => {
     // The rail owns search; there is no second search above the document.
     await expect(page.getByTestId("kb-top-search")).toHaveCount(0);
     expect(new URL(page.url()).searchParams.get("editorMode")).toBe("edit");
-    // The editor uses the pane while writing; only the reading view keeps the prose measure.
+    // Reading and editing both use the full pane width.
     const paneWidth = await page
       .getByTestId("kb-document")
       .evaluate((element) => element.getBoundingClientRect().width);
@@ -61,6 +61,12 @@ test.describe("Knowledge bases", () => {
       .getByTestId("kb-document-content")
       .evaluate((element) => element.getBoundingClientRect().width);
     expect(editorWidth).toBeGreaterThan(paneWidth - 80);
+    await page.getByTestId("markdown-mode-read").click();
+    const readerWidth = await page
+      .getByTestId("markdown-preview")
+      .evaluate((element) => element.getBoundingClientRect().width);
+    expect(readerWidth).toBeGreaterThan(paneWidth - 80);
+    await page.getByTestId("markdown-mode-edit").click();
     // Escape leaves fullscreen on a page with no dialog around the editor.
     await page.getByTestId("markdown-expand").click();
     await expect(page.getByTestId("markdown-editor")).toHaveAttribute("data-expanded", "true");

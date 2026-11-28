@@ -1,23 +1,11 @@
 import type { KbDocumentListing, KnowledgeBase } from "@orc/core/kb";
-import {
-  BookOpen,
-  Check,
-  ChevronDown,
-  FileText,
-  Folder,
-  FolderTree,
-  Plus,
-  Search,
-  Tag,
-} from "lucide-react";
+import { BookOpen, Check, ChevronDown, Folder, FolderTree, Plus, Search, Tag } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { Link } from "react-router-dom";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useKbStatus } from "@/hooks/useKnowledge";
-import { useScratchpads } from "@/hooks/useScratchpads";
 import { cn } from "@/lib/utils";
 
 const LABEL_LIMIT = 8;
@@ -32,7 +20,6 @@ export function KbRail({
   kb,
   projectName,
   listing,
-  projectId,
   folder,
   label,
   queryInput,
@@ -49,7 +36,6 @@ export function KbRail({
   kb: KnowledgeBase | null;
   projectName: (id: string | null) => string;
   listing: KbDocumentListing | undefined;
-  projectId: string | undefined;
   folder: string;
   label: string;
   queryInput: string;
@@ -75,11 +61,6 @@ export function KbRail({
     (a, b) => b.count - a.count || a.label.localeCompare(b.label),
   );
   const shownLabels = allLabels ? labels : labels.slice(0, LABEL_LIMIT);
-  const pads = useScratchpads({
-    ...(projectId ? { project_id: projectId } : { unassigned: "true" as const }),
-    ...(projectId ? { include_global: "true" as const } : {}),
-    limit: 6,
-  });
   return (
     <nav
       id="kb-sidebar-panel"
@@ -144,9 +125,6 @@ export function KbRail({
         >
           <Search size={14} />
         </Button>
-        <kbd className="mr-1 hidden rounded border border-border px-1 text-[10px] text-outline sm:block">
-          ⌘K
-        </kbd>
       </form>
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-2">
         <section aria-label="Knowledge bases">
@@ -283,36 +261,6 @@ export function KbRail({
             )}
           </section>
         )}
-
-        <section aria-label="Pads">
-          <div className="flex items-center justify-between px-2 pb-1">
-            <h2 className="text-xs font-medium text-outline">Pads</h2>
-            <Link
-              to="/scratchpad"
-              className="text-[11px] text-primary hover:underline"
-              data-testid="kb-pads-all"
-            >
-              All pads
-            </Link>
-          </div>
-          <ul className="space-y-0.5">
-            {(pads.data?.scratchpads ?? []).slice(0, 5).map((pad) => (
-              <li key={pad.id}>
-                <Link
-                  to={`/scratchpad/${pad.id}`}
-                  data-testid="kb-pad-link"
-                  className="flex min-h-8 items-center gap-2 rounded-md px-2 text-sm text-outline hover:bg-surface-high hover:text-on-surface"
-                >
-                  <FileText size={13} className="shrink-0" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate">{pad.title}</span>
-                </Link>
-              </li>
-            ))}
-            {pads.data && pads.data.scratchpads.length === 0 && (
-              <li className="px-2 py-1 text-xs text-outline">No pads yet</li>
-            )}
-          </ul>
-        </section>
       </div>
       <KbStatusLine />
     </nav>

@@ -424,9 +424,12 @@ function AppShell({
                       element={<IntegrationCallback />}
                     />
                     <Route path="/rules" element={<Rules />} />
-                    <Route path="/scratchpad" element={<Scratchpads projectId={projectId} />} />
                     <Route
-                      path="/scratchpad/:scratchpadId"
+                      path="/knowledge/scratchpads"
+                      element={<Scratchpads projectId={projectId} />}
+                    />
+                    <Route
+                      path="/knowledge/scratchpads/:scratchpadId"
                       element={<Scratchpads projectId={projectId} />}
                     />
                     <Route path="*" element={<Navigate to="/activity" replace />} />

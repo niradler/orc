@@ -168,7 +168,7 @@ test("saves the selection to a linked scratchpad", async ({ page, request }) => 
   const link = page.getByTestId("chat-selection-saved-link");
   await expect(link).toHaveText("SELECTION-SOURCE");
   const href = await link.getAttribute("href");
-  expect(href).toMatch(/^\/scratchpad\/.+/);
+  expect(href).toMatch(/^\/knowledge\/scratchpads\/.+/);
 
   // The pad was created with the quote and source line, not an empty shell.
   const id = href?.split("/").pop() ?? "";

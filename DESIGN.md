@@ -390,8 +390,8 @@ expandable details.
 
 The shell is project-centered: a compact sidebar, project dropdown and one
 contextual navigation row. Keep Activity first and the default at `/activity`.
-Knowledge has exactly Knowledge base and Memories as sibling destinations; Pads
-appear in its rail as a shortcut, while their list and reader grammar stays #589.
+Knowledge has exactly Knowledge base, Memories and Scratchpads as sibling
+destinations; Scratchpads keep their own list and reader grammar (#589).
 KB settings, digest, comments and document history are contextual actions. Chat
 is a sidebar destination under Activity, at `/chat`, and also opens from the
 header's chat action. The chat page is a normal page: session list, conversation
@@ -794,12 +794,12 @@ content. Keep table headers secondary and titles primary. Avoid adding labels,
 extra headings or explanatory UI copy merely to fill space. Preserve current sizing;
 Nir confirmed the earlier perceived size issue was browser zoom.
 
-Knowledge remains a reading/editing workspace: Knowledge base and Memories
-keep their names and shareable tabs. The knowledge base is a 288px navigation rail
-(knowledge bases, folders, labels and Pads), a centered 68ch reader with Read/Edit,
-and a 264px context rail that is closed by default and remembered per view. Pads
-stay a separate object and appear in that rail as a shortcut; their list and reader
-grammar is #589. Chat keeps its dedicated components, Codex default
+Knowledge remains a reading/editing workspace: Knowledge base, Memories and
+Scratchpads keep their names and shareable tabs. The knowledge base is a 288px
+navigation rail (knowledge bases, folders and labels), a full-width reader with
+Read/Edit, and a 264px context rail that is closed by default and remembered per
+view. Scratchpads stay a separate object in their own tab after Memories; their
+list and reader grammar is #589. Chat keeps its dedicated components, Codex default
 and persisted provider selection. Terminals retain terminal state, PTY lifecycle,
 scrollback and key input. Syntax colors may remain domain-specific where needed for
 legibility; no blanket grayscale filters or broad descendant color overrides.

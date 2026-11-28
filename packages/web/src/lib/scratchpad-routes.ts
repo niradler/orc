@@ -1,4 +1,4 @@
-export const SCRATCHPADS_PATH = "/scratchpad";
+export const SCRATCHPADS_PATH = "/knowledge/scratchpads";
 
 export function scratchpadPath(id: string): string {
   return `${SCRATCHPADS_PATH}/${encodeURIComponent(id)}`;
