@@ -34,6 +34,8 @@ const wantsSanity = args.includes("--sanity");
 const steps: Step[] = [
   ["Lint", ["bun", "run", "lint"]],
   ["Biome check", ["bun", "x", "biome", "check", "./packages", "./scripts"]],
+  ["Docs screens referenced", ["bun", "scripts/docs-screens.ts"]],
+  ["Docs screens guard tests", ["bun", "test", "scripts/docs-screens.test.ts"]],
   ["Domain ownership", ["bun", "test", "scripts/ci-domains.test.ts"]],
   ["Push hook tests", ["bun", "test", "scripts/pre-push.test.ts"]],
   ["Dependency security regressions", ["bun", "test", "scripts/dependency-security.test.ts"]],
