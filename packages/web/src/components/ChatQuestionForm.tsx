@@ -1,5 +1,5 @@
 import { CHAT_QUESTION_DISMISS_ANSWER, type ChatQuestion } from "@orc/core/chat";
-import { Check, MessageCircle } from "lucide-react";
+import { Check, ChevronDown, MessageCircle } from "lucide-react";
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { HelpPopover } from "@/components/HelpPopover";
 
@@ -191,40 +191,58 @@ export function ChatQuestionForm({
         void onAnswer(answers);
       }}
     >
-      {total > 1 && (
-        <div
-          role="tablist"
-          aria-label="Questions"
-          className="flex flex-wrap gap-1 border-b border-outline-variant pb-2"
-        >
-          {request.questions.map((question, index) => (
-            <button
-              key={question.id}
-              type="button"
-              role="tab"
-              id={tabId(index)}
-              ref={(node) => {
-                tabs.current[index] = node;
-              }}
-              data-testid={`chat-question-tab-${index}`}
-              aria-selected={index === active}
-              aria-controls={panelId(index)}
-              tabIndex={index === active ? 0 : -1}
-              onClick={() => setStep(index)}
-              onKeyDown={(event) => onTabKeyDown(event, index)}
-              className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-md px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
-                index === active
-                  ? "bg-surface font-medium text-foreground"
-                  : "text-on-surface-variant hover:bg-surface"
-              }`}
+      {(total > 1 || onCollapse) && (
+        <div className="flex items-start gap-2">
+          {total > 1 && (
+            <div
+              role="tablist"
+              aria-label="Questions"
+              className="flex flex-1 flex-wrap gap-1 border-b border-outline-variant pb-2"
             >
-              <span className="shrink-0 tabular-nums opacity-70">{index + 1}</span>
-              <span className="truncate">{question.header || `Question ${index + 1}`}</span>
-              {answered(question) && (
-                <Check aria-label="Answered" size={12} className="shrink-0 text-primary" />
-              )}
+              {request.questions.map((question, index) => (
+                <button
+                  key={question.id}
+                  type="button"
+                  role="tab"
+                  id={tabId(index)}
+                  ref={(node) => {
+                    tabs.current[index] = node;
+                  }}
+                  data-testid={`chat-question-tab-${index}`}
+                  aria-selected={index === active}
+                  aria-controls={panelId(index)}
+                  tabIndex={index === active ? 0 : -1}
+                  onClick={() => setStep(index)}
+                  onKeyDown={(event) => onTabKeyDown(event, index)}
+                  className={`flex min-h-8 max-w-48 items-center gap-1.5 rounded-md px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+                    index === active
+                      ? "bg-surface font-medium text-foreground"
+                      : "text-on-surface-variant hover:bg-surface"
+                  }`}
+                >
+                  <span className="shrink-0 tabular-nums opacity-70">{index + 1}</span>
+                  <span className="truncate">{question.header || `Question ${index + 1}`}</span>
+                  {answered(question) && (
+                    <Check aria-label="Answered" size={12} className="shrink-0 text-primary" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {onCollapse && (
+            <button
+              type="button"
+              data-testid="chat-question-collapse"
+              aria-expanded={true}
+              aria-controls={formId}
+              aria-label="Collapse question"
+              title="Collapse question"
+              onClick={onCollapse}
+              className="ml-auto flex min-h-8 min-w-8 shrink-0 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-md:min-h-11 max-md:min-w-11 pointer-coarse:min-h-11 pointer-coarse:min-w-11"
+            >
+              <ChevronDown aria-hidden="true" size={16} />
             </button>
-          ))}
+          )}
         </div>
       )}
       {request.questions.map((question, index) => {
@@ -305,18 +323,6 @@ export function ChatQuestionForm({
         >
           Dismiss
         </button>
-        {onCollapse && (
-          <button
-            type="button"
-            data-testid="chat-question-collapse"
-            aria-expanded={true}
-            aria-controls={formId}
-            onClick={onCollapse}
-            className="min-h-8 rounded-md px-3 text-on-surface-variant hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus max-md:min-h-11 pointer-coarse:min-h-11"
-          >
-            Collapse
-          </button>
-        )}
         <HelpPopover label="Answering questions" testId="chat-question-help">
           Pick a suggestion, or type your own answer in the field under the options. With several
           questions, use the tabs or Next to move between them; the answer sends once every question
