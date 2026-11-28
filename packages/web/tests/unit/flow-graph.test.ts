@@ -90,6 +90,24 @@ describe("toFlowDefinition", () => {
     expect(parsed.edges).toEqual([{ from: "a", to: "b" }]);
   });
 
+  test("keeps command nodes, which run checks without an agent", () => {
+    const parsed = def({
+      name: "checks",
+      entry: "start",
+      nodes: {
+        start: { kind: "command", command: "bun check.mjs", routing: "all" },
+        lane: { kind: "command", command: "echo ok" },
+        done: { kind: "terminal" },
+      },
+      edges: [
+        { from: "start", to: "lane" },
+        { from: "lane", to: "done" },
+      ],
+    });
+    expect(parsed.nodes.map((n) => n.id)).toEqual(["start", "lane", "done"]);
+    expect(parsed.edges).toHaveLength(2);
+  });
+
   test("every built-in flow is readable", () => {
     for (const raw of Object.values(BUILTIN_FLOW_SOURCES)) {
       const parsed = toFlowDefinition(raw);

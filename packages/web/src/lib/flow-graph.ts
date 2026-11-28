@@ -17,9 +17,9 @@
 
 import type { FlowNodeRun, FlowRun } from "@/api/client";
 
-export type FlowNodeKind = "agent" | "gate" | "human" | "terminal";
+export type FlowNodeKind = "agent" | "gate" | "human" | "terminal" | "command";
 
-const NODE_KINDS: FlowNodeKind[] = ["agent", "gate", "human", "terminal"];
+const NODE_KINDS: FlowNodeKind[] = ["agent", "gate", "human", "terminal", "command"];
 
 export type FlowJoin = {
   mode: "all" | "any";
