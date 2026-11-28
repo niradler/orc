@@ -18,6 +18,7 @@ import {
   STATE_FILTER_COMMANDS,
   searchHitPath,
 } from "@/lib/command-palette";
+import { SCRATCHPADS_PATH } from "@/lib/scratchpad-routes";
 import { applySessionFilter, parseFilter } from "@/lib/session-filter";
 import { cwdTail, terminalKind } from "@/lib/terminal-kinds";
 import { TERMINAL_PALETTE_EVENT, type TerminalPaletteRequest } from "@/lib/terminal-palette";
@@ -308,7 +309,7 @@ export function CommandPalette({
     "New scratchpad",
     "Start a doc, diagram or HTML page",
     "Actions",
-    () => go("/scratchpad?new=1"),
+    () => go(`${SCRATCHPADS_PATH}?new=1`),
     "create add pad note markdown excalidraw drawing",
   );
   add(

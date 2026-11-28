@@ -26,7 +26,7 @@ for (const width of [1440, 390, 320]) {
     const height = width < 640 ? 650 : 900;
     await page.setViewportSize({ width, height });
     await gotoView(page, "scratchpads");
-    await page.goto(`/scratchpad?project=${project.id}&padProject=${project.id}`);
+    await page.goto(`/knowledge/scratchpads?project=${project.id}&padProject=${project.id}`);
     await page.getByTestId("new-scratchpad-button").click();
     const dialog = page.getByTestId("scratchpad-form");
     await expect(dialog).toBeVisible();

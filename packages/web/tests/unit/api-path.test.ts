@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { staysInApi } from "../../src/lib/api-path";
 
 describe("pad bridge paths", () => {
-  const here = "http://lab:7700/scratchpad/abc";
+  const here = "http://lab:7700/knowledge/scratchpads/abc";
 
   test("should allow API paths under a relative or absolute base", () => {
     expect(staysInApi("/tasks?limit=100", "/api", here)).toBe(true);

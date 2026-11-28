@@ -29,6 +29,7 @@ export const WORKSPACE_SECTIONS = [
     pages: [
       { id: "knowledge", label: "Knowledge base", path: "/knowledge/base" },
       { id: "memories", label: "Memories", path: "/knowledge/memories" },
+      { id: "scratchpads", label: "Scratchpads", path: "/knowledge/scratchpads" },
     ],
   },
   {
@@ -46,7 +47,6 @@ export const WORKSPACE_SECTIONS = [
       { id: "packages", label: "Packages", path: "/packages" },
       { id: "agents", label: "Agents", path: "/packages/agents" },
       { id: "rules", label: "Rules", path: "/rules" },
-      { id: "scratchpads", label: "Scratchpads", path: "/scratchpad" },
     ],
   },
   {

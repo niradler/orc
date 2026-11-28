@@ -26,9 +26,9 @@ Pages are grouped in the sidebar:
 | Activity  | Activity, Jobs, Webhooks, Audit              |
 | Chat      | Chat                                         |
 | Tasks     | Tasks                                        |
-| Knowledge | Knowledge base, Memories                     |
+| Knowledge | Knowledge base, Memories, Scratchpads        |
 | Terminals | Terminals                                    |
-| Library   | Skills, Packages, Agents, Rules, Scratchpads |
+| Library   | Skills, Packages, Agents, Rules              |
 | Settings  | Settings                                     |
 
 Projects has its own page at `/projects`. Every page has a shareable URL.
@@ -425,7 +425,103 @@ Short project facts (ports, conventions, decisions) that agents load at session 
 
 ![Knowledge](/screens/knowledge.png)
 
-Knowledge bases: upload PDFs, Office files, HTML, CSV and Markdown, write Markdown in place, or register a folder to copy in. Search returns cited passages. Each knowledge base can have a digest agent that maintains it on a schedule. The digest asks for a tool whitelist; `claude` and `claude-cli` enforce it, while another backend runs the digest without it (the picker marks those and the run warns).
+![Knowledge reader with the context rail closed](/screens/knowledge-reader.png)
+
+The Knowledge base is a reading desk. Its navigation rail holds the KB switcher, folders
+and labels; the main pane has Recently updated, Most read and a label shelf above
+the full document list (List or Table). Open a document and its title sits in the
+location bar, not in a page header: the document starts at the top of the pane and
+uses its full width in every mode. **Details**
+in the top bar opens a context rail with the document title, path, labels, revision and
+trust, outline, properties, links, backlinks, comments, usage and history. The rail is
+closed by default and its state is remembered per view; on phones it opens as a sheet.
+Comments keep an open → resolved/dismissed lifecycle with a closing reply, filterable
+counts, and reopen; resolved history is kept. Search lives once in the navigation rail.
+Choosing a workspace section in the app rail folds that rail to icons so the page gets
+the room.
+
+![Document details with review comments and lifecycle](/screens/knowledge-details.png)
+
+**One editor everywhere.** Every Markdown surface uses the same live-preview editor:
+KB documents, Skills instructions and `.md` terminal files, Pads documents, Memories,
+task bodies and job task fields. Syntax shows on the active line and renders as you
+write. The toolbar and `/` menu insert headings, lists, tasks, quotes, code, tables,
+callouts, dividers, links and images; task boxes are clickable; pasted HTML becomes
+Markdown; pasted images are stored through the KB asset endpoint and render inline.
+Raw **Source** is a toggle, Read/Edit remain the document modes, explicit Save stays
+available, and autosave plus revision-conflict protection keep drafts safe.
+
+![One live-preview editor with toolbar and rendered tables](/screens/knowledge-editor.png)
+
+**Intake** is one surface with **Write**, **Upload** and **Folder** tabs. Uploads move
+through parse, index and ready/failed states with retry. Labels are search facets:
+rename, merge or delete them from the label index without changing paths, links or
+citations. Search exposes Auto/Keyword/Semantic mode, scope and label facets, groups
+results by document and opens at the cited passage. Search views are URL-shareable.
+
+![Label index with rename, merge and delete](/screens/knowledge-labels.png)
+
+![Search with mode, scope and label facets](/screens/knowledge-search.png)
+
+Knowledge bases are portable through **OKF v0.3**. Folder and upload intake reads
+frontmatter: `title` and `description` become document fields, `tags` become labels,
+`type` becomes a label, and fields ORC does not model stay in the content. **Export OKF**
+downloads a bundle with per-document Markdown, folder `index.md` tables of contents, a
+root `index.md` with `okf_version`, and `log.md`. `verified`, `generated`, `status` and
+`stale_after` show in the reader and influence ranking; stale or archived knowledge is
+deprioritized. Use folder registration to bring in an Obsidian vault and Upload for a
+Notion Markdown export. Notion databases are not imported.
+
+Each knowledge base can have a digest agent that maintains it on a schedule, which makes
+the KB an active personal or company brain: personal brains are project KBs, company
+brains are global KBs every agent can read. The digest asks for a tool whitelist;
+`claude` and `claude-cli` enforce it, while another backend runs the digest without it
+(the picker marks those and the run warns). Scratchpads remain a separate object in
+their own tab after Memories; their list and reader grammar is handled separately.
+
+## Scratchpads
+
+Working documents, diagrams and HTML pages that you or an agent create and come back to. Agents use the `pad_*` MCP tools. Share one by copying its link. Under **Knowledge → Scratchpads**.
+
+Deleting a scratchpad is recoverable: it stays readable and listed with a **deletes in N days** marker, and is permanently removed after 30 days. Use **Restore** before then. This is the same archive-then-purge lifecycle as project deletion.
+
+Pads can also **expire**. Set an expiry in the pad's properties (or `ttl` / `expires_at` through the API and `pad_*` tools) for one-off drafts and intermediate reports; leave long-lived pads and human notes without one. When an expiry is due the pad is archived like a delete, shown with its delete deadline, and purged after a 7-day grace period. **Pin** a pad to exempt it, and pads referenced by another pad, task, comment, knowledge-base document or memory are kept with an **expiry skipped** note. `keep_alive` extends the expiry on every edit. The list filters **Expiring soon** and **Archived**, and each row shows its expiry or pin state.
+
+HTML pads receive the **ORC HTML kit** in both the editor preview and chat artifacts:
+dashboard theme tokens, base styles, cards, tables, stats, badges, tabs and charts.
+Use `orc-*` classes to build a native-looking page without a custom `<style>` block.
+The kit is inlined at render time, needs no network request, and does not change the
+saved HTML. Custom CSS and JavaScript still work.
+
+Pin the kit stylesheet in your HTML head to keep its version as the kit evolves:
+
+```html
+<meta name="orc-kit" content="3">
+```
+
+Bundled older versions remain available. A missing or unknown version uses the
+current kit. Both previews follow the dashboard's light/dark theme; changing the
+theme rebuilds the iframe document, resetting its running scripts and local UI
+state. The saved pad content stays the same.
+
+Kit tabs support clicking, Left/Right arrows with wrapping, and Home/End. Only
+the selected panel is shown. The kit does not grant ORC API access: editor pads
+still require **Render with ORC access**, and chat artifacts keep their opaque
+sandbox and the CSP that blocks scripted requests and external resources. Prefer
+inline SVG for charts that must work in both views; a CDN chart library is
+blocked in chat.
+
+For concise component markup, use built-in custom elements such as
+`<orc-card>`, `<orc-stat label="Open tasks" value="12">`,
+`<orc-badge tone="success">`, `<orc-table>` and `<orc-chart>`.
+`<orc-tabs>` generates accessible tab controls from labeled `<orc-tab>` panels.
+`<orc-chart kind="bar|line|area|sparkline" data='[…]'>` draws a themed chart with
+labeled axes and hover values. These components reuse the kit with no additional
+dependencies or network requests, so a chart renders identically in the editor
+preview and a chat artifact; ordinary HTML with `orc-*` classes remains supported.
+
+Agents can load the component list, copy-paste skeleton and chart guidance with
+`skill_read` for `orc-platform`, ref `references/html-kit.md`. See [Skills](./skills.md).
 
 ## Jobs
 
@@ -554,50 +650,6 @@ Shared specialist agent definitions: instructions, model and tools, reusable acr
 ## Rules
 
 Applied rules and their outcomes per workspace, plus rule settings for enforcement and agent assignment. See [Agent rules](./agent-rules.md).
-
-## Scratchpads
-
-Working documents, diagrams and HTML pages that you or an agent create and come back to. Agents use the `pad_*` MCP tools. Share one by copying its link.
-
-Deleting a scratchpad is recoverable: it stays readable and listed with a **deletes in N days** marker, and is permanently removed after 30 days. Use **Restore** before then. This is the same archive-then-purge lifecycle as project deletion.
-
-Pads can also **expire**. Set an expiry in the pad's properties (or `ttl` / `expires_at` through the API and `pad_*` tools) for one-off drafts and intermediate reports; leave long-lived pads and human notes without one. When an expiry is due the pad is archived like a delete, shown with its delete deadline, and purged after a 7-day grace period. **Pin** a pad to exempt it, and pads referenced by another pad, task, comment, knowledge-base document or memory are kept with an **expiry skipped** note. `keep_alive` extends the expiry on every edit. The list filters **Expiring soon** and **Archived**, and each row shows its expiry or pin state.
-
-HTML pads receive the **ORC HTML kit** in both the editor preview and chat artifacts:
-dashboard theme tokens, base styles, cards, tables, stats, badges, tabs and charts.
-Use `orc-*` classes to build a native-looking page without a custom `<style>` block.
-The kit is inlined at render time, needs no network request, and does not change the
-saved HTML. Custom CSS and JavaScript still work.
-
-Pin the kit stylesheet in your HTML head to keep its version as the kit evolves:
-
-```html
-<meta name="orc-kit" content="3">
-```
-
-Bundled older versions remain available. A missing or unknown version uses the
-current kit. Both previews follow the dashboard's light/dark theme; changing the
-theme rebuilds the iframe document, resetting its running scripts and local UI
-state. The saved pad content stays the same.
-
-Kit tabs support clicking, Left/Right arrows with wrapping, and Home/End. Only
-the selected panel is shown. The kit does not grant ORC API access: editor pads
-still require **Render with ORC access**, and chat artifacts keep their opaque
-sandbox and the CSP that blocks scripted requests and external resources. Prefer
-inline SVG for charts that must work in both views; a CDN chart library is
-blocked in chat.
-
-For concise component markup, use built-in custom elements such as
-`<orc-card>`, `<orc-stat label="Open tasks" value="12">`,
-`<orc-badge tone="success">`, `<orc-table>` and `<orc-chart>`.
-`<orc-tabs>` generates accessible tab controls from labeled `<orc-tab>` panels.
-`<orc-chart kind="bar|line|area|sparkline" data='[…]'>` draws a themed chart with
-labeled axes and hover values. These components reuse the kit with no additional
-dependencies or network requests, so a chart renders identically in the editor
-preview and a chat artifact; ordinary HTML with `orc-*` classes remains supported.
-
-Agents can load the component list, copy-paste skeleton and chart guidance with
-`skill_read` for `orc-platform`, ref `references/html-kit.md`. See [Skills](./skills.md).
 
 ## Settings
 

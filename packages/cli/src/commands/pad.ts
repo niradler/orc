@@ -32,7 +32,7 @@ function formatTime(epochSeconds: number): string {
 }
 
 function padLink(id: string): string {
-  return new URL(`/scratchpad/${id}`, resolveApiBase()).toString();
+  return new URL(`/knowledge/scratchpads/${id}`, resolveApiBase()).toString();
 }
 
 function parseKind(kind: string): ScratchpadKind {

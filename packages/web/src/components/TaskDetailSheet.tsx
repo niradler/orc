@@ -14,7 +14,7 @@ import { FlowRunPanel, FlowSectionHeading } from "@/components/flow/FlowRunPanel
 import { GoalPanel } from "@/components/flow/GoalPanel";
 import { HelpPopover } from "@/components/HelpPopover";
 import { Markdown } from "@/components/Markdown";
-import { MarkdownField } from "@/components/MarkdownField";
+import { MarkdownFormField } from "@/components/MarkdownFormField";
 import { PriorityBadge } from "@/components/PriorityBadge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TaskGitLinks } from "@/components/TaskGitLinks";
@@ -627,7 +627,7 @@ function EditTaskDialog({
                   className="bg-background border-control-border text-on-surface font-body text-sm"
                 />
               </div>
-              <MarkdownField
+              <MarkdownFormField
                 label="Body"
                 aria-label="Body"
                 data-testid="edit-task-body"

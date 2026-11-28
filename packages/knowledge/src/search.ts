@@ -11,6 +11,7 @@ import { DOC_COLUMNS, type DocRow, type KbRow } from "./catalog.js";
 import { estimateTokens } from "./chunker.js";
 import type { Engine } from "./engine.js";
 import type { ChunkFilter, IndexedChunk } from "./index-db.js";
+import { okfFields } from "./okf.js";
 
 const RRF_K = 60;
 const CANDIDATES = 60;
@@ -203,6 +204,17 @@ export class Searcher {
       r.score += 1;
       r.matched.add("exact");
       ranked.set(doc.id, r);
+    }
+
+    // OKF lifecycle influences ranking: verified knowledge rises, stale/archived knowledge sinks.
+    const today = new Date().toISOString().slice(0, 10);
+    for (const r of ranked.values()) {
+      const fields = okfFields(r.doc.content ?? "");
+      let factor = 1;
+      if (fields.verified) factor *= 1.08;
+      if (fields.stale_after && fields.stale_after < today) factor *= 0.75;
+      if (fields.status && /deprecated|archived|obsolete/i.test(fields.status)) factor *= 0.6;
+      r.score *= factor;
     }
 
     const byId = new Map(chunks.map((c) => [c.id, c]));

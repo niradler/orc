@@ -41,6 +41,7 @@ export function WorkspaceSidebar({
   onToggle,
   embedded = false,
   onNavigate,
+  onSectionNavigate,
 }: {
   projectId: string;
   onProjectChange: (id: string) => void;
@@ -48,6 +49,8 @@ export function WorkspaceSidebar({
   onToggle?: () => void;
   embedded?: boolean;
   onNavigate?: () => void;
+  /** A workspace section was chosen: the desktop shell gives the page the room. */
+  onSectionNavigate?: () => void;
 }) {
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
@@ -91,6 +94,7 @@ export function WorkspaceSidebar({
               aria-label={section.label}
               onClick={() => {
                 navigate(workspaceDestination(section.path, projectId, search, pathname));
+                onSectionNavigate?.();
                 onNavigate?.();
               }}
               className={cn(

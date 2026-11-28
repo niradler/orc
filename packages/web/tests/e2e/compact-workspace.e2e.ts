@@ -226,15 +226,15 @@ test("populated workspaces fit desktop, tablet and phones in both themes", async
       }, theme);
       for (const width of [1440, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 900 });
-        for (const route of ["webhooks", "chat", "scratchpad", "jobs"]) {
+        for (const route of ["webhooks", "chat", "knowledge/scratchpads", "jobs"]) {
           await page.goto(
-            `/${route}?project=${project.id}${route === "scratchpad" ? `&padProject=${project.id}` : ""}${route === "chat" ? "&sessionList=show" : ""}`,
+            `/${route}?project=${project.id}${route === "knowledge/scratchpads" ? `&padProject=${project.id}` : ""}${route === "chat" ? "&sessionList=show" : ""}`,
           );
           if (route === "chat")
             await expect(
               page.getByTestId("chat-session-list").getByTestId("chat-history-row"),
             ).toBeVisible();
-          if (route === "scratchpad") {
+          if (route === "knowledge/scratchpads") {
             // Extra pads can appear (auto Learnings digest, concurrent fixtures);
             // assert the seeded pads instead of an exact row count.
             for (const title of [

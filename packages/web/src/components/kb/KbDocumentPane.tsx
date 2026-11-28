@@ -3,7 +3,6 @@ import {
   KB_READ_KINDS,
   type KbDocumentWithContent,
   type KbUsageStats,
-  type KnowledgeBase,
 } from "@orc/core/kb";
 import {
   AlertTriangle,
@@ -12,12 +11,11 @@ import {
   FileDown,
   FileUp,
   MoreHorizontal,
-  PanelRight,
   Pencil,
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useRef, useState } from "react";
+import { Fragment, type KeyboardEvent, type ReactNode, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/api/client";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -119,18 +117,14 @@ export function UsageTable({ usage, testId }: { usage: KbUsageStats; testId: str
 }
 
 export function KbDocumentPane({
-  kb,
   doc,
-  onHome,
   onOpen,
   onDeleted,
   onReplaceFile,
   detailsOpen,
   onDetailsOpenChange,
 }: {
-  kb: KnowledgeBase;
   doc: KbDocumentWithContent;
-  onHome: () => void;
   onOpen: (documentId: string, heading?: string) => void;
   onDeleted: () => void;
   onReplaceFile: (file: File) => void;
@@ -230,141 +224,84 @@ export function KbDocumentPane({
       {text}
     </button>
   );
+  const docActions = (
+    <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label="Document actions"
+          aria-haspopup="menu"
+          data-testid="kb-doc-menu"
+        >
+          <MoreHorizontal size={16} />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        data-testid="kb-doc-actions-menu"
+        align="end"
+        sideOffset={4}
+        collisionPadding={8}
+        role="menu"
+        aria-label="Document actions"
+        className="z-50 w-52 rounded-md border border-outline-variant bg-surface-high p-1 shadow-lg"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement)
+            .querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')
+            ?.focus();
+        }}
+        onKeyDown={moveMenuFocus}
+      >
+        {menuItem("kb-doc-properties", <Pencil size={14} />, "Title and labels", () => {
+          beforeEdit.current = { title: doc.title, backlinks: doc.backlinks };
+          setEditing(true);
+        })}
+        {!hasOriginal &&
+          menuItem(
+            "kb-doc-download-markdown",
+            <FileDown size={14} />,
+            "Download Markdown",
+            downloadMarkdown,
+          )}
+        {hasOriginal &&
+          menuItem(
+            "kb-doc-download",
+            <Download size={14} />,
+            "Download original",
+            () => void download(),
+          )}
+        {upload &&
+          menuItem(
+            "kb-doc-reparse",
+            <RefreshCw size={14} />,
+            "Parse again",
+            () => void act(() => api.kb.reparse(doc.id)),
+          )}
+        {upload &&
+          menuItem("kb-doc-replace", <FileUp size={14} />, "Replace file", () =>
+            replaceInput.current?.click(),
+          )}
+        {doc.origin !== "external" &&
+          menuItem(
+            "kb-doc-delete",
+            <Trash2 size={14} />,
+            "Delete document",
+            () => setDeleting(true),
+            true,
+          )}
+      </PopoverContent>
+    </Popover>
+  );
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
       <article
         data-testid="kb-document"
         className="min-w-0 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
       >
-        <div className="w-full min-w-0 px-4 pb-16 pt-4 sm:px-8 sm:pt-6">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-            <nav
-              aria-label="Breadcrumb"
-              className="flex min-w-0 flex-1 basis-48 items-center gap-1 text-sm text-outline"
-            >
-              <button
-                type="button"
-                data-testid="kb-breadcrumb-kb"
-                className="min-w-0 max-w-[60%] truncate hover:text-on-surface hover:underline"
-                onClick={onHome}
-              >
-                {kb.name}
-              </button>
-              <ChevronRight size={14} className="shrink-0" aria-hidden />
-              <span
-                className="min-w-0 truncate font-mono text-xs"
-                data-testid="kb-document-path"
-                title={doc.path}
-              >
-                {doc.path}
-              </span>
-            </nav>
-            <div className="flex shrink-0 items-center gap-1">
-              <Button
-                size="sm"
-                variant={detailsOpen ? "secondary" : "ghost"}
-                aria-pressed={detailsOpen}
-                data-testid="kb-details-toggle"
-                onClick={() => onDetailsOpenChange(!detailsOpen)}
-              >
-                <PanelRight size={14} />
-                Details
-                {openComments > 0 && (
-                  <span
-                    data-testid="kb-details-open-comments"
-                    title={`${openComments} open ${openComments === 1 ? "comment" : "comments"}`}
-                    className="inline-flex items-center gap-1 text-xs tabular-nums text-outline"
-                  >
-                    <StateDot tone="warning" />
-                    {openComments}
-                  </span>
-                )}
-              </Button>
-              <Popover open={menuOpen} onOpenChange={setMenuOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    aria-label="Document actions"
-                    aria-haspopup="menu"
-                    data-testid="kb-doc-menu"
-                  >
-                    <MoreHorizontal size={16} />
-                  </Button>
-                </PopoverTrigger>
-
-                <PopoverContent
-                  data-testid="kb-doc-actions-menu"
-                  align="end"
-                  sideOffset={4}
-                  collisionPadding={8}
-                  role="menu"
-                  aria-label="Document actions"
-                  className="z-50 w-52 rounded-md border border-outline-variant bg-surface-high p-1 shadow-lg"
-                  onOpenAutoFocus={(event) => {
-                    event.preventDefault();
-                    (event.currentTarget as HTMLElement)
-                      .querySelector<HTMLElement>('[role="menuitem"]:not(:disabled)')
-                      ?.focus();
-                  }}
-                  onKeyDown={moveMenuFocus}
-                >
-                  {menuItem("kb-doc-properties", <Pencil size={14} />, "Title and labels", () => {
-                    beforeEdit.current = { title: doc.title, backlinks: doc.backlinks };
-                    setEditing(true);
-                  })}
-                  {!hasOriginal &&
-                    menuItem(
-                      "kb-doc-download-markdown",
-                      <FileDown size={14} />,
-                      "Download Markdown",
-                      downloadMarkdown,
-                    )}
-                  {hasOriginal &&
-                    menuItem(
-                      "kb-doc-download",
-                      <Download size={14} />,
-                      "Download original",
-                      () => void download(),
-                    )}
-                  {upload &&
-                    menuItem(
-                      "kb-doc-reparse",
-                      <RefreshCw size={14} />,
-                      "Parse again",
-                      () => void act(() => api.kb.reparse(doc.id)),
-                    )}
-                  {upload &&
-                    menuItem("kb-doc-replace", <FileUp size={14} />, "Replace file", () =>
-                      replaceInput.current?.click(),
-                    )}
-                  {doc.origin !== "external" &&
-                    menuItem(
-                      "kb-doc-delete",
-                      <Trash2 size={14} />,
-                      "Delete document",
-                      () => setDeleting(true),
-                      true,
-                    )}
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
-          <header className="mb-2 mt-4 space-y-2">
-            <h1 data-testid="kb-document-title" className="wrap-break-word text-3xl font-medium">
-              {doc.title}
-            </h1>
-            {doc.description && <p className="text-outline">{doc.description}</p>}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-outline">
-              {doc.labels.length > 0 && (
-                <span className="flex flex-wrap gap-1">
-                  {doc.labels.map((l) => (
-                    <Badge key={l} variant="secondary" data-testid="kb-document-label">
-                      {l}
-                    </Badge>
-                  ))}
-                </span>
-              )}
+        <div className="w-full min-w-0 px-4 pb-16 pt-4 text-[16px] leading-[1.65] sm:px-6 sm:pt-6">
+          {(doc.parse_state !== "ok" || doc.folder_sync || doc.stale) && (
+            <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-outline">
               {doc.parse_state !== "ok" && (
                 <span
                   className={cn(
@@ -403,11 +340,8 @@ export function KbDocumentPane({
                   Stale: a source changed
                 </span>
               )}
-              <span>
-                Updated {new Date(doc.updated_at).toLocaleDateString()} by {doc.updated_by}
-              </span>
             </div>
-          </header>
+          )}
           {doc.warnings.length > 0 && (
             <ul data-testid="kb-document-warnings" className="mb-2 space-y-1 text-sm text-warning">
               {doc.warnings.map((w) => (
@@ -478,6 +412,9 @@ export function KbDocumentPane({
             layout="page"
             pageTitle={doc.title}
             hideFrontmatter
+            onUploadImage={(file) =>
+              api.kb.uploadAsset(doc.kb_id, file).then((asset) => asset.path)
+            }
             onSave={
               doc.editable
                 ? async (content, base) => {
@@ -498,7 +435,14 @@ export function KbDocumentPane({
           />
         </div>
       </article>
-      {detailsOpen && wide && <DocumentDetails doc={doc} onOpen={onOpen} />}
+      {detailsOpen && wide && (
+        <DocumentDetails
+          doc={doc}
+          openComments={openComments}
+          actions={docActions}
+          onOpen={onOpen}
+        />
+      )}
       {!wide && (
         <Sheet open={detailsOpen} onOpenChange={onDetailsOpenChange}>
           <SheetContent defaultWidth={360} resizeKey="kb-properties" aria-describedby={undefined}>
@@ -508,6 +452,8 @@ export function KbDocumentPane({
             <SheetBody className="p-0 sm:p-0">
               <DocumentDetails
                 doc={doc}
+                openComments={openComments}
+                actions={docActions}
                 onOpen={(id, heading) => {
                   onDetailsOpenChange(false);
                   onOpen(id, heading);
@@ -558,7 +504,7 @@ export function KbDocumentPane({
 function DetailsSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-1.5">
-      <h2 className="text-sm font-medium text-outline">{title}</h2>
+      <h2 className="text-[11px] font-medium uppercase tracking-wide text-outline">{title}</h2>
       {children}
     </section>
   );
@@ -567,9 +513,13 @@ function DetailsSection({ title, children }: { title: string; children: ReactNod
 /** Navigation and conversation around the document; bookkeeping stays folded away. */
 function DocumentDetails({
   doc,
+  openComments,
+  actions,
   onOpen,
 }: {
   doc: KbDocumentWithContent;
+  openComments: number;
+  actions: ReactNode;
   onOpen: (documentId: string, heading?: string) => void;
 }) {
   const usage = useKbDocumentUsage(doc.id);
@@ -579,8 +529,60 @@ function DocumentDetails({
     <aside
       data-testid="kb-document-details"
       aria-label="Document details"
-      className="w-full shrink-0 space-y-6 p-4 text-sm lg:min-h-0 lg:w-80 lg:overflow-y-auto lg:border-l lg:border-outline-variant"
+      className="w-full shrink-0 space-y-5 p-4 text-sm lg:min-h-0 lg:w-[300px] lg:overflow-y-auto lg:border-l lg:border-outline-variant"
     >
+      <div className="space-y-2 border-b border-outline-variant pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 space-y-0.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-outline">Document</p>
+            <p className="wrap-break-word text-sm font-medium">{doc.title}</p>
+            <p className="truncate font-mono text-[11px] text-outline" title={doc.path}>
+              {doc.path}
+            </p>
+          </div>
+          {actions}
+        </div>
+        {doc.description && (
+          <p className="wrap-break-word text-xs leading-relaxed text-outline">{doc.description}</p>
+        )}
+        {doc.labels.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {doc.labels.map((label) => (
+              <Badge key={label} variant="secondary" data-testid="kb-document-label">
+                {label}
+              </Badge>
+            ))}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <span className="rounded-full bg-surface px-2 py-0.5 text-outline">
+            Revision {doc.revision}
+          </span>
+          <span
+            className={cn(
+              "rounded-full border px-2 py-0.5",
+              doc.properties.verified
+                ? "border-secondary/40 text-secondary"
+                : "border-outline-variant text-outline",
+            )}
+          >
+            {doc.properties.verified ? "Verified" : "Not verified"}
+          </span>
+          {doc.stale && (
+            <span className="rounded-full border border-warning/40 px-2 py-0.5 text-warning">
+              Stale
+            </span>
+          )}
+          {openComments > 0 && (
+            <span className="rounded-full border border-warning/40 px-2 py-0.5 text-warning">
+              {openComments} open {openComments === 1 ? "comment" : "comments"}
+            </span>
+          )}
+        </div>
+        <p className="text-[11px] text-outline">
+          Updated {new Date(doc.updated_at).toLocaleDateString()} by {doc.updated_by}
+        </p>
+      </div>
       {doc.outline.length > 0 && (
         <DetailsSection title="On this page">
           <nav aria-label="Outline" className="space-y-0.5">
@@ -598,6 +600,65 @@ function DocumentDetails({
           </nav>
         </DetailsSection>
       )}
+      <DetailsSection title="Properties">
+        <dl
+          data-testid="kb-document-properties"
+          className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs"
+        >
+          {doc.properties.type && (
+            <>
+              <dt className="text-outline">Type</dt>
+              <dd>{doc.properties.type}</dd>
+            </>
+          )}
+          <dt className="text-outline">Origin</dt>
+          <dd>{doc.origin === "upload" ? "uploaded file" : doc.origin}</dd>
+          <dt className="text-outline">Search</dt>
+          <dd data-testid="kb-index-state">{STATE_LABEL[doc.index_state] ?? doc.index_state}</dd>
+          <dt className="text-outline">Revision</dt>
+          <dd>{doc.revision}</dd>
+          <dt className="text-outline">Verified</dt>
+          <dd className={doc.properties.verified ? "text-success" : "text-outline"}>
+            {doc.properties.verified
+              ? `Verified${doc.properties.generated ? ` · ${doc.properties.generated}` : ""}`
+              : "Not verified"}
+          </dd>
+          {doc.properties.status && (
+            <>
+              <dt className="text-outline">Status</dt>
+              <dd>{doc.properties.status}</dd>
+            </>
+          )}
+          {doc.properties.stale_after && (
+            <>
+              <dt className="text-outline">Review after</dt>
+              <dd
+                className={
+                  doc.properties.stale_after < new Date().toISOString().slice(0, 10)
+                    ? "text-warning"
+                    : ""
+                }
+              >
+                {doc.properties.stale_after}
+              </dd>
+            </>
+          )}
+          {doc.properties.timestamp && (
+            <>
+              <dt className="text-outline">Timestamp</dt>
+              <dd>{doc.properties.timestamp}</dd>
+            </>
+          )}
+          {Object.entries(doc.properties.extra).map(([key, value]) => (
+            <Fragment key={key}>
+              <dt className="text-outline">{key}</dt>
+              <dd className="min-w-0 break-words">
+                {typeof value === "string" ? value : JSON.stringify(value)}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      </DetailsSection>
       {doc.links.length > 0 && (
         <DetailsSection title={`Links to (${doc.links.length})`}>
           {doc.links.map((l) =>
@@ -667,11 +728,7 @@ function DocumentDetails({
             ))}
           </ol>
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-outline">
-            <dt>Search</dt>
-            <dd data-testid="kb-index-state">{STATE_LABEL[doc.index_state] ?? doc.index_state}</dd>
-            <dt>Origin</dt>
-            <dd>{doc.origin}</dd>
-            <dt>Type</dt>
+            <dt>Media</dt>
             <dd>{doc.media_type}</dd>
             <dt>Size</dt>
             <dd>{formatBytes(doc.size_bytes)}</dd>

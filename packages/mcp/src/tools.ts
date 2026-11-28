@@ -1554,7 +1554,10 @@ function memoryWriter(options: ToolOptions): { author: string; session_id: strin
 
 /** Where the human opens a pad; the API serves the web UI in an installed ORC. */
 function padLink(id: string, options: ToolOptions): string {
-  return new URL(`/scratchpad/${id}`, options.publicApiBaseUrl ?? orcApiBase()).toString();
+  return new URL(
+    `/knowledge/scratchpads/${id}`,
+    options.publicApiBaseUrl ?? orcApiBase(),
+  ).toString();
 }
 
 async function padContentUrl(

@@ -12,6 +12,9 @@ export function imageRendering(src: unknown): ImageRendering {
   if (typeof src !== "string" || !src.trim()) return { kind: "text" };
   const value = src.trim();
   if (/^data:image\//i.test(value) || /^blob:/i.test(value)) return { kind: "inline", src: value };
+  // ORC serves pasted knowledge images from its own origin; no third party learns about the read.
+  if (/^\/api\/kb\/assets\/[A-Za-z0-9_-]+\/[A-Za-z0-9_.-]+$/.test(value))
+    return { kind: "inline", src: value };
   const absolute = value.startsWith("//") ? `https:${value}` : value;
   try {
     const url = new URL(absolute);

@@ -98,8 +98,9 @@ test("knowledge base document links use real documents and edits reopen after th
         .getByRole("button", { name: "Browse", exact: true })
         .click();
       await expect(page.getByTestId("kb-sidebar")).toBeVisible();
-      await page.locator(`[data-testid="kb-nav-document"][data-document-title="${from}"]`).click();
+      await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
       await expect(page.getByTestId("kb-sidebar")).not.toBeVisible();
+      await page.locator(`[data-testid="kb-document-row"][data-document-title="${from}"]`).click();
       await expect(page.getByTestId("markdown-preview")).toContainText("Task flows");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -190,17 +191,7 @@ test("a conflicting knowledge base document save keeps its draft and explicit di
     await row.click();
     await page.getByTestId("markdown-mode-edit").click();
     await page.getByTestId("kb-document-content").fill("# My unsaved draft");
-    let sameNoteDialogs = 0;
-    const unexpectedDiscard = async (dialog: import("@playwright/test").Dialog) => {
-      sameNoteDialogs++;
-      await dialog.dismiss();
-    };
-    page.on("dialog", unexpectedDiscard);
-    // Picking the open document again from the sidebar is not a navigation away from the draft.
-    await page.locator(`[data-testid="kb-nav-document"][data-document-title="${title}"]`).click();
-    expect(sameNoteDialogs).toBe(0);
     await expect(page.getByTestId("document-save-status")).toHaveText("Unsaved changes");
-    page.off("dialog", unexpectedDiscard);
     await apiPatch(request, `/kb/documents/${doc.id}`, {
       expected_revision: doc.revision,
       content: "# New external revision",

@@ -5,7 +5,7 @@ import { BackendPicker, USE_DEFAULT_BACKEND } from "@/components/BackendPicker";
 import { FormDialog } from "@/components/FormDialog";
 import { FlowPicker, USE_DEFAULT_FLOW } from "@/components/flow/FlowPicker";
 import { HelpPopover } from "@/components/HelpPopover";
-import { MarkdownField } from "@/components/MarkdownField";
+import { MarkdownFormField } from "@/components/MarkdownFormField";
 import { Button } from "@/components/ui/button";
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -226,7 +226,7 @@ export function CreateTaskDialog({
                         autoFocus
                       />
                     </div>
-                    <MarkdownField
+                    <MarkdownFormField
                       label="Body"
                       aria-label="Body"
                       value={body}

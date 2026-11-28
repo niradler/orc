@@ -125,7 +125,7 @@ async function createPad(
 async function openPad(page: Page, id: string, search = ""): Promise<void> {
   // gotoView installs the API secret before the first load.
   await gotoView(page, "scratchpads");
-  await page.goto(`/scratchpad/${id}${search}`);
+  await page.goto(`/knowledge/scratchpads/${id}${search}`);
   await expect(page.getByTestId("scratchpad-page")).toBeVisible();
 }
 
@@ -188,13 +188,14 @@ test.describe("Scratchpads", () => {
       await expect(form).toHaveCount(0);
 
       // Creating opens the pad at its deep link.
-      await expect(page).toHaveURL(/\/scratchpad\/[^/?]+/);
+      await expect(page).toHaveURL(/\/knowledge\/scratchpads\/[^/?]+/);
       id = new URL(page.url()).pathname.split("/").pop();
       await expect(page.getByTestId("scratchpad-title")).toHaveText(title);
       await expect(page.getByTestId("scratchpad-author")).toHaveText("human");
 
-      await page.getByTestId("markdown-mode-split").click();
+      await page.getByTestId("markdown-mode-edit").click();
       await page.getByTestId("scratchpad-doc").fill("# Plan\n\nShip the scratchpad.\n");
+      await page.getByTestId("markdown-mode-read").click();
       await expect(page.getByTestId("markdown-preview")).toContainText("Ship the scratchpad.");
       await page.getByTestId("document-save").click();
       await expect(page.getByTestId("document-save-status")).toHaveText("Saved");
@@ -217,7 +218,7 @@ test.describe("Scratchpads", () => {
 
       await page.getByTestId("scratchpad-delete").click();
       await page.getByTestId("confirm-dialog-confirm").click();
-      await expect(page).toHaveURL(/\/scratchpad(\?|$)/);
+      await expect(page).toHaveURL(/\/knowledge\/scratchpads(\?|$)/);
       // Deleting schedules a purge; the pad stays available with its deadline.
       const scheduled = await request.get(`${API_BASE}/scratchpads/${id}`, {
         headers: AUTH_HEADERS,
@@ -256,7 +257,7 @@ test.describe("Scratchpads", () => {
       await page.getByRole("option", { name: "Expiring soon" }).click();
       await expect(row(expiring.id)).toBeVisible();
 
-      await page.goto(`/scratchpad/${expiring.id}`);
+      await page.goto(`/knowledge/scratchpads/${expiring.id}`);
       await expect(page.getByTestId("scratchpad-expires")).toContainText("expires in");
       await page.getByTestId("scratchpad-pin").click();
       await expect(page.getByTestId("scratchpad-pinned")).toHaveText("pinned");
@@ -664,7 +665,7 @@ test.describe("Scratchpads", () => {
     await page.getByTestId("command-palette-open").click();
     await page.getByTestId("command-palette-input").fill("new scratchpad");
     await page.locator('[data-command-id="new-scratchpad"]').click();
-    await expect(page).toHaveURL(/\/scratchpad(\?|$)/);
+    await expect(page).toHaveURL(/\/knowledge\/scratchpads(\?|$)/);
     await expect(page.getByTestId("scratchpad-form")).toBeVisible();
     expect(new URL(page.url()).searchParams.has("new")).toBe(false);
   });

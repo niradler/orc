@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { apiDelete, apiPost, gotoView, tid } from "./_helpers";
 
-test("Knowledge has two canonical destinations and knowledge-base state is shareable", async ({
+test("Knowledge has three canonical destinations and knowledge-base state is shareable", async ({
   page,
   request,
 }) => {
@@ -20,6 +20,15 @@ test("Knowledge has two canonical destinations and knowledge-base state is share
       /\/knowledge\/base/,
     );
     await expect(page.getByTestId("nav-memories")).toHaveAttribute("href", /\/knowledge\/memories/);
+    await expect(page.getByTestId("nav-scratchpads")).toHaveAttribute(
+      "href",
+      /\/knowledge\/scratchpads/,
+    );
+    // Choosing a workspace section gives the page the room: the app rail folds to icons.
+    await page.getByTestId("nav-knowledge").click();
+    await expect(
+      page.getByTestId("workspace-sidebar").getByRole("button", { name: "Expand sidebar" }),
+    ).toBeVisible();
     await page.getByTestId("section-knowledge").click();
     await expect(page.getByTestId("view-title")).toHaveText("Knowledge bases");
     await page.locator(`[data-testid="kb-row"][data-kb-name="${kb.name}"]`).click();
@@ -40,12 +49,15 @@ test("Knowledge has two canonical destinations and knowledge-base state is share
     await page.getByTestId("nav-memories").click();
     expect(new URL(page.url()).pathname).toBe("/knowledge/memories");
     await expect(page.getByTestId("new-memory-button")).toBeVisible();
+    await page.getByTestId("nav-scratchpads").click();
+    expect(new URL(page.url()).pathname).toBe("/knowledge/scratchpads");
+    await expect(page.getByTestId("new-scratchpad-button")).toBeVisible();
   } finally {
     await apiDelete(request, `/kb/bases/${kb.id}`);
   }
 });
 
-test("choosing a knowledge base lists its documents in the navigation and closes the previous one", async ({
+test("choosing a knowledge base shows its documents and marks the selection", async ({
   page,
   request,
 }) => {
@@ -63,32 +75,26 @@ test("choosing a knowledge base lists its documents in the navigation and closes
     }),
   );
   const [first, second] = bases;
-  const navDoc = (title: string) =>
-    page.locator(`[data-testid="kb-nav-document"][data-document-title="${title}"]`);
+  const docRow = (title: string) =>
+    page.locator(`[data-testid="kb-document-row"][data-document-title="${title}"]`);
   const kbRow = (name: string) => page.locator(`[data-testid="kb-row"][data-kb-name="${name}"]`);
   try {
-    // A knowledge base opened by link lists its documents without another click.
+    // A knowledge base opened by link lists its documents on the home pane without another click.
     await gotoView(page, "knowledge");
     await page.goto(`/knowledge/base?kb=${first.id}`);
-    await expect(kbRow(first.name)).toHaveAttribute("aria-expanded", "true");
-    await expect(navDoc("Tree first")).toBeVisible();
+    await expect(kbRow(first.name)).toHaveAttribute("aria-current", "page");
+    await expect(docRow("Tree first")).toBeVisible();
 
     await kbRow(second.name).click();
-    await expect(navDoc("Tree second")).toBeVisible();
-    await expect(navDoc("Tree first")).toHaveCount(0);
-    await expect(kbRow(first.name)).toHaveAttribute("aria-expanded", "false");
+    await expect(docRow("Tree second")).toBeVisible();
+    await expect(docRow("Tree first")).toHaveCount(0);
+    await expect(kbRow(first.name)).not.toHaveAttribute("aria-current", "page");
+    await expect(kbRow(second.name)).toHaveAttribute("aria-current", "page");
 
-    // Clicking the open knowledge base again folds and unfolds its list.
-    await kbRow(second.name).click();
-    await expect(navDoc("Tree second")).toHaveCount(0);
-    await expect(kbRow(second.name)).toHaveAttribute("aria-expanded", "false");
-    await kbRow(second.name).click();
-    await expect(navDoc("Tree second")).toBeVisible();
-
-    // A document opened from the navigation keeps its knowledge base open.
-    await navDoc("Tree second").click();
+    // Opening a document keeps its knowledge base selected in the rail.
+    await docRow("Tree second").click();
     await expect(page.getByTestId("kb-document-title")).toHaveText("Tree second");
-    await expect(navDoc("Tree second")).toHaveAttribute("aria-current", "page");
+    await expect(kbRow(second.name)).toHaveAttribute("aria-current", "page");
   } finally {
     await Promise.all(bases.map((kb) => apiDelete(request, `/kb/bases/${kb.id}`)));
   }

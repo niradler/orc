@@ -37,7 +37,7 @@ describe("scratchpad MCP tools", () => {
       options,
     );
     const id = idOf(created);
-    expect(created).toContain(`http://orc.test/scratchpad/${id}`);
+    expect(created).toContain(`http://orc.test/knowledge/scratchpads/${id}`);
 
     const read = await executeTool("pad_get", { id }, options);
     expect(read).toContain("# Design notes");

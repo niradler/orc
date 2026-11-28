@@ -37,11 +37,10 @@ for (const viewport of [
     await expect(preview.locator("h1")).toHaveCSS("font-size", "24px");
     await expect(preview.locator("table")).toBeVisible();
     await expect(preview.locator("svg").first()).toBeVisible();
-    await page.getByTestId("markdown-mode-split").click();
+    await page.getByTestId("markdown-mode-edit").click();
     await expect(page.getByTestId("skill-file-content")).toBeVisible();
     const updated = `${original}\nSaved through the reusable workspace.\n`;
     await page.getByTestId("skill-file-content").fill(updated);
-    await expect(preview).toContainText("Saved through the reusable workspace");
     await expect(page.getByTestId("document-save-status")).toHaveText("Unsaved changes");
     page.once("dialog", (dialog) => dialog.dismiss());
     if (viewport.width < 640) {
@@ -82,6 +81,7 @@ for (const viewport of [
       .locator(`[data-testid="skill-row"][data-skill-name="${name}"]`)
       .getByTestId("skill-open")
       .click();
+    await page.getByTestId("markdown-mode-read").click();
     await expect(page.getByTestId("markdown-preview")).toContainText(
       "Saved through the reusable workspace",
     );

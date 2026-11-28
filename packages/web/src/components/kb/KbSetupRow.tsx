@@ -88,7 +88,7 @@ export function KbSetupRow({
         </div>
       </div>
       {expandable && expanded && (
-        <div id={id} className="min-w-0 pb-4 pl-5 pt-1">
+        <div id={id} className={cn("min-w-0 pb-4 pt-1", compact ? "" : "pl-5")}>
           {children}
         </div>
       )}

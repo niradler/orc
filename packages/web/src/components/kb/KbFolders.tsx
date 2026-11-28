@@ -52,7 +52,7 @@ function folderName(root: string): string {
  * Folders on disk whose files are copied into this knowledge base and follow the file on each
  * scan until edited in ORC. ORC never writes the folder.
  */
-export function KbFolders({ kb }: { kb: KnowledgeBase }) {
+export function KbFolders({ kb, compact = false }: { kb: KnowledgeBase; compact?: boolean }) {
   const sources = useKbSources(kb.id);
   const invalidate = useInvalidateKb();
   const action = useAction();
@@ -95,6 +95,7 @@ export function KbFolders({ kb }: { kb: KnowledgeBase }) {
   return (
     <KbSetupRow
       title="Synced folders"
+      compact={compact}
       testId="kb-folders"
       toggleTestId="kb-sources"
       expanded={expanded}
@@ -208,15 +209,21 @@ export function KbFolders({ kb }: { kb: KnowledgeBase }) {
         )}
         {adding ? (
           <form onSubmit={add} className="min-w-0 space-y-3" data-testid="kb-source-form">
-            <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+            <div
+              className={
+                compact
+                  ? "grid min-w-0 gap-3"
+                  : "grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]"
+              }
+            >
               <Field label="Folder path" hint={pathHint()}>
-                <div className="flex min-w-0 gap-2">
+                <div className="flex min-w-0 flex-wrap gap-2">
                   <Input
                     aria-label="Folder path"
                     data-testid="kb-source-path-input"
                     value={root}
                     onChange={(e) => setRoot(e.target.value)}
-                    className="min-w-0 font-mono text-sm"
+                    className="min-w-0 flex-1 font-mono text-sm"
                     autoFocus
                   />
                   <Button

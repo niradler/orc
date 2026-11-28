@@ -175,7 +175,7 @@ export async function gotoView(
     memories: "knowledge/memories",
     knowledge: "knowledge/base",
     agents: "packages/agents",
-    scratchpads: "scratchpad",
+    scratchpads: "knowledge/scratchpads",
     sessions: "chat?sessionList=show",
   };
   const path = paths[view] ?? view;

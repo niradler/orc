@@ -128,7 +128,7 @@ export function digestState(digest: KbDigest): string {
   return `${on ? "On" : "Paused"} · ${when}`;
 }
 
-export function KbDigestSection({ kb }: { kb: KnowledgeBase }) {
+export function KbDigestSection({ kb, compact = false }: { kb: KnowledgeBase; compact?: boolean }) {
   const digest = useKbDigest(kb.id);
   const [dialog, setDialog] = useState<"edit" | "remove" | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -137,6 +137,7 @@ export function KbDigestSection({ kb }: { kb: KnowledgeBase }) {
     <>
       <KbSetupRow
         title="Digest"
+        compact={compact}
         testId="kb-digest"
         toggleTestId="kb-digest-expand"
         expanded={expanded}

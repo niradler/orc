@@ -8,6 +8,9 @@ import { ulid } from "@orc/core/ids";
 import {
   KB_DIGEST_DEFAULT_CRON,
   KB_DIGEST_TEMPLATE,
+  type KbBulkAction,
+  KbBulkActionSchema,
+  type KbBulkResult,
   type KbCallContext,
   type KbComment,
   type KbCommentClose,
@@ -37,6 +40,9 @@ import {
   type KbDocumentWithContent,
   type KbEvidencePack,
   type KbEvidenceRequest,
+  type KbLabelIndex,
+  type KbLabelManage,
+  KbLabelManageSchema,
   type KbMaintenanceQueue,
   type KbRevision,
   type KbScope,
@@ -55,6 +61,7 @@ import { AuditLog } from "@orc/db/audit";
 import { KbDigestStore, kbDigestCommand, kbDigestJobName } from "@orc/db/kb-digest";
 import { deleteJob } from "@orc/db/tx";
 import { Cron } from "croner";
+import { strToU8, zipSync } from "fflate";
 import {
   Catalog,
   DOC_COLUMNS,
@@ -75,6 +82,13 @@ import { IndexDb } from "./index-db.js";
 import { JobRunner } from "./jobs.js";
 import { resolveKbLinks } from "./links.js";
 import { firstHeading, type markdownToBlocks, outline, stripFrontmatter } from "./markdown.js";
+import {
+  buildOkfBundle,
+  isOkfReserved,
+  type OkfDocument,
+  okfFields,
+  withOkfDefaults,
+} from "./okf.js";
 import { BASIC_FORMATS, htmlTitle } from "./parsers/basic.js";
 import {
   DOCLING_FORMATS,
@@ -498,13 +512,22 @@ export class KnowledgeService {
       .query(`SELECT ${DOC_COLUMNS} FROM kb_documents WHERE kb_id = ? ORDER BY path COLLATE NOCASE`)
       .all(kbId) as DocRow[];
     const folders = new Set<string>();
-    const labels = new Map<string, number>();
+    const reads = this.usage.documentReads(kbId);
+    const labels = new Map<string, KbLabelIndex>();
     for (const r of rows) {
       const parts = r.path.split("/").slice(0, -1);
       for (let i = 1; i <= parts.length; i++) folders.add(parts.slice(0, i).join("/"));
-      for (const l of JSON.parse(r.labels) as string[]) labels.set(l, (labels.get(l) ?? 0) + 1);
+      const docReads = reads.get(r.id)?.reads ?? 0;
+      for (const l of JSON.parse(r.labels) as string[]) {
+        const entry = labels.get(l) ?? { label: l, count: 0, reads: 0, updated_at: 0 };
+        labels.set(l, {
+          label: l,
+          count: entry.count + 1,
+          reads: entry.reads + docReads,
+          updated_at: Math.max(entry.updated_at, r.updated_at),
+        });
+      }
     }
-    const reads = this.usage.documentReads(kbId);
     const folder = filter.folder?.replace(/\/+$/, "");
     const documents = rows
       .filter((r) => !folder || r.path.toLowerCase().startsWith(`${folder.toLowerCase()}/`))
@@ -516,9 +539,7 @@ export class KnowledgeService {
     return {
       documents,
       folders: [...folders].sort((a, b) => a.localeCompare(b)),
-      labels: [...labels]
-        .map(([label, count]) => ({ label, count }))
-        .sort((a, b) => a.label.localeCompare(b.label)),
+      labels: [...labels.values()].sort((a, b) => a.label.localeCompare(b.label)),
     };
   }
 
@@ -553,12 +574,23 @@ export class KnowledgeService {
       )
       .all(id, id) as KbDocumentWithContent["backlinks"];
     if (opts.record !== false) this.usage.record(ctx, "fetch", [target(doc)]);
+    const fields = okfFields(text?.markdown ?? doc.content ?? "");
     return {
       ...toDoc(doc),
       content,
       outline: outline(blocks),
       backlinks,
       links,
+      properties: {
+        tags: fields.tags,
+        extra: fields.extra,
+        ...(fields.type ? { type: fields.type } : {}),
+        ...(fields.timestamp ? { timestamp: fields.timestamp } : {}),
+        ...(fields.verified ? { verified: true } : {}),
+        ...(fields.generated ? { generated: fields.generated } : {}),
+        ...(fields.status ? { status: fields.status } : {}),
+        ...(fields.stale_after ? { stale_after: fields.stale_after } : {}),
+      },
     };
   }
 
@@ -685,14 +717,19 @@ export class KnowledgeService {
     const path = input.path ?? this.freePath(kbId, `${slugify(input.title)}.md`);
     if (input.path) this.assertPathFree(kbId, path);
     if (!isMarkdownName(path)) throw new ValidationError("Authored documents need a .md path");
+    const okf = withOkfDefaults(
+      input.content,
+      { title: input.title, description: input.description, labels: input.labels },
+      input.title,
+    );
     const now = Date.now();
     const doc: DocRow = {
       id: ulid(),
       kb_id: kbId,
-      title: input.title,
-      description: input.description ?? "",
+      title: okf.title,
+      description: okf.description,
       path,
-      labels: JSON.stringify(normalizeLabels(input.labels)),
+      labels: JSON.stringify(normalizeLabels(okf.labels)),
       origin: "authored",
       media_type: "text/markdown",
       original_name: null,
@@ -850,6 +887,179 @@ export class KnowledgeService {
       this.catalog.kb(doc.kb_id)?.project_id ?? null,
       doc.path,
     );
+  }
+
+  /** Applies one action to the displayed selection, keeping per-document revisions and errors. */
+  bulk(ctx: KbCallContext, kbId: string, raw: KbBulkAction): KbBulkResult {
+    const kb = this.kbOrThrow(kbId);
+    this.requireEditable(ctx, kb);
+    const input = KbBulkActionSchema.parse(raw);
+    const ids = [...new Set(input.ids)];
+    const result: KbBulkResult = { updated: 0, removed: 0, failures: [] };
+    for (const id of ids) {
+      const doc = this.catalog.doc(id);
+      if (!doc || doc.kb_id !== kbId) {
+        result.failures.push({ id, error: "Document is not in this knowledge base" });
+        continue;
+      }
+      try {
+        if (input.action === "delete") {
+          if (doc.origin === "external")
+            throw new ValidationError(
+              "This document is a copy from a registered folder; remove the folder instead",
+            );
+          this.deleteDocument(ctx, id);
+          result.removed++;
+          continue;
+        }
+        const labels = JSON.parse(doc.labels) as string[];
+        if (input.action === "label") {
+          if (!input.labels?.length) throw new ValidationError("Choose at least one label");
+          this.updateDocument(ctx, id, {
+            expected_revision: doc.revision,
+            labels: [...labels, ...input.labels],
+            note: "Labels added in bulk",
+          });
+        } else if (input.action === "unlabel") {
+          if (!input.labels?.length) throw new ValidationError("Choose at least one label");
+          const remove = new Set(input.labels);
+          this.updateDocument(ctx, id, {
+            expected_revision: doc.revision,
+            labels: labels.filter((label) => !remove.has(label)),
+            note: "Labels removed in bulk",
+          });
+        } else {
+          const folder = (input.folder ?? "").replace(/^\/+|\/+$/g, "");
+          if (folder.split("/").some((part) => !part || part === "." || part === ".."))
+            throw new ValidationError("Use a relative folder path without . or .. segments");
+          const name = doc.path.split("/").pop() ?? doc.path;
+          const path = folder ? `${folder}/${name}` : name;
+          this.updateDocument(ctx, id, {
+            expected_revision: doc.revision,
+            path,
+            note: `Moved in bulk to ${folder || "the root"}`,
+          });
+        }
+        result.updated++;
+      } catch (err) {
+        result.failures.push({ id, error: (err as Error).message });
+      }
+    }
+    if (result.updated || result.removed)
+      this.audit(
+        ctx,
+        `kb.documents.bulk.${input.action}`,
+        [kbId, ...ids],
+        kb.project_id,
+        `${result.updated} updated, ${result.removed} removed`,
+      );
+    return result;
+  }
+
+  /** Rename, merge or delete one label across every document in the knowledge base. */
+  manageLabel(ctx: KbCallContext, kbId: string, raw: KbLabelManage) {
+    const kb = this.kbOrThrow(kbId);
+    this.requireEditable(ctx, kb);
+    const input = KbLabelManageSchema.parse(raw);
+    if (input.action !== "delete" && !input.to)
+      throw new ValidationError("Rename and merge need a target label");
+    const target = input.to ? normalizeLabels([input.to])[0] : undefined;
+    const rows = (
+      this.db.query(`SELECT ${DOC_COLUMNS} FROM kb_documents WHERE kb_id = ?`).all(kbId) as DocRow[]
+    ).filter((row) => (JSON.parse(row.labels) as string[]).includes(input.label));
+    const result = { updated: 0, failures: [] as { id: string; error: string }[] };
+    for (const row of rows) {
+      try {
+        const labels = (JSON.parse(row.labels) as string[]).filter((l) => l !== input.label);
+        this.updateDocument(ctx, row.id, {
+          expected_revision: row.revision,
+          labels: target ? [...labels, target] : labels,
+          note:
+            input.action === "delete"
+              ? `Label ${input.label} removed`
+              : `Label ${input.label} → ${target}`,
+        });
+        result.updated++;
+      } catch (err) {
+        result.failures.push({ id: row.id, error: (err as Error).message });
+      }
+    }
+    if (result.updated)
+      this.audit(
+        ctx,
+        `kb.label.${input.action}`,
+        [kbId],
+        kb.project_id,
+        `${input.label}${target ? ` → ${target}` : ""} on ${result.updated} documents`,
+      );
+    return result;
+  }
+
+  /** A same-origin image asset referenced by document Markdown; not a document of its own. */
+  putAsset(ctx: KbCallContext, kbId: string, name: string, bytes: Uint8Array) {
+    const kb = this.kbOrThrow(kbId);
+    this.requireEditable(ctx, kb);
+    const ext = extname(name).slice(1).toLowerCase();
+    if (!["png", "jpg", "jpeg", "gif", "webp", "avif", "svg"].includes(ext))
+      throw new ValidationError("Images must be PNG, JPEG, GIF, WebP, AVIF or SVG");
+    if (!bytes.byteLength) throw new ValidationError("Image is empty");
+    if (bytes.byteLength > 10 * 1024 * 1024)
+      throw new ValidationError("Images are limited to 10 MB");
+    const asset = this.engine.storage.putAsset(kbId, name, bytes);
+    return { ...asset, name, size_bytes: bytes.byteLength };
+  }
+
+  readAsset(kbId: string, file: string): { bytes: Buffer; media_type: string } {
+    this.kbOrThrow(kbId);
+    const bytes = this.engine.storage.readAsset(kbId, file);
+    const ext = extname(file).slice(1).toLowerCase();
+    const media =
+      ext === "svg"
+        ? "image/svg+xml"
+        : ext === "jpg" || ext === "jpeg"
+          ? "image/jpeg"
+          : ext === "avif"
+            ? "image/avif"
+            : ext === "webp"
+              ? "image/webp"
+              : ext === "gif"
+                ? "image/gif"
+                : "image/png";
+    return { bytes, media_type: media };
+  }
+
+  /** A conformant OKF v0.3 bundle: concepts, folder indexes, root index and log. */
+  exportOkf(kbId: string) {
+    const kb = this.kbOrThrow(kbId);
+    const rows = this.db
+      .query(`SELECT ${DOC_COLUMNS} FROM kb_documents WHERE kb_id = ? ORDER BY path COLLATE NOCASE`)
+      .all(kbId) as DocRow[];
+    const docs: OkfDocument[] = rows.map((row) => ({
+      path: row.path,
+      title: row.title,
+      description: row.description,
+      labels: JSON.parse(row.labels) as string[],
+      content: documentText(this.engine, row)?.markdown ?? row.content ?? "",
+    }));
+    const log = (
+      this.db
+        .query(
+          `SELECT d.title, r.revision, r.created_at, r.actor FROM kb_document_revisions r
+           JOIN kb_documents d ON d.id = r.document_id WHERE d.kb_id = ?
+           ORDER BY r.created_at DESC LIMIT 200`,
+        )
+        .all(kbId) as { title: string; revision: number; created_at: number; actor: string }[]
+    ).map(
+      (r) =>
+        `${new Date(r.created_at).toISOString().slice(0, 10)} · ${r.title} · revision ${r.revision} · ${r.actor}`,
+    );
+    const files = buildOkfBundle(docs, log, kb.name);
+    const zip = zipSync(
+      Object.fromEntries(files.map((file) => [file.path, strToU8(file.content)])),
+      { level: 6 },
+    );
+    const filename = `${slugify(kb.name) || "knowledge"}-okf.zip`;
+    return { filename, bytes: zip, files: files.length };
   }
 
   /** Open comments on a removed document move to the KB, so the digest still sees them. */
@@ -1308,15 +1518,20 @@ export class KnowledgeService {
         });
       }
       const path = input.path ?? this.freePath(kbId, `${ext === "txt" ? slugify(stem) : stem}.md`);
+      const okf = withOkfDefaults(
+        text,
+        { title: input.title, description: input.description, labels },
+        firstHeading(stripFrontmatter(text)) ?? stem,
+      );
       return this.createDocument(
         ctx,
         kbId,
         {
-          title: input.title ?? firstHeading(stripFrontmatter(text)) ?? stem,
+          title: okf.title,
           path,
-          labels,
+          labels: okf.labels,
           content,
-          ...(input.description ? { description: input.description } : {}),
+          ...(okf.description ? { description: okf.description } : {}),
         },
         input.note ?? `Uploaded ${name}`,
       );
@@ -1795,6 +2010,8 @@ export class KnowledgeService {
     for (const rel of files) {
       const ext = extname(rel).slice(1).toLowerCase();
       if (!KB_UPLOAD_FORMATS.includes(ext)) continue;
+      // OKF bundle navigation and history are reserved, not concepts.
+      if (isOkfReserved(rel)) continue;
       // Seen even when unreadable, so a transient read error does not mark the document missing.
       seen.add(rel);
       const existing = known.get(rel);
@@ -1856,6 +2073,11 @@ export class KnowledgeService {
     const markdown = ext === "md" || ext === "markdown";
     const text = markdown ? decodeUtf8(bytes) : null;
     if (markdown && text === null) throw new Error("Markdown must be UTF-8");
+    const fields = text !== null ? okfFields(text) : null;
+    const okfLabels = normalizeLabels([
+      ...(fields?.tags ?? []),
+      ...(fields?.type ? [fields.type] : []),
+    ]);
     const now = Date.now();
     const ctx: KbCallContext = { source: "api", actor: { name: SCANNER } };
     const parseState = markdown ? "ok" : "pending";
@@ -1880,6 +2102,12 @@ export class KnowledgeService {
         content: text,
         content_hash: hash,
         size_bytes: bytes.byteLength,
+        title: fields?.title ?? existing.title,
+        description: fields?.description ?? existing.description,
+        labels:
+          text !== null && (fields?.tags.length || fields?.type)
+            ? JSON.stringify(okfLabels)
+            : existing.labels,
         parse_state: parseState,
         index_state: "pending",
         warnings: markdown ? warnings : "[]",
@@ -1888,14 +2116,18 @@ export class KnowledgeService {
       };
       this.db.transaction(() => {
         const res = this.db.run(
-          `UPDATE kb_documents SET revision = ?, content = ?, content_hash = ?, size_bytes = ?, parse_state = ?,
-             index_state = 'pending', warnings = ?, updated_at = ?, updated_by = ?
+          `UPDATE kb_documents SET revision = ?, content = ?, content_hash = ?, size_bytes = ?, title = ?,
+             description = ?, labels = ?, parse_state = ?, index_state = 'pending', warnings = ?,
+             updated_at = ?, updated_by = ?
            WHERE id = ? AND revision = ? AND folder_detached = 0`,
           [
             revision,
             text,
             hash,
             next.size_bytes,
+            next.title,
+            next.description,
+            next.labels,
             parseState,
             next.warnings,
             now,
@@ -1928,11 +2160,12 @@ export class KnowledgeService {
       id,
       kb_id: source.kb_id,
       title:
+        fields?.title ??
         (text !== null ? firstHeading(stripFrontmatter(text)) : undefined) ??
         name.replace(/\.[^.]+$/, ""),
-      description: "",
+      description: fields?.description ?? "",
       path,
-      labels: "[]",
+      labels: JSON.stringify(okfLabels),
       origin: "external",
       media_type: mediaTypeOf(name),
       original_name: name,

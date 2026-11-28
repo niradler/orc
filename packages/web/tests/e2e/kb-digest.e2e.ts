@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { API_BASE, AUTH_HEADERS, apiDelete, apiGet, apiPost, gotoView, tid } from "./_helpers";
-import { selectKnowledgeBase } from "./_knowledge-ui";
+import { openKbContext, selectKnowledgeBase } from "./_knowledge-ui";
 
 type Kb = { id: string; name: string };
 type Doc = { id: string; title: string };
@@ -51,6 +51,7 @@ test.describe("Knowledge base digest", () => {
       const capable = await digestBackends(request);
       expect(capable.length).toBeGreaterThan(0);
       await openKb(page, kb.name);
+      await openKbContext(page);
       const section = page.getByTestId("kb-digest");
       await section.getByTestId("kb-digest-add").click();
 
@@ -184,6 +185,7 @@ test.describe("Knowledge base digest", () => {
       expect(paused.status()).toBe(200);
 
       await openKb(page, kb.name);
+      await openKbContext(page);
       const section = page.getByTestId("kb-digest");
       await expect(section.getByTestId("kb-digest-enabled")).toHaveText("Paused");
       await section.getByTestId("kb-digest-expand").click();
@@ -239,6 +241,7 @@ test.describe("Knowledge base digest", () => {
     });
     try {
       await openKb(page, kb.name);
+      await openKbContext(page);
       await page.getByTestId("kb-digest-add").click();
       const dialog = page.getByRole("dialog");
       await expect(dialog.getByTestId("kb-digest-mcp-hint")).toBeVisible();
@@ -263,6 +266,7 @@ test.describe("Knowledge base comments", () => {
         content: "# Deploy runbook\n\nSteps.",
       });
       await openKb(page, kb.name);
+      await openKbContext(page);
       const kbComments = page.getByTestId("kb-comments");
       // Collapsed by default: only the header and the counts take space.
       await expect(kbComments.getByTestId("kb-comments-none")).toBeVisible();
@@ -358,6 +362,7 @@ test.describe("Knowledge base comments", () => {
     try {
       await apiPost(request, `/kb/bases/${kb.id}/comments`, { body: "Please fix" });
       await openKb(page, kb.name);
+      await openKbContext(page);
       await page.getByTestId("kb-comments-count-open").click();
       const comment = page.getByTestId("kb-comments").getByTestId("kb-comment");
       await comment.getByTestId("kb-comment-resolve").click();
@@ -386,6 +391,7 @@ test.describe("Knowledge base comments", () => {
         await gotoView(page, "knowledge");
         await page.goto(`/knowledge/base?kb=${kb.id}`);
         await expect(page.getByTestId("kb-overview-name")).toHaveText(kb.name);
+        await openKbContext(page);
         await expect(page.getByTestId("kb-digest-summary")).toBeVisible();
         await page.getByTestId("kb-comments-count-open").click();
         await expect(page.getByTestId("kb-comment")).toHaveCount(1);

@@ -262,11 +262,12 @@ for (const width of [390, 1440]) {
           .getByTestId("markdown-preview")
           .filter({ visible: true });
         await expect(document).toContainText("Keep this document");
+        await page.getByTestId("kb-details-toggle").click();
         const menu = page.getByTestId("kb-doc-menu");
         await menu.click();
         await expect(page.getByTestId("kb-doc-actions-menu")).toBeVisible();
-        if (width < 1000) await document.tap();
-        else await document.click();
+        // The document menu lives in Details, so dismiss against the panel, not behind its sheet.
+        await page.getByTestId("kb-document-details").click({ position: { x: 8, y: 8 } });
         await expect(page.getByTestId("kb-doc-actions-menu")).toBeHidden();
         await expect(document).toContainText("Keep this document");
         await menu.click();

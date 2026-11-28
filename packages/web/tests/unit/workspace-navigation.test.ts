@@ -22,10 +22,15 @@ test("nested deep links select the specific page and keep primary groups stable"
   expect(workspaceSection("/knowledge/memories/example")?.id).toBe("knowledge");
   expect(workspacePage("/knowledge/base")?.label).toBe("Knowledge base");
   expect(workspacePage("/knowledge/memories/example")?.label).toBe("Memories");
+  expect(workspaceSection("/knowledge/scratchpads/example")?.id).toBe("knowledge");
+  expect(workspacePage("/knowledge/scratchpads/example")?.label).toBe("Scratchpads");
   expect(workspaceSection("/knowledge/base")?.pages.map((page) => page.label)).toEqual([
     "Knowledge base",
     "Memories",
+    "Scratchpads",
   ]);
+  // The old Library route is gone; pads live under Knowledge now.
+  expect(workspaceSection("/scratchpad")).toBeUndefined();
   expect(
     workspaceDestination(
       "/knowledge/base?view=collections",

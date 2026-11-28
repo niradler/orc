@@ -71,7 +71,7 @@ for (const width of [1440, 390]) {
       page.locator(`[data-testid="scratchpad-row"][data-scratchpad-id="${id}"]`);
     try {
       await gotoView(page, "scratchpads");
-      await page.goto(`/scratchpad?project=${one.id}`);
+      await page.goto(`/knowledge/scratchpads?project=${one.id}`);
       await expect(row(shared.id)).toBeVisible();
       await expect(row(first.id)).toBeVisible();
       await expect(row(second.id)).toHaveCount(0);
@@ -89,7 +89,7 @@ for (const width of [1440, 390]) {
       await selectProject(page, "all");
       await expect(row(first.id)).toBeVisible();
       await expect(row(second.id)).toBeVisible();
-      await page.goto(`/scratchpad?padProject=${two.id}`);
+      await page.goto(`/knowledge/scratchpads?padProject=${two.id}`);
       await expect(page).toHaveURL(new RegExp(`project=${two.id}`));
       expect(new URL(page.url()).searchParams.has("padProject")).toBe(false);
       await expect(row(second.id)).toBeVisible();
